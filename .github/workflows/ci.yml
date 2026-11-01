@@ -1,0 +1,24 @@
+name: CI
+
+# 什么时候运行：推送到 main 分支时，或者有人提交 Pull Request 时
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest      # 在 GitHub 提供的一台临时 Linux 服务器上运行
+    steps:
+      - uses: actions/checkout@v4     # 第 1 步：把你的代码拉到这台服务器上
+
+      - uses: astral-sh/setup-uv@v6   # 第 2 步：装 uv（Python 版本按 .python-version）
+
+      - name: 安装依赖
+        run: uv sync --locked         # 严格按 uv.lock 安装，版本和你电脑上一模一样
+
+      - name: 代码检查（ruff）
+        run: uv run ruff check . && uv run ruff format --check .
+
+      - name: 类型检查（pyright）
+        run: uv run pyright
