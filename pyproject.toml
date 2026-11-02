@@ -7,8 +7,12 @@ version = "0.0.1"
 description = "JacarandaParse：完全离线的文档结构化与人工审核工具"
 requires-python = ">=3.12"
 license = "Apache-2.0"
-# 依赖会随模块逐步加入：第五课加 OCR，后面再加 FastAPI、数据库等。
-dependencies = []
+
+dependencies = [
+    "onnxruntime>=1.31.1",
+    "pillow>=13.0.0",
+    "rapidocr>=3.10.0",
+]
 
 [project.scripts]
 jacara = "jacara.cli:main"
