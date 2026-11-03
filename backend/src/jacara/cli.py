@@ -1,17 +1,27 @@
 """命令行入口：`jacara`。
 
 uv run jacara --version
-uv run jacara ocr 图片路径                       用默认模型识别文字
+uv run jacara ocr 图片或PDF                      识别文字（PDF 有文字层时直接读取）
 uv run jacara serve --model 模型.gguf            启动本地大模型服务
-uv run jacara extract 图片路径                   识别文字并抽取字段（要先启动模型服务）
+uv run jacara extract 图片或PDF                  识别、抽取字段并核对出处（要先启动模型服务）
 """
+
+from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from jacara import __version__
+
+if TYPE_CHECKING:
+    # 只给类型检查用，运行时不导入：jacara --version 不用加载 OCR 和模型相关的库。
+    from jacara.plugins.exporters import DocumentReport
+    from jacara.plugins.extractors import FieldSpec, LlmExtractor
+    from jacara.plugins.ocr import OcrPage
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -19,8 +29,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="version", version=f"jacara {__version__}")
     sub = parser.add_subparsers(dest="command")
 
-    p_ocr = sub.add_parser("ocr", help="识别一张图片里的文字")
-    p_ocr.add_argument("image", type=Path, help="图片路径，支持 jpg、png")
+    p_ocr = sub.add_parser("ocr", help="识别图片或 PDF 里的文字")
+    p_ocr.add_argument("image", type=Path, help="图片或 PDF 路径")
     p_ocr.add_argument("--engine", default="rapidocr", help="OCR 引擎名，默认 rapidocr")
     p_ocr.add_argument("--det-model", type=Path, help="自定义文字检测模型（.onnx）")
     p_ocr.add_argument(
@@ -35,8 +45,8 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("--port", type=int, default=8080, help="端口，默认 8080")
     p_serve.add_argument("--context", type=int, default=8192, help="上下文长度，默认 8192")
 
-    p_ext = sub.add_parser("extract", help="识别图片并抽取字段（要先运行 jacara serve）")
-    p_ext.add_argument("image", type=Path, help="图片路径，支持 jpg、png")
+    p_ext = sub.add_parser("extract", help="识别图片或 PDF 并抽取字段（要先运行 jacara serve）")
+    p_ext.add_argument("image", type=Path, help="图片或 PDF 路径")
     p_ext.add_argument("--server", default="http://127.0.0.1:8080", help="模型服务地址")
     p_ext.add_argument("--show-prompt", action="store_true", help="同时打印发给模型的内容")
     p_ext.add_argument(
@@ -81,14 +91,24 @@ def _ocr(args: argparse.Namespace) -> int:
     except ValueError as err:
         print(err)
         return 1
-    page = engine.recognize(image)
 
-    size = f"{page.width}×{page.height}"
-    print(f"图片 {size} · 识别出 {len(page.lines)} 行 · 用时 {page.duration_ms} 毫秒")
-    print("模型：" + " · ".join(f"{k}={v}" for k, v in page.models.items()) + "\n")
-    for i, line in enumerate(page.lines, start=1):
-        x0, y0, x1, y1 = (round(v) for v in line.bbox)
-        print(f"{i:>3}. [{line.confidence:.2f}] ({x0},{y0})-({x1},{y1})  {line.text}")
+    from jacara.plugins.ocr.loader import UnsupportedFileError, load_pages
+
+    try:
+        pages = load_pages(image, engine)
+    except UnsupportedFileError as err:
+        print(err)
+        return 1
+
+    for number, page in enumerate(pages, start=1):
+        if len(pages) > 1:
+            print(f"\n===== 第 {number} / {len(pages)} 页 =====")
+        size = f"{page.width}×{page.height}"
+        print(f"图片 {size} · 识别出 {len(page.lines)} 行 · 用时 {page.duration_ms} 毫秒")
+        print("模型：" + " · ".join(f"{k}={v}" for k, v in page.models.items()) + "\n")
+        for i, line in enumerate(page.lines, start=1):
+            x0, y0, x1, y1 = (round(v) for v in line.bbox)
+            print(f"{i:>3}. [{line.confidence:.2f}] ({x0},{y0})-({x1},{y1})  {line.text}")
     return 0
 
 
@@ -109,34 +129,65 @@ def _serve(args: argparse.Namespace) -> int:
 
 
 def _extract(args: argparse.Namespace) -> int:
-    image: Path = args.image
-    if not image.exists():
-        print(f"找不到文件：{image}")
+    path: Path = args.image
+    if not path.exists():
+        print(f"找不到文件：{path}")
         return 1
 
-    from jacara.plugins.aligners import TextMatchAligner
     from jacara.plugins.extractors import PRESETS, ExtractionError, LlmExtractor
-    from jacara.plugins.extractors.llm import build_messages
     from jacara.plugins.model_backends import ModelBackendError, ModelConfig, create_model_backend
     from jacara.plugins.ocr import create_ocr_engine
+    from jacara.plugins.ocr.loader import UnsupportedFileError, load_pages
+
+    try:
+        pages = load_pages(path, create_ocr_engine())
+    except UnsupportedFileError as err:
+        print(err)
+        return 1
+
+    extractor = LlmExtractor(create_model_backend(ModelConfig(base_url=args.server)))
+    reports = []
+    for number, page in enumerate(pages, start=1):
+        source = path.name
+        if len(pages) > 1:
+            source = f"{path.name} 第 {number} 页"
+            print(f"\n===== 第 {number} / {len(pages)} 页 =====")
+        try:
+            reports.append(_extract_page(page, source, PRESETS[args.fields], extractor, args))
+        except (ModelBackendError, ExtractionError) as err:
+            print(err)
+            return 1
+
+    if args.excel is not None:
+        from jacara.plugins.exporters import create_exporter
+
+        create_exporter("excel").export(reports, args.excel)
+        print(f"\n已导出：{args.excel}")
+    return 0
+
+
+def _extract_page(
+    page: OcrPage,
+    source: str,
+    fields: Sequence[FieldSpec],
+    extractor: LlmExtractor,
+    args: argparse.Namespace,
+) -> DocumentReport:
+    """一页走完 抽取 → 对齐 → 校验，打印结果，返回这一页的完整报告。"""
+    from jacara.plugins.aligners import TextMatchAligner
+    from jacara.plugins.exporters import DocumentReport
+    from jacara.plugins.extractors.llm import build_messages
     from jacara.plugins.validators import RuleValidator
 
-    fields = PRESETS[args.fields]
-    page = create_ocr_engine().recognize(image)
-    print(f"OCR：识别出 {len(page.lines)} 块文字 · 用时 {page.duration_ms} 毫秒")
+    how = page.models.get("source", "OCR 识别")
+    print(f"读取：{how} · {len(page.lines)} 块文字 · 用时 {page.duration_ms} 毫秒")
 
     if args.show_prompt:
         for message in build_messages(page, fields):
             print(f"\n----- {message.role} -----\n{message.content}")
         print("-----\n")
 
-    backend = create_model_backend(ModelConfig(base_url=args.server))
-    try:
-        result = LlmExtractor(backend).extract(page, fields)
-    except (ModelBackendError, ExtractionError) as err:
-        print(err)
-        return 1
-
+    result = extractor.extract(page, fields)
     print(f"抽取：模型 {result.model} · 提示词 {result.prompt_version}", end="")
     print(f" · 用时 {result.duration_ms} 毫秒\n")
 
@@ -161,7 +212,7 @@ def _extract(args: argparse.Namespace) -> int:
 
         if a.evidence is not None:
             x0, y0, x1, y1 = (round(v) for v in a.evidence.bbox)
-            where = f"第 {a.evidence.row} 行 · OCR 置信度 {a.evidence.confidence:.2f}"
+            where = f"第 {a.evidence.row} 行 · 置信度 {a.evidence.confidence:.2f}"
             print(f"{indent}{where} · 位置 ({x0},{y0})-({x1},{y1})")
         if a.needs_review:
             print(_paint(f"{indent}需要确认：{a.note}", color))
@@ -181,20 +232,14 @@ def _extract(args: argparse.Namespace) -> int:
     reviews = sum(a.needs_review or a.field.name in flagged for a in aligned)
     print(f"\n{len(aligned)} 个字段，{reviews} 个需要人工确认")
 
-    if args.excel is not None:
-        from jacara.plugins.exporters import DocumentReport, create_exporter
-
-        report = DocumentReport(
-            source=image.name,
-            extraction=result,
-            aligned=aligned,
-            checks=checks,
-            ocr_engine=page.models.get("engine", page.engine),
-            processed_at=datetime.now(),
-        )
-        create_exporter("excel").export([report], args.excel)
-        print(f"已导出：{args.excel}")
-    return 0
+    return DocumentReport(
+        source=source,
+        extraction=result,
+        aligned=aligned,
+        checks=checks,
+        ocr_engine=page.models.get("engine", page.engine),
+        processed_at=datetime.now(),
+    )
 
 
 _RED, _YELLOW, _GREEN = "31", "33", "32"
