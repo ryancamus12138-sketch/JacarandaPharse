@@ -9,11 +9,13 @@ from jacara.plugins.extractors.base import (
     FieldType,
 )
 from jacara.plugins.extractors.llm import PROMPT_VERSION, LlmExtractor, build_schema
-from jacara.plugins.extractors.presets import RECEIPT_FIELDS
+from jacara.plugins.extractors.presets import PRESETS, RECEIPT_FIELDS, RECEIPT_FULL_FIELDS
 
 __all__ = [
+    "PRESETS",
     "PROMPT_VERSION",
     "RECEIPT_FIELDS",
+    "RECEIPT_FULL_FIELDS",
     "ExtractedField",
     "ExtractionError",
     "ExtractionResult",

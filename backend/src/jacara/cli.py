@@ -7,6 +7,7 @@ uv run jacara extract 图片路径                   识别文字并抽取字段
 """
 
 import argparse
+import sys
 from pathlib import Path
 
 from jacara import __version__
@@ -37,6 +38,12 @@ def main(argv: list[str] | None = None) -> int:
     p_ext.add_argument("image", type=Path, help="图片路径，支持 jpg、png")
     p_ext.add_argument("--server", default="http://127.0.0.1:8080", help="模型服务地址")
     p_ext.add_argument("--show-prompt", action="store_true", help="同时打印发给模型的内容")
+    p_ext.add_argument(
+        "--fields",
+        choices=["receipt", "full"],
+        default="receipt",
+        help="抽哪些字段：receipt 常用 4 个（默认），full 收据上所有单个字段",
+    )
 
     args = parser.parse_args(argv)
     if args.command == "ocr":
@@ -105,33 +112,66 @@ def _extract(args: argparse.Namespace) -> int:
         print(f"找不到文件：{image}")
         return 1
 
-    from jacara.plugins.extractors import RECEIPT_FIELDS, ExtractionError, LlmExtractor
+    from jacara.plugins.aligners import TextMatchAligner
+    from jacara.plugins.extractors import PRESETS, ExtractionError, LlmExtractor
     from jacara.plugins.extractors.llm import build_messages
     from jacara.plugins.model_backends import ModelBackendError, ModelConfig, create_model_backend
     from jacara.plugins.ocr import create_ocr_engine
 
+    fields = PRESETS[args.fields]
     page = create_ocr_engine().recognize(image)
-    print(f"OCR：识别出 {len(page.lines)} 行 · 用时 {page.duration_ms} 毫秒")
+    print(f"OCR：识别出 {len(page.lines)} 块文字 · 用时 {page.duration_ms} 毫秒")
 
     if args.show_prompt:
-        for message in build_messages(page, RECEIPT_FIELDS):
+        for message in build_messages(page, fields):
             print(f"\n----- {message.role} -----\n{message.content}")
         print("-----\n")
 
     backend = create_model_backend(ModelConfig(base_url=args.server))
     try:
-        result = LlmExtractor(backend).extract(page, RECEIPT_FIELDS)
+        result = LlmExtractor(backend).extract(page, fields)
     except (ModelBackendError, ExtractionError) as err:
         print(err)
         return 1
 
     print(f"抽取：模型 {result.model} · 提示词 {result.prompt_version}", end="")
     print(f" · 用时 {result.duration_ms} 毫秒\n")
-    width = max(len(f.name) for f in result.fields)
-    for f in result.fields:
-        value = "（找不到）" if f.value is None else f.value
-        print(f"  {f.name:<{width}}  {value}")
+
+    aligned = TextMatchAligner().align(page, result)
+    width = max(len(a.field.name) for a in aligned)
+    for a in aligned:
+        value = "（找不到）" if a.field.value is None else a.field.value
+        if a.status == "empty":
+            mark, color = "－", ""
+        elif a.status == "not_found":
+            mark, color = "✗", _RED
+        elif a.needs_review:
+            mark, color = "!", _YELLOW
+        else:
+            mark, color = "✓", _GREEN
+        print(_paint(f"{mark} {a.field.name:<{width}}  {value}", color))
+
+        indent = " " * (width + 4)
+        if a.evidence is not None:
+            x0, y0, x1, y1 = (round(v) for v in a.evidence.bbox)
+            where = f"第 {a.evidence.row} 行 · OCR 置信度 {a.evidence.confidence:.2f}"
+            print(f"{indent}{where} · 位置 ({x0},{y0})-({x1},{y1})")
+        if a.needs_review:
+            print(_paint(f"{indent}需要确认：{a.note}", color))
+
+    reviews = sum(a.needs_review for a in aligned)
+    print(f"\n{len(aligned)} 个字段，{reviews} 个需要人工确认")
     return 0
+
+
+_RED, _YELLOW, _GREEN = "31", "33", "32"
+
+
+def _paint(text: str, color: str) -> str:
+    """在终端里给文字上色（ANSI 颜色码）。输出到文件时不上色。"""
+    if not color or not sys.stdout.isatty():
+        return text
+    return f"\033[{color}m{text}\033[0m"
 
 
 if __name__ == "__main__":

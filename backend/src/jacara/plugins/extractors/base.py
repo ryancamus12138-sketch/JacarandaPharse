@@ -32,12 +32,13 @@ class FieldSpec:
 class ExtractedField:
     """抽出来的一个字段。value 为 None 表示原文里找不到。
 
-    以后证据对齐会给它加上"出处"（在第几行、图上什么位置），接口只加字段不删字段。
+    row 是模型说的"值在第几行"，只是线索，要由证据对齐去核对。
     """
 
     name: str
     type: FieldType
     value: str | float | None
+    row: int | None = None
 
 
 @dataclass(frozen=True)
