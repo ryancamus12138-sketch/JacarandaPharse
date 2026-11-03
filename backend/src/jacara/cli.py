@@ -8,6 +8,7 @@ uv run jacara extract 图片路径                   识别文字并抽取字段
 
 import argparse
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from jacara import __version__
@@ -44,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         default="receipt",
         help="抽哪些字段：receipt 常用 4 个（默认），full 收据上所有单个字段",
     )
+    p_ext.add_argument("--excel", type=Path, help="同时把结果导出成 Excel，例如 results/收据.xlsx")
 
     args = parser.parse_args(argv)
     if args.command == "ocr":
@@ -178,6 +180,20 @@ def _extract(args: argparse.Namespace) -> int:
 
     reviews = sum(a.needs_review or a.field.name in flagged for a in aligned)
     print(f"\n{len(aligned)} 个字段，{reviews} 个需要人工确认")
+
+    if args.excel is not None:
+        from jacara.plugins.exporters import DocumentReport, create_exporter
+
+        report = DocumentReport(
+            source=image.name,
+            extraction=result,
+            aligned=aligned,
+            checks=checks,
+            ocr_engine=page.models.get("engine", page.engine),
+            processed_at=datetime.now(),
+        )
+        create_exporter("excel").export([report], args.excel)
+        print(f"已导出：{args.excel}")
     return 0
 
 
