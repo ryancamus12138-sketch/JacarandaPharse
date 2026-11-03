@@ -46,13 +46,21 @@ def date_variants(value: str) -> list[str]:
         variants += [f"{dd}{sep}{mm}{sep}{yyyy}", f"{mm}{sep}{dd}{sep}{yyyy}"]
         variants += [f"{yyyy}{sep}{mm}{sep}{dd}"]
     variants += [f"{d.year}年{d.month}月{d.day}日", f"{yyyy}年{mm}月{dd}日"]
+    for month in (d.strftime("%B"), d.strftime("%b")):  # August、Aug
+        variants += [f"{month} {d.day}, {yyyy}", f"{d.day} {month} {yyyy}"]
+        variants += [f"{dd} {month} {yyyy}", f"{d.day}-{month}-{yyyy}", f"{dd}-{month}-{yyyy}"]
     return list(dict.fromkeys(variants))
 
 
 def _exact_pattern(variants: list[str]) -> re.Pattern[str]:
     """数字和日期的查找规则：前后不能紧挨着别的数字，避免 9.00 匹配到 19.00 或 9.000。"""
     alternatives = "|".join(re.escape(v) for v in variants)
-    return re.compile(rf"(?<![\d.,])(?:{alternatives})(?![\d]|[.,]\d)")
+    return re.compile(rf"(?<![\d.,])(?:{alternatives})(?![\d]|[.,]\d)", re.IGNORECASE)
+
+
+def _tidy(text: str) -> str:
+    """去掉逗号、句号前多余的空格：PDF 里常见 "August 3 , 2014" 这种写法。"""
+    return re.sub(r"\s+(?=[,.])", "", text)
 
 
 def _best_similarity(needle: str, haystack: str) -> float:
@@ -118,8 +126,8 @@ class TextMatchAligner:
 
     def _find_exact(self, pattern: re.Pattern[str], rows: list[OcrRow]) -> Evidence | None:
         for row in rows:
-            if pattern.search(row.text):
-                lines = tuple(ln for ln in row.lines if pattern.search(ln.text)) or row.lines
+            if pattern.search(_tidy(row.text)):
+                lines = tuple(ln for ln in row.lines if pattern.search(_tidy(ln.text))) or row.lines
                 return Evidence(row.index, row.text, lines, similarity=1.0)
         return None
 
