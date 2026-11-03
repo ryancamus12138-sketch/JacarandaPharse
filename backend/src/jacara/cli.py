@@ -117,6 +117,7 @@ def _extract(args: argparse.Namespace) -> int:
     from jacara.plugins.extractors.llm import build_messages
     from jacara.plugins.model_backends import ModelBackendError, ModelConfig, create_model_backend
     from jacara.plugins.ocr import create_ocr_engine
+    from jacara.plugins.validators import RuleValidator
 
     fields = PRESETS[args.fields]
     page = create_ocr_engine().recognize(image)
@@ -138,28 +139,44 @@ def _extract(args: argparse.Namespace) -> int:
     print(f" · 用时 {result.duration_ms} 毫秒\n")
 
     aligned = TextMatchAligner().align(page, result)
+    checks = RuleValidator().validate(result.fields)
+    flagged = checks.fields_with_issues()
+
     width = max(len(a.field.name) for a in aligned)
+    indent = " " * (width + 4)
     for a in aligned:
-        value = "（找不到）" if a.field.value is None else a.field.value
-        if a.status == "empty":
-            mark, color = "－", ""
-        elif a.status == "not_found":
+        name = a.field.name
+        value = "（找不到）" if a.field.value is None else " ".join(str(a.field.value).split())
+        if a.status == "not_found":
             mark, color = "✗", _RED
-        elif a.needs_review:
+        elif a.needs_review or name in flagged:
             mark, color = "!", _YELLOW
+        elif a.status == "empty":
+            mark, color = "－", ""
         else:
             mark, color = "✓", _GREEN
-        print(_paint(f"{mark} {a.field.name:<{width}}  {value}", color))
+        print(_paint(f"{mark} {name:<{width}}  {value}", color))
 
-        indent = " " * (width + 4)
         if a.evidence is not None:
             x0, y0, x1, y1 = (round(v) for v in a.evidence.bbox)
             where = f"第 {a.evidence.row} 行 · OCR 置信度 {a.evidence.confidence:.2f}"
             print(f"{indent}{where} · 位置 ({x0},{y0})-({x1},{y1})")
         if a.needs_review:
             print(_paint(f"{indent}需要确认：{a.note}", color))
+        for issue in checks.issues:
+            if name in issue.fields:
+                print(_paint(f"{indent}规则不通过：{issue.title}", color))
 
-    reviews = sum(a.needs_review for a in aligned)
+    print("\n规则校验")
+    for issue in checks.issues:
+        mark, color = ("✗", _RED) if issue.severity == "error" else ("!", _YELLOW)
+        print(_paint(f"  {mark} {issue.title}：{issue.message}", color))
+    summary = f"  {len(checks.passed)} 条通过，{len(checks.issues)} 条不通过"
+    if checks.skipped:
+        summary += f"，{len(checks.skipped)} 条因缺字段跳过"
+    print(summary)
+
+    reviews = sum(a.needs_review or a.field.name in flagged for a in aligned)
     print(f"\n{len(aligned)} 个字段，{reviews} 个需要人工确认")
     return 0
 
