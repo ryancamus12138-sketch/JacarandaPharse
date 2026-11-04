@@ -4,6 +4,7 @@ uv run jacara --version
 uv run jacara ocr 图片或PDF                      识别文字（PDF 有文字层时直接读取）
 uv run jacara serve --model 模型.gguf            启动本地大模型服务
 uv run jacara extract 图片或PDF                  识别、抽取字段并核对出处（要先启动模型服务）
+uv run jacara doctor                             检查数据库、队列、对象存储、本地模型是否连得上
 """
 
 from __future__ import annotations
@@ -57,7 +58,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_ext.add_argument("--excel", type=Path, help="同时把结果导出成 Excel，例如 results/收据.xlsx")
 
+    sub.add_parser("doctor", help="检查数据库、任务队列、对象存储、本地模型是否连得上")
+
     args = parser.parse_args(argv)
+    if args.command == "doctor":
+        return _doctor()
     if args.command == "ocr":
         return _ocr(args)
     if args.command == "serve":
@@ -240,6 +245,24 @@ def _extract_page(
         ocr_engine=page.models.get("engine", page.engine),
         processed_at=datetime.now(),
     )
+
+
+def _doctor() -> int:
+    from jacara.core.config import get_settings
+    from jacara.core.health import run_checks
+
+    checks = run_checks(get_settings())
+    width = max(len(c.name) for c in checks)
+    for check in checks:
+        mark, color = ("✓", _GREEN) if check.ok else ("✗", _RED)
+        print(_paint(f"{mark} {check.name:<{width}}  {check.detail}", color))
+        if check.hint:
+            print(f"  {' ' * width}  → {check.hint}")
+    failed = sum(not c.ok for c in checks)
+    print(
+        f"\n{len(checks)} 项检查，{failed} 项失败" if failed else f"\n{len(checks)} 项检查全部通过"
+    )
+    return 1 if failed else 0
 
 
 _RED, _YELLOW, _GREEN = "31", "33", "32"
