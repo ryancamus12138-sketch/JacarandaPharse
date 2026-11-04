@@ -9,6 +9,7 @@ requires-python = ">=3.12"
 license = "Apache-2.0"
 
 dependencies = [
+    "alembic>=1.20.1",
     "boto3>=1.43.123",
     "httpx>=0.28.1",
     "onnxruntime>=1.31.1",
@@ -20,6 +21,7 @@ dependencies = [
     "pypdfium2>=5.14.0",
     "rapidocr>=3.10.0",
     "redis>=8.1.0",
+    "sqlalchemy>=2.1.8",
 ]
 
 [project.scripts]
