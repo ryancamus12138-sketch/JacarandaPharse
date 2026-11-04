@@ -22,6 +22,7 @@ uv run pytest                # 自动化测试
 ```bash
 cp .env.example .env         # 然后把 .env 里的 change-me 改成随机值：openssl rand -hex 16
 docker compose up -d         # 启动 PostgreSQL、Valkey、SeaweedFS
+uv run alembic upgrade head  # 建表（以后表结构有变化时也运行这一条）
 uv run jacara doctor         # 检查所有服务是否连得上
 ```
 
@@ -34,6 +35,7 @@ uv run jacara ocr 文件                                # 识别图片或 PDF �
 uv run jacara serve --model models/模型.gguf          # 启动本地模型服务
 uv run jacara extract 文件                            # 抽取字段、核对出处、规则校验
 uv run jacara extract 文件 --fields full --excel results/结果.xlsx
+uv run jacara extract 文件 --save                     # 同时存进数据库
 uv run jacara doctor                                  # 检查数据库、队列、对象存储、本地模型
 ```
 
@@ -42,7 +44,7 @@ uv run jacara doctor                                  # 检查数据库、队列
 ## 处理流水线
 
 ```text
-文件 → 读取（文字层 / OCR）→ 抽取（本地大模型）→ 证据对齐 → 规则校验 → 导出（Excel）
+文件 → 读取（文字层 / OCR）→ 抽取（本地大模型）→ 证据对齐 → 规则校验 → 导出（Excel）/ 存入数据库
 ```
 
 | 步骤 | 位置 | 作用 |
@@ -52,6 +54,7 @@ uv run jacara doctor                                  # 检查数据库、队列
 | 对齐 | `plugins/aligners/` | 每个值在原文里找出处（行号、坐标），找不到标红 |
 | 校验 | `plugins/validators/` | 用数字互相验证（现金 − 总额 = 找零等） |
 | 导出 | `plugins/exporters/` | Excel：汇总、明细、来源 |
+| 保存 | `pipeline/store.py` | 存进 PostgreSQL：文档、抽取记录、字段值 |
 
 ## 后端服务
 
@@ -64,11 +67,23 @@ uv run jacara doctor                                  # 检查数据库、队列
 
 都只监听本机。配置在 `.env`，由 `backend/src/jacara/core/config.py` 统一读取。
 
+## 数据库
+
+| 表 | 内容 |
+| --- | --- |
+| `documents` | 上传的文件：文件名、指纹（sha256）、大小、页数 |
+| `extractions` | 每一页的一次抽取：文字来源、模型、提示词版本、模型原始回答、规则校验结果 |
+| `extracted_values` | 每个字段：值、出处（行号、坐标）、红黄绿状态。写入后不修改 |
+| `value_revisions` | 人工修改记录：只新增，不覆盖原值 |
+
+表结构的变化用 Alembic 管理（`backend/migrations/`）。查看数据：`docker compose exec postgres psql -U jacara`。
+
 ## 目录
 
 | 目录 | 内容 |
 | --- | --- |
 | `backend/src/jacara/` | 产品代码：处理流水线、后端业务、命令行 |
+| `backend/migrations/` | 数据库迁移 |
 | `backend/tests/` | 自动化测试 |
 | `web/` | 前端 |
 | `deploy/` | 正式部署用的 Docker Compose 与离线安装包 |
@@ -81,7 +96,7 @@ uv run jacara doctor                                  # 检查数据库、队列
 | --- | --- | --- |
 | 环境与骨架 | 工具、目录结构、配置、Git、CI | 完成 |
 | 处理流水线 | 读取 → 抽取 → 对齐 → 校验 → 导出 | 完成（命令行版） |
-| 后端 | 测试、基础设施与配置、数据库、API、后台任务、审核、权限 | 进行中 |
+| 后端 | 测试 ✓、基础设施与配置 ✓、数据库 ✓、API、后台任务、审核、权限 | 进行中 |
 | 前端 | 文档列表、审核工作台、导出、设置 | |
 | 部署 | Docker Compose、离线安装包 | |
 

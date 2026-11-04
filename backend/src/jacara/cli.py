@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -57,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         help="抽哪些字段：receipt 常用 4 个（默认），full 收据上所有单个字段",
     )
     p_ext.add_argument("--excel", type=Path, help="同时把结果导出成 Excel，例如 results/收据.xlsx")
+    p_ext.add_argument("--save", action="store_true", help="同时把结果存进数据库")
 
     sub.add_parser("doctor", help="检查数据库、任务队列、对象存储、本地模型是否连得上")
 
@@ -158,7 +160,8 @@ def _extract(args: argparse.Namespace) -> int:
             source = f"{path.name} 第 {number} 页"
             print(f"\n===== 第 {number} / {len(pages)} 页 =====")
         try:
-            reports.append(_extract_page(page, source, PRESETS[args.fields], extractor, args))
+            report = _extract_page(page, source, PRESETS[args.fields], extractor, args)
+            reports.append(replace(report, page=number))
         except (ModelBackendError, ExtractionError) as err:
             print(err)
             return 1
@@ -168,6 +171,28 @@ def _extract(args: argparse.Namespace) -> int:
 
         create_exporter("excel").export(reports, args.excel)
         print(f"\n已导出：{args.excel}")
+
+    if args.save:
+        return _save(path, reports)
+    return 0
+
+
+def _save(path: Path, reports: list[DocumentReport]) -> int:
+    from sqlalchemy.exc import OperationalError, ProgrammingError
+
+    from jacara.core.db import session_scope
+    from jacara.pipeline.store import save_document
+
+    try:
+        with session_scope() as session:
+            document = save_document(session, path, reports)
+    except OperationalError:
+        print("连不上数据库。运行 docker compose up -d 启动，再用 uv run jacara doctor 检查")
+        return 1
+    except ProgrammingError:
+        print("数据库里还没有表。先运行：uv run alembic upgrade head")
+        return 1
+    print(f"\n已存入数据库：documents.id = {document.id}")
     return 0
 
 
@@ -244,6 +269,8 @@ def _extract_page(
         checks=checks,
         ocr_engine=page.models.get("engine", page.engine),
         processed_at=datetime.now(),
+        text_source=page.engine if page.engine == "pdf-text" else "ocr",
+        template=args.fields,
     )
 
 

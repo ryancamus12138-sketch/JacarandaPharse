@@ -32,6 +32,15 @@ class DocumentReport:
 
     processed_at: datetime
 
+    page: int = 1
+    """第几页，从 1 开始。"""
+
+    text_source: str = "ocr"
+    """这一页的文字怎么来的：ocr（OCR 识别）或 pdf-text（PDF 文字层）。"""
+
+    template: str = "receipt"
+    """用的字段清单名。"""
+
 
 class Exporter(Protocol):
     """导出器接口：任何类只要有 name、suffix 属性和 export 方法，就是一个导出器。"""

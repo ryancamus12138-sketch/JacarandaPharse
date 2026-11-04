@@ -27,25 +27,34 @@
 
 ```text
 backend/src/jacara/
-  core/       公共底座：配置（config.py）、健康检查（health.py）、数据库、权限、审计、对象存储
+  core/       公共底座：配置（config.py）、健康检查（health.py）、数据库（db.py）、归属（owner.py）、权限、审计、对象存储
   plugins/    流水线插件，一个扩展点一个子包：ocr tables model_backends extractors aligners validators exporters
-  pipeline/   流水线编排与后台任务
+  pipeline/   流水线编排与后台任务；store.py 负责把结果存进数据库
   modules/    业务功能，一个功能一个子包，内部 schemas → models → repository → service → router
+  models.py   导入所有数据库表
   cli.py      命令行入口
-backend/tests/  自动化测试（pytest）
-web/            前端（React + TypeScript + Vite + Ant Design）
-deploy/         正式部署：Docker Compose、Nginx、离线安装包
-docs/adr/       架构决策记录
-compose.yaml    开发用基础设施：PostgreSQL、Valkey、SeaweedFS
+backend/migrations/  数据库迁移（Alembic），迁移文件在 versions/
+backend/tests/       自动化测试（pytest）
+web/                 前端（React + TypeScript + Vite + Ant Design）
+deploy/              正式部署：Docker Compose、Nginx、离线安装包
+docs/adr/            架构决策记录
+compose.yaml         开发用基础设施：PostgreSQL、Valkey、SeaweedFS
+alembic.ini          数据库迁移设置
 ```
 
 **处理流水线：** 文件 → 读取（`ocr/loader.py`：图片 OCR，电子 PDF 读文字层）→ 视觉行（`ocr/layout.py`）
 → 抽取（`extractors`，经 `model_backends` 调本地模型）→ 证据对齐（`aligners`）→ 规则校验（`validators`）
-→ 导出（`exporters`）。各步之间只通过 `OcrPage`、`ExtractionResult`、`AlignedField`、`ValidationResult`、
-`DocumentReport` 这些数据类型交接。
+→ 导出（`exporters`）或保存（`pipeline/store.py`）。各步之间只通过 `OcrPage`、`ExtractionResult`、
+`AlignedField`、`ValidationResult`、`DocumentReport` 这些数据类型交接。
 
 **配置：** 只在 `core/config.py` 的 `Settings` 里读配置（环境变量 > `.env` > 默认值），
 其他地方用 `get_settings()`，不要直接读 `os.environ`。密码类字段用 `SecretStr`，不要打印或写进日志。
+
+**数据库：** 表定义在各模块的 `models.py`，每张表继承 `Base`、`OwnedMixin`、`TimestampMixin`；
+新增模块的 models 要在 `jacara/models.py` 里导入。改表结构后必须生成迁移：
+`uv run alembic revision --autogenerate -m "说明"`，打开检查后再 `uv run alembic upgrade head`；
+`uv run alembic check` 能发现忘了生成迁移。迁移文件要提交进 Git。
+`extracted_values` 写入后不修改，人工修改写进 `value_revisions`。写数据用 `session_scope()`。
 
 **分层规则：** router 不碰数据库，只调用 service；权限检查、审计、状态变化只写在 service 里；调用只能从上往下走。
 
@@ -63,7 +72,8 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5、openpyxl、pytest�
 - 小步提交：一个任务只改一件事，在分支上做，通过检查后再合并到 main。
 - 提交前运行 `uv run ruff check .`、`uv run ruff format --check .`、`uv run pyright`、`uv run pytest`，必须全部通过。
 - 自动化测试用 pytest，放在 `backend/tests/`。改代码时同时加或改测试，`uv run pytest` 必须通过。
-  测试不连外部服务：模型用假后端，OCR 用手写的 OcrPage，文件写到 `tmp_path`，配置测试不读真实的 `.env`。
+  测试不连外部服务：模型用假后端，OCR 用手写的 OcrPage，文件写到 `tmp_path`，配置测试不读真实的 `.env`，
+  数据库用内存 SQLite（`create_engine("sqlite://")` + `Base.metadata.create_all`）。
 - 评测（用数据集算准确率）尚未确定，暂不加入；不要自行添加 eval/。
 - 重要的技术选择写一条 ADR（`docs/adr/NNNN-标题.md`），格式参考 0001。
 - 不提交 `.env`、数据集、模型文件。密钥只放在 `.env`；新增配置项时同时更新 `.env.example`（只写假值）。
@@ -81,9 +91,15 @@ docker compose up -d       # 启动数据库、任务队列、对象存储（配
 docker compose ps          # 看服务状态
 docker compose down        # 停止（数据保留）
 
+uv run alembic upgrade head                              # 把数据库升级到最新的表结构
+uv run alembic revision --autogenerate -m "说明"         # 改了 models.py 后生成迁移
+uv run alembic check                                     # 检查代码里的表和数据库是否一致
+
 uv run jacara --version
 uv run jacara doctor                                     # 检查所有服务是否连得上
 uv run jacara ocr 文件                                   # 识别图片或 PDF 里的文字
 uv run jacara serve --model models/Qwen3.5-9B-Q4_K_M.gguf  # 启动本地模型
-uv run jacara extract 文件 --fields full --excel results/结果.xlsx
+uv run jacara extract 文件 --fields full --excel results/结果.xlsx --save
+
+docker compose exec postgres psql -U jacara              # 进入数据库，\dt 看表，\q 退出
 ```
