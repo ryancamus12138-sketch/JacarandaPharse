@@ -26,6 +26,7 @@ dev = [
     "ruff>=0.17",
     "pyright[nodejs]>=1.1.400",
     "pre-commit>=4.3",
+    "pytest>=9.2.0",
 ]
 
 [build-system]
@@ -45,10 +46,18 @@ src = ["backend/src"]
 select = ["E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF"]
 ignore = ["RUF001", "RUF002", "RUF003"]  # 允许中文全角标点
 
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/**" = ["S101"]  # 测试就是用 assert 写的
+
 # ---------- pyright：类型检查 ----------
 [tool.pyright]
-include = ["backend/src"]
+include = ["backend/src", "backend/tests"]
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
 venvPath = "."
 venv = ".venv"
+
+# ---------- pytest：自动化测试 ----------
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+addopts = "-q"
