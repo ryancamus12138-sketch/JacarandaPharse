@@ -1,0 +1,41 @@
+"""测试共用的小工具。pytest 会自动加载这个文件，里面的 fixture 所有测试都能用。"""
+
+from __future__ import annotations
+
+import pytest
+
+from jacara.plugins.ocr.base import OcrLine, OcrPage, Point
+
+
+def make_line(text: str, x0: float, y0: float, x1: float, y1: float, conf: float = 0.99) -> OcrLine:
+    """造一块假的 OCR 文字：只要给出文字和外框。"""
+    polygon = (Point(x0, y0), Point(x1, y0), Point(x1, y1), Point(x0, y1))
+    return OcrLine(text=text, polygon=polygon, confidence=conf)
+
+
+def make_page(*lines: OcrLine) -> OcrPage:
+    return OcrPage(
+        width=500, height=1000, lines=tuple(lines), engine="test", models={}, duration_ms=0
+    )
+
+
+@pytest.fixture
+def receipt_page() -> OcrPage:
+    """一张缩小版的收据：照着 SROIE 第 0 张的真实 OCR 结果写的，包括 OCR 的错（找零读成 100）。"""
+    return make_page(
+        make_line("BOOK TA _K (TAMAN DAYA) SDN BHD", 68, 91, 423, 115),
+        make_line("NO.55 55,57 & 59, JALAN SAGU 18,", 108, 142, 383, 165),
+        make_line("TAMAN DAYA,", 190, 166, 280, 186),
+        make_line("Date:", 48, 369, 100, 390),
+        make_line("25/12/2018 8:13:39 PM", 163, 369, 345, 390),
+        make_line("1 PC", 71, 593, 113, 616),
+        make_line("9.000", 201, 593, 250, 614),
+        make_line("9.00", 408, 593, 447, 614),
+        make_line("Total :", 241, 636, 300, 657),
+        make_line("9.00", 407, 635, 446, 656),
+        make_line("Cash", 202, 743, 240, 765),
+        make_line("10.00", 394, 743, 446, 768),
+        make_line("CHANGE", 203, 767, 260, 789),
+        make_line("100", 407, 768, 447, 791),
+        make_line("引物出门", 140, 881, 200, 900, conf=0.64),
+    )
