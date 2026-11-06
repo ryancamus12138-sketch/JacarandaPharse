@@ -41,6 +41,7 @@ def save_document(
         sha256=file_sha256(path),
         size_bytes=path.stat().st_size,
         page_count=len(reports),
+        status="done",
         **who,
     )
     session.add(document)

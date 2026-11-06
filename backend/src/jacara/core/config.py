@@ -34,6 +34,9 @@ class Settings(BaseSettings):
 
     model_server: str = "http://127.0.0.1:8080"
 
+    max_upload_mb: int = 50
+    """上传文件的大小上限（MB）。"""
+
     @property
     def database_url(self) -> str:
         """SQLAlchemy 用的连接地址。里面有密码，不要打印出来。"""
