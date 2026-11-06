@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
+from jacara.plugins.aligners import TextMatchAligner
+from jacara.plugins.exporters import DocumentReport
+from jacara.plugins.extractors import ExtractedField as F
+from jacara.plugins.extractors import ExtractionResult
 from jacara.plugins.ocr.base import OcrLine, OcrPage, Point
+from jacara.plugins.validators import RuleValidator
 
 
 def make_line(text: str, x0: float, y0: float, x1: float, y1: float, conf: float = 0.99) -> OcrLine:
@@ -38,4 +45,25 @@ def receipt_page() -> OcrPage:
         make_line("CHANGE", 203, 767, 260, 789),
         make_line("100", 407, 768, 447, 791),
         make_line("引物出门", 140, 881, 200, 900, conf=0.64),
+    )
+
+
+@pytest.fixture
+def report(receipt_page) -> DocumentReport:
+    """一份走完流水线的结果：找零读成 100，规则"现金 − 总额 = 找零"不通过。"""
+    fields = (
+        F("merchant", "string", "BOOK TA _K (TAMAN DAYA) SDN BHD", 1),
+        F("total", "number", 9.0, 6),
+        F("cash", "number", 10.0, 7),
+        F("change", "number", 100.0, 8),
+        F("member", "string", None, None),
+    )
+    result = ExtractionResult(fields, '{"raw": "模型原话"}', "test-model", "fake", "extract-v2", 5)
+    return DocumentReport(
+        source="receipt.jpg",
+        extraction=result,
+        aligned=TextMatchAligner().align(receipt_page, result),
+        checks=RuleValidator().validate(fields),
+        ocr_engine="rapidocr test",
+        processed_at=datetime(2026, 11, 4),
     )

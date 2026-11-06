@@ -28,7 +28,11 @@ class Document(Base, OwnedMixin, TimestampMixin):
     size_bytes: Mapped[int]
     page_count: Mapped[int]
     storage_key: Mapped[str | None] = mapped_column(String(512))
-    """原始文件在对象存储里的位置。下一课做上传时填写。"""
+    """原始文件在对象存储里的位置。通过 API 上传的文件才有。"""
+    content_type: Mapped[str | None] = mapped_column(String(100))
+    """文件类型，例如 image/jpeg、application/pdf。"""
+    status: Mapped[str] = mapped_column(String(16), default="uploaded", server_default="uploaded")
+    """处理状态：uploaded（已上传）→ processing → done / failed。"""
 
     extractions: Mapped[list[Extraction]] = relationship(
         back_populates="document", order_by="Extraction.page"

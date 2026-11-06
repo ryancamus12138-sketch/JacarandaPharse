@@ -4,8 +4,6 @@ SQLite 是一个"装在文件（或内存）里的小数据库"，Python 自带�
 所以能测出"存进去、读出来"的逻辑对不对。PostgreSQL 特有的地方（JSONB 等）由迁移和 doctor 负责。
 """
 
-from datetime import datetime
-
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -14,11 +12,6 @@ from jacara.core.db import Base, session_scope
 from jacara.core.owner import PERSONAL_OWNER
 from jacara.models import Document, ExtractedValue, Extraction
 from jacara.pipeline.store import file_sha256, save_document
-from jacara.plugins.aligners import TextMatchAligner
-from jacara.plugins.exporters import DocumentReport
-from jacara.plugins.extractors import ExtractedField as F
-from jacara.plugins.extractors import ExtractionResult
-from jacara.plugins.validators import RuleValidator
 
 
 @pytest.fixture
@@ -26,26 +19,6 @@ def factory() -> sessionmaker[Session]:
     engine = create_engine("sqlite://")  # 内存数据库：每个测试一个全新的，测完就没了
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)
-
-
-@pytest.fixture
-def report(receipt_page) -> DocumentReport:
-    fields = (
-        F("merchant", "string", "BOOK TA _K (TAMAN DAYA) SDN BHD", 1),
-        F("total", "number", 9.0, 6),
-        F("cash", "number", 10.0, 7),
-        F("change", "number", 100.0, 8),
-        F("member", "string", None, None),
-    )
-    result = ExtractionResult(fields, '{"raw": "模型原话"}', "test-model", "fake", "extract-v2", 5)
-    return DocumentReport(
-        source="receipt.jpg",
-        extraction=result,
-        aligned=TextMatchAligner().align(receipt_page, result),
-        checks=RuleValidator().validate(fields),
-        ocr_engine="rapidocr test",
-        processed_at=datetime(2026, 11, 4),
-    )
 
 
 @pytest.fixture

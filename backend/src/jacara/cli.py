@@ -5,6 +5,7 @@ uv run jacara ocr 图片或PDF                      识别文字（PDF 有文字
 uv run jacara serve --model 模型.gguf            启动本地大模型服务
 uv run jacara extract 图片或PDF                  识别、抽取字段并核对出处（要先启动模型服务）
 uv run jacara doctor                             检查数据库、队列、对象存储、本地模型是否连得上
+uv run jacara api                                启动 Web 服务，浏览器打开 http://127.0.0.1:8000/docs
 """
 
 from __future__ import annotations
@@ -62,9 +63,15 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("doctor", help="检查数据库、任务队列、对象存储、本地模型是否连得上")
 
+    p_api = sub.add_parser("api", help="启动 Web 服务（API 和接口文档）")
+    p_api.add_argument("--port", type=int, default=8000, help="端口，默认 8000")
+    p_api.add_argument("--reload", action="store_true", help="改了代码自动重启（开发用）")
+
     args = parser.parse_args(argv)
     if args.command == "doctor":
         return _doctor()
+    if args.command == "api":
+        return _api(args)
     if args.command == "ocr":
         return _ocr(args)
     if args.command == "serve":
@@ -290,6 +297,15 @@ def _doctor() -> int:
         f"\n{len(checks)} 项检查，{failed} 项失败" if failed else f"\n{len(checks)} 项检查全部通过"
     )
     return 1 if failed else 0
+
+
+def _api(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    print(f"接口文档：http://127.0.0.1:{args.port}/docs（Ctrl + C 停止）")
+    # 只监听本机。reload 模式要传"模块:变量"字符串，uvicorn 才能在改代码后重新导入。
+    uvicorn.run("jacara.app:app", host="127.0.0.1", port=args.port, reload=args.reload)
+    return 0
 
 
 _RED, _YELLOW, _GREEN = "31", "33", "32"

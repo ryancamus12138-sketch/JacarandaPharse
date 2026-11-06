@@ -3,100 +3,86 @@
 完全离线、本地部署的文档结构化工具：把收据、发票等 PDF 和图片抽取成结构化字段，
 **每个值都能回到原文找到出处**，找不到出处的值会被标红，交给人工确认。
 
+## 它怎么工作
+
+```text
+图片 / PDF
+  → 读取（PDF 有文字层直接读，没有就渲染成图片）
+  → OCR 识别文字，按位置分行
+  → 本地大模型抽取字段（每个值附带行号）
+  → 证据对齐：在原文里找到每个值，记下坐标
+  → 规则校验：总额为正、现金 − 总额 = 找零……
+  → 导出 Excel / 存入数据库 / 通过 API 提供给前端
+```
+
+全程不联网：OCR 模型随包提供，大模型由本机的 llama-server 运行。
+
 ## 快速开始（开发）
 
-需要 [uv](https://docs.astral.sh/uv/)。Python 由 uv 自动下载。
+需要 [uv](https://docs.astral.sh/uv/) 和 [Docker Desktop](https://www.docker.com/products/docker-desktop/)。Python 由 uv 自动下载。
 
 ```bash
 uv sync                      # 创建虚拟环境并安装依赖
-uv run jacara --version
-uv run ruff check .          # 代码检查
-uv run pyright               # 类型检查
-uv run pytest                # 自动化测试
-```
-
-本地模型需要 llama.cpp（Mac：`brew install llama.cpp`）和一个 GGUF 模型文件，放在 `models/`（不进 Git）。
-
-后端需要的数据库、任务队列、对象存储用 Docker 运行（Mac 上装 Docker Desktop）：
-
-```bash
-cp .env.example .env         # 然后把 .env 里的 change-me 改成随机值：openssl rand -hex 16
+cp .env.example .env         # 复制配置，把 change-me 改成随机值（openssl rand -hex 16）
 docker compose up -d         # 启动 PostgreSQL、Valkey、SeaweedFS
-uv run alembic upgrade head  # 建表（以后表结构有变化时也运行这一条）
-uv run jacara doctor         # 检查所有服务是否连得上
+uv run alembic upgrade head  # 建表
+uv run jacara doctor         # 检查各项服务
 ```
 
-`.env` 里是你自己的密码，不会进 Git。端口被占用时，改 `.env` 里对应的端口即可（例如 `POSTGRES_PORT=5433`）。
-
-## 命令行
+### 命令行
 
 ```bash
-uv run jacara ocr 文件                                # 识别图片或 PDF 里的文字
-uv run jacara serve --model models/模型.gguf          # 启动本地模型服务
-uv run jacara extract 文件                            # 抽取字段、核对出处、规则校验
-uv run jacara extract 文件 --fields full --excel results/结果.xlsx
-uv run jacara extract 文件 --save                     # 同时存进数据库
-uv run jacara doctor                                  # 检查数据库、队列、对象存储、本地模型
+uv run jacara serve --model <模型文件>.gguf     # 启动本地大模型（单独一个终端）
+uv run jacara ocr receipt.jpg                   # 只识别文字
+uv run jacara extract receipt.jpg --excel out.xlsx --save
 ```
 
-支持图片（jpg、png 等）和 PDF。有文字层的 PDF 直接读取，扫描件自动 OCR。
+### Web API
 
-## 处理流水线
-
-```text
-文件 → 读取（文字层 / OCR）→ 抽取（本地大模型）→ 证据对齐 → 规则校验 → 导出（Excel）/ 存入数据库
+```bash
+uv run jacara api --reload
 ```
 
-| 步骤 | 位置 | 作用 |
+打开 <http://127.0.0.1:8000/docs> 可以直接在浏览器里试每个接口（离线可用）。
+
+| 方法 | 路径 | 作用 |
 | --- | --- | --- |
-| 读取 | `plugins/ocr/` | 图片和扫描件用 RapidOCR；电子 PDF 用 pdfplumber 读文字层 |
-| 抽取 | `plugins/model_backends/`、`plugins/extractors/` | llama-server + Qwen3.5，JSON Schema 约束输出 |
-| 对齐 | `plugins/aligners/` | 每个值在原文里找出处（行号、坐标），找不到标红 |
-| 校验 | `plugins/validators/` | 用数字互相验证（现金 − 总额 = 找零等） |
-| 导出 | `plugins/exporters/` | Excel：汇总、明细、来源 |
-| 保存 | `pipeline/store.py` | 存进 PostgreSQL：文档、抽取记录、字段值 |
+| GET | `/api/v1/health` | 服务是否在运行 |
+| POST | `/api/v1/documents` | 上传文件（图片或 PDF，默认上限 50 MB） |
+| GET | `/api/v1/documents` | 文档列表（分页：`limit`、`offset`） |
+| GET | `/api/v1/documents/{id}` | 文档详情：每页的抽取结果、字段值和出处 |
+| GET | `/api/v1/documents/{id}/file` | 下载原始文件 |
 
-## 后端服务
+### 检查与测试
 
-| 服务 | 作用 | 本机地址 |
-| --- | --- | --- |
-| PostgreSQL | 数据库：文档、字段、修改记录、审计日志 | `127.0.0.1:5432` |
-| Valkey | 任务队列 | `127.0.0.1:6379` |
-| SeaweedFS | 对象存储（S3 接口）：上传的原始文件 | `127.0.0.1:8333` |
-| llama-server | 本地大模型（`jacara serve` 启动） | `127.0.0.1:8080` |
+```bash
+uv run ruff format . && uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest
+```
 
-都只监听本机。配置在 `.env`，由 `backend/src/jacara/core/config.py` 统一读取。
-
-## 数据库
-
-| 表 | 内容 |
-| --- | --- |
-| `documents` | 上传的文件：文件名、指纹（sha256）、大小、页数 |
-| `extractions` | 每一页的一次抽取：文字来源、模型、提示词版本、模型原始回答、规则校验结果 |
-| `extracted_values` | 每个字段：值、出处（行号、坐标）、红黄绿状态。写入后不修改 |
-| `value_revisions` | 人工修改记录：只新增，不覆盖原值 |
-
-表结构的变化用 Alembic 管理（`backend/migrations/`）。查看数据：`docker compose exec postgres psql -U jacara`。
+测试不需要 Docker 和模型，几秒钟跑完。推到 GitHub 后 CI 会自动跑同样的检查。
 
 ## 目录
 
 | 目录 | 内容 |
 | --- | --- |
-| `backend/src/jacara/` | 产品代码：处理流水线、后端业务、命令行 |
+| `backend/src/jacara/plugins/` | 流水线插件：OCR、模型后端、抽取、对齐、校验、导出 |
+| `backend/src/jacara/core/` | 配置、数据库、权限、对象存储 |
+| `backend/src/jacara/modules/` | 业务功能（文档、字段……），每个功能五层 |
+| `backend/src/jacara/app.py` | Web API 入口 |
 | `backend/migrations/` | 数据库迁移 |
-| `backend/tests/` | 自动化测试 |
+| `backend/tests/` | 自动测试 |
 | `web/` | 前端 |
-| `deploy/` | 正式部署用的 Docker Compose 与离线安装包 |
+| `deploy/` | 部署 |
 | `docs/adr/` | 架构决策记录 |
-| `compose.yaml` | 开发用的基础设施（数据库、队列、对象存储） |
 
 ## 开发路线
 
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | 环境与骨架 | 工具、目录结构、配置、Git、CI | 完成 |
-| 处理流水线 | 读取 → 抽取 → 对齐 → 校验 → 导出 | 完成（命令行版） |
-| 后端 | 测试 ✓、基础设施与配置 ✓、数据库 ✓、API、后台任务、审核、权限 | 进行中 |
+| 处理流水线 | PDF/图片读取 → OCR → 字段抽取 → 证据对齐 → 规则校验 → 导出 | 完成 |
+| 后端 | 基础设施、数据库、文档 API | 完成 |
+| 后端 | 后台任务、人工审核、权限与账号、导出 API | 进行中 |
 | 前端 | 文档列表、审核工作台、导出、设置 | |
 | 部署 | Docker Compose、离线安装包 | |
 
