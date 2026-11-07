@@ -46,7 +46,7 @@ backend/src/jacara/
     store.py        把结果存进数据库
   modules/      业务功能，一个功能一个子包
     documents/      schemas → models → repository → service → router
-    fields/         抽取出的字段值与修改记录
+    fields/         字段值与人工审核：修改、确认、修改历史（/api/v1/values）
   models.py     汇总所有数据库表（给 Alembic 用）
   app.py        FastAPI 应用：create_app()，挂载 /api/v1
   worker.py     后台 worker：Celery 任务定义，jacara worker 启动
@@ -78,6 +78,10 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 
 **后台任务：** 慢的事（OCR、大模型）不在 API 请求里做，放进队列交给 worker。
 任务只传文档 id，worker 自己去数据库和对象存储取。任务要能重复执行而不出错（按状态认领，不是 uploaded 就跳过）。
+
+**人工审核：** `extracted_values` 写入后不改。修改或确认都新增一条 `value_revisions`（seq 1、2、3……），
+当前值取最新一条（`current_value`），原值永远在 `value`。界面显示 `current_value`，标黄看 `pending_review`。
+所有需要确认的字段都处理完，调用"完成审核"，文档 done → reviewed；之后再改字段，文档回到 done。
 
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 

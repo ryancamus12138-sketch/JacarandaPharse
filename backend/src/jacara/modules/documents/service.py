@@ -1,4 +1,4 @@
-"""文档的业务逻辑：上传、列表、详情、下载、重新处理。
+"""文档的业务逻辑：上传、列表、详情、下载、重新处理、完成审核。
 
 权限检查、状态变化只写在这里（项目分层规则）。service 不知道 HTTP，
 抛出的是业务错误（DocumentError），由 router 翻译成 HTTP 状态码。
@@ -123,8 +123,22 @@ class DocumentService:
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
         detail = DocumentDetail.model_validate(document)
-        reviews = sum(v.needs_review for e in detail.extractions for v in e.values)
+        reviews = sum(v.pending_review for e in detail.extractions for v in e.values)
         return detail.model_copy(update={"review_count": reviews})
+
+    def review(self, document_id: uuid.UUID) -> DocumentOut:
+        """完成审核：所有需要确认的字段都处理过了，文档状态 done → reviewed。"""
+        document = self._find(document_id)
+        require(self.owner, "document:review", document.team_id)
+        if document.status != "done":
+            raise DocumentError(
+                "conflict", f"文档状态是 {document.status}，处理完成（done）后才能完成审核"
+            )
+        pending = sum(v.pending_review for e in document.extractions for v in e.values)
+        if pending:
+            raise DocumentError("conflict", f"还有 {pending} 个字段等待确认")
+        document.status = "reviewed"
+        return DocumentOut.model_validate(document)
 
     def download(self, document_id: uuid.UUID) -> tuple[Document, bytes]:
         document = self._find(document_id)
