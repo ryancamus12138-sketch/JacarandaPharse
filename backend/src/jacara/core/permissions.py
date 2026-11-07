@@ -11,7 +11,7 @@ from typing import Literal
 from jacara.core.config import get_settings
 from jacara.core.owner import Owner
 
-Action = Literal["document:create", "document:read", "document:download"]
+Action = Literal["document:create", "document:read", "document:download", "document:process"]
 
 
 class PermissionDenied(Exception):

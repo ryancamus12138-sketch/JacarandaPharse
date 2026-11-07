@@ -12,8 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from jacara.core.deps import get_owner, get_session, get_storage
+from jacara.core.deps import get_owner, get_queue, get_session, get_storage
 from jacara.core.owner import Owner
+from jacara.core.queue import TaskQueue
 from jacara.core.storage import ObjectStorage
 from jacara.modules.documents.schemas import DocumentDetail, DocumentOut, DocumentPage
 from jacara.modules.documents.service import DocumentError, DocumentService
@@ -27,16 +28,19 @@ _STATUS = {
     "too_large": status.HTTP_413_CONTENT_TOO_LARGE,
     "empty": status.HTTP_422_UNPROCESSABLE_CONTENT,
     "unreadable": status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "conflict": status.HTTP_409_CONFLICT,
     "storage": status.HTTP_503_SERVICE_UNAVAILABLE,
+    "queue": status.HTTP_503_SERVICE_UNAVAILABLE,
 }
 
 
 def get_service(
     session: Annotated[Session, Depends(get_session)],
     storage: Annotated[ObjectStorage, Depends(get_storage)],
+    queue: Annotated[TaskQueue, Depends(get_queue)],
     owner: Annotated[Owner, Depends(get_owner)],
 ) -> DocumentService:
-    return DocumentService(session, storage, owner)
+    return DocumentService(session, storage, queue, owner)
 
 
 Service = Annotated[DocumentService, Depends(get_service)]
@@ -48,7 +52,10 @@ def _http_error(err: DocumentError) -> HTTPException:
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="上传文件")
 def upload_document(file: UploadFile, service: Service) -> DocumentOut:
-    """上传一张图片或一个 PDF。文件存进对象存储，文档信息存进数据库，状态为 uploaded。"""
+    """上传一张图片或一个 PDF。文件存进对象存储，文档信息存进数据库，放进后台队列等待处理。
+
+    马上返回，状态为 uploaded。之后用"文档详情"查看状态，变成 done 就有抽取结果了。
+    """
     data = file.file.read()
     try:
         return service.upload(file.filename or "", file.content_type or "", data)
@@ -83,3 +90,15 @@ def download_document(document_id: uuid.UUID, service: Service) -> Response:
     except DocumentError as err:
         raise _http_error(err) from err
     return Response(content=data, media_type=document.content_type or "application/octet-stream")
+
+
+@router.post("/{document_id}/process", status_code=status.HTTP_202_ACCEPTED, summary="重新处理")
+def process_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
+    """把失败（failed）或还在排队（uploaded）的文档重新放进后台队列。
+
+    202 的意思是"收到了，会去做"，不是"已经做完了"。
+    """
+    try:
+        return service.process(document_id)
+    except DocumentError as err:
+        raise _http_error(err) from err

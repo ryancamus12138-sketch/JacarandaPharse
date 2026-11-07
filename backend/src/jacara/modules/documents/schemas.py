@@ -24,6 +24,9 @@ class DocumentOut(BaseModel):
     size_bytes: int
     page_count: int
     status: str
+    """uploaded（排队中）→ processing（处理中）→ done（完成）/ failed（失败）"""
+    error: str | None = None
+    """失败原因。只有 status 是 failed 时才有。"""
     created_at: datetime
     review_count: int = 0
     """需要人工确认的字段数。"""

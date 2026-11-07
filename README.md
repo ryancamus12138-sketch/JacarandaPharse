@@ -37,13 +37,20 @@ uv run jacara ocr receipt.jpg                   # 只识别文字
 uv run jacara extract receipt.jpg --excel out.xlsx --save
 ```
 
-### Web API
+### Web API 和后台任务
+
+在 `docker compose up -d` 之外，开三个终端：
 
 ```bash
-uv run jacara api --reload
+uv run jacara serve --model <模型文件>.gguf     # 1. 本地大模型
+uv run jacara worker                            # 2. 后台任务：处理上传的文件
+uv run jacara api --reload                      # 3. Web API
 ```
 
 打开 <http://127.0.0.1:8000/docs> 可以直接在浏览器里试每个接口（离线可用）。
+
+上传后接口马上返回，文件在后台处理。状态变化：
+`uploaded`（排队中）→ `processing`（处理中）→ `done`（完成）或 `failed`（失败，`error` 里写着原因）。
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
@@ -52,6 +59,7 @@ uv run jacara api --reload
 | GET | `/api/v1/documents` | 文档列表（分页：`limit`、`offset`） |
 | GET | `/api/v1/documents/{id}` | 文档详情：每页的抽取结果、字段值和出处 |
 | GET | `/api/v1/documents/{id}/file` | 下载原始文件 |
+| POST | `/api/v1/documents/{id}/process` | 重新处理（失败后重试） |
 
 ### 检查与测试
 
@@ -59,7 +67,7 @@ uv run jacara api --reload
 uv run ruff format . && uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest
 ```
 
-测试不需要 Docker 和模型，几秒钟跑完。推到 GitHub 后 CI 会自动跑同样的检查。
+测试不需要 Docker、模型和 worker，几秒钟跑完。推到 GitHub 后 CI 会自动跑同样的检查。
 
 ## 目录
 
@@ -68,7 +76,9 @@ uv run ruff format . && uv run ruff check . && uv run ruff format --check . && u
 | `backend/src/jacara/plugins/` | 流水线插件：OCR、模型后端、抽取、对齐、校验、导出 |
 | `backend/src/jacara/core/` | 配置、数据库、权限、对象存储 |
 | `backend/src/jacara/modules/` | 业务功能（文档、字段……），每个功能五层 |
+| `backend/src/jacara/pipeline/` | 流水线组装、后台处理、保存结果 |
 | `backend/src/jacara/app.py` | Web API 入口 |
+| `backend/src/jacara/worker.py` | 后台任务入口 |
 | `backend/migrations/` | 数据库迁移 |
 | `backend/tests/` | 自动测试 |
 | `web/` | 前端 |
@@ -81,8 +91,8 @@ uv run ruff format . && uv run ruff check . && uv run ruff format --check . && u
 | --- | --- | --- |
 | 环境与骨架 | 工具、目录结构、配置、Git、CI | 完成 |
 | 处理流水线 | PDF/图片读取 → OCR → 字段抽取 → 证据对齐 → 规则校验 → 导出 | 完成 |
-| 后端 | 基础设施、数据库、文档 API | 完成 |
-| 后端 | 后台任务、人工审核、权限与账号、导出 API | 进行中 |
+| 后端 | 基础设施、数据库、文档 API、后台任务 | 完成 |
+| 后端 | 人工审核、权限与账号、导出 API | 进行中 |
 | 前端 | 文档列表、审核工作台、导出、设置 | |
 | 部署 | Docker Compose、离线安装包 | |
 

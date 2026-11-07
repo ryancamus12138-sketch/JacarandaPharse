@@ -34,18 +34,29 @@ def save_document(
     reports: Sequence[DocumentReport],
     owner: Owner = PERSONAL_OWNER,
 ) -> Document:
-    """保存一个文件和它每一页的抽取结果。调用方负责提交（session_scope 会自动提交）。"""
-    who = {"user_id": owner.user_id, "team_id": owner.team_id}
+    """命令行用：新建一条文档记录，连同每一页的抽取结果一起保存。调用方负责提交。"""
     document = Document(
         filename=path.name,
         sha256=file_sha256(path),
         size_bytes=path.stat().st_size,
         page_count=len(reports),
         status="done",
-        **who,
+        user_id=owner.user_id,
+        team_id=owner.team_id,
     )
     session.add(document)
+    add_extractions(session, document, reports)
+    return document
 
+
+def add_extractions(
+    session: Session, document: Document, reports: Sequence[DocumentReport]
+) -> None:
+    """把每一页的抽取结果挂到一个已有的文档上。后台任务处理上传的文件时用这个。
+
+    抽取结果的归属和文档一样（同一个 user、同一个 team）。
+    """
+    who = {"user_id": document.user_id, "team_id": document.team_id}
     for report in reports:
         e = report.extraction
         extraction = Extraction(
@@ -68,7 +79,6 @@ def save_document(
             session.add(_value_row(field, position, extraction, field.field.name in flagged, who))
 
     session.flush()  # 让数据库现在就分配好 ID、检查约束，有错马上报
-    return document
 
 
 def _value_row(

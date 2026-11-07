@@ -5,20 +5,12 @@ SQLite 是一个"装在文件（或内存）里的小数据库"，Python 自带�
 """
 
 import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import select
 
-from jacara.core.db import Base, session_scope
+from jacara.core.db import session_scope
 from jacara.core.owner import PERSONAL_OWNER
 from jacara.models import Document, ExtractedValue, Extraction
 from jacara.pipeline.store import file_sha256, save_document
-
-
-@pytest.fixture
-def factory() -> sessionmaker[Session]:
-    engine = create_engine("sqlite://")  # 内存数据库：每个测试一个全新的，测完就没了
-    Base.metadata.create_all(engine)
-    return sessionmaker(bind=engine, expire_on_commit=False)
 
 
 @pytest.fixture

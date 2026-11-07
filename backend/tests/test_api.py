@@ -1,53 +1,25 @@
-"""文档接口：用 FastAPI 的 TestClient 发请求，数据库用内存 SQLite，对象存储用内存里的假存储。
+"""文档接口：用 FastAPI 的 TestClient 发请求。
 
-dependency_overrides 把真正的依赖（PostgreSQL、SeaweedFS）换成假的，
-router 和 service 的代码一行不改。
+dependency_overrides 把真正的依赖（PostgreSQL、SeaweedFS、Valkey）换成假的（见 conftest.py），
+router 和 service 的代码一行不改。测试不会往真的队列里放任务。
 """
 
+import uuid
 from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.orm import Session
 
 from jacara.app import create_app
-from jacara.core.db import Base, session_scope
-from jacara.core.deps import get_session, get_storage
+from jacara.core.db import session_scope
+from jacara.core.deps import get_queue, get_session, get_storage
+from jacara.models import Document
 from jacara.pipeline.store import save_document
 
 
-class MemoryStorage:
-    """假的对象存储：文件存在一个字典里。满足 ObjectStorage 接口。"""
-
-    def __init__(self) -> None:
-        self.files: dict[str, tuple[bytes, str]] = {}
-
-    def put(self, key: str, data: bytes, content_type: str) -> None:
-        self.files[key] = (data, content_type)
-
-    def get(self, key: str) -> bytes:
-        return self.files[key][0]
-
-
 @pytest.fixture
-def factory() -> sessionmaker[Session]:
-    # StaticPool：所有请求共用同一个内存数据库连接，否则每个连接都是一个新的空数据库
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    return sessionmaker(bind=engine, expire_on_commit=False)
-
-
-@pytest.fixture
-def storage() -> MemoryStorage:
-    return MemoryStorage()
-
-
-@pytest.fixture
-def client(factory, storage) -> Iterator[TestClient]:
+def client(factory, storage, queue) -> Iterator[TestClient]:
     app = create_app()
 
     def test_session() -> Iterator[Session]:
@@ -56,6 +28,7 @@ def client(factory, storage) -> Iterator[TestClient]:
 
     app.dependency_overrides[get_session] = test_session
     app.dependency_overrides[get_storage] = lambda: storage
+    app.dependency_overrides[get_queue] = lambda: queue
     with TestClient(app) as test_client:
         yield test_client
 
@@ -161,3 +134,45 @@ def test_docs_page_works_offline(client):
     page = client.get("/docs").text
     assert "cdn.jsdelivr.net" not in page  # 不从网上加载界面文件
     assert client.get("/static-offline-docs/swagger-ui-bundle.js").status_code == 200
+
+
+def test_upload_puts_document_in_queue(client, queue):
+    body = upload(client, "receipt.jpg", b"x", "image/jpeg").json()
+    assert queue.sent == [uuid.UUID(body["id"])]
+
+
+def test_upload_still_works_when_queue_is_down(client, queue):
+    queue.down = True
+    response = upload(client, "receipt.jpg", b"x", "image/jpeg")
+    assert response.status_code == 201  # 文件和记录都保存了，之后可以重新处理
+    assert response.json()["status"] == "uploaded"
+
+
+def _set_status(factory, document_id: str, status: str, error: str | None = None) -> None:
+    with session_scope(factory) as session:
+        document = session.get_one(Document, uuid.UUID(document_id))
+        document.status = status
+        document.error = error
+
+
+def test_failed_document_can_be_processed_again(client, factory, queue):
+    document_id = upload(client, "receipt.jpg", b"x", "image/jpeg").json()["id"]
+    _set_status(factory, document_id, "failed", "大模型服务连不上")
+
+    response = client.post(f"/api/v1/documents/{document_id}/process")
+    assert response.status_code == 202
+    assert response.json()["status"] == "uploaded"
+    assert response.json()["error"] is None  # 旧的失败原因清掉
+    assert queue.sent == [uuid.UUID(document_id)] * 2  # 上传一次，重新处理一次
+
+
+def test_done_document_is_not_processed_again(client, factory):
+    document_id = upload(client, "receipt.jpg", b"x", "image/jpeg").json()["id"]
+    _set_status(factory, document_id, "done")
+    assert client.post(f"/api/v1/documents/{document_id}/process").status_code == 409
+
+
+def test_process_when_queue_is_down_is_503(client, queue):
+    document_id = upload(client, "receipt.jpg", b"x", "image/jpeg").json()["id"]
+    queue.down = True
+    assert client.post(f"/api/v1/documents/{document_id}/process").status_code == 503

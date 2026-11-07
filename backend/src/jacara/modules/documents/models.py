@@ -32,7 +32,9 @@ class Document(Base, OwnedMixin, TimestampMixin):
     content_type: Mapped[str | None] = mapped_column(String(100))
     """文件类型，例如 image/jpeg、application/pdf。"""
     status: Mapped[str] = mapped_column(String(16), default="uploaded", server_default="uploaded")
-    """处理状态：uploaded（已上传）→ processing → done / failed。"""
+    """处理状态：uploaded（已上传，排队中）→ processing（处理中）→ done（完成）/ failed（失败）。"""
+    error: Mapped[str | None] = mapped_column(Text)
+    """处理失败的原因（给人看的说明）。成功或还没处理时为空。"""
 
     extractions: Mapped[list[Extraction]] = relationship(
         back_populates="document", order_by="Extraction.page"
