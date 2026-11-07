@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
+from jacara.core.db import Base
+from jacara.core.queue import QueueError
+from jacara.core.storage import StorageError
 from jacara.plugins.aligners import TextMatchAligner
 from jacara.plugins.exporters import DocumentReport
 from jacara.plugins.extractors import ExtractedField as F
@@ -67,3 +74,55 @@ def report(receipt_page) -> DocumentReport:
         ocr_engine="rapidocr test",
         processed_at=datetime(2026, 11, 4),
     )
+
+
+@pytest.fixture
+def factory() -> sessionmaker[Session]:
+    """内存里的 SQLite 数据库，每个测试一个全新的，测完就没了。
+
+    StaticPool：所有会话共用同一个连接。内存 SQLite 每开一个新连接就是一个新的空数据库，
+    而 API 和后台处理都会开多个会话，必须共用同一个。
+    """
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine, expire_on_commit=False)
+
+
+class MemoryStorage:
+    """假的对象存储：文件存在一个字典里。满足 ObjectStorage 接口。"""
+
+    def __init__(self) -> None:
+        self.files: dict[str, tuple[bytes, str]] = {}
+
+    def put(self, key: str, data: bytes, content_type: str) -> None:
+        self.files[key] = (data, content_type)
+
+    def get(self, key: str) -> bytes:
+        if key not in self.files:
+            raise StorageError(f"找不到文件：{key}")  # 和真的 S3Storage 一样，报 StorageError
+        return self.files[key][0]
+
+
+class FakeQueue:
+    """假的任务队列：只记下放进来的文档 id，不真的发给 Valkey。down=True 模拟 Valkey 没启动。"""
+
+    def __init__(self) -> None:
+        self.sent: list[uuid.UUID] = []
+        self.down = False
+
+    def enqueue_document(self, document_id: uuid.UUID) -> None:
+        if self.down:
+            raise QueueError("任务队列（Valkey）连不上")
+        self.sent.append(document_id)
+
+
+@pytest.fixture
+def storage() -> MemoryStorage:
+    return MemoryStorage()
+
+
+@pytest.fixture
+def queue() -> FakeQueue:
+    return FakeQueue()

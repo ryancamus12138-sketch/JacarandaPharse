@@ -6,15 +6,13 @@ uv run jacara serve --model 模型.gguf            启动本地大模型服务
 uv run jacara extract 图片或PDF                  识别、抽取字段并核对出处（要先启动模型服务）
 uv run jacara doctor                             检查数据库、队列、对象存储、本地模型是否连得上
 uv run jacara api                                启动 Web 服务，浏览器打开 http://127.0.0.1:8000/docs
+uv run jacara worker                             启动后台任务，处理通过 API 上传的文件
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Sequence
-from dataclasses import replace
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,8 +21,6 @@ from jacara import __version__
 if TYPE_CHECKING:
     # 只给类型检查用，运行时不导入：jacara --version 不用加载 OCR 和模型相关的库。
     from jacara.plugins.exporters import DocumentReport
-    from jacara.plugins.extractors import FieldSpec, LlmExtractor
-    from jacara.plugins.ocr import OcrPage
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -67,11 +63,15 @@ def main(argv: list[str] | None = None) -> int:
     p_api.add_argument("--port", type=int, default=8000, help="端口，默认 8000")
     p_api.add_argument("--reload", action="store_true", help="改了代码自动重启（开发用）")
 
+    sub.add_parser("worker", help="启动后台任务：处理通过 API 上传的文件（要先运行 jacara serve）")
+
     args = parser.parse_args(argv)
     if args.command == "doctor":
         return _doctor()
     if args.command == "api":
         return _api(args)
+    if args.command == "worker":
+        return _worker()
     if args.command == "ocr":
         return _ocr(args)
     if args.command == "serve":
@@ -148,30 +148,39 @@ def _extract(args: argparse.Namespace) -> int:
         print(f"找不到文件：{path}")
         return 1
 
+    from jacara.pipeline.run import Pipeline, page_label
     from jacara.plugins.extractors import PRESETS, ExtractionError, LlmExtractor
+    from jacara.plugins.extractors.llm import build_messages
     from jacara.plugins.model_backends import ModelBackendError, ModelConfig, create_model_backend
     from jacara.plugins.ocr import create_ocr_engine
-    from jacara.plugins.ocr.loader import UnsupportedFileError, load_pages
+    from jacara.plugins.ocr.loader import UnsupportedFileError
 
+    backend = create_model_backend(ModelConfig(base_url=args.server))
+    pipeline = Pipeline(ocr=create_ocr_engine(), extractor=LlmExtractor(backend))
     try:
-        pages = load_pages(path, create_ocr_engine())
+        pages = pipeline.read(path)
     except UnsupportedFileError as err:
         print(err)
         return 1
 
-    extractor = LlmExtractor(create_model_backend(ModelConfig(base_url=args.server)))
     reports = []
     for number, page in enumerate(pages, start=1):
-        source = path.name
         if len(pages) > 1:
-            source = f"{path.name} 第 {number} 页"
             print(f"\n===== 第 {number} / {len(pages)} 页 =====")
+        how = page.models.get("source", "OCR 识别")
+        print(f"读取：{how} · {len(page.lines)} 块文字 · 用时 {page.duration_ms} 毫秒")
+        if args.show_prompt:
+            for message in build_messages(page, PRESETS[args.fields]):
+                print(f"\n----- {message.role} -----\n{message.content}")
+            print("-----\n")
+        source = page_label(path.name, number, len(pages))
         try:
-            report = _extract_page(page, source, PRESETS[args.fields], extractor, args)
-            reports.append(replace(report, page=number))
+            report = pipeline.extract_page(page, source, number, args.fields)
         except (ModelBackendError, ExtractionError) as err:
             print(err)
             return 1
+        _print_report(report)
+        reports.append(report)
 
     if args.excel is not None:
         from jacara.plugins.exporters import create_exporter
@@ -203,33 +212,12 @@ def _save(path: Path, reports: list[DocumentReport]) -> int:
     return 0
 
 
-def _extract_page(
-    page: OcrPage,
-    source: str,
-    fields: Sequence[FieldSpec],
-    extractor: LlmExtractor,
-    args: argparse.Namespace,
-) -> DocumentReport:
-    """一页走完 抽取 → 对齐 → 校验，打印结果，返回这一页的完整报告。"""
-    from jacara.plugins.aligners import TextMatchAligner
-    from jacara.plugins.exporters import DocumentReport
-    from jacara.plugins.extractors.llm import build_messages
-    from jacara.plugins.validators import RuleValidator
-
-    how = page.models.get("source", "OCR 识别")
-    print(f"读取：{how} · {len(page.lines)} 块文字 · 用时 {page.duration_ms} 毫秒")
-
-    if args.show_prompt:
-        for message in build_messages(page, fields):
-            print(f"\n----- {message.role} -----\n{message.content}")
-        print("-----\n")
-
-    result = extractor.extract(page, fields)
+def _print_report(report: DocumentReport) -> None:
+    """把一页的结果打印出来：每个字段的值、出处、需要确认的原因，以及规则校验。"""
+    result, aligned, checks = report.extraction, report.aligned, report.checks
     print(f"抽取：模型 {result.model} · 提示词 {result.prompt_version}", end="")
     print(f" · 用时 {result.duration_ms} 毫秒\n")
 
-    aligned = TextMatchAligner().align(page, result)
-    checks = RuleValidator().validate(result.fields)
     flagged = checks.fields_with_issues()
 
     width = max(len(a.field.name) for a in aligned)
@@ -269,17 +257,6 @@ def _extract_page(
     reviews = sum(a.needs_review or a.field.name in flagged for a in aligned)
     print(f"\n{len(aligned)} 个字段，{reviews} 个需要人工确认")
 
-    return DocumentReport(
-        source=source,
-        extraction=result,
-        aligned=aligned,
-        checks=checks,
-        ocr_engine=page.models.get("engine", page.engine),
-        processed_at=datetime.now(),
-        text_source=page.engine if page.engine == "pdf-text" else "ocr",
-        template=args.fields,
-    )
-
 
 def _doctor() -> int:
     from jacara.core.config import get_settings
@@ -297,6 +274,14 @@ def _doctor() -> int:
         f"\n{len(checks)} 项检查，{failed} 项失败" if failed else f"\n{len(checks)} 项检查全部通过"
     )
     return 1 if failed else 0
+
+
+def _worker() -> int:
+    from jacara.worker import run_worker
+
+    print("后台任务已启动，等待上传的文件（Ctrl + C 停止）")
+    run_worker()
+    return 0
 
 
 def _api(args: argparse.Namespace) -> int:

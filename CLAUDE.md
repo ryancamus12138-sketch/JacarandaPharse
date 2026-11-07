@@ -35,16 +35,21 @@ backend/src/jacara/
     owner.py        数据归属（Owner、PERSONAL_OWNER）
     permissions.py  权限检查 require()
     storage.py      对象存储（S3 接口，SeaweedFS）
-    deps.py         FastAPI 依赖：数据库会话、存储、当前用户
+    queue.py        任务队列（Celery + Valkey）：API 只负责把任务放进去
+    deps.py         FastAPI 依赖：数据库会话、存储、任务队列、当前用户
     health.py       jacara doctor 的各项检查
   plugins/      流水线插件，一个扩展点一个子包，各有 base.py（接口）和注册表
                 ocr model_backends extractors aligners validators exporters tables
-  pipeline/     流水线编排与保存（store.py）
+  pipeline/     流水线
+    run.py          组装插件，一个文件 → 每页的 DocumentReport（命令行和 worker 共用）
+    process.py      后台处理一个上传的文档，负责状态变化 uploaded → processing → done / failed
+    store.py        把结果存进数据库
   modules/      业务功能，一个功能一个子包
     documents/      schemas → models → repository → service → router
     fields/         抽取出的字段值与修改记录
   models.py     汇总所有数据库表（给 Alembic 用）
   app.py        FastAPI 应用：create_app()，挂载 /api/v1
+  worker.py     后台 worker：Celery 任务定义，jacara worker 启动
   cli.py        命令行入口
 backend/migrations/   Alembic 数据库迁移
 backend/tests/        自动测试（pytest）
@@ -68,13 +73,18 @@ compose.yaml  开发用基础设施：PostgreSQL、Valkey、SeaweedFS
 service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`），router 用一张表把 code 翻译成 HTTP 状态码。
 
 **写入顺序：** 先存文件到对象存储，成功后再写数据库。存储失败就不留数据库记录。
+**放进队列之前先提交：** worker 是另一个进程，用自己的连接查数据库，没提交的数据它看不到。
+队列连不上不算上传失败，文档停在 uploaded，可以调用"重新处理"。
+
+**后台任务：** 慢的事（OCR、大模型）不在 API 请求里做，放进队列交给 worker。
+任务只传文档 id，worker 自己去数据库和对象存储取。任务要能重复执行而不出错（按状态认领，不是 uploaded 就跳过）。
 
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 
 ## 技术栈
 
 Python 3.13（`.python-version`）、uv、FastAPI + fastapi-offline + uvicorn、Pydantic v2、SQLAlchemy 2、Alembic、
-Celery + Valkey（下一步）、PostgreSQL 18、SeaweedFS（只用 S3 接口，boto3）、pypdfium2 + pdfplumber、
+Celery + Valkey、PostgreSQL 18、SeaweedFS（只用 S3 接口，boto3）、pypdfium2 + pdfplumber、
 RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、openpyxl、pytest。
 
 ## 工作方式
@@ -82,7 +92,8 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
 - 小步提交：一个任务只改一件事，在分支上做，开 PR，CI 通过后再合并到 main。
 - 提交前运行下面"检查"里的整条命令，必须全部通过。
 - 新功能要带测试：放在 `backend/tests/`，共用的假数据写在 `conftest.py`。
-  测试不依赖 Docker 和模型：数据库用内存 SQLite，对象存储和模型用假的，接口测试用 `dependency_overrides` 替换依赖。
+  测试不依赖 Docker 和模型：数据库用内存 SQLite，对象存储、任务队列、OCR、模型都用假的
+  （`MemoryStorage`、`FakeQueue` 在 conftest.py），接口测试用 `dependency_overrides` 替换依赖。
 - 评测方案（准确率打分）尚未确定，暂不加入；不要自行添加 eval/。
 - 改了数据库表就生成一条迁移，检查后再提交；需要改已有数据时在迁移里手写 SQL。
 - 重要的技术选择写一条 ADR（`docs/adr/NNNN-标题.md`），格式参考 0002。
@@ -103,11 +114,14 @@ uv run alembic revision --autogenerate -m "说明"   # 改了表之后生成迁�
 uv run alembic check                      # 确认表和迁移一致
 uv run alembic current                    # 当前数据库在哪个版本
 
-# 运行
-uv run jacara serve --model <模型文件>.gguf          # 启动本地大模型（另开一个终端）
+# 运行完整服务：docker compose 之外，再开三个终端
+uv run jacara serve --model <模型文件>.gguf          # 终端 1：本地大模型
+uv run jacara worker                                 # 终端 2：后台任务，处理上传的文件
+uv run jacara api --reload                           # 终端 3：API，打开 http://127.0.0.1:8000/docs
+
+# 不用 API，直接在命令行处理一个文件
 uv run jacara ocr <图片或PDF>                        # 只做文字识别
 uv run jacara extract <图片或PDF> --excel out.xlsx --save   # 抽取字段，导出并存库
-uv run jacara api --reload                           # 启动 API，打开 http://127.0.0.1:8000/docs
 
 # 检查（提交前）
 uv run ruff format . && uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest

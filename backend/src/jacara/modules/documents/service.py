@@ -1,4 +1,4 @@
-"""文档的业务逻辑：上传、列表、详情。
+"""文档的业务逻辑：上传、列表、详情、下载、重新处理。
 
 权限检查、状态变化只写在这里（项目分层规则）。service 不知道 HTTP，
 抛出的是业务错误（DocumentError），由 router 翻译成 HTTP 状态码。
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import logging
 import mimetypes
 import uuid
 from pathlib import PurePath
@@ -17,10 +18,16 @@ from sqlalchemy.orm import Session
 from jacara.core.config import get_settings
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
+from jacara.core.queue import QueueError, TaskQueue
 from jacara.core.storage import ObjectStorage, StorageError
 from jacara.models import Document
 from jacara.modules.documents.repository import DocumentRepository
 from jacara.modules.documents.schemas import DocumentDetail, DocumentOut, DocumentPage
+
+log = logging.getLogger(__name__)
+
+RETRYABLE = {"uploaded", "failed"}
+"""这些状态的文档可以（重新）放进队列。processing 正在处理，done 已经有结果。"""
 
 ALLOWED_TYPES = {
     "image/jpeg": ".jpg",
@@ -41,9 +48,13 @@ class DocumentError(Exception):
 
 
 class DocumentService:
-    def __init__(self, session: Session, storage: ObjectStorage, owner: Owner) -> None:
+    def __init__(
+        self, session: Session, storage: ObjectStorage, queue: TaskQueue, owner: Owner
+    ) -> None:
+        self.session = session
         self.repo = DocumentRepository(session)
         self.storage = storage
+        self.queue = queue
         self.owner = owner
 
     def upload(self, filename: str, content_type: str, data: bytes) -> DocumentOut:
@@ -81,6 +92,21 @@ class DocumentService:
                 team_id=self.owner.team_id,
             )
         )
+        self._enqueue(document)
+        return DocumentOut.model_validate(document)
+
+    def process(self, document_id: uuid.UUID) -> DocumentOut:
+        """重新放进队列：处理失败后重试，或者上传时队列没连上。"""
+        document = self._find(document_id)
+        require(self.owner, "document:process", document.team_id)
+        if document.storage_key is None:
+            raise DocumentError("no_file", "这个文档没有保存原始文件（命令行导入的），无法处理")
+        if document.status not in RETRYABLE:
+            raise DocumentError("conflict", f"文档状态是 {document.status}，不能重新处理")
+        document.status = "uploaded"
+        document.error = None
+        if not self._enqueue(document):
+            raise DocumentError("queue", "任务队列暂时不可用，请稍后再试")
         return DocumentOut.model_validate(document)
 
     def page(self, limit: int, offset: int) -> DocumentPage:
@@ -109,6 +135,21 @@ class DocumentService:
             return document, self.storage.get(document.storage_key)
         except StorageError as err:
             raise DocumentError("storage", "对象存储暂时不可用，请稍后再试") from err
+
+    def _enqueue(self, document: Document) -> bool:
+        """先提交，再放进队列。
+
+        顺序不能反：worker 是另一个进程，用自己的数据库连接去查这个文档。
+        如果先放进队列，worker 可能在提交之前就来查，会找不到。
+        队列连不上不算上传失败：文件和记录都在，状态停在 uploaded，之后可以调用重新处理。
+        """
+        self.session.commit()
+        try:
+            self.queue.enqueue_document(document.id)
+        except QueueError:
+            log.warning("文档 %s 没能放进队列，状态保持 uploaded", document.id)
+            return False
+        return True
 
     def _find(self, document_id: uuid.UUID) -> Document:
         document = self.repo.get(document_id, self.owner.team_id)
