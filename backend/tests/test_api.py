@@ -1,36 +1,16 @@
 """文档接口：用 FastAPI 的 TestClient 发请求。
 
-dependency_overrides 把真正的依赖（PostgreSQL、SeaweedFS、Valkey）换成假的（见 conftest.py），
-router 和 service 的代码一行不改。测试不会往真的队列里放任务。
+client 在 conftest.py 里：dependency_overrides 把真正的依赖（PostgreSQL、SeaweedFS、Valkey）
+换成假的，router 和 service 的代码一行不改。测试不会往真的队列里放任务。
 """
 
 import uuid
-from collections.abc import Iterator
 
-import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
 
-from jacara.app import create_app
 from jacara.core.db import session_scope
-from jacara.core.deps import get_queue, get_session, get_storage
 from jacara.models import Document
 from jacara.pipeline.store import save_document
-
-
-@pytest.fixture
-def client(factory, storage, queue) -> Iterator[TestClient]:
-    app = create_app()
-
-    def test_session() -> Iterator[Session]:
-        with session_scope(factory) as session:
-            yield session
-
-    app.dependency_overrides[get_session] = test_session
-    app.dependency_overrides[get_storage] = lambda: storage
-    app.dependency_overrides[get_queue] = lambda: queue
-    with TestClient(app) as test_client:
-        yield test_client
 
 
 def upload(client: TestClient, name: str, data: bytes, content_type: str):

@@ -92,6 +92,18 @@ def download_document(document_id: uuid.UUID, service: Service) -> Response:
     return Response(content=data, media_type=document.content_type or "application/octet-stream")
 
 
+@router.post("/{document_id}/review", summary="完成审核")
+def review_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
+    """所有标黄的字段都修改或确认过之后，把文档标记为已审核（reviewed）。
+
+    还有字段没处理时返回 409，并说明还剩几个。
+    """
+    try:
+        return service.review(document_id)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
 @router.post("/{document_id}/process", status_code=status.HTTP_202_ACCEPTED, summary="重新处理")
 def process_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
     """把失败（failed）或还在排队（uploaded）的文档重新放进后台队列。

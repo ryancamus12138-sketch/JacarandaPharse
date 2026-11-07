@@ -51,6 +51,7 @@ uv run jacara api --reload                      # 3. Web API
 
 上传后接口马上返回，文件在后台处理。状态变化：
 `uploaded`（排队中）→ `processing`（处理中）→ `done`（完成）或 `failed`（失败，`error` 里写着原因）。
+处理完后人工审核：修改或确认标黄的字段（原值保留，每次审核都有记录），全部处理完再"完成审核"，变成 `reviewed`。
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
@@ -60,6 +61,9 @@ uv run jacara api --reload                      # 3. Web API
 | GET | `/api/v1/documents/{id}` | 文档详情：每页的抽取结果、字段值和出处 |
 | GET | `/api/v1/documents/{id}/file` | 下载原始文件 |
 | POST | `/api/v1/documents/{id}/process` | 重新处理（失败后重试） |
+| POST | `/api/v1/documents/{id}/review` | 完成审核（所有标黄的字段都处理过之后） |
+| POST | `/api/v1/values/{id}/revisions` | 审核一个字段：修改（edit）或确认（confirm） |
+| GET | `/api/v1/values/{id}/revisions` | 一个字段的修改历史 |
 
 ### 检查与测试
 
@@ -91,8 +95,8 @@ uv run ruff format . && uv run ruff check . && uv run ruff format --check . && u
 | --- | --- | --- |
 | 环境与骨架 | 工具、目录结构、配置、Git、CI | 完成 |
 | 处理流水线 | PDF/图片读取 → OCR → 字段抽取 → 证据对齐 → 规则校验 → 导出 | 完成 |
-| 后端 | 基础设施、数据库、文档 API、后台任务 | 完成 |
-| 后端 | 人工审核、权限与账号、导出 API | 进行中 |
+| 后端 | 基础设施、数据库、文档 API、后台任务、人工审核 | 完成 |
+| 后端 | 权限与账号、导出 API | 进行中 |
 | 前端 | 文档列表、审核工作台、导出、设置 | |
 | 部署 | Docker Compose、离线安装包 | |
 

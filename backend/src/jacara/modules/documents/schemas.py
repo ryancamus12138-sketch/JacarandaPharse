@@ -12,6 +12,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from jacara.modules.fields.schemas import ValueOut
+
+__all__ = ["DocumentDetail", "DocumentOut", "DocumentPage", "ExtractionOut", "ValueOut"]
+"""ValueOut 搬到了 fields 模块；这里继续导出，原来从这里 import 的代码不用改。"""
+
 
 class DocumentOut(BaseModel):
     """文档列表里的一项。"""
@@ -24,25 +29,13 @@ class DocumentOut(BaseModel):
     size_bytes: int
     page_count: int
     status: str
-    """uploaded（排队中）→ processing（处理中）→ done（完成）/ failed（失败）"""
+    """uploaded（排队中）→ processing（处理中）→ done（完成）/ failed（失败）；
+    done 之后人工审核完，点"完成审核"变成 reviewed。"""
     error: str | None = None
     """失败原因。只有 status 是 failed 时才有。"""
     created_at: datetime
     review_count: int = 0
-    """需要人工确认的字段数。"""
-
-
-class ValueOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    name: str
-    type: str
-    value: str | None
-    status: str
-    needs_review: bool
-    note: str
-    evidence: dict[str, Any] | None
+    """还在等人确认的字段数（已经修改或确认过的不算）。"""
 
 
 class ExtractionOut(BaseModel):

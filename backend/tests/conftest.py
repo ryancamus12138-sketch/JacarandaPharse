@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 from datetime import datetime
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from jacara.core.db import Base
+from jacara.app import create_app
+from jacara.core.db import Base, session_scope
+from jacara.core.deps import get_queue, get_session, get_storage
 from jacara.core.queue import QueueError
 from jacara.core.storage import StorageError
 from jacara.plugins.aligners import TextMatchAligner
@@ -126,3 +130,19 @@ def storage() -> MemoryStorage:
 @pytest.fixture
 def queue() -> FakeQueue:
     return FakeQueue()
+
+
+@pytest.fixture
+def client(factory, storage, queue) -> Iterator[TestClient]:
+    """调用 API 用的客户端：数据库、对象存储、任务队列都换成上面的假东西。"""
+    app = create_app()
+
+    def test_session() -> Iterator[Session]:
+        with session_scope(factory) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = test_session
+    app.dependency_overrides[get_storage] = lambda: storage
+    app.dependency_overrides[get_queue] = lambda: queue
+    with TestClient(app) as test_client:
+        yield test_client
