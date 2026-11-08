@@ -1,4 +1,4 @@
-"""文档的业务逻辑：上传、列表、详情、下载、重新处理、完成审核。
+"""文档的业务逻辑：上传、列表、详情、下载、重新处理、完成审核、导出。
 
 权限检查、状态变化只写在这里（项目分层规则）。service 不知道 HTTP，
 抛出的是业务错误（DocumentError），由 router 翻译成 HTTP 状态码。
@@ -10,8 +10,10 @@ import hashlib
 import io
 import logging
 import mimetypes
+import tempfile
 import uuid
-from pathlib import PurePath
+from datetime import date
+from pathlib import Path, PurePath
 
 from sqlalchemy.orm import Session
 
@@ -23,11 +25,19 @@ from jacara.core.storage import ObjectStorage, StorageError
 from jacara.models import Document
 from jacara.modules.documents.repository import DocumentRepository
 from jacara.modules.documents.schemas import DocumentDetail, DocumentOut, DocumentPage
+from jacara.pipeline.load import load_reports
+from jacara.plugins.exporters import create_exporter
 
 log = logging.getLogger(__name__)
 
 RETRYABLE = {"uploaded", "failed"}
 """这些状态的文档可以（重新）放进队列。processing 正在处理，done 已经有结果。"""
+
+EXPORTABLE = {"done", "reviewed"}
+"""处理完、有结果的文档才能导出。"""
+
+MAX_EXPORT = 100
+"""一次最多导出几个文档。"""
 
 ALLOWED_TYPES = {
     "image/jpeg": ".jpg",
@@ -139,6 +149,40 @@ class DocumentService:
             raise DocumentError("conflict", f"还有 {pending} 个字段等待确认")
         document.status = "reviewed"
         return DocumentOut.model_validate(document)
+
+    def export(self, document_ids: list[uuid.UUID]) -> tuple[str, bytes]:
+        """把一个或多个文档导出成一个 Excel，返回（文件名，文件内容）。
+
+        格子里是审核之后的值（current_value）；改过的标蓝，批注里写原值和原因。
+        """
+        require(self.owner, "document:export")
+        ids = list(dict.fromkeys(document_ids))  # 去掉重复的 id，保持原来的顺序
+        if not ids:
+            raise DocumentError("invalid", "请至少选择一个文档")
+        if len(ids) > MAX_EXPORT:
+            raise DocumentError("invalid", f"一次最多导出 {MAX_EXPORT} 个文档")
+
+        found = {d.id: d for d in self.repo.get_many(ids, self.owner.team_id)}
+        missing = [str(i) for i in ids if i not in found]
+        if missing:
+            raise DocumentError("not_found", f"找不到文档：{', '.join(missing)}")
+        documents = [found[i] for i in ids]  # 按用户选的顺序
+        not_ready = [d.filename for d in documents if d.status not in EXPORTABLE]
+        if not_ready:
+            raise DocumentError("conflict", f"这些文档还没处理完，不能导出：{', '.join(not_ready)}")
+
+        reports = [report for d in documents for report in load_reports(d)]
+        exporter = create_exporter("excel")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / f"export{exporter.suffix}"
+            exporter.export(reports, path)
+            data = path.read_bytes()
+
+        if len(documents) == 1:
+            name = f"{PurePath(documents[0].filename).stem}{exporter.suffix}"
+        else:
+            name = f"jacara-{date.today():%Y%m%d}-{len(documents)}份{exporter.suffix}"
+        return name, data
 
     def download(self, document_id: uuid.UUID) -> tuple[Document, bytes]:
         document = self._find(document_id)

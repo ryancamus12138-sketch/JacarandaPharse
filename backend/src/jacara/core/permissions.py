@@ -17,6 +17,7 @@ Action = Literal[
     "document:download",
     "document:process",
     "document:review",
+    "document:export",
     "value:read",
     "value:review",
 ]

@@ -44,6 +44,7 @@ backend/src/jacara/
     run.py          组装插件，一个文件 → 每页的 DocumentReport（命令行和 worker 共用）
     process.py      后台处理一个上传的文档，负责状态变化 uploaded → processing → done / failed
     store.py        把结果存进数据库
+    load.py         从数据库读回 DocumentReport（带人工审核结果），给导出器用
   modules/      业务功能，一个功能一个子包
     documents/      schemas → models → repository → service → router
     fields/         字段值与人工审核：修改、确认、修改历史（/api/v1/values）
@@ -82,6 +83,9 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 **人工审核：** `extracted_values` 写入后不改。修改或确认都新增一条 `value_revisions`（seq 1、2、3……），
 当前值取最新一条（`current_value`），原值永远在 `value`。界面显示 `current_value`，标黄看 `pending_review`。
 所有需要确认的字段都处理完，调用"完成审核"，文档 done → reviewed；之后再改字段，文档回到 done。
+
+**导出：** 导出器是插件，只认 `DocumentReport`。API 导出时由 `pipeline/load.py` 从数据库拼回来，
+`reviews` 里带着每个字段最新的审核结果；格子写审核之后的值，改过的标蓝、批注写原值和原因。
 
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 
