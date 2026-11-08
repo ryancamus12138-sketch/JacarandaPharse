@@ -35,6 +35,19 @@ class DocumentRepository:
         )
         return self.session.scalars(query).one_or_none()
 
+    def get_many(self, document_ids: list[uuid.UUID], team_id: uuid.UUID) -> list[Document]:
+        """一次取多个文档（导出用），同样连同抽取、字段、审核记录一起查好。顺序不保证。"""
+        query = (
+            select(Document)
+            .where(Document.id.in_(document_ids), Document.team_id == team_id)
+            .options(
+                selectinload(Document.extractions)
+                .selectinload(Extraction.values)
+                .selectinload(ExtractedValue.revisions)
+            )
+        )
+        return list(self.session.scalars(query))
+
     def page(self, team_id: uuid.UUID, limit: int, offset: int) -> tuple[list[Document], int]:
         """按上传时间倒序，返回一页文档和总数。"""
         query = (

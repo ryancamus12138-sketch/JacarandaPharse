@@ -5,7 +5,7 @@
 
 from collections.abc import Callable
 
-from jacara.plugins.exporters.base import DocumentReport, Exporter
+from jacara.plugins.exporters.base import DocumentReport, Exporter, Review
 from jacara.plugins.exporters.excel import ExcelExporter
 
 _EXPORTERS: dict[str, Callable[[], Exporter]] = {
@@ -26,4 +26,11 @@ def create_exporter(name: str) -> Exporter:
     return factory()
 
 
-__all__ = ["DocumentReport", "ExcelExporter", "Exporter", "available_exporters", "create_exporter"]
+__all__ = [
+    "DocumentReport",
+    "ExcelExporter",
+    "Exporter",
+    "Review",
+    "available_exporters",
+    "create_exporter",
+]

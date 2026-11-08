@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
@@ -14,6 +14,18 @@ from typing import Protocol
 from jacara.plugins.aligners.base import AlignedField
 from jacara.plugins.extractors.base import ExtractionResult
 from jacara.plugins.validators.base import ValidationResult
+
+
+@dataclass(frozen=True)
+class Review:
+    """人工审核的结果（最新一次）。导出时显示这个值，而不是模型的原值。"""
+
+    action: str
+    """edit（修改）或 confirm（确认原值是对的）。"""
+    value: str | None
+    """审核之后的值（文字形式，和数据库里一样）。"""
+    reason: str
+    reviewed_at: datetime
 
 
 @dataclass(frozen=True)
@@ -40,6 +52,9 @@ class DocumentReport:
 
     template: str = "receipt"
     """用的字段清单名。"""
+
+    reviews: Mapping[str, Review] = field(default_factory=dict)
+    """字段名 → 人工审核结果。刚处理完、还没人审核时是空的（命令行导出就是这样）。"""
 
 
 class Exporter(Protocol):

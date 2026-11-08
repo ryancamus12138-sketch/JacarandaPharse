@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
@@ -21,6 +22,8 @@ from jacara.modules.documents.service import DocumentError, DocumentService
 
 router = APIRouter(prefix="/documents", tags=["文档"])
 
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
 _STATUS = {
     "not_found": status.HTTP_404_NOT_FOUND,
     "no_file": status.HTTP_404_NOT_FOUND,
@@ -28,6 +31,7 @@ _STATUS = {
     "too_large": status.HTTP_413_CONTENT_TOO_LARGE,
     "empty": status.HTTP_422_UNPROCESSABLE_CONTENT,
     "unreadable": status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "invalid": status.HTTP_422_UNPROCESSABLE_CONTENT,
     "conflict": status.HTTP_409_CONFLICT,
     "storage": status.HTTP_503_SERVICE_UNAVAILABLE,
     "queue": status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -48,6 +52,18 @@ Service = Annotated[DocumentService, Depends(get_service)]
 
 def _http_error(err: DocumentError) -> HTTPException:
     return HTTPException(status_code=_STATUS.get(err.code, 400), detail=err.message)
+
+
+def _attachment(filename: str, data: bytes, media_type: str) -> Response:
+    """让浏览器把响应当成文件下载，并用 filename 作为文件名。
+
+    文件名可能有中文：filename* 按标准（RFC 6266）写成 UTF-8 编码；
+    filename 是给不认识 filename* 的老程序看的纯英文名字。
+    """
+    disposition = f"attachment; filename=\"export.xlsx\"; filename*=UTF-8''{quote(filename)}"
+    return Response(
+        content=data, media_type=media_type, headers={"Content-Disposition": disposition}
+    )
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="上传文件")
@@ -73,6 +89,22 @@ def list_documents(
     return service.page(limit, offset)
 
 
+@router.get("/export.xlsx", summary="导出多个文档", response_class=Response)
+def export_documents(
+    service: Service,
+    ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
+) -> Response:
+    """把多个文档导出到一个 Excel：汇总表一行一张单据，方便对账。
+
+    写法：`/api/v1/documents/export.xlsx?ids=第一个id&ids=第二个id`
+    """
+    try:
+        filename, data = service.export(ids)
+    except DocumentError as err:
+        raise _http_error(err) from err
+    return _attachment(filename, data, XLSX)
+
+
 @router.get("/{document_id}", summary="文档详情")
 def get_document(document_id: uuid.UUID, service: Service) -> DocumentDetail:
     """文档信息，加上每一页抽出的字段、出处和规则校验结果。"""
@@ -90,6 +122,16 @@ def download_document(document_id: uuid.UUID, service: Service) -> Response:
     except DocumentError as err:
         raise _http_error(err) from err
     return Response(content=data, media_type=document.content_type or "application/octet-stream")
+
+
+@router.get("/{document_id}/export.xlsx", summary="导出 Excel", response_class=Response)
+def export_document(document_id: uuid.UUID, service: Service) -> Response:
+    """把一个文档导出成 Excel。格子里是审核之后的值，改过的标蓝，批注里有原值和原因。"""
+    try:
+        filename, data = service.export([document_id])
+    except DocumentError as err:
+        raise _http_error(err) from err
+    return _attachment(filename, data, XLSX)
 
 
 @router.post("/{document_id}/review", summary="完成审核")
