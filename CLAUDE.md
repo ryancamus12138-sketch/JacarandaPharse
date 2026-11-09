@@ -13,7 +13,7 @@
 ## 绝对不能破坏的规则
 
 1. **离线**：运行时不访问任何外部网络。不引入需要联网的依赖、遥测或在线 API。
-   接口文档页（/docs）的界面文件随包提供，不从 CDN 加载。
+   接口文档页（/docs）的界面文件随包提供，不从 CDN 加载。前端也不从 CDN 加载字体、图标或脚本。
 2. **原始值不覆盖**：模型抽出的原始值永远保留，人工修改另存一条修改记录（`value_revisions`）。
 3. **审计日志只追加**：不提供修改或删除审计记录的代码路径。
 4. **每次抽取都记录来源**：模型名、模型版本、量化方式、提示词版本、模板版本、时间。
@@ -24,7 +24,7 @@
 8. **前端只调用 `/api/v1`**：不直连数据库或对象存储。
 9. **接口只加字段、不删字段**：插件接口和 API 都有版本号。不兼容的改动走新版本（`/api/v2`）。
 10. **授权**：项目为 Apache 2.0。不引入 GPL/AGPL 依赖（例如 PyMuPDF）。
-11. **只监听本机**：所有服务（API、llama-server、Docker 里的数据库等）只绑定 `127.0.0.1`。
+11. **只监听本机**：所有服务（API、llama-server、前端开发服务器、Docker 里的数据库等）只绑定 `127.0.0.1`。
 
 ## 代码结构
 
@@ -59,6 +59,11 @@ backend/src/jacara/
 backend/migrations/   Alembic 数据库迁移
 backend/tests/        自动测试（pytest）
 web/          前端（React + TypeScript + Vite + Ant Design）
+  vite.config.ts    开发服务器：只监听 127.0.0.1:5173，/api 转发给后端 127.0.0.1:8000
+  src/main.tsx      入口：中文、主题色
+  src/App.tsx       页面（以后是路由）
+  src/api/          调用后端的唯一地方：client.ts（发请求、统一错误）、types.ts（和后端 schemas 对应）
+  src/features/     按功能分的页面：documents、review、admin（以后几课加）
 deploy/       部署相关
 docs/adr/     架构决策记录
 compose.yaml  开发用基础设施：PostgreSQL、Valkey、SeaweedFS
@@ -96,6 +101,10 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 由管理员勾选开通，`ADMIN_ONLY` 里的永远只有管理员有。token 和密码都只存哈希；用户只停用、不删除。
 第一个管理员用 `jacara user add 用户名 --role admin` 建。
 
+**前端：** 页面不直接写 `fetch`，都通过 `web/src/api/`。后端出错返回 `{"detail": "..."}`，
+`client.ts` 统一变成 `ApiError`，页面直接显示它的 message。`types.ts` 和后端的 schemas 字段名保持一样。
+前端用 `/auth/me` 的 `mode` 决定是否显示登录页，用 `permissions` 决定显示哪些按钮。
+
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 
 ## 技术栈
@@ -103,11 +112,12 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 Python 3.13（`.python-version`）、uv、FastAPI + fastapi-offline + uvicorn、Pydantic v2、SQLAlchemy 2、Alembic、
 Celery + Valkey、argon2-cffi（密码哈希）、PostgreSQL 18、SeaweedFS（只用 S3 接口，boto3）、pypdfium2 + pdfplumber、
 RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、openpyxl、pytest。
+前端：Node.js 26、npm、Vite、React、TypeScript、Ant Design、oxlint。
 
 ## 工作方式
 
 - 小步提交：一个任务只改一件事，在分支上做，开 PR，CI 通过后再合并到 main。
-- 提交前运行下面"检查"里的整条命令，必须全部通过。
+- 提交前运行下面"检查"里的整条命令，必须全部通过；改了前端还要跑前端检查。
 - 新功能要带测试：放在 `backend/tests/`，共用的假数据写在 `conftest.py`。
   测试不依赖 Docker 和模型：数据库用内存 SQLite，对象存储、任务队列、OCR、模型都用假的
   （`MemoryStorage`、`FakeQueue` 在 conftest.py），接口测试用 `dependency_overrides` 替换依赖。
@@ -115,7 +125,8 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
 - 评测方案（准确率打分）尚未确定，暂不加入；不要自行添加 eval/。
 - 改了数据库表就生成一条迁移，检查后再提交；需要改已有数据时在迁移里手写 SQL。
 - 重要的技术选择写一条 ADR（`docs/adr/NNNN-标题.md`），格式参考 0002。
-- 不提交 `.env`、数据集、模型文件。密钥只放在 `.env`。
+- 不提交 `.env`、数据集、模型文件、`node_modules/`、`web/dist/`。密钥只放在 `.env`。要提交 `web/package-lock.json`。
+- 前端调用后端只通过 `web/src/api/`，页面里不直接写 `fetch`。按钮显不显示看 `/auth/me` 的 `permissions`，但真正的权限检查在后端。
 
 ## 常用命令
 
@@ -142,11 +153,16 @@ uv run jacara user add admin --role admin
 uv run jacara user add xiaowang --allow document:create   # 新建使用者并开通"上传文件"
 uv run jacara user password admin                          # 忘了密码时重设
 
+# 前端（在 web/ 文件夹里运行；后端要先启动）
+cd web && npm install                     # 第一次，或者 package.json 变了之后
+npm run dev                               # http://127.0.0.1:5173
+npm run lint && npm run build             # 前端检查（提交前）
+
 # 不用 API，直接在命令行处理一个文件
 uv run jacara ocr <图片或PDF>                        # 只做文字识别
 uv run jacara extract <图片或PDF> --excel out.xlsx --save   # 抽取字段，导出并存库
 
-# 检查（提交前）
+# 检查（提交前，在根目录）
 uv run ruff format . && uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest
 uv run pytest -vv -k upload               # 只跑名字里带 upload 的测试，并显示每个测试名
 ```
