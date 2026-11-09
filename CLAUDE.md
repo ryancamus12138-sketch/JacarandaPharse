@@ -18,6 +18,7 @@
 3. **审计日志只追加**：不提供修改或删除审计记录的代码路径。
 4. **每次抽取都记录来源**：模型名、模型版本、量化方式、提示词版本、模板版本、时间。
 5. **每个操作都过权限检查**：service 的每个公开方法先调用 `core/permissions.require()`。个人模式下总是通过，但调用不能省。
+   值得追查的操作（登录、上传、审核、导出、管理用户）还要调用 `modules/audit/service.record()` 记审计日志。
 6. **数据带归属**：每条业务数据都有 user 和 team（个人模式用 `PERSONAL_OWNER`）。查询必须按 team 过滤。
 7. **插件不碰数据库**：插件只接收数据、返回结果，由 pipeline 负责保存。
 8. **前端只调用 `/api/v1`**：不直连数据库或对象存储。
@@ -32,11 +33,12 @@ backend/src/jacara/
   core/         公共底座
     config.py       配置（从 .env 读取，pydantic-settings）
     db.py           数据库：Base、混入类、session_scope
-    owner.py        数据归属（Owner、PERSONAL_OWNER）
-    permissions.py  权限检查 require()
+    owner.py        当前用户（Owner：user、team、角色、开通的权限；个人模式是 PERSONAL_OWNER）
+    permissions.py  权限规则和 require()：管理员全部；使用者 = 基本权限 + 管理员开通的
+    security.py     密码哈希（Argon2id）、登录 token
     storage.py      对象存储（S3 接口，SeaweedFS）
     queue.py        任务队列（Celery + Valkey）：API 只负责把任务放进去
-    deps.py         FastAPI 依赖：数据库会话、存储、任务队列、当前用户
+    deps.py         FastAPI 依赖：数据库会话、存储、任务队列、当前用户（团队模式从 token 认人）
     health.py       jacara doctor 的各项检查
   plugins/      流水线插件，一个扩展点一个子包，各有 base.py（接口）和注册表
                 ocr model_backends extractors aligners validators exporters tables
@@ -48,6 +50,8 @@ backend/src/jacara/
   modules/      业务功能，一个功能一个子包
     documents/      schemas → models → repository → service → router
     fields/         字段值与人工审核：修改、确认、修改历史（/api/v1/values）
+    auth/           团队、用户、登录会话（/api/v1/auth、/api/v1/users）
+    audit/          审计日志：只追加（/api/v1/audit-logs）
   models.py     汇总所有数据库表（给 Alembic 用）
   app.py        FastAPI 应用：create_app()，挂载 /api/v1
   worker.py     后台 worker：Celery 任务定义，jacara worker 启动
@@ -87,12 +91,17 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 **导出：** 导出器是插件，只认 `DocumentReport`。API 导出时由 `pipeline/load.py` 从数据库拼回来，
 `reviews` 里带着每个字段最新的审核结果；格子写审核之后的值，改过的标蓝、批注写原值和原因。
 
+**账号和权限：** `JACARA_MODE=personal`（默认）不用登录；`team` 模式必须登录，请求头带 `Authorization: Bearer <token>`。
+只有两种角色：管理员（admin）和使用者（member）。使用者默认能看、能下载、能导出，其余权限（`GRANTABLE`）
+由管理员勾选开通，`ADMIN_ONLY` 里的永远只有管理员有。token 和密码都只存哈希；用户只停用、不删除。
+第一个管理员用 `jacara user add 用户名 --role admin` 建。
+
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 
 ## 技术栈
 
 Python 3.13（`.python-version`）、uv、FastAPI + fastapi-offline + uvicorn、Pydantic v2、SQLAlchemy 2、Alembic、
-Celery + Valkey、PostgreSQL 18、SeaweedFS（只用 S3 接口，boto3）、pypdfium2 + pdfplumber、
+Celery + Valkey、argon2-cffi（密码哈希）、PostgreSQL 18、SeaweedFS（只用 S3 接口，boto3）、pypdfium2 + pdfplumber、
 RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、openpyxl、pytest。
 
 ## 工作方式
@@ -102,6 +111,7 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
 - 新功能要带测试：放在 `backend/tests/`，共用的假数据写在 `conftest.py`。
   测试不依赖 Docker 和模型：数据库用内存 SQLite，对象存储、任务队列、OCR、模型都用假的
   （`MemoryStorage`、`FakeQueue` 在 conftest.py），接口测试用 `dependency_overrides` 替换依赖。
+  测试默认是个人模式（conftest 的 `personal_mode`），不受自己 `.env` 影响；要测团队模式的文件自己切过去。
 - 评测方案（准确率打分）尚未确定，暂不加入；不要自行添加 eval/。
 - 改了数据库表就生成一条迁移，检查后再提交；需要改已有数据时在迁移里手写 SQL。
 - 重要的技术选择写一条 ADR（`docs/adr/NNNN-标题.md`），格式参考 0002。
@@ -126,6 +136,11 @@ uv run alembic current                    # 当前数据库在哪个版本
 uv run jacara serve --model <模型文件>.gguf          # 终端 1：本地大模型
 uv run jacara worker                                 # 终端 2：后台任务，处理上传的文件
 uv run jacara api --reload                           # 终端 3：API，打开 http://127.0.0.1:8000/docs
+
+# 团队模式：.env 里 JACARA_MODE=team，然后建第一个管理员（密码会提示输入）
+uv run jacara user add admin --role admin
+uv run jacara user add xiaowang --allow document:create   # 新建使用者并开通"上传文件"
+uv run jacara user password admin                          # 忘了密码时重设
 
 # 不用 API，直接在命令行处理一个文件
 uv run jacara ocr <图片或PDF>                        # 只做文字识别

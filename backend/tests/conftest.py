@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from jacara.app import create_app
+from jacara.core.config import get_settings
 from jacara.core.db import Base, session_scope
 from jacara.core.deps import get_queue, get_session, get_storage
 from jacara.core.queue import QueueError
@@ -23,6 +24,15 @@ from jacara.plugins.extractors import ExtractedField as F
 from jacara.plugins.extractors import ExtractionResult
 from jacara.plugins.ocr.base import OcrLine, OcrPage, Point
 from jacara.plugins.validators import RuleValidator
+
+
+@pytest.fixture(autouse=True)
+def personal_mode(monkeypatch):
+    """测试默认用个人模式，不管你自己的 .env 里写的是什么。要测团队模式的文件再自己切过去。"""
+    monkeypatch.setenv("JACARA_MODE", "personal")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def make_line(text: str, x0: float, y0: float, x1: float, y1: float, conf: float = 0.99) -> OcrLine:

@@ -5,10 +5,14 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request, status
+from fastapi.responses import JSONResponse
 from fastapi_offline import FastAPIOffline
 
 from jacara import __version__
+from jacara.core.permissions import PermissionDenied
+from jacara.modules.audit.router import router as audit_router
+from jacara.modules.auth.router import auth_router, users_router
 from jacara.modules.documents.router import router as documents_router
 from jacara.modules.fields.router import router as fields_router
 
@@ -26,14 +30,23 @@ def create_app() -> FastAPI:
     )
 
     api = APIRouter(prefix=API_PREFIX)
+    api.include_router(auth_router)
     api.include_router(documents_router)
     api.include_router(fields_router)
+    api.include_router(users_router)
+    api.include_router(audit_router)
 
     @api.get("/health", tags=["系统"], summary="服务是否在运行")
     def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
     app.include_router(api)
+
+    @app.exception_handler(PermissionDenied)
+    def permission_denied(request: Request, err: PermissionDenied) -> JSONResponse:
+        """service 里 require() 不通过时抛出 PermissionDenied，这里统一变成 403。"""
+        return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content={"detail": str(err)})
+
     return app
 
 

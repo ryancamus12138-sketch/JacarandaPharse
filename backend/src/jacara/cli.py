@@ -7,6 +7,9 @@ uv run jacara extract 图片或PDF                  识别、抽取字段并核�
 uv run jacara doctor                             检查数据库、队列、对象存储、本地模型是否连得上
 uv run jacara api                                启动 Web 服务，浏览器打开 http://127.0.0.1:8000/docs
 uv run jacara worker                             启动后台任务，处理通过 API 上传的文件
+uv run jacara user add 用户名 --role admin        新建用户（团队模式的第一个管理员用它建）
+uv run jacara user add 用户名 --allow value:review    新建使用者，并开通"修改和确认字段"
+uv run jacara user password 用户名                重设密码
 """
 
 from __future__ import annotations
@@ -65,6 +68,24 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("worker", help="启动后台任务：处理通过 API 上传的文件（要先运行 jacara serve）")
 
+    p_user = sub.add_parser("user", help="管理用户（团队模式）")
+    user_sub = p_user.add_subparsers(dest="user_command", required=True)
+    p_add = user_sub.add_parser("add", help="新建用户，密码会提示输入")
+    p_add.add_argument("username", help="登录用的名字（英文字母、数字、_ . -）")
+    p_add.add_argument(
+        "--role", choices=["admin", "member"], default="member", help="admin 管理员，member 使用者"
+    )
+    p_add.add_argument(
+        "--allow",
+        action="append",
+        default=[],
+        choices=["document:create", "document:process", "value:review", "document:review"],
+        help="给使用者开通的权限，可以写多次",
+    )
+    p_add.add_argument("--name", default="", help="显示名，例如 张三")
+    p_pw = user_sub.add_parser("password", help="重设密码，并让这个用户已登录的全部失效")
+    p_pw.add_argument("username")
+
     args = parser.parse_args(argv)
     if args.command == "doctor":
         return _doctor()
@@ -72,6 +93,8 @@ def main(argv: list[str] | None = None) -> int:
         return _api(args)
     if args.command == "worker":
         return _worker()
+    if args.command == "user":
+        return _user(args)
     if args.command == "ocr":
         return _ocr(args)
     if args.command == "serve":
@@ -274,6 +297,78 @@ def _doctor() -> int:
         f"\n{len(checks)} 项检查，{failed} 项失败" if failed else f"\n{len(checks)} 项检查全部通过"
     )
     return 1 if failed else 0
+
+
+def _ask_password() -> str | None:
+    """输入两次密码。getpass 输入时屏幕上不显示，也不会留在终端历史里。"""
+    from getpass import getpass
+
+    from jacara.core.security import MIN_PASSWORD_LENGTH
+
+    password = getpass("密码：")
+    if len(password) < MIN_PASSWORD_LENGTH:
+        print(f"密码至少 {MIN_PASSWORD_LENGTH} 个字符")
+        return None
+    if getpass("再输入一次：") != password:
+        print("两次输入的不一样")
+        return None
+    return password
+
+
+def _user(args: argparse.Namespace) -> int:
+    from datetime import UTC, datetime
+
+    from pydantic import ValidationError
+    from sqlalchemy.exc import OperationalError, ProgrammingError
+
+    from jacara.core.db import session_scope
+    from jacara.core.security import hash_password
+    from jacara.modules.audit.service import record
+    from jacara.modules.auth.repository import AuthRepository
+    from jacara.modules.auth.schemas import UserCreate
+    from jacara.modules.auth.service import AuthError, add_user, owner_of
+
+    password = _ask_password()
+    if password is None:
+        return 1
+    try:
+        with session_scope() as session:
+            repo = AuthRepository(session)
+            if args.user_command == "add":
+                data = UserCreate(
+                    username=args.username,
+                    password=password,
+                    display_name=args.name,
+                    role=args.role,
+                    permissions=args.allow,
+                )
+                team = repo.default_team()
+                user = add_user(session, team.id, data)
+                record(session, owner_of(user), "user:create", "user", user.id, via="cli")
+                role = "管理员" if user.role == "admin" else "使用者"
+                print(f"已新建用户 {user.username}（{role}），团队：{team.name}")
+            else:
+                user = repo.user_by_username(args.username)
+                if user is None:
+                    print(f"找不到用户 {args.username}")
+                    return 1
+                user.password_hash = hash_password(password)
+                repo.revoke_sessions(user.id, datetime.now(UTC))
+                record(session, owner_of(user), "user:password", "user", user.id, via="cli")
+                print(f"已重设 {user.username} 的密码，之前的登录都已失效")
+    except ValidationError as err:
+        print(f"输入不对：{err.errors()[0]['msg']}")
+        return 1
+    except AuthError as err:
+        print(err.message)
+        return 1
+    except OperationalError:
+        print("连不上数据库。运行 docker compose up -d 启动，再用 uv run jacara doctor 检查")
+        return 1
+    except ProgrammingError:
+        print("数据库里还没有表。先运行：uv run alembic upgrade head")
+        return 1
+    return 0
 
 
 def _worker() -> int:

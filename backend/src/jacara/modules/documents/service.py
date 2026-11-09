@@ -23,6 +23,7 @@ from jacara.core.permissions import require
 from jacara.core.queue import QueueError, TaskQueue
 from jacara.core.storage import ObjectStorage, StorageError
 from jacara.models import Document
+from jacara.modules.audit.service import record
 from jacara.modules.documents.repository import DocumentRepository
 from jacara.modules.documents.schemas import DocumentDetail, DocumentOut, DocumentPage
 from jacara.pipeline.load import load_reports
@@ -102,6 +103,9 @@ class DocumentService:
                 team_id=self.owner.team_id,
             )
         )
+        record(
+            self.session, self.owner, "document:upload", "document", document.id, filename=safe_name
+        )
         self._enqueue(document)
         return DocumentOut.model_validate(document)
 
@@ -115,6 +119,7 @@ class DocumentService:
             raise DocumentError("conflict", f"文档状态是 {document.status}，不能重新处理")
         document.status = "uploaded"
         document.error = None
+        record(self.session, self.owner, "document:process", "document", document.id)
         if not self._enqueue(document):
             raise DocumentError("queue", "任务队列暂时不可用，请稍后再试")
         return DocumentOut.model_validate(document)
@@ -148,6 +153,7 @@ class DocumentService:
         if pending:
             raise DocumentError("conflict", f"还有 {pending} 个字段等待确认")
         document.status = "reviewed"
+        record(self.session, self.owner, "document:review", "document", document.id)
         return DocumentOut.model_validate(document)
 
     def export(self, document_ids: list[uuid.UUID]) -> tuple[str, bytes]:
@@ -182,6 +188,10 @@ class DocumentService:
             name = f"{PurePath(documents[0].filename).stem}{exporter.suffix}"
         else:
             name = f"jacara-{date.today():%Y%m%d}-{len(documents)}份{exporter.suffix}"
+        # 导出是"数据离开系统"，要留记录：谁、什么时候、导出了哪些文档
+        record(
+            self.session, self.owner, "document:export", documents=[str(d.id) for d in documents]
+        )
         return name, data
 
     def download(self, document_id: uuid.UUID) -> tuple[Document, bytes]:

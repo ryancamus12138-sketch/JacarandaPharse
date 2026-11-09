@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     max_upload_mb: int = 50
     """上传文件的大小上限（MB）。"""
 
+    session_hours: int = 12
+    """登录多久后过期（小时）。只在 team 模式用。"""
+
     @property
     def database_url(self) -> str:
         """SQLAlchemy 用的连接地址。里面有密码，不要打印出来。"""
