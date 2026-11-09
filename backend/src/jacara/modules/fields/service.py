@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.models import ExtractedValue, ValueRevision
+from jacara.modules.audit.service import record
 from jacara.modules.fields.repository import ValueRepository
 from jacara.modules.fields.schemas import RevisionIn, RevisionOut, ValueHistory, ValueOut
 
@@ -33,6 +34,7 @@ class FieldError(Exception):
 
 class FieldService:
     def __init__(self, session: Session, owner: Owner) -> None:
+        self.session = session
         self.repo = ValueRepository(session)
         self.owner = owner
 
@@ -76,6 +78,16 @@ class FieldService:
             # 两个人同时审核同一个字段：seq 一样，数据库只让一个写进去
             raise FieldError("conflict", "这个字段刚被别人审核过，请刷新后再试") from err
 
+        record(
+            self.session,
+            self.owner,
+            f"value:{change.action}",
+            "value",
+            value.id,
+            document_id=str(document.id),
+            field=value.name,
+            value=new_value,
+        )
         if document.status == "reviewed":
             document.status = "done"  # 审核完的文档又改了，要重新点"完成审核"
         return ValueOut.model_validate(value)

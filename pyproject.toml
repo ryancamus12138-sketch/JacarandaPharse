@@ -10,6 +10,7 @@ license = "Apache-2.0"
 
 dependencies = [
     "alembic>=1.20.1",
+    "argon2-cffi>=25.1.0",
     "boto3>=1.43.123",
     "celery[redis]>=5.7.0",
     "fastapi>=0.162.0",
@@ -58,7 +59,8 @@ select = ["E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF"]
 ignore = ["RUF001", "RUF002", "RUF003"]  # 允许中文全角标点
 
 [tool.ruff.lint.per-file-ignores]
-"backend/tests/**" = ["S101"]  # 测试就是用 assert 写的
+# S101：测试就是用 assert 写的；S105、S106：测试里的假密码不是真密钥
+"backend/tests/**" = ["S101", "S105", "S106"]
 
 # ---------- pyright：类型检查 ----------
 [tool.pyright]
