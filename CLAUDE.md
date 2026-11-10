@@ -58,14 +58,15 @@ backend/src/jacara/
   cli.py        命令行入口
 backend/migrations/   Alembic 数据库迁移
 backend/tests/        自动测试（pytest）
-web/          前端（React + TypeScript + Vite + Ant Design + react-router）
+web/          前端（React + TypeScript + Vite + Ant Design + react-router + TanStack Query）
   vite.config.ts    开发服务器：只监听 127.0.0.1:5173，/api 转发给后端 127.0.0.1:8000
-  src/main.tsx      入口：中文、主题色
+  src/main.tsx      入口：中文、主题色、QueryClient
   src/App.tsx       路由：哪个网址显示哪个页面
   src/api/          调用后端的唯一地方：client.ts（发请求、带 token、统一错误）、一个功能一个文件、types.ts
   src/auth/         登录：AuthProvider（全站共用"现在是谁"）、useAuth()、RequireAuth（守门员）、登录页
   src/components/   共用组件：AppLayout（菜单、用户名、退出）
-  src/features/     按功能分的页面：documents、review、admin
+  src/features/     按功能分的页面：documents（列表、上传）、review（审核）、admin
+  src/utils/        小工具：文件大小、时间格式
 deploy/       部署相关
 docs/adr/     架构决策记录
 compose.yaml  开发用基础设施：PostgreSQL、Valkey、SeaweedFS
@@ -108,6 +109,8 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 登录后 token 存在 localStorage（`api/token.ts`），每个请求自动带上；带着 token 收到 401 就清掉 token、回登录页。
 "现在是谁"打开网页时问一次（`AuthProvider`），页面用 `useAuth()` 拿 `me` 和 `can('权限名')`。
 个人模式 `/auth/me` 直接成功，不显示登录页。权限变了前端要刷新才更新菜单，但后端每个请求都现查。
+页面取数据用 TanStack Query：读用 `useQuery`，改用 `useMutation`，改完 `invalidateQueries` 让相关列表重新取。
+文档列表有"排队中/处理中"时每 3 秒刷新一次，全部处理完就停。
 
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 
@@ -116,7 +119,7 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 Python 3.13（`.python-version`）、uv、FastAPI + fastapi-offline + uvicorn、Pydantic v2、SQLAlchemy 2、Alembic、
 Celery + Valkey、argon2-cffi（密码哈希）、PostgreSQL 18、SeaweedFS（只用 S3 接口，boto3）、pypdfium2 + pdfplumber、
 RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、openpyxl、pytest。
-前端：Node.js 26、npm、Vite、React、TypeScript、Ant Design、react-router、oxlint。
+前端：Node.js 26、npm、Vite、React、TypeScript、Ant Design、react-router、TanStack Query、oxlint。
 
 ## 工作方式
 
@@ -131,6 +134,8 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
 - 重要的技术选择写一条 ADR（`docs/adr/NNNN-标题.md`），格式参考 0002。
 - 不提交 `.env`、数据集、模型文件、`node_modules/`、`web/dist/`。密钥只放在 `.env`。要提交 `web/package-lock.json`。
 - 前端调用后端只通过 `web/src/api/`，页面里不直接写 `fetch`。按钮显不显示看 `/auth/me` 的 `permissions`，但真正的权限检查在后端。
+- **npm 命令只在 `web/` 里运行。** 根目录不应该有 `package.json`、`package-lock.json`、`node_modules/`，
+  否则网页里会有两份 React（白屏、`Invalid hook call`）。`web/` 里只放前端文件，不要有 `__init__.py`。
 
 ## 常用命令
 
@@ -147,10 +152,11 @@ uv run alembic revision --autogenerate -m "说明"   # 改了表之后生成迁�
 uv run alembic check                      # 确认表和迁移一致
 uv run alembic current                    # 当前数据库在哪个版本
 
-# 运行完整服务：docker compose 之外，再开三个终端
+# 运行完整服务：docker compose 之外，再开四个终端
 uv run jacara serve --model <模型文件>.gguf          # 终端 1：本地大模型
 uv run jacara worker                                 # 终端 2：后台任务，处理上传的文件
 uv run jacara api --reload                           # 终端 3：API，打开 http://127.0.0.1:8000/docs
+cd web && npm run dev                                # 终端 4：前端，打开 http://127.0.0.1:5173
 
 # 团队模式：.env 里 JACARA_MODE=team，然后建第一个管理员（密码会提示输入）
 uv run jacara user add admin --role admin
@@ -159,7 +165,8 @@ uv run jacara user password admin                          # 忘了密码时重�
 
 # 前端（在 web/ 文件夹里运行；后端要先启动）
 cd web && npm install                     # 第一次，或者 package.json 变了之后
-npm run dev                               # http://127.0.0.1:5173
+npm install 包名                          # 加新包：一定要在 web/ 里
+npm run dev -- --force                    # 装了新包后页面异常：清掉 Vite 缓存再启动
 npm run lint && npm run build             # 前端检查（提交前）
 
 # 不用 API，直接在命令行处理一个文件

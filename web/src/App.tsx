@@ -7,6 +7,7 @@ import { AppLayout } from './components/AppLayout'
 import { AuditLogPage } from './features/admin/AuditLogPage'
 import { UsersPage } from './features/admin/UsersPage'
 import { DocumentListPage } from './features/documents/DocumentListPage'
+import { ReviewPage } from './features/review/ReviewPage'
 
 /** 路由：哪个网址显示哪个页面。 */
 export default function App() {
@@ -24,6 +25,7 @@ export default function App() {
           >
             <Route index element={<Navigate to="/documents" replace />} />
             <Route path="documents" element={<DocumentListPage />} />
+            <Route path="documents/:id" element={<ReviewPage />} />
             <Route
               path="admin/users"
               element={
