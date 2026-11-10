@@ -1,4 +1,4 @@
-import { ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons'
+import { ColumnHeightOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons'
 import { Alert, Button, Flex, Spin, Typography } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
@@ -8,6 +8,7 @@ import { usePageImage } from './usePageImage'
 
 const ZOOMS = [0.5, 0.75, 1, 1.5, 2, 3]
 const PAD = 4 // 框比文字稍大一点，不压住字
+const FRAME_PADDING = 16
 
 interface Props {
   documentId: string
@@ -34,6 +35,7 @@ export function PageViewer({
   // 图片的真实像素大小。出处坐标就是按这个算的，SVG 用它当坐标系
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null)
   const boxes = useRef(new Map<string, SVGRectElement>())
+  const frame = useRef<HTMLDivElement>(null)
 
   // 右边选中一个字段时，把左边对应的框滚到看得见的地方
   useEffect(() => {
@@ -45,9 +47,20 @@ export function PageViewer({
   }, [selectedId])
 
   const withBox = values.filter((v) => v.evidence)
-  const step = (delta: number) => {
-    const next = ZOOMS.indexOf(zoom) + delta
-    setZoom(ZOOMS[Math.min(Math.max(next, 0), ZOOMS.length - 1)])
+  // 放大、缩小：跳到下一档。"整页"算出来的比例不在档位里，所以按大小找，不按位置找
+  const zoomIn = () => setZoom(ZOOMS.find((z) => z > zoom + 0.001) ?? ZOOMS[ZOOMS.length - 1])
+  const zoomOut = () => setZoom([...ZOOMS].reverse().find((z) => z < zoom - 0.001) ?? ZOOMS[0])
+
+  // 整页：缩到整张图刚好放得下（细长的小票很需要）。zoom 是"图片宽 / 框宽"
+  const fitPage = () => {
+    const box = frame.current
+    if (!box || !natural) {
+      return
+    }
+    const width = box.clientWidth - FRAME_PADDING * 2
+    const height = box.clientHeight - FRAME_PADDING * 2
+    const fit = (height / width) * (natural.width / natural.height)
+    setZoom(Math.min(1, fit))
   }
 
   return (
@@ -57,31 +70,40 @@ export function PageViewer({
           {withBox.length} 个字段在原图上找到了出处，点框或右边的字段可以对照
         </Typography.Text>
         <Flex gap={4} align="center">
+          <Button size="small" icon={<ColumnHeightOutlined />} onClick={fitPage}>
+            整页
+          </Button>
           <Button
             size="small"
             icon={<ZoomOutOutlined />}
-            onClick={() => step(-1)}
-            disabled={zoom === ZOOMS[0]}
+            onClick={zoomOut}
+            disabled={zoom <= ZOOMS[0]}
           />
-          <Button size="small" onClick={() => setZoom(1)} style={{ width: 64 }}>
+          <Button
+            size="small"
+            onClick={() => setZoom(1)}
+            style={{ width: 64 }}
+            title="点一下回到 100%（宽度占满）"
+          >
             {Math.round(zoom * 100)}%
           </Button>
           <Button
             size="small"
             icon={<ZoomInOutlined />}
-            onClick={() => step(1)}
-            disabled={zoom === ZOOMS[ZOOMS.length - 1]}
+            onClick={zoomIn}
+            disabled={zoom >= ZOOMS[ZOOMS.length - 1]}
           />
         </Flex>
       </Flex>
 
       <div
+        ref={frame}
         style={{
           flex: 1,
           overflow: 'auto',
           background: '#f0eef5',
           borderRadius: 8,
-          padding: 16,
+          padding: FRAME_PADDING,
         }}
       >
         {image.isPending && (

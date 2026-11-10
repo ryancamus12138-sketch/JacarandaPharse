@@ -32,19 +32,19 @@ npm run lint && npm run build
 | --- | --- |
 | `src/main.tsx` | 入口：中文、主题色、TanStack Query |
 | `src/App.tsx` | 路由：哪个网址显示哪个页面 |
-| `src/api/` | 调用后端的唯一地方：`client.ts` 发请求、自动带 token、统一错误；一个功能一个文件（`auth.ts`、`documents.ts`）；`types.ts` 和后端 schemas 对应 |
+| `src/api/` | 调用后端的唯一地方：`client.ts` 发请求、自动带 token、统一错误（`api()` 读 JSON、`apiBlob()` 读图片、`apiDownload()` 下载文件并读出文件名）；一个功能一个文件（`auth.ts`、`documents.ts`、`values.ts`）；`types.ts` 和后端 schemas 对应 |
 | `src/auth/` | 登录：`AuthProvider`（全站共用"现在是谁"）、`useAuth()`、守门员 `RequireAuth`、登录页 |
 | `src/components/` | 共用组件：`AppLayout`（左边菜单、顶上用户名和退出） |
-| `src/features/` | 按功能分的页面：`documents/`（列表、上传、状态）、`review/`（审核）、`admin/` |
-| `src/utils/` | 小工具：文件大小、时间格式 |
+| `src/features/` | 按功能分的页面：`documents/`（列表、上传、状态、导出按钮）、`review/`（审核工作台）、`admin/` |
+| `src/utils/` | 小工具：文件大小、时间格式、`saveFile()`（把下载回来的文件交给浏览器保存） |
 
 ## 页面
 
 | 网址 | 页面 | 谁能看 |
 | --- | --- | --- |
 | `/login` | 登录 | 没登录的人 |
-| `/documents` | 文档列表：上传（要"上传文件"权限）、状态自动刷新、重试（要"重新处理"权限） | 登录了就能看 |
-| `/documents/:id` | 审核工作台：左边原图和出处框，右边字段；修改、确认（要"修改字段"权限）、修改历史、完成审核（要"完成审核"权限）；↑↓ 切换字段，Enter 确认 | 登录了就能看 |
+| `/documents` | 文档列表：上传（要"上传文件"权限）、状态自动刷新、重试（要"重新处理"权限）、勾选导出（zip 或汇总 Excel） | 登录了就能看 |
+| `/documents/:id` | 审核工作台：左边原图和出处框（整页、缩放），右边字段；修改、确认（要"修改字段"权限）、修改历史、完成审核（要"完成审核"权限）、导出这一份；↑↓ 切换字段，Enter 确认 | 登录了就能看 |
 | `/admin/users` | 用户管理 | 管理员 |
 | `/admin/audit-logs` | 审计日志 | 管理员 |
 
@@ -53,3 +53,14 @@ npm run lint && npm run build
 读数据用 `useQuery`（`queryKey` 起名字、`queryFn` 调 `src/api/` 里的函数），改数据用 `useMutation`，
 改完调用 `queryClient.invalidateQueries({ queryKey: [...] })`，相关列表会自动重新取。
 文档列表有"排队中/处理中"的文件时每 3 秒刷新一次，全部处理完就停。
+
+## 下载文件和显示图片
+
+浏览器加载 `<img src>`、点 `<a href>` 下载时都**不会带登录 token**，团队模式下会 401。所以：
+
+- 页面图片：`apiBlob()` 带 token 取回来，再用 `URL.createObjectURL` 变成 `blob:` 地址给 `<img>`；
+- 导出 Excel / zip：`apiDownload()` 带 token 取回来，从 `Content-Disposition` 读出文件名（优先 `filename*`，中文不乱码），
+  再用 `saveFile()` 交给浏览器保存。
+
+多个文档默认每份一个 Excel、打包成 zip（浏览器没法直接下载文件夹，解压后就是文件夹）；
+按钮旁边的下拉可以选"汇总到一个 Excel"，一行一张单据，方便对账。

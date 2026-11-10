@@ -6,6 +6,7 @@ router 只做三件事：读请求、调用 service、把结果或错误变成 H
 from __future__ import annotations
 
 import uuid
+from pathlib import PurePath
 from typing import Annotated
 from urllib.parse import quote
 
@@ -23,6 +24,7 @@ from jacara.modules.documents.service import DocumentError, DocumentService
 router = APIRouter(prefix="/documents", tags=["文档"])
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+ZIP = "application/zip"
 
 _STATUS = {
     "not_found": status.HTTP_404_NOT_FOUND,
@@ -60,7 +62,8 @@ def _attachment(filename: str, data: bytes, media_type: str) -> Response:
     文件名可能有中文：filename* 按标准（RFC 6266）写成 UTF-8 编码；
     filename 是给不认识 filename* 的老程序看的纯英文名字。
     """
-    disposition = f"attachment; filename=\"export.xlsx\"; filename*=UTF-8''{quote(filename)}"
+    fallback = f"export{PurePath(filename).suffix}"  # 纯英文的备用名：export.xlsx、export.zip
+    disposition = f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename)}"
     return Response(
         content=data, media_type=media_type, headers={"Content-Disposition": disposition}
     )
@@ -103,6 +106,22 @@ def export_documents(
     except DocumentError as err:
         raise _http_error(err) from err
     return _attachment(filename, data, XLSX)
+
+
+@router.get("/export.zip", summary="导出多个文档（每个一个 Excel）", response_class=Response)
+def export_documents_zip(
+    service: Service,
+    ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
+) -> Response:
+    """每个文档单独一个 Excel，打包成一个 zip 下载，解压后就是一个文件夹。
+
+    写法：`/api/v1/documents/export.zip?ids=第一个id&ids=第二个id`
+    """
+    try:
+        filename, data = service.export_zip(ids)
+    except DocumentError as err:
+        raise _http_error(err) from err
+    return _attachment(filename, data, ZIP)
 
 
 @router.get("/{document_id}", summary="文档详情")

@@ -81,6 +81,34 @@ export async function apiBlob(path: string, init: ApiInit = {}): Promise<Blob> {
   return response.blob()
 }
 
+/** 下载回来的文件：内容 + 后端给的文件名。 */
+export interface DownloadedFile {
+  blob: Blob
+  filename: string
+}
+
+/** 调用"下载文件"的接口（导出 Excel）：除了内容，还要后端在 Content-Disposition 里给的文件名。 */
+export async function apiDownload(path: string, fallbackName: string): Promise<DownloadedFile> {
+  const response = await send(path, {})
+  const filename = filenameFrom(response.headers.get('Content-Disposition')) ?? fallbackName
+  return { blob: await response.blob(), filename }
+}
+
+/**
+ * 从 Content-Disposition 里取文件名。后端两种都给（第十七课）：
+ * filename*=UTF-8''%E6%94%B6%E6%8D%AE.xlsx（中文按标准编码过）优先，没有再用 filename="export.xlsx"。
+ */
+function filenameFrom(header: string | null): string | null {
+  if (!header) {
+    return null
+  }
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(header)
+  if (encoded) {
+    return decodeURIComponent(encoded[1])
+  }
+  return /filename="?([^";]+)"?/i.exec(header)?.[1] ?? null
+}
+
 async function errorMessage(response: Response): Promise<string> {
   if (response.status === 502 || response.status === 504) {
     return '连不上后端。请确认终端里 uv run jacara api 正在运行'

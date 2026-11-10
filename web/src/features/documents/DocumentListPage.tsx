@@ -1,6 +1,6 @@
 import { ReloadOutlined } from '@ant-design/icons'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Card, Table, type TableProps, Tag } from 'antd'
+import { Alert, App, Button, Card, Flex, Table, type TableProps, Tag } from 'antd'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { ApiError } from '../../api/client'
@@ -8,7 +8,8 @@ import { listDocuments, processDocument } from '../../api/documents'
 import type { DocumentSummary } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
 import { formatBytes, formatTime } from '../../utils/format'
-import { IN_PROGRESS } from './status'
+import { ExportButton } from './ExportButton'
+import { EXPORTABLE, IN_PROGRESS } from './status'
 import { StatusTag } from './StatusTag'
 import { UploadArea } from './UploadArea'
 
@@ -27,12 +28,14 @@ function canRetry(d: DocumentSummary, now: number): boolean {
   return d.status === 'uploaded' && now - new Date(d.created_at).getTime() > STUCK_MS
 }
 
-/** 文档列表：上传、看状态、失败重试。点文件名进入审核页。 */
+/** 文档列表：上传、看状态、失败重试、勾选导出。点文件名进入审核页。 */
 export function DocumentListPage() {
   const { can } = useAuth()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
+  // 勾选了哪些文档（要导出的）。翻页时保留，可以跨页勾选
+  const [selected, setSelected] = useState<string[]>([])
 
   const documents = useQuery({
     queryKey: ['documents', page],
@@ -62,7 +65,7 @@ export function DocumentListPage() {
           filename
         ),
     },
-        {
+    {
       title: '状态',
       dataIndex: 'status',
       width: 120,
@@ -110,13 +113,16 @@ export function DocumentListPage() {
     <Card
       title="文档"
       extra={
-        <Button
-          icon={<ReloadOutlined />}
-          onClick={() => void documents.refetch()}
-          loading={documents.isFetching}
-        >
-          刷新
-        </Button>
+        <Flex gap={8}>
+          <ExportButton ids={selected} type="primary" />
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => void documents.refetch()}
+            loading={documents.isFetching}
+          >
+            刷新
+          </Button>
+        </Flex>
       }
     >
       {can('document:create') && <UploadArea />}
@@ -133,6 +139,13 @@ export function DocumentListPage() {
       <Table<DocumentSummary>
         rowKey="id"
         columns={columns}
+        rowSelection={{
+          selectedRowKeys: selected,
+          onChange: (keys) => setSelected(keys.map(String)),
+          preserveSelectedRowKeys: true, // 翻到别的页，已经勾的不会丢
+          // 还没处理完的没有结果，不能导出
+          getCheckboxProps: (d) => ({ disabled: !EXPORTABLE.includes(d.status) }),
+        }}
         dataSource={documents.data?.items}
         loading={documents.isPending}
         pagination={{
