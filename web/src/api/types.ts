@@ -22,3 +22,10 @@ export interface Me {
   permissions: string[]
   user: User | null
 }
+
+/** POST /auth/login 的返回。token 只在这里出现一次。 */
+export interface LoginOut {
+  token: string
+  expires_at: string
+  user: User
+}

@@ -1,68 +1,62 @@
-import { Alert, Card, Descriptions, Flex, Spin, Tag, Typography } from 'antd'
-import { useEffect, useState } from 'react'
-import { api, ApiError } from './api/client'
-import type { Health, Me } from './api/types'
+import { Button, Result } from 'antd'
+import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router'
+import { AuthProvider } from './auth/AuthProvider'
+import { LoginPage } from './auth/LoginPage'
+import { RequireAuth, RequirePermission } from './auth/RequireAuth'
+import { AppLayout } from './components/AppLayout'
+import { AuditLogPage } from './features/admin/AuditLogPage'
+import { UsersPage } from './features/admin/UsersPage'
+import { DocumentListPage } from './features/documents/DocumentListPage'
 
-/** 这一课先做一个"连通检查"页：确认网页能通过 Vite 转发，连到后端。 */
+/** 路由：哪个网址显示哪个页面。 */
 export default function App() {
-  const [health, setHealth] = useState<Health | null>(null)
-  const [me, setMe] = useState<Me | null>(null)
-  const [error, setError] = useState<ApiError | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    // 网页一打开就执行一次：先问后端在不在，再问"我是谁"
-    async function load() {
-      try {
-        setHealth(await api<Health>('/health'))
-        setMe(await api<Me>('/auth/me'))
-      } catch (err) {
-        setError(err instanceof ApiError ? err : new ApiError(0, String(err)))
-      } finally {
-        setLoading(false)
-      }
-    }
-    void load()
-  }, [])
-
   return (
-    <Flex justify="center" style={{ padding: 48 }}>
-      <Card title="JacarandaParse" style={{ width: 560 }}>
-        {loading && <Spin />}
-        {health && (
-          <Alert type="success" showIcon title={`后端已连上，版本 ${health.version}`} />
-        )}
-        {error?.status === 401 && (
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginTop: 16 }}
-            title="团队模式：需要登录"
-            description="下一课做登录页。"
-          />
-        )}
-        {error && error.status !== 401 && (
-          <Alert type="error" showIcon style={{ marginTop: 16 }} title={error.message} />
-        )}
-        {me && (
-          <Descriptions column={1} bordered size="small" style={{ marginTop: 16 }}>
-            <Descriptions.Item label="模式">
-              {me.mode === 'personal' ? '个人模式（不用登录）' : '团队模式'}
-            </Descriptions.Item>
-            <Descriptions.Item label="角色">{me.role}</Descriptions.Item>
-            <Descriptions.Item label="能做的操作">
-              <Flex wrap gap={4}>
-                {me.permissions.map((name) => (
-                  <Tag key={name}>{name}</Tag>
-                ))}
-              </Flex>
-            </Descriptions.Item>
-          </Descriptions>
-        )}
-        <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
-          这一页只用来确认前端和后端连通了。
-        </Typography.Paragraph>
-      </Card>
-    </Flex>
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            element={
+              <RequireAuth>
+                <AppLayout />
+              </RequireAuth>
+            }
+          >
+            <Route index element={<Navigate to="/documents" replace />} />
+            <Route path="documents" element={<DocumentListPage />} />
+            <Route
+              path="admin/users"
+              element={
+                <RequirePermission permission="user:manage">
+                  <UsersPage />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="admin/audit-logs"
+              element={
+                <RequirePermission permission="audit:read">
+                  <AuditLogPage />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="*"
+              element={
+                <Result
+                  status="404"
+                  title="找不到这个页面"
+                  extra={
+                    <Link to="/">
+                      <Button type="primary">回首页</Button>
+                    </Link>
+                  }
+                />
+              }
+            />
+          </Route>
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   )
 }
