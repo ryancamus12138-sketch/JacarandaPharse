@@ -120,3 +120,30 @@ export interface Extraction {
 export interface DocumentDetail extends DocumentSummary {
   extractions: Extraction[]
 }
+
+/** 一次审核（POST /values/{id}/revisions）。edit：改成 value；confirm：当前值是对的。 */
+export interface RevisionIn {
+  action: 'edit' | 'confirm'
+  /** 新值。只有 edit 用；null 表示"原文里确实没有这个字段"。 */
+  value?: string | null
+  /** 为什么这样改。修改时必须写。 */
+  reason: string
+}
+
+/** 一条审核记录。 */
+export interface Revision {
+  id: string
+  seq: number
+  action: 'edit' | 'confirm'
+  new_value: string | null
+  reason: string
+  /** 谁做的。 */
+  user_id: string
+  created_at: string
+}
+
+/** 一个字段的完整经历：模型原值 + 每一次审核。 */
+export interface ValueHistory {
+  value: FieldValue
+  revisions: Revision[]
+}

@@ -11,7 +11,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from jacara.plugins.ocr.base import OcrConfig, OcrLine, OcrPage, Point
 
@@ -65,8 +65,7 @@ class RapidOcrEngine:
 
     def recognize(self, image: Path) -> OcrPage:
         engine = self._load()
-        with Image.open(image) as img:
-            width, height = img.size
+        width, height = exif_size(image)
 
         started = time.perf_counter()
         result = engine(str(image))
@@ -91,3 +90,13 @@ class RapidOcrEngine:
             models=self._models(),
             duration_ms=duration_ms,
         )
+
+
+def exif_size(image: Path) -> tuple[int, int]:
+    """图片转正之后的宽高。
+
+    RapidOCR 读图时会按 EXIF 方向转正（手机照片常常横着存、另记一个旋转标记），
+    识别出的坐标是转正之后的，所以宽高也要按转正之后的算。
+    """
+    with Image.open(image) as img:
+        return ImageOps.exif_transpose(img).size

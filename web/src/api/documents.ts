@@ -29,3 +29,9 @@ export function getDocument(id: string): Promise<DocumentDetail> {
 export function getPageImage(id: string, page: number): Promise<Blob> {
   return apiBlob(`/documents/${id}/pages/${page}/image`)
 }
+
+
+/** 完成审核：所有标黄的字段都处理过之后，文档变成"已审核"。 */
+export function completeReview(id: string): Promise<DocumentSummary> {
+  return api<DocumentSummary>(`/documents/${id}/review`, { method: 'POST' })
+}
