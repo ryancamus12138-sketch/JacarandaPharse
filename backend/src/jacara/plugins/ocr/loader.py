@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import io
 import tempfile
 import time
 from importlib.metadata import version
@@ -17,6 +18,7 @@ from pathlib import Path
 import pdfplumber
 import pypdfium2 as pdfium
 from pdfplumber.page import Page
+from PIL import Image
 
 from jacara.plugins.ocr.base import OcrEngine, OcrLine, OcrPage, Point
 
@@ -95,3 +97,32 @@ def _render_and_ocr(path: Path, number: int, ocr: OcrEngine) -> OcrPage:
         image_path = Path(folder) / f"page-{number + 1}.png"
         image.save(image_path)
         return ocr.recognize(image_path)
+
+
+def page_png(data: bytes, is_pdf: bool, number: int) -> bytes:
+    """把文件的第 number 页（从 1 开始）画成 PNG，给审核页面显示。
+
+    坐标和 OCR 时完全一样，出处框才能画准：
+    - PDF 用同样的 PDF_SCALE 渲染（文字层的坐标也乘了它）；
+    - 图片按原样的像素输出，不按 EXIF 旋转（OCR 量尺寸时也没有旋转）。
+      顺便统一成 PNG：浏览器显示不了 TIFF。
+    页码超出范围时抛 IndexError，由调用方先检查。
+    """
+    if is_pdf:
+        pdf = pdfium.PdfDocument(data)
+        try:
+            if not 1 <= number <= len(pdf):
+                raise IndexError(number)
+            image = pdf[number - 1].render(scale=PDF_SCALE).to_pil()
+        finally:
+            pdf.close()
+    else:
+        if number != 1:
+            raise IndexError(number)
+        image = Image.open(io.BytesIO(data))
+        image.load()
+        if image.mode not in ("RGB", "RGBA", "L"):
+            image = image.convert("RGB")  # CMYK、调色板等模式先转成 RGB
+    out = io.BytesIO()
+    image.save(out, format="PNG")
+    return out.getvalue()

@@ -9,7 +9,7 @@ import uuid
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -122,6 +122,24 @@ def download_document(document_id: uuid.UUID, service: Service) -> Response:
     except DocumentError as err:
         raise _http_error(err) from err
     return Response(content=data, media_type=document.content_type or "application/octet-stream")
+
+
+@router.get("/{document_id}/pages/{page}/image", summary="某一页的图片", response_class=Response)
+def page_image(
+    document_id: uuid.UUID, page: Annotated[int, Path(ge=1)], service: Service
+) -> Response:
+    """第 page 页（从 1 开始）画成 PNG。审核页面显示它，并按字段的 evidence.bbox 在上面画出处框。
+
+    PDF 按抽取时同样的倍数渲染，图片按原像素输出，所以坐标能对上。
+    """
+    try:
+        data = service.page_image(document_id, page)
+    except DocumentError as err:
+        raise _http_error(err) from err
+    # 同一页的图片不会变，浏览器可以缓存一小时；private：只存在自己的浏览器里
+    return Response(
+        content=data, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"}
+    )
 
 
 @router.get("/{document_id}/export.xlsx", summary="导出 Excel", response_class=Response)
