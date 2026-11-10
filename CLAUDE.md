@@ -104,6 +104,9 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 
 **导出：** 导出器是插件，只认 `DocumentReport`。API 导出时由 `pipeline/load.py` 从数据库拼回来，
 `reviews` 里带着每个字段最新的审核结果；格子写审核之后的值，改过的标蓝、批注写原值和原因。
+多个文档默认每份一个 Excel、打包成 zip（`export.zip`，重名加 (2)）；也可以汇总到一个 Excel（`export.xlsx`）。
+两种导出共用 `_exportable()` 的检查，都记审计日志（detail 里有 format）。
+前端下载要带 token：`apiDownload()` 取回文件和 Content-Disposition 里的文件名，`utils/download.saveFile()` 保存。
 
 **账号和权限：** `JACARA_MODE=personal`（默认）不用登录；`team` 模式必须登录，请求头带 `Authorization: Bearer <token>`。
 只有两种角色：管理员（admin）和使用者（member）。使用者默认能看、能下载、能导出，其余权限（`GRANTABLE`）

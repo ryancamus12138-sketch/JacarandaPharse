@@ -2,6 +2,7 @@
 
 import io
 import uuid
+import zipfile
 from urllib.parse import unquote
 
 import pytest
@@ -77,6 +78,30 @@ def test_export_many_documents_in_order(client, save):
     assert response.status_code == 200
     assert [r["文件"] for r in summary(response)] == ["b.jpg", "a.jpg"]  # 按选的顺序，去掉重复
     assert download_name(response).endswith("2份.xlsx")
+
+
+def test_export_zip_one_excel_per_document(client, save):
+    ids = [save("receipt.jpg"), save("发票.pdf"), save("receipt.jpg")]
+    response = client.get("/api/v1/documents/export.zip", params={"ids": [str(i) for i in ids]})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert download_name(response).endswith("3份.zip")
+    assert 'filename="export.zip"' in response.headers["content-disposition"]
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        # 按选的顺序；重名的加 (2)
+        assert archive.namelist() == ["receipt.xlsx", "发票.xlsx", "receipt (2).xlsx"]
+        for name in archive.namelist():
+            sheet = load_workbook(io.BytesIO(archive.read(name)))["汇总"]
+            assert sheet.max_row == 2  # 表头 + 这一张单据
+
+
+def test_export_zip_checks_like_excel(client, factory, save):
+    document_id = save()
+    with session_scope(factory) as session:
+        session.get_one(Document, document_id).status = "processing"
+    response = client.get("/api/v1/documents/export.zip", params={"ids": [str(document_id)]})
+    assert response.status_code == 409
 
 
 def test_chinese_file_name(client, save):

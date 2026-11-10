@@ -18,6 +18,7 @@ import { ApiError } from '../../api/client'
 import { completeReview, getDocument } from '../../api/documents'
 import type { FieldValue } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
+import { ExportButton } from '../documents/ExportButton'
 import { StatusTag } from '../documents/StatusTag'
 import { FieldPanel } from './FieldPanel'
 import { PageViewer } from './PageViewer'
@@ -167,6 +168,7 @@ export function ReviewPage() {
               </Button>
             </Tooltip>
           )}
+          <ExportButton ids={[doc.id]} />
           {back}
         </Flex>
       }

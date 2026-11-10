@@ -12,6 +12,7 @@ import logging
 import mimetypes
 import tempfile
 import uuid
+import zipfile
 from datetime import date
 from pathlib import Path, PurePath
 
@@ -158,10 +159,38 @@ class DocumentService:
         return DocumentOut.model_validate(document)
 
     def export(self, document_ids: list[uuid.UUID]) -> tuple[str, bytes]:
-        """把一个或多个文档导出成一个 Excel，返回（文件名，文件内容）。
+        """把一个或多个文档导出成一个 Excel（汇总表一行一张单据），返回（文件名，文件内容）。
 
         格子里是审核之后的值（current_value）；改过的标蓝，批注里写原值和原因。
         """
+        documents = self._exportable(document_ids)
+        data = _workbook(documents)
+        if len(documents) == 1:
+            name = f"{PurePath(documents[0].filename).stem}.xlsx"
+        else:
+            name = f"jacara-{date.today():%Y%m%d}-{len(documents)}份.xlsx"
+        self._record_export(documents, "xlsx")
+        return name, data
+
+    def export_zip(self, document_ids: list[uuid.UUID]) -> tuple[str, bytes]:
+        """每个文档单独一个 Excel，打包成一个 zip。
+
+        浏览器一次只能下载一个文件，没法直接下载文件夹，所以打包；解压后就是一个文件夹。
+
+        zip 里的文件名跟原文件同名（receipt.jpg → receipt.xlsx），重名的加 (2)、(3)。
+        """
+        documents = self._exportable(document_ids)
+        out = io.BytesIO()
+        used: set[str] = set()
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+            for document in documents:
+                name = _unique(f"{PurePath(document.filename).stem}.xlsx", used)
+                archive.writestr(name, _workbook([document]))
+        self._record_export(documents, "zip")
+        return f"jacara-{date.today():%Y%m%d}-{len(documents)}份.zip", out.getvalue()
+
+    def _exportable(self, document_ids: list[uuid.UUID]) -> list[Document]:
+        """导出前的检查（两种导出都一样）：有权限、数量对、都找得到、都处理完了。按用户选的顺序返回。"""
         require(self.owner, "document:export")
         ids = list(dict.fromkeys(document_ids))  # 去掉重复的 id，保持原来的顺序
         if not ids:
@@ -173,27 +202,21 @@ class DocumentService:
         missing = [str(i) for i in ids if i not in found]
         if missing:
             raise DocumentError("not_found", f"找不到文档：{', '.join(missing)}")
-        documents = [found[i] for i in ids]  # 按用户选的顺序
+        documents = [found[i] for i in ids]
         not_ready = [d.filename for d in documents if d.status not in EXPORTABLE]
         if not_ready:
             raise DocumentError("conflict", f"这些文档还没处理完，不能导出：{', '.join(not_ready)}")
+        return documents
 
-        reports = [report for d in documents for report in load_reports(d)]
-        exporter = create_exporter("excel")
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / f"export{exporter.suffix}"
-            exporter.export(reports, path)
-            data = path.read_bytes()
-
-        if len(documents) == 1:
-            name = f"{PurePath(documents[0].filename).stem}{exporter.suffix}"
-        else:
-            name = f"jacara-{date.today():%Y%m%d}-{len(documents)}份{exporter.suffix}"
-        # 导出是"数据离开系统"，要留记录：谁、什么时候、导出了哪些文档
+    def _record_export(self, documents: list[Document], file_format: str) -> None:
+        # 导出是"数据离开系统"，要留记录：谁、什么时候、导出了哪些文档、什么格式
         record(
-            self.session, self.owner, "document:export", documents=[str(d.id) for d in documents]
+            self.session,
+            self.owner,
+            "document:export",
+            documents=[str(d.id) for d in documents],
+            format=file_format,
         )
-        return name, data
 
     def download(self, document_id: uuid.UUID) -> tuple[Document, bytes]:
         document = self._find(document_id)
@@ -256,3 +279,24 @@ def _count_pages(content_type: str, data: bytes) -> int:
             return len(pdf.pages)
     except Exception as err:
         raise DocumentError("unreadable", "PDF 文件打不开，可能已损坏") from err
+
+
+def _workbook(documents: list[Document]) -> bytes:
+    """几个文档写进一个 Excel，返回文件内容。"""
+    reports = [report for d in documents for report in load_reports(d)]
+    exporter = create_exporter("excel")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / f"export{exporter.suffix}"
+        exporter.export(reports, path)
+        return path.read_bytes()
+
+
+def _unique(name: str, used: set[str]) -> str:
+    """zip 里不能有两个同名文件：receipt.xlsx 已经有了，就叫 receipt (2).xlsx。"""
+    stem, suffix = PurePath(name).stem, PurePath(name).suffix
+    candidate, n = name, 1
+    while candidate in used:
+        n += 1
+        candidate = f"{stem} ({n}){suffix}"
+    used.add(candidate)
+    return candidate
