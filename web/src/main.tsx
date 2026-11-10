@@ -2,6 +2,7 @@ import { App as AntApp, ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import 'antd/dist/reset.css' // 去掉浏览器自带的页面边距等默认样式
 import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(

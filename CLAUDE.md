@@ -58,12 +58,14 @@ backend/src/jacara/
   cli.py        命令行入口
 backend/migrations/   Alembic 数据库迁移
 backend/tests/        自动测试（pytest）
-web/          前端（React + TypeScript + Vite + Ant Design）
+web/          前端（React + TypeScript + Vite + Ant Design + react-router）
   vite.config.ts    开发服务器：只监听 127.0.0.1:5173，/api 转发给后端 127.0.0.1:8000
   src/main.tsx      入口：中文、主题色
-  src/App.tsx       页面（以后是路由）
-  src/api/          调用后端的唯一地方：client.ts（发请求、统一错误）、types.ts（和后端 schemas 对应）
-  src/features/     按功能分的页面：documents、review、admin（以后几课加）
+  src/App.tsx       路由：哪个网址显示哪个页面
+  src/api/          调用后端的唯一地方：client.ts（发请求、带 token、统一错误）、一个功能一个文件、types.ts
+  src/auth/         登录：AuthProvider（全站共用"现在是谁"）、useAuth()、RequireAuth（守门员）、登录页
+  src/components/   共用组件：AppLayout（菜单、用户名、退出）
+  src/features/     按功能分的页面：documents、review、admin
 deploy/       部署相关
 docs/adr/     架构决策记录
 compose.yaml  开发用基础设施：PostgreSQL、Valkey、SeaweedFS
@@ -103,7 +105,9 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 
 **前端：** 页面不直接写 `fetch`，都通过 `web/src/api/`。后端出错返回 `{"detail": "..."}`，
 `client.ts` 统一变成 `ApiError`，页面直接显示它的 message。`types.ts` 和后端的 schemas 字段名保持一样。
-前端用 `/auth/me` 的 `mode` 决定是否显示登录页，用 `permissions` 决定显示哪些按钮。
+登录后 token 存在 localStorage（`api/token.ts`），每个请求自动带上；带着 token 收到 401 就清掉 token、回登录页。
+"现在是谁"打开网页时问一次（`AuthProvider`），页面用 `useAuth()` 拿 `me` 和 `can('权限名')`。
+个人模式 `/auth/me` 直接成功，不显示登录页。权限变了前端要刷新才更新菜单，但后端每个请求都现查。
 
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 
@@ -112,7 +116,7 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 Python 3.13（`.python-version`）、uv、FastAPI + fastapi-offline + uvicorn、Pydantic v2、SQLAlchemy 2、Alembic、
 Celery + Valkey、argon2-cffi（密码哈希）、PostgreSQL 18、SeaweedFS（只用 S3 接口，boto3）、pypdfium2 + pdfplumber、
 RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、openpyxl、pytest。
-前端：Node.js 26、npm、Vite、React、TypeScript、Ant Design、oxlint。
+前端：Node.js 26、npm、Vite、React、TypeScript、Ant Design、react-router、oxlint。
 
 ## 工作方式
 
