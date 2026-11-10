@@ -1,5 +1,6 @@
 /**
  * 调用后端的唯一入口。所有页面都通过这里请求 /api/v1（项目规则 8）。
+ * 返回 JSON 的用 api()，返回文件（图片、Excel）的用 apiBlob()。
  *
  * - 有 token 就自动带上 Authorization 头；
  * - 后端出错时返回 {"detail": "..."}，这里统一变成 ApiError，页面直接显示 message；
@@ -30,7 +31,8 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
   onUnauthorized = handler
 }
 
-export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
+/** 发请求：带 token、处理 401 和错误。成功时返回原始的 Response，由下面两个函数决定怎么读。 */
+async function send(path: string, init: ApiInit): Promise<Response> {
   const { json, ...rest } = init
   const headers = new Headers(rest.headers)
   const token = getToken()
@@ -61,10 +63,22 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
   if (!response.ok) {
     throw new ApiError(response.status, await errorMessage(response))
   }
+  return response
+}
+
+/** 调用返回 JSON 的接口（绝大多数接口）。 */
+export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
+  const response = await send(path, init)
   if (response.status === 204) {
     return undefined as T // 204：成功了，但没有内容（比如退出登录）
   }
   return (await response.json()) as T
+}
+
+/** 调用返回文件的接口（图片、Excel）。 */
+export async function apiBlob(path: string, init: ApiInit = {}): Promise<Blob> {
+  const response = await send(path, init)
+  return response.blob()
 }
 
 async function errorMessage(response: Response): Promise<string> {

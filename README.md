@@ -59,7 +59,7 @@ uv run jacara api --reload                      # 3. Web API
 | POST | `/api/v1/documents` | 上传文件（图片或 PDF，默认上限 50 MB） |
 | GET | `/api/v1/documents` | 文档列表（分页：`limit`、`offset`） |
 | GET | `/api/v1/documents/{id}` | 文档详情：每页的抽取结果、字段值和出处 |
-| GET | `/api/v1/documents/{id}/file` | 下载原始文件 |
+| GET | `/api/v1/documents/{id}/pages/{n}/image` | 第 n 页的图片（PNG），出处框的坐标就是这张图上的像素 |
 | POST | `/api/v1/documents/{id}/process` | 重新处理（失败后重试） |
 | POST | `/api/v1/documents/{id}/review` | 完成审核（所有标黄的字段都处理过之后） |
 | POST | `/api/v1/values/{id}/revisions` | 审核一个字段：修改（edit）或确认（confirm） |

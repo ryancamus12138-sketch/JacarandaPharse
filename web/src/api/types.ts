@@ -53,3 +53,70 @@ export interface DocumentPage {
   items: DocumentSummary[]
   total: number
 }
+
+/** 一个值的出处：在 OCR 结果的第几行、那一行的原文、在页面图片上的框。 */
+export interface Evidence {
+  row: number
+  row_text: string
+  /** [左, 上, 右, 下]，单位是 /pages/{n}/image 那张图片上的像素。 */
+  bbox: [number, number, number, number]
+  /** 出处文字的 OCR 置信度（0–1）。 */
+  confidence: number
+  /** 值和原文有多像（0–1），1 是完全一样。 */
+  similarity: number
+}
+
+/** matched 找到一样的；fuzzy 只找到相似的；not_found 原文里找不到；empty 模型说原文里没有。 */
+export type AlignStatus = 'matched' | 'fuzzy' | 'not_found' | 'empty'
+
+/** 一个字段（后端的 ValueOut）。 */
+export interface FieldValue {
+  id: string
+  name: string
+  type: 'string' | 'number' | 'date'
+  /** 模型抽出的原值，永远不变。 */
+  value: string | null
+  /** 当前值：审核之后的值，界面上显示这个。 */
+  current_value: string | null
+  status: AlignStatus
+  needs_review: boolean
+  /** 有人修改或确认过。 */
+  reviewed: boolean
+  /** 还在等人确认：界面上标黄。 */
+  pending_review: boolean
+  /** 为什么要确认，比如"原文里找不到这个值"。 */
+  note: string
+  evidence: Evidence | null
+}
+
+/** 一条没通过的规则，比如"现金 − 总额 = 找零"。 */
+export interface CheckIssue {
+  rule: string
+  title: string
+  message: string
+  fields: string[]
+  severity: 'error' | 'warning'
+}
+
+export interface Checks {
+  passed: string[]
+  skipped: string[]
+  issues: CheckIssue[]
+}
+
+/** 一页的抽取结果。 */
+export interface Extraction {
+  id: string
+  page: number
+  source: string
+  model: string
+  prompt_version: string
+  template: string
+  checks: Checks
+  values: FieldValue[]
+}
+
+/** 文档详情：文档本身 + 每一页的抽取结果。 */
+export interface DocumentDetail extends DocumentSummary {
+  extractions: Extraction[]
+}

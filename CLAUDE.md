@@ -62,10 +62,10 @@ web/          前端（React + TypeScript + Vite + Ant Design + react-router + T
   vite.config.ts    开发服务器：只监听 127.0.0.1:5173，/api 转发给后端 127.0.0.1:8000
   src/main.tsx      入口：中文、主题色、QueryClient
   src/App.tsx       路由：哪个网址显示哪个页面
-  src/api/          调用后端的唯一地方：client.ts（发请求、带 token、统一错误）、一个功能一个文件、types.ts
+  src/api/          调用后端的唯一地方：client.ts（api() 读 JSON、apiBlob() 读文件）、一个功能一个文件、types.ts
   src/auth/         登录：AuthProvider（全站共用"现在是谁"）、useAuth()、RequireAuth（守门员）、登录页
   src/components/   共用组件：AppLayout（菜单、用户名、退出）
-  src/features/     按功能分的页面：documents（列表、上传）、review（审核）、admin
+  src/features/     按功能分的页面：documents（列表、上传）、review（审核工作台）、admin
   src/utils/        小工具：文件大小、时间格式
 deploy/       部署相关
 docs/adr/     架构决策记录
@@ -96,6 +96,11 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 当前值取最新一条（`current_value`），原值永远在 `value`。界面显示 `current_value`，标黄看 `pending_review`。
 所有需要确认的字段都处理完，调用"完成审核"，文档 done → reviewed；之后再改字段，文档回到 done。
 
+**页面图片和出处坐标：** 字段的 `evidence.bbox` 是 [左, 上, 右, 下]，单位是 OCR 当时那张图上的像素。
+`GET /documents/{id}/pages/{n}/image` 由 `plugins/ocr/loader.page_png()` 生成同一张图：PDF 用同一个 `PDF_SCALE` 渲染，
+图片按原像素输出（不按 EXIF 旋转）。改 `PDF_SCALE` 或 OCR 前的图片处理时，两边必须一起改，
+`test_page_image.py` 会检查尺寸。数据库里没有存页面宽高，前端用图片的实际像素大小当坐标系。
+
 **导出：** 导出器是插件，只认 `DocumentReport`。API 导出时由 `pipeline/load.py` 从数据库拼回来，
 `reviews` 里带着每个字段最新的审核结果；格子写审核之后的值，改过的标蓝、批注写原值和原因。
 
@@ -111,6 +116,9 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 个人模式 `/auth/me` 直接成功，不显示登录页。权限变了前端要刷新才更新菜单，但后端每个请求都现查。
 页面取数据用 TanStack Query：读用 `useQuery`，改用 `useMutation`，改完 `invalidateQueries` 让相关列表重新取。
 文档列表有"排队中/处理中"时每 3 秒刷新一次，全部处理完就停。
+审核页的图片要带 token，所以用 `apiBlob()` 取回来再变成 `blob:` 地址，不能直接 `<img src="/api/...">`。
+出处框用盖在图片上的 SVG 画，`viewBox` 设成图片的真实像素，`bbox` 拿来直接用。
+选中和悬停的字段放在 `ReviewPage`，左边 `PageViewer` 和右边 `FieldPanel` 都读它，所以两边联动。
 
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 

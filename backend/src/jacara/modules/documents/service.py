@@ -28,6 +28,7 @@ from jacara.modules.documents.repository import DocumentRepository
 from jacara.modules.documents.schemas import DocumentDetail, DocumentOut, DocumentPage
 from jacara.pipeline.load import load_reports
 from jacara.plugins.exporters import create_exporter
+from jacara.plugins.ocr.loader import page_png
 
 log = logging.getLogger(__name__)
 
@@ -203,6 +204,25 @@ class DocumentService:
             return document, self.storage.get(document.storage_key)
         except StorageError as err:
             raise DocumentError("storage", "对象存储暂时不可用，请稍后再试") from err
+
+    def page_image(self, document_id: uuid.UUID, page: int) -> bytes:
+        """第 page 页（从 1 开始）的 PNG 图片。坐标和抽取时一样，审核页面在上面画出处框。"""
+        document = self._find(document_id)
+        require(self.owner, "document:read", document.team_id)
+        if document.storage_key is None:
+            raise DocumentError("no_file", "这个文档没有保存原始文件（命令行导入的）")
+        if not 1 <= page <= document.page_count:
+            raise DocumentError(
+                "not_found", f"这个文档只有 {document.page_count} 页，没有第 {page} 页"
+            )
+        try:
+            data = self.storage.get(document.storage_key)
+        except StorageError as err:
+            raise DocumentError("storage", "对象存储暂时不可用，请稍后再试") from err
+        try:
+            return page_png(data, document.content_type == "application/pdf", page)
+        except Exception as err:
+            raise DocumentError("unreadable", "这个文件打不开，可能已损坏") from err
 
     def _enqueue(self, document: Document) -> bool:
         """先提交，再放进队列。
