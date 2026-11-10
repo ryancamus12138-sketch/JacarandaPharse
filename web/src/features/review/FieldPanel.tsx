@@ -1,6 +1,9 @@
 import { Alert, Flex, Tag, Typography } from 'antd'
 import type { Extraction, FieldValue } from '../../api/types'
 import { boxColor, fieldLabel } from './fields'
+import { ReviewForm } from './ReviewForm'
+import { RevisionHistory } from './RevisionHistory'
+import type { Revise } from './useRevise'
 
 interface Props {
   extraction: Extraction
@@ -8,10 +11,24 @@ interface Props {
   hoveredId: string | null
   onSelect: (id: string) => void
   onHover: (id: string | null) => void
+  /** 能不能修改、确认（有"修改字段"权限）。不能的话只显示，不显示表单。 */
+  canEdit: boolean
+  revise: Revise
+  /** 一个字段审核完了。 */
+  onReviewed: (id: string) => void
 }
 
-/** 右边：这一页的字段列表和规则校验结果。点字段 = 左边高亮它的出处。 */
-export function FieldPanel({ extraction, selectedId, hoveredId, onSelect, onHover }: Props) {
+/** 右边：这一页的字段列表和规则校验结果。点字段 = 左边高亮它的出处，并展开审核表单。 */
+export function FieldPanel({
+  extraction,
+  selectedId,
+  hoveredId,
+  onSelect,
+  onHover,
+  canEdit,
+  revise,
+  onReviewed,
+}: Props) {
   const { checks, values } = extraction
   const pending = values.filter((v) => v.pending_review).length
 
@@ -29,6 +46,7 @@ export function FieldPanel({ extraction, selectedId, hoveredId, onSelect, onHove
       <Typography.Text type="secondary">
         {values.length} 个字段
         {pending > 0 ? `，${pending} 个等你确认（标黄）` : '，都不用确认'}
+        {canEdit && ' · ↑↓ 切换字段，Enter 确认'}
       </Typography.Text>
       <Flex vertical gap={4}>
         {values.map((v) => (
@@ -39,6 +57,9 @@ export function FieldPanel({ extraction, selectedId, hoveredId, onSelect, onHove
             hovered={v.id === hoveredId}
             onSelect={() => onSelect(v.id)}
             onHover={(on) => onHover(on ? v.id : null)}
+            canEdit={canEdit}
+            revise={revise}
+            onReviewed={() => onReviewed(v.id)}
           />
         ))}
       </Flex>
@@ -56,12 +77,18 @@ function FieldRow({
   hovered,
   onSelect,
   onHover,
+  canEdit,
+  revise,
+  onReviewed,
 }: {
   value: FieldValue
   selected: boolean
   hovered: boolean
   onSelect: () => void
   onHover: (on: boolean) => void
+  canEdit: boolean
+  revise: Revise
+  onReviewed: () => void
 }) {
   const edited = v.reviewed && v.current_value !== v.value
   return (
@@ -95,8 +122,9 @@ function FieldRow({
           {v.pending_review && <Tag color="gold">待确认</Tag>}
           {v.reviewed && !edited && <Tag color="green">已确认</Tag>}
           {edited && <Tag color="blue">已修改</Tag>}
-          {v.status === 'not_found' && <Tag color="red">原文里找不到</Tag>}
-          {v.status === 'fuzzy' && <Tag>相似匹配</Tag>}
+          {/* 下面两个说的是模型原值；人审核过之后就不再显示，免得误会 */}
+          {!v.reviewed && v.status === 'not_found' && <Tag color="red">原文里找不到</Tag>}
+          {!v.reviewed && v.status === 'fuzzy' && <Tag>相似匹配</Tag>}
         </Flex>
       </Flex>
       {(selected || v.pending_review) && v.note && (
@@ -115,6 +143,11 @@ function FieldRow({
           模型原值：{v.value ?? '（原文没有）'}
         </Typography.Paragraph>
       )}
+      {/* key 带上当前值：改完之后表单用新值重新开始 */}
+      {selected && canEdit && (
+        <ReviewForm key={`${v.id}:${v.current_value}`} value={v} revise={revise} onDone={onReviewed} />
+      )}
+      {selected && v.reviewed && <RevisionHistory valueId={v.id} />}
     </div>
   )
 }

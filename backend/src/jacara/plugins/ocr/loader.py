@@ -18,7 +18,7 @@ from pathlib import Path
 import pdfplumber
 import pypdfium2 as pdfium
 from pdfplumber.page import Page
-from PIL import Image
+from PIL import Image, ImageOps
 
 from jacara.plugins.ocr.base import OcrEngine, OcrLine, OcrPage, Point
 
@@ -104,8 +104,8 @@ def page_png(data: bytes, is_pdf: bool, number: int) -> bytes:
 
     坐标和 OCR 时完全一样，出处框才能画准：
     - PDF 用同样的 PDF_SCALE 渲染（文字层的坐标也乘了它）；
-    - 图片按原样的像素输出，不按 EXIF 旋转（OCR 量尺寸时也没有旋转）。
-      顺便统一成 PNG：浏览器显示不了 TIFF。
+    - 图片先按 EXIF 方向转正：手机照片的像素常常是横着存的，另记一个"要转 90 度"的标记，
+      RapidOCR 读图时会先转正再识别，坐标是转正之后的。顺便统一成 PNG：浏览器显示不了 TIFF。
     页码超出范围时抛 IndexError，由调用方先检查。
     """
     if is_pdf:
@@ -119,8 +119,7 @@ def page_png(data: bytes, is_pdf: bool, number: int) -> bytes:
     else:
         if number != 1:
             raise IndexError(number)
-        image = Image.open(io.BytesIO(data))
-        image.load()
+        image = ImageOps.exif_transpose(Image.open(io.BytesIO(data)))
         if image.mode not in ("RGB", "RGBA", "L"):
             image = image.convert("RGB")  # CMYK、调色板等模式先转成 RGB
     out = io.BytesIO()

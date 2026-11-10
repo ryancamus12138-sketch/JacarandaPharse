@@ -98,8 +98,9 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 
 **页面图片和出处坐标：** 字段的 `evidence.bbox` 是 [左, 上, 右, 下]，单位是 OCR 当时那张图上的像素。
 `GET /documents/{id}/pages/{n}/image` 由 `plugins/ocr/loader.page_png()` 生成同一张图：PDF 用同一个 `PDF_SCALE` 渲染，
-图片按原像素输出（不按 EXIF 旋转）。改 `PDF_SCALE` 或 OCR 前的图片处理时，两边必须一起改，
-`test_page_image.py` 会检查尺寸。数据库里没有存页面宽高，前端用图片的实际像素大小当坐标系。
+图片先按 EXIF 方向转正（RapidOCR 识别前也会转正，`rapid.exif_size()` 按转正后的算宽高）。
+改 `PDF_SCALE` 或 OCR 前的图片处理时，两边必须一起改，`test_page_image.py` 会检查尺寸。
+数据库里没有存页面宽高，前端用图片的实际像素大小当坐标系。
 
 **导出：** 导出器是插件，只认 `DocumentReport`。API 导出时由 `pipeline/load.py` 从数据库拼回来，
 `reviews` 里带着每个字段最新的审核结果；格子写审核之后的值，改过的标蓝、批注写原值和原因。
@@ -119,6 +120,9 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 审核页的图片要带 token，所以用 `apiBlob()` 取回来再变成 `blob:` 地址，不能直接 `<img src="/api/...">`。
 出处框用盖在图片上的 SVG 画，`viewBox` 设成图片的真实像素，`bbox` 拿来直接用。
 选中和悬停的字段放在 `ReviewPage`，左边 `PageViewer` 和右边 `FieldPanel` 都读它，所以两边联动。
+
+审核：选中字段展开 `ReviewForm`，"值是对的"发 confirm，"保存修改"发 edit（原因必填、原文没有发 null）；
+规则全在后端，前端只显示后端的错误原话。`useRevise()` 成功后刷新这个文档、文档列表和修改历史。
 
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 
