@@ -2,6 +2,7 @@ import { Button, Result } from 'antd'
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router'
 import { AuthProvider } from './auth/AuthProvider'
 import { LoginPage } from './auth/LoginPage'
+import { ResetPasswordPage } from './auth/ResetPasswordPage'
 import { RequireAuth, RequirePermission } from './auth/RequireAuth'
 import { AppLayout } from './components/AppLayout'
 import { AuditLogPage } from './features/admin/AuditLogPage'
@@ -16,6 +17,7 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route
             element={
               <RequireAuth>

@@ -12,7 +12,7 @@ from sqlalchemy import select
 from jacara.core.config import get_settings
 from jacara.core.db import session_scope
 from jacara.core.security import hash_password, token_hash, verify_password
-from jacara.models import AuditLog, AuthSession, Team, User
+from jacara.models import AuditLog, AuthSession, PasswordResetCode, Team, User
 from jacara.modules.auth.repository import AuthRepository
 from jacara.modules.auth.schemas import UserCreate
 from jacara.modules.auth.service import add_user
@@ -248,6 +248,94 @@ def test_granting_takes_effect_now(client, as_user):
 
     client.patch(f"/api/v1/users/{bob_id}", headers=admin, json={"permissions": []})
     assert upload(client, bob).status_code == 403  # 取消了也马上生效
+
+
+# ---------- 改密码、忘记密码 ----------
+
+
+def change_password(client, headers, old: str, new: str):
+    body = {"old_password": old, "new_password": new}
+    return client.post("/api/v1/auth/password", headers=headers, json=body)
+
+
+def test_change_own_password(client, factory, make_user):
+    make_user("bob")
+    phone = {"Authorization": f"Bearer {login(client, 'bob').json()['token']}"}
+    laptop = {"Authorization": f"Bearer {login(client, 'bob').json()['token']}"}
+
+    wrong = change_password(client, laptop, "not-my-password", "new-password")
+    assert (wrong.status_code, wrong.json()["detail"]) == (422, "原密码不对")
+    same = change_password(client, laptop, PASSWORD, PASSWORD)
+    assert (same.status_code, same.json()["detail"]) == (422, "新密码不能和原来的一样")
+    assert change_password(client, laptop, PASSWORD, "short").status_code == 422
+
+    assert change_password(client, laptop, PASSWORD, "new-password").status_code == 204
+    assert client.get("/api/v1/documents", headers=laptop).status_code == 200  # 正在用的不退出
+    assert client.get("/api/v1/documents", headers=phone).status_code == 401  # 别的设备退出了
+    assert login(client, "bob").status_code == 401
+    assert login(client, "bob", "new-password").status_code == 200
+    assert "auth:password_change" in actions(factory)
+
+
+NEW_PASSWORD = "new-password"
+
+
+def reset(client, username: str, code: str, password: str = NEW_PASSWORD):
+    body = {"username": username, "code": code, "password": password}
+    return client.post("/api/v1/auth/reset-password", json=body)
+
+
+def test_forgot_password_with_reset_code(client, factory, as_user):
+    admin = as_user("boss", role="admin")
+    bob = as_user("bob")
+    bob_id = client.get("/api/v1/auth/me", headers=bob).json()["user"]["id"]
+
+    url = f"/api/v1/users/{bob_id}/reset-code"
+    assert client.post(url, headers=bob).status_code == 403  # 只有管理员能生成
+    issued = client.post(url, headers=admin).json()
+    code = issued["code"]
+    assert len(code) == 9 and code[4] == "-"  # 比如 K7QM-3XWD
+    assert issued["username"] == "bob"
+
+    assert reset(client, "bob", "AAAA-AAAA").status_code == 400  # 码不对
+    assert reset(client, "nobody", code).status_code == 400  # 用户名不对
+    assert reset(client, "bob", code, PASSWORD).status_code == 422  # 和原来的一样（码还能用）
+    # 不分大小写，横线和空格都可以不打
+    assert reset(client, "bob", code.lower().replace("-", " ")).status_code == 204
+    assert reset(client, "bob", code, "other-password").status_code == 400  # 用过一次就作废
+
+    assert client.get("/api/v1/documents", headers=bob).status_code == 401  # 已登录的退出了
+    assert login(client, "bob", "new-password").status_code == 200
+
+    log = actions(factory)
+    assert "user:reset_code" in log
+    assert "auth:password_reset" in log
+    assert "auth:reset_failed" in log
+    with session_scope(factory) as session:
+        details = str(list(session.scalars(select(AuditLog.detail))))
+        assert code not in details  # 审计日志里没有重设码
+        assert "new-password" not in details  # 也没有密码
+
+
+def test_new_reset_code_voids_old_one(client, as_user):
+    admin = as_user("boss", role="admin")
+    bob = as_user("bob")
+    url = f"/api/v1/users/{client.get('/api/v1/auth/me', headers=bob).json()['user']['id']}"
+    first = client.post(f"{url}/reset-code", headers=admin).json()["code"]
+    second = client.post(f"{url}/reset-code", headers=admin).json()["code"]
+    assert reset(client, "bob", first).status_code == 400  # 旧的作废了
+    assert reset(client, "bob", second).status_code == 204
+
+
+def test_reset_code_expires(client, factory, as_user):
+    admin = as_user("boss", role="admin")
+    bob = as_user("bob")
+    bob_id = client.get("/api/v1/auth/me", headers=bob).json()["user"]["id"]
+    code = client.post(f"/api/v1/users/{bob_id}/reset-code", headers=admin).json()["code"]
+    with session_scope(factory) as session:
+        row = session.scalars(select(PasswordResetCode)).one()
+        row.expires_at = datetime.now(UTC) - timedelta(minutes=1)  # 假装过了 15 分钟
+    assert reset(client, "bob", code).status_code == 400
 
 
 # ---------- 审计日志 ----------
