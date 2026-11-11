@@ -4,6 +4,9 @@ import pytest
 
 from jacara.core.config import Settings
 
+FAKE_KEY = "not-a-real-key"
+"""测试用的假密钥。故意写得一看就是假的，免得 gitleaks 当成真密钥拦下来。"""
+
 
 @pytest.fixture(autouse=True)
 def no_real_env_file(tmp_path, monkeypatch):
@@ -37,3 +40,16 @@ def test_secrets_are_hidden_when_printed(monkeypatch):
     settings = Settings()
     assert "s3cret" not in repr(settings)
     assert "s3cret" not in str(settings.postgres_password)
+
+
+def test_placeholder_secrets_are_found(monkeypatch):
+    monkeypatch.setenv("POSTGRES_PASSWORD", "change-me")
+    monkeypatch.setenv("S3_ACCESS_KEY", "")
+    monkeypatch.setenv("S3_SECRET_KEY", FAKE_KEY)
+    assert Settings().weak_secrets() == ["POSTGRES_PASSWORD", "S3_ACCESS_KEY"]
+
+
+def test_web_dist_defaults_to_project_web_folder(tmp_path, monkeypatch):
+    assert Settings().web_dist.parts[-2:] == ("web", "dist")
+    monkeypatch.setenv("JACARA_WEB_DIR", str(tmp_path / "site"))
+    assert Settings().web_dist == tmp_path / "site"

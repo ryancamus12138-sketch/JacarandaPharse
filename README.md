@@ -18,44 +18,63 @@
 
 全程不联网：OCR 模型随包提供，大模型由本机的 llama-server 运行。
 
-## 快速开始（开发）
+## 第一次准备
 
-需要 [uv](https://docs.astral.sh/uv/)、[Docker Desktop](https://www.docker.com/products/docker-desktop/) 和 [Node.js](https://nodejs.org)（LTS）。Python 由 uv 自动下载。
+需要 [uv](https://docs.astral.sh/uv/)、[Docker Desktop](https://www.docker.com/products/docker-desktop/)、[Node.js](https://nodejs.org)（LTS）
+和 llama.cpp（Mac：`brew install llama.cpp`）。Python 由 uv 自动下载。
 
 ```bash
 uv sync                      # 创建虚拟环境并安装依赖
-cp .env.example .env         # 复制配置，把 change-me 改成随机值（openssl rand -hex 16）
+cp .env.example .env         # 复制配置，把 change-me 都改成随机值（openssl rand -hex 16）
 docker compose up -d         # 启动 PostgreSQL、Valkey、SeaweedFS
 uv run alembic upgrade head  # 建表
-uv run jacara doctor         # 检查各项服务
-cd web && npm install        # 前端依赖（只在 web/ 里运行 npm）
+cd web && npm install && npm run build && cd ..   # 打包网页（只在 web/ 里运行 npm）
+uv run jacara doctor         # 检查 .env、网页和各项服务
 ```
+
+模型文件（`.gguf`）放在 `models/` 里，不进 Git。
+
+## 日常使用：一个命令
+
+```bash
+docker compose up -d
+uv run jacara start --model models/Qwen3.5-9B-Q4_K_M.gguf
+```
+
+打开 <http://127.0.0.1:8000>：上传、看处理进度、审核、导出、管理用户。按一次 **Ctrl + C** 全部停止。
+
+`jacara start` 一起启动大模型、后台任务（worker）和 Web 服务，网页由 Web 服务直接提供。
+启动前会检查：`.env` 里的密钥不能还是 `change-me`，8000、8080 端口不能被占用。
+不写 `--model` 时只启动 worker 和 Web 服务，大模型要自己另外启动。
+
+## 开发：四个终端
+
+改代码时用这种方式，前端改了马上能看到：
+
+```bash
+uv run jacara serve --model models/<模型文件>.gguf  # 1. 本地大模型
+uv run jacara worker                               # 2. 后台任务：处理上传的文件
+uv run jacara api --reload                         # 3. Web API，改了后端代码自动重启
+cd web && npm run dev                              # 4. 网页开发服务器
+```
+
+开发时打开 <http://127.0.0.1:5173>。<http://127.0.0.1:8000/docs> 可以直接在浏览器里试每个接口（离线可用）。
+改完前端要给别人用时，运行 `cd web && npm run build`，再重启 `jacara start`。
 
 ### 命令行
 
 ```bash
-uv run jacara serve --model <模型文件>.gguf     # 启动本地大模型（单独一个终端）
 uv run jacara ocr receipt.jpg                   # 只识别文字
-uv run jacara extract receipt.jpg --excel out.xlsx --save
+uv run jacara extract receipt.jpg --excel out.xlsx --save   # 要先启动大模型
 ```
 
-### 网页、API 和后台任务
-
-在 `docker compose up -d` 之外，开四个终端：
-
-```bash
-uv run jacara serve --model <模型文件>.gguf     # 1. 本地大模型
-uv run jacara worker                            # 2. 后台任务：处理上传的文件
-uv run jacara api --reload                      # 3. Web API
-cd web && npm run dev                           # 4. 网页
-```
-
-打开 <http://127.0.0.1:5173> 使用网页：上传、看处理进度、审核、导出、管理用户。
-<http://127.0.0.1:8000/docs> 可以直接在浏览器里试每个接口（离线可用）。
+### 接口
 
 上传后接口马上返回，文件在后台处理。状态变化：
 `uploaded`（排队中）→ `processing`（处理中）→ `done`（待审核）或 `failed`（失败，`error` 里写着原因）。
 处理完后人工审核：修改或确认标黄的字段（原值保留，每次审核都有记录），全部处理完再"完成审核"，变成 `reviewed`。
+
+接口都在 `/api/v1` 下面，其他网址都是网页。
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
@@ -84,11 +103,13 @@ cd web && npm run dev                           # 4. 网页
 | GET | `/api/v1/users/permissions` | 可以开通的权限 |
 | GET | `/api/v1/audit-logs` | 审计日志：谁、什么时候、做了什么（管理员） |
 
+给别人用时，可以在 `.env` 里写 `JACARA_API_DOCS=false` 关掉 `/docs`。
+
 ### 个人模式和团队模式
 
 默认是个人模式（`.env` 里 `JACARA_MODE=personal`）：不用登录，一个人用。
 
-几个人一起用时改成 `JACARA_MODE=team`，重启 API，再建第一个管理员：
+几个人一起用时改成 `JACARA_MODE=team`，重启，再建第一个管理员：
 
 ```bash
 uv run jacara user add admin --role admin
@@ -114,10 +135,10 @@ cd web && npm run lint && npm run build
 | 目录 | 内容 |
 | --- | --- |
 | `backend/src/jacara/plugins/` | 流水线插件：OCR、模型后端、抽取、对齐、校验、导出 |
-| `backend/src/jacara/core/` | 配置、数据库、权限、登录 token、对象存储 |
+| `backend/src/jacara/core/` | 配置、数据库、权限、登录 token、对象存储、提供网页 |
 | `backend/src/jacara/modules/` | 业务功能（文档、字段、账号、审计日志），每个功能五层 |
 | `backend/src/jacara/pipeline/` | 流水线组装、后台处理、保存结果 |
-| `backend/src/jacara/app.py` | Web API 入口 |
+| `backend/src/jacara/app.py` | Web 服务入口：接口 + 网页 |
 | `backend/src/jacara/worker.py` | 后台任务入口 |
 | `backend/migrations/` | 数据库迁移 |
 | `backend/tests/` | 自动测试 |
@@ -133,7 +154,7 @@ cd web && npm run lint && npm run build
 | 处理流水线 | PDF/图片读取 → OCR → 字段抽取 → 证据对齐 → 规则校验 → 导出 | 完成 |
 | 后端 | 基础设施、数据库、文档 API、后台任务、人工审核、导出 API、账号与权限 | 完成 |
 | 前端 | 登录、文档列表、审核工作台、导出、用户管理、审计日志 | 完成 |
-| 部署 | 一个程序跑起来、Docker Compose、离线安装包 | 进行中 |
+| 部署 | 一个命令跑起来（完成）、Docker Compose、离线安装包 | 进行中 |
 
 ## 授权
 

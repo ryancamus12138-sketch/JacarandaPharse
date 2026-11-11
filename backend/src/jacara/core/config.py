@@ -7,6 +7,7 @@ docker compose 读的也是同一个 .env，所以数据库密码只需要写一
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import SecretStr
@@ -17,6 +18,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     jacara_mode: Literal["personal", "team"] = "personal"
+
+    jacara_api_docs: bool = True
+    """是否打开接口文档页 /docs。给别人用时建议关掉（false）：少暴露一些接口细节。"""
+
+    jacara_web_dir: Path | None = None
+    """打包好的网页在哪个文件夹。不写就用项目里的 web/dist（cd web && npm run build 生成）。"""
 
     postgres_user: str = "jacara"
     postgres_password: SecretStr = SecretStr("")
@@ -52,6 +59,30 @@ class Settings(BaseSettings):
     @property
     def valkey_url(self) -> str:
         return f"redis://{self.valkey_host}:{self.valkey_port}/0"
+
+    @property
+    def web_dist(self) -> Path:
+        """打包好的网页所在的文件夹。"""
+        return self.jacara_web_dir or PROJECT_ROOT / "web" / "dist"
+
+    def weak_secrets(self) -> list[str]:
+        """还是空的、或者还是示例值 change-me 的密钥，返回它们在 .env 里的名字。"""
+        secrets = {
+            "POSTGRES_PASSWORD": self.postgres_password,
+            "S3_ACCESS_KEY": self.s3_access_key,
+            "S3_SECRET_KEY": self.s3_secret_key,
+        }
+        return [
+            name
+            for name, value in secrets.items()
+            if value.get_secret_value().strip().lower() in _PLACEHOLDERS
+        ]
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+"""项目根目录：这个文件在 backend/src/jacara/core/ 下面，往上四层。"""
+
+_PLACEHOLDERS = {"", "change-me"}
 
 
 @lru_cache
