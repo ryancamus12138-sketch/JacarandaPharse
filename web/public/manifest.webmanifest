@@ -1,0 +1,13 @@
+{
+  "name": "JacarandaParse",
+  "short_name": "Jacaranda",
+  "description": "离线文档结构化：上传收据和发票，抽取字段并核对出处",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#6a4fc4",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
