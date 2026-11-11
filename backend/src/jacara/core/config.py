@@ -41,6 +41,9 @@ class Settings(BaseSettings):
 
     model_server: str = "http://127.0.0.1:8080"
 
+    jacara_model: Path | None = None
+    """jacara start 要启动的模型文件（.gguf）。不写就用 models/ 文件夹里唯一的那个 .gguf。"""
+
     max_upload_mb: int = 50
     """上传文件的大小上限（MB）。"""
 
@@ -64,6 +67,17 @@ class Settings(BaseSettings):
     def web_dist(self) -> Path:
         """打包好的网页所在的文件夹。"""
         return self.jacara_web_dir or PROJECT_ROOT / "web" / "dist"
+
+    def find_model(self) -> Path | None:
+        """jacara start 不带 --model 时用哪个模型：先看 JACARA_MODEL，再看 models/ 里的。
+
+        models/ 里有好几个 .gguf 时不猜，返回 None，让人用 --model 或 JACARA_MODEL 指定。
+        """
+        if self.jacara_model is not None:
+            path = self.jacara_model
+            return path if path.is_absolute() else PROJECT_ROOT / path
+        found = sorted((PROJECT_ROOT / "models").glob("*.gguf"))
+        return found[0] if len(found) == 1 else None
 
     def weak_secrets(self) -> list[str]:
         """还是空的、或者还是示例值 change-me 的密钥，返回它们在 .env 里的名字。"""

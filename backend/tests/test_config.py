@@ -53,3 +53,23 @@ def test_web_dist_defaults_to_project_web_folder(tmp_path, monkeypatch):
     assert Settings().web_dist.parts[-2:] == ("web", "dist")
     monkeypatch.setenv("JACARA_WEB_DIR", str(tmp_path / "site"))
     assert Settings().web_dist == tmp_path / "site"
+
+
+def test_model_from_env_is_relative_to_the_project(monkeypatch):
+    from jacara.core.config import PROJECT_ROOT
+
+    monkeypatch.setenv("JACARA_MODEL", "models/a.gguf")
+    assert Settings().find_model() == PROJECT_ROOT / "models" / "a.gguf"
+
+
+def test_model_is_found_only_when_there_is_exactly_one(tmp_path, monkeypatch):
+    """models/ 里只有一个 .gguf 就用它；没有或有好几个都不猜。"""
+    from jacara.core import config
+
+    monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)
+    assert Settings().find_model() is None
+    (tmp_path / "models").mkdir()
+    (tmp_path / "models" / "a.gguf").write_bytes(b"")
+    assert Settings().find_model() == tmp_path / "models" / "a.gguf"
+    (tmp_path / "models" / "b.gguf").write_bytes(b"")
+    assert Settings().find_model() is None

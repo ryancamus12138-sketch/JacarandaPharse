@@ -1,18 +1,26 @@
-# 收据模板：收据上能找到的所有单个字段（14 个）。命令行 --template receipt_full 用。
-# 商品明细是表格，等表格字段做好后再加。说明见 receipt.toml。
+# 收据模板：收据上能找到的所有单个字段（15 个）加商品明细。版本 3：同 receipt.toml 第 3 版。
+# 命令行 --template receipt_full 用。说明见 receipt.toml。
 
 name = "receipt_full"
-version = 1
-title = "收据（全部 14 个单个字段）"
-description = "常用 4 个字段之外，再加公司注册号、地址、时间、收银员、会员、小计、税额、四舍五入、现金、找零。"
-rules = ["total_positive", "date_exists", "date_not_future", "rounding", "cash_covers_total", "change"]
+version = 3
+title = "收据（全部 15 个字段 + 商品明细）"
+description = "常用 5 个字段之外，再加公司注册号、地址、时间、收银员、会员、小计、税额、四舍五入、现金、找零。"
+rules = ["total_positive", "date_exists", "date_not_future", "rounding", "cash_covers_total", "change",
+         "items_sum", "item_line"]
 
 [[fields]]
 name = "merchant"
-label = "商家"
+label = "商家（公司）"
 type = "string"
 required = true
-description = "商家（公司或店铺）名称，常带 SDN BHD、Ltd、有限公司等字样；不是收银员或顾客的人名"
+description = "开这张收据的公司的名称，一般在最上面几行，常带 SDN BHD、S/B、BHD、ENTERPRISE、TRADING、有限公司等字样。只抄公司名本身：不要带后面括号里的公司注册号（如 (123456-X)）、分店名、地址或电话。收据上同时有店名和公司名时，这里填公司名；只有店名时才填店名。不是收银员或顾客的人名"
+
+[[fields]]
+name = "store_name"
+label = "店名"
+type = "string"
+required = false
+description = "顾客看到的店名或品牌名（招牌名），如 STARBUCKS、喜茶。常在公司名上面或旁边，字更大。和公司名一样、或收据上没有单独的店名时，照抄公司名"
 
 [[fields]]
 name = "document_no"
@@ -104,3 +112,34 @@ label = "找零"
 type = "number"
 required = false
 description = "找零（Change）"
+
+# 表格：行数不固定，每行同样的几列。每一格都当作一个字段存（items.2.amount = 第 2 行的金额），
+# 和普通字段一样找出处、校验、审核。
+[[tables]]
+name = "items"
+label = "商品明细"
+description = "买的每一样商品或服务，一样一行，按收据上的顺序，一样都不能漏。一样商品在收据上常占两行：上一行是商品名，下一行是商品编号、数量（如 1x、3x）、单价、金额，这时合成一行，row 填价格那一行。商品名只填名称，不要把商品编号、数量或价格当成商品名。金额后面带 - 的是折扣，金额填负数。不包括小计、税、服务费、调整、总额、现金、找零这些汇总行"
+
+[[tables.columns]]
+name = "name"
+label = "商品"
+type = "string"
+description = "商品名称，照抄原文。不是商品编号（一串数字）"
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+type = "number"
+description = "数量，如 3x 填 3。收据上没写时填 null"
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+type = "number"
+description = "单价，收据上没写时填 null"
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+type = "number"
+description = "这一行的金额（一般是数量 × 单价）"

@@ -20,6 +20,13 @@ class TemplateRuleOut(BaseModel):
     severity: str
 
 
+class TemplateTableOut(BaseModel):
+    name: str
+    label: str
+    description: str
+    columns: list[TemplateFieldOut]
+
+
 class TemplateOut(BaseModel):
     name: str
     version: int
@@ -27,3 +34,5 @@ class TemplateOut(BaseModel):
     description: str
     fields: list[TemplateFieldOut]
     rules: list[TemplateRuleOut]
+    tables: list[TemplateTableOut] = []
+    """表格（例如商品明细）。每一格存成 items.2.amount 这样名字的字段。"""

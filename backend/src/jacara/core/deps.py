@@ -7,7 +7,8 @@ router 里写 session: Session = Depends(get_session)，FastAPI 每次请求会�
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Annotated
+from functools import lru_cache
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -21,6 +22,9 @@ from jacara.core.storage import ObjectStorage
 from jacara.core.storage import get_storage as _get_storage
 from jacara.modules.auth.service import AuthService
 
+if TYPE_CHECKING:
+    from jacara.plugins.ocr.base import OcrEngine
+
 bearer = HTTPBearer(auto_error=False, description="登录接口返回的 token")
 """从请求头 Authorization: Bearer <token> 里取出 token。/docs 页面右上角的 Authorize 按钮就是它。"""
 
@@ -33,6 +37,14 @@ def get_session() -> Iterator[Session]:
 
 def get_storage() -> ObjectStorage:
     return _get_storage()
+
+
+@lru_cache
+def get_ocr() -> OcrEngine:
+    """API 里用的 OCR 引擎（审核时"重新识别这块"用）。模型第一次用到时才加载，之后一直用同一个。"""
+    from jacara.plugins.ocr import create_ocr_engine
+
+    return create_ocr_engine()
 
 
 def get_queue() -> TaskQueue:

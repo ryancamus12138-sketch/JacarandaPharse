@@ -38,14 +38,18 @@ uv run jacara doctor         # 检查 .env、网页和各项服务
 
 ```bash
 docker compose up -d
-uv run jacara start --model models/Qwen3.5-9B-Q4_K_M.gguf
+uv run jacara start
 ```
 
-打开 <http://127.0.0.1:8000>：上传、看处理进度、审核、导出、管理用户。按一次 **Ctrl + C** 全部停止。
+浏览器会自动打开 <http://127.0.0.1:8000>：上传、看处理进度、审核、导出、管理用户。
+按一次 **Ctrl + C**（或在别的终端运行 `uv run jacara stop`）全部停止。
 
 `jacara start` 一起启动大模型、后台任务（worker）和 Web 服务，网页由 Web 服务直接提供。
-启动前会检查：`.env` 里的密钥不能还是 `change-me`，8000、8080 端口不能被占用。
-不写 `--model` 时只启动 worker 和 Web 服务，大模型要自己另外启动。
+
+- 模型文件：`models/` 里只有一个 `.gguf` 时自动用它；有好几个时用 `--model` 或 `.env` 的 `JACARA_MODEL` 指定。
+- 已经在运行了再执行一次：不会报错，直接打开浏览器。要重启就先 `jacara stop`。
+- 8080 上已经有模型服务（例如另开的 `jacara serve`）：直接用它，不再启动一个。
+- 启动前会检查 `.env` 里的密钥不能还是 `change-me`。
 
 ## 开发：四个终端
 

@@ -24,6 +24,22 @@ def test_date_variants_include_common_spellings():
         assert expected in variants
 
 
+@pytest.mark.parametrize(
+    ("iso", "text"),
+    [
+        ("2018-03-05", "DATE: 5/3/2018"),
+        ("2018-01-17", "17/1/2018 13:02"),
+        ("2018-03-28", "28 MAR 18"),
+        ("2017-01-02", "Date:02/JAN/2017"),
+        ("2018-03-25", "25032018"),
+        ("2018-03-04", "20180304"),
+    ],
+)
+def test_more_date_spellings_found_by_eval(iso, text):
+    """评测里抽对了却找不到出处的日期写法（docs/eval/README.md 全量基线）。"""
+    assert _exact_pattern(date_variants(iso)).search(text)
+
+
 def test_two_digit_year_is_found_but_not_inside_a_longer_date():
     """评测发现：收据上常写两位年份（18/03/18）。但 12-01-19 不能匹配到 12-01-1995 的前半截。"""
     pattern = _exact_pattern(date_variants("2018-03-18"))

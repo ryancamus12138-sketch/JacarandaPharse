@@ -38,19 +38,26 @@ def answer(**fields: tuple[object, int | None]) -> str:
 
 def test_values_rows_and_provenance(receipt_page):
     backend = FakeBackend(
-        answer(merchant=("SHOP", 1), document_no=(None, None), date=("2018-12-25", 4), total=(9, 6))
+        answer(
+            merchant=("SHOP", 1),
+            store_name=(None, None),
+            document_no=(None, None),
+            date=("2018-12-25", 4),
+            total=(9, 6),
+        )
     )
     result = LlmExtractor(backend).extract(receipt_page, RECEIPT_FIELDS)
 
     values = {f.name: (f.value, f.row) for f in result.fields}
     assert values == {
         "merchant": ("SHOP", 1),
+        "store_name": (None, None),
         "document_no": (None, None),
         "date": ("2018-12-25", 4),
         "total": (9.0, 6),  # 整数 9 转成 9.0
     }
     assert result.model == "fake-model"
-    assert result.prompt_version == "extract-v2"
+    assert result.prompt_version == "extract-v4"
     assert result.raw_output == backend.answer  # 原始回答原样保留
 
 

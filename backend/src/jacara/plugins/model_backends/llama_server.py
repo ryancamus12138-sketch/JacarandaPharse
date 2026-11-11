@@ -32,9 +32,10 @@ class LlamaServerBackend:
         payload: dict[str, object] = {
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "temperature": c.temperature,
-            "max_tokens": c.max_tokens,
             "chat_template_kwargs": {"enable_thinking": c.enable_thinking},
         }
+        if c.max_tokens is not None:
+            payload["max_tokens"] = c.max_tokens
         if json_schema is not None:
             # 服务端会按这个格式限制模型的输出，模型"想"说别的也说不出来。
             payload["response_format"] = {"type": "json_object", "schema": json_schema}
@@ -65,6 +66,17 @@ class LlamaServerBackend:
 
         data = response.json()
         usage = data.get("usage", {})
+        if data["choices"][0].get("finish_reason") == "length":
+            # 回答写到 max_tokens 就被截断了，后面拿到的一定是半截 JSON，不如直接说清楚
+            limit = (
+                f"{self.config.max_tokens} 个 token"
+                if self.config.max_tokens is not None
+                else "模型服务的上下文长度"
+            )
+            raise ModelBackendError(
+                f"模型的回答太长，写到 {limit} 被截断了。"
+                "可以调大上下文长度（jacara serve --context）后重试。"
+            )
         return ChatResult(
             text=data["choices"][0]["message"]["content"],
             model=data.get("model", "unknown"),

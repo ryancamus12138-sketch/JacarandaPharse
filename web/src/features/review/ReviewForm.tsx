@@ -49,14 +49,15 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
 
   return (
     // 点表单里面时不要再触发外面那一行的"选中"
-    <div onClick={(e) => e.stopPropagation()} style={{ margin: '8px 0 0 88px' }}>
+    <div onClick={(e) => e.stopPropagation()} style={{ margin: '8px 0 0 0' }}>
       <Form<ReviewFormValues>
         form={form}
         size="small"
         layout="vertical"
         initialValues={{
           value: v.current_value ?? '',
-          missing: v.current_value === null,
+          // 人工新加的格子本来就是空的，等着填，不算"原文里没有"
+          missing: v.current_value === null && v.origin !== 'manual',
           reason: '',
         }}
         onFinish={save}
@@ -70,6 +71,9 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
         >
           <Input placeholder={PLACEHOLDER[v.type]} disabled={missing} autoComplete="off" />
         </Form.Item>
+        <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>
+          也可以按住 Alt（Option），在左边原图上点文字直接填入
+        </div>
         <Form.Item name="missing" valuePropName="checked" style={{ marginBottom: 8 }}>
           <Checkbox>原文里没有这个字段</Checkbox>
         </Form.Item>

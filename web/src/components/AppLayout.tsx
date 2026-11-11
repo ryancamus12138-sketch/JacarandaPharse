@@ -42,10 +42,15 @@ export function AppLayout() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Layout.Sider theme="light" width={200} style={{ borderRight: '1px solid #f0f0f0' }}>
-        <Typography.Title level={5} style={{ padding: '20px 24px 8px', margin: 0 }}>
-          JacarandaParse
-        </Typography.Title>
+      <Layout.Sider theme="light" width={216} style={{ borderRight: '1px solid #f0f0f0' }}>
+        <Flex align="center" gap={8} style={{ padding: '20px 16px 8px' }}>
+          {/* 图标在 web/public 里，和浏览器标签页上的是同一个 */}
+          <img src="/icon-192.png" alt="" width={24} height={24} style={{ flexShrink: 0 }} />
+          {/* nowrap：名字不换行 */}
+          <Typography.Title level={5} style={{ margin: 0, whiteSpace: 'nowrap' }}>
+            JacarandaParse
+          </Typography.Title>
+        </Flex>
         <Menu
           mode="inline"
           items={items}

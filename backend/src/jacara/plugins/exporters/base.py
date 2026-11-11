@@ -13,6 +13,7 @@ from typing import Protocol
 
 from jacara.plugins.aligners.base import AlignedField
 from jacara.plugins.extractors.base import ExtractionResult
+from jacara.plugins.ocr.base import OcrPage
 from jacara.plugins.validators.base import ValidationResult
 
 
@@ -58,6 +59,9 @@ class DocumentReport:
 
     reviews: Mapping[str, Review] = field(default_factory=dict)
     """字段名 → 人工审核结果。刚处理完、还没人审核时是空的（命令行导出就是这样）。"""
+
+    ocr_page: OcrPage | None = None
+    """这一页的 OCR 结果。流水线刚跑完时有，存进数据库给审核页面"点原文填值"用；导出器不用。"""
 
 
 class Exporter(Protocol):

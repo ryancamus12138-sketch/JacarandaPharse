@@ -1,6 +1,8 @@
-"""人工审核的业务逻辑：修改字段、确认字段、查看修改历史。
+"""人工审核的业务逻辑：修改字段、确认字段、从原文选取、表格增删行、查看修改历史。
 
 原值永远不改（项目规则 2）：每次审核都新增一条 value_revisions，当前值取最新一条。
+删除一行也是新增记录（action="delete"），不真的删；
+增加一行是新增 origin="manual" 的字段（ADR 0027）。
 """
 
 from __future__ import annotations
@@ -8,16 +10,29 @@ from __future__ import annotations
 import math
 import uuid
 from datetime import date
+from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
-from jacara.models import ExtractedValue, ValueRevision
+from jacara.core.textvalue import parse_date, parse_number
+from jacara.models import ExtractedValue, Extraction, ValueRevision
 from jacara.modules.audit.service import record
 from jacara.modules.fields.repository import ValueRepository
-from jacara.modules.fields.schemas import RevisionIn, RevisionOut, ValueHistory, ValueOut
+from jacara.modules.fields.schemas import (
+    ConfirmManyOut,
+    RevisionIn,
+    RevisionOut,
+    RowChange,
+    RowIn,
+    ValueHistory,
+    ValueOut,
+)
+from jacara.pipeline.store import evidence_from_ocr
+from jacara.plugins.extractors.base import cell_name, split_cell_name
+from jacara.templates import TemplateError, load_template
 
 REVIEWABLE = {"done", "reviewed"}
 """这些状态的文档才能审核：处理完了、有结果。"""
@@ -52,8 +67,42 @@ class FieldService:
         document = value.extraction.document
         if document.status not in REVIEWABLE:
             raise FieldError("not_ready", f"文档状态是 {document.status}，处理完成后才能审核")
+        if value.deleted:
+            raise FieldError("invalid", "这一行已经删除了，要改的话先恢复这一行")
 
-        if change.action == "edit":
+        evidence: dict[str, Any] | None = None
+        if change.source_lines is not None and change.source_box is not None:
+            raise FieldError("invalid", "从原文选取和框选只能用一种")
+        if change.action == "edit" and change.source_box is not None:
+            # 框选重新识别：值是人看过、确认的；出处就是框出的区域
+            new_value = normalize(value.type, change.value)
+            if new_value is None:
+                raise FieldError("invalid", "框里没有要填的值，请框住要识别的文字")
+            x0, y0, x1, y1 = change.source_box
+            evidence = {
+                "row": None,
+                "row_text": new_value,
+                "bbox": [
+                    round(min(x0, x1), 1),
+                    round(min(y0, y1), 1),
+                    round(max(x0, x1), 1),
+                    round(max(y0, y1), 1),
+                ],
+                "confidence": 1.0,  # 人确认过
+                "similarity": 1.0,
+                "drawn": True,
+            }
+            reason = change.reason.strip() or "框选重新识别"
+        elif change.action == "edit" and change.source_lines is not None:
+            # 从原文选取：值从选的文字读出来，出处换成选的这几块
+            lines = self._ocr_lines(value.extraction, change.source_lines)
+            evidence = evidence_from_ocr(lines)
+            if change.value is None:
+                new_value = value_from_text(value.type, " ".join(ln["text"] for ln in lines))
+            else:
+                new_value = normalize(value.type, change.value)
+            reason = change.reason.strip() or "从原文选取"
+        elif change.action == "edit":
             new_value = normalize(value.type, change.value)
             reason = change.reason.strip()
             if not reason:
@@ -63,21 +112,7 @@ class FieldService:
         else:
             new_value, reason = value.current_value, change.reason.strip()
 
-        revision = ValueRevision(
-            original=value,
-            seq=len(value.revisions) + 1,
-            action=change.action,
-            new_value=new_value,
-            reason=reason,
-            user_id=self.owner.user_id,
-            team_id=value.team_id,
-        )
-        try:
-            self.repo.add_revision(revision)
-        except IntegrityError as err:
-            # 两个人同时审核同一个字段：seq 一样，数据库只让一个写进去
-            raise FieldError("conflict", "这个字段刚被别人审核过，请刷新后再试") from err
-
+        self._add(value, change.action, new_value, reason, evidence)
         record(
             self.session,
             self.owner,
@@ -87,10 +122,193 @@ class FieldService:
             document_id=str(document.id),
             field=value.name,
             value=new_value,
+            picked=evidence is not None,
         )
+        self._touch(value.extraction)
+        return ValueOut.model_validate(value)
+
+    def confirm_many(self, ids: list[uuid.UUID], reason: str) -> ConfirmManyOut:
+        """一次确认好几个字段：每个字段各记一条 confirm 记录，审计日志记一条（带上全部 id）。
+
+        删掉的行跳过；同一个字段只确认一次。
+        """
+        values = [self._find(i) for i in dict.fromkeys(ids)]
+        for value in values:
+            require(self.owner, "value:review", value.team_id)
+            if value.extraction.document.status not in REVIEWABLE:
+                status = value.extraction.document.status
+                raise FieldError("not_ready", f"文档状态是 {status}，处理完成后才能审核")
+        reason = reason.strip() or "批量确认"
+        done = [v for v in values if not v.deleted]
+        for value in done:
+            self._add(value, "confirm", value.current_value, reason, None)
+            self._touch(value.extraction)
+        if done:
+            record(
+                self.session,
+                self.owner,
+                "value:confirm_many",
+                "extraction",
+                done[0].extraction_id,
+                document_id=str(done[0].extraction.document_id),
+                count=len(done),
+                value_ids=[str(v.id) for v in done],
+                reason=reason,
+            )
+        return ConfirmManyOut(confirmed=len(done), skipped=len(values) - len(done))
+
+    # ---- 表格的行 ----
+
+    def add_row(self, extraction_id: uuid.UUID, table: str, row: RowIn) -> list[ValueOut]:
+        """在表格里加一行：每一列一个空字段（origin="manual"），之后用修改或"从原文选取"填值。"""
+        extraction = self._extraction(extraction_id)
+        require(self.owner, "value:review", extraction.team_id)
+        self._check_reviewable(extraction)
+        columns = _columns(extraction, table)
+        rows = _rows(extraction, table)
+        if row.after not in (None, 0) and row.after not in rows:
+            raise FieldError("not_found", f"表格 {table} 里没有第 {row.after} 行")
+
+        index = max(rows, default=0) + 1  # 新行的编号：比现有的都大，不和任何一行重名
+        start, end = _gap(extraction, table, rows, row.after)
+        position = max((v.position for v in extraction.values), default=-1) + 1
+        created: list[ExtractedValue] = []
+        for k, (column, type_) in enumerate(columns):
+            value = ExtractedValue(
+                extraction=extraction,
+                position=position + k,
+                sort_key=start + (end - start) * (k + 1) / (len(columns) + 1),
+                origin="manual",
+                name=cell_name(table, index, column),
+                type=type_,
+                value=None,
+                row_no=None,
+                status="empty",
+                needs_review=False,
+                note="审核时人工增加的行",
+                evidence=None,
+                user_id=self.owner.user_id,
+                team_id=extraction.team_id,
+            )
+            self.session.add(value)
+            created.append(value)
+        self.session.flush()
+        record(
+            self.session,
+            self.owner,
+            "value:add_row",
+            "extraction",
+            extraction.id,
+            document_id=str(extraction.document_id),
+            table=table,
+            row=index,
+            after=row.after,
+            reason=row.reason.strip(),
+        )
+        self._touch(extraction)
+        for value in created:
+            self.session.refresh(value, ["revisions"])
+        return [ValueOut.model_validate(v) for v in created]
+
+    def delete_row(
+        self, extraction_id: uuid.UUID, table: str, index: int, change: RowChange
+    ) -> list[ValueOut]:
+        """删除一行：每一格新增一条 delete 记录。不真的删，可以恢复。"""
+        return self._row_action(extraction_id, table, index, change, "delete")
+
+    def restore_row(
+        self, extraction_id: uuid.UUID, table: str, index: int, change: RowChange
+    ) -> list[ValueOut]:
+        """恢复删掉的一行：每一格新增一条 restore 记录，值是删除前的值。"""
+        return self._row_action(extraction_id, table, index, change, "restore")
+
+    def _row_action(
+        self, extraction_id: uuid.UUID, table: str, index: int, change: RowChange, action: str
+    ) -> list[ValueOut]:
+        extraction = self._extraction(extraction_id)
+        require(self.owner, "value:review", extraction.team_id)
+        self._check_reviewable(extraction)
+        cells = _rows(extraction, table).get(index)
+        if not cells:
+            raise FieldError("not_found", f"表格 {table} 里没有第 {index} 行")
+        reason = change.reason.strip()
+        if not reason:
+            what = "删除" if action == "delete" else "恢复"
+            raise FieldError("invalid", f"{what}一行时请写明原因，以后查记录时能看懂")
+        deleted = all(v.deleted for v in cells)
+        if action == "delete" and deleted:
+            raise FieldError("invalid", "这一行已经删除了")
+        if action == "restore" and not deleted:
+            raise FieldError("invalid", "这一行没有被删除")
+        for value in cells:
+            self._add(value, action, value.current_value, reason, None)
+        record(
+            self.session,
+            self.owner,
+            f"value:{action}_row",
+            "extraction",
+            extraction.id,
+            document_id=str(extraction.document_id),
+            table=table,
+            row=index,
+            reason=reason,
+        )
+        self._touch(extraction)
+        return [ValueOut.model_validate(v) for v in cells]
+
+    # ---- 共用 ----
+
+    def _add(
+        self,
+        value: ExtractedValue,
+        action: str,
+        new_value: str | None,
+        reason: str,
+        evidence: dict[str, Any] | None,
+    ) -> None:
+        revision = ValueRevision(
+            original=value,
+            seq=len(value.revisions) + 1,
+            action=action,
+            new_value=new_value,
+            reason=reason,
+            evidence=evidence,
+            user_id=self.owner.user_id,
+            team_id=value.team_id,
+        )
+        try:
+            self.repo.add_revision(revision)
+        except IntegrityError as err:
+            # 两个人同时审核同一个字段：seq 一样，数据库只让一个写进去
+            raise FieldError("conflict", "这个字段刚被别人审核过，请刷新后再试") from err
+
+    def _touch(self, extraction: Extraction) -> None:
+        document = extraction.document
         if document.status == "reviewed":
             document.status = "done"  # 审核完的文档又改了，要重新点"完成审核"
-        return ValueOut.model_validate(value)
+
+    def _check_reviewable(self, extraction: Extraction) -> None:
+        status = extraction.document.status
+        if status not in REVIEWABLE:
+            raise FieldError("not_ready", f"文档状态是 {status}，处理完成后才能审核")
+
+    def _extraction(self, extraction_id: uuid.UUID) -> Extraction:
+        extraction = self.repo.get_extraction(extraction_id, self.owner.team_id)
+        if extraction is None:
+            raise FieldError("not_found", "找不到这一页的抽取结果")
+        return extraction
+
+    def _ocr_lines(self, extraction: Extraction, indexes: list[int]) -> list[dict[str, Any]]:
+        lines: list[dict[str, Any]] = (extraction.ocr or {}).get("lines", [])
+        if not lines:
+            raise FieldError(
+                "invalid", "这一页没有保存 OCR 结果（新功能上线前处理的），不能从原文选取"
+            )
+        if not indexes:
+            raise FieldError("invalid", "请至少选一块文字")
+        if any(not 0 <= i < len(lines) for i in indexes):
+            raise FieldError("invalid", "选的文字块不存在，请刷新后再试")
+        return [lines[i] for i in dict.fromkeys(indexes)]
 
     def _find(self, value_id: uuid.UUID) -> ExtractedValue:
         value = self.repo.get(value_id, self.owner.team_id)
@@ -120,3 +338,73 @@ def normalize(type_: str, raw: str | None) -> str | None:
                 "invalid", f"{text!r} 不是日期，请写成 2018-12-25 这样的格式"
             ) from None
     return text
+
+
+def value_from_text(type_: str, text: str) -> str | None:
+    """从原文选的文字里读出值，存成和模型原值一样的格式。"""
+    if type_ == "number":
+        number = parse_number(text)
+        if number is None:
+            raise FieldError("invalid", f"选的文字「{text}」里没有数字")
+        return str(number)
+    if type_ == "date":
+        day = parse_date(text)
+        if day is None:
+            raise FieldError("invalid", f"选的文字「{text}」读不出日期，请手动填写")
+        return day.isoformat()
+    return " ".join(text.split()) or None
+
+
+def _rows(extraction: Extraction, table: str) -> dict[int, list[ExtractedValue]]:
+    """表格的每一行（按行编号）：这一行的所有格子。"""
+    rows: dict[int, list[ExtractedValue]] = {}
+    for value in extraction.values:
+        cell = split_cell_name(value.name)
+        if cell and cell[0] == table:
+            rows.setdefault(cell[1], []).append(value)
+    return rows
+
+
+def _columns(extraction: Extraction, table: str) -> list[tuple[str, str]]:
+    """新行有哪些列（列名、类型）：按模板；模板找不到就照表格里已有的行。"""
+    try:
+        template = load_template(extraction.template)
+    except TemplateError:
+        template = None
+    if template is not None:
+        for t in template.tables:
+            if t.name == table:
+                return [(c.name, c.type) for c in t.columns]
+    columns: dict[str, str] = {}
+    for value in extraction.values:
+        cell = split_cell_name(value.name)
+        if cell and cell[0] == table:
+            columns.setdefault(cell[2], value.type)
+    if not columns:
+        raise FieldError("not_found", f"这一页没有叫 {table} 的表格")
+    return list(columns.items())
+
+
+def _gap(
+    extraction: Extraction,
+    table: str,
+    rows: dict[int, list[ExtractedValue]],
+    after: int | None,
+) -> tuple[float, float]:
+    """新行的显示顺序放在哪两个数之间：after 那一行的最后一格，和它后面紧接着的字段。
+
+    after=0 表示插在表格最前面：放在第一行的第一格之前。
+    """
+    keys = sorted(v.sort_key for v in extraction.values)
+    if after == 0 and rows:
+        first = min(v.sort_key for cells in rows.values() for v in cells)
+        earlier = [k for k in keys if k < first]
+        return (earlier[-1] if earlier else first - 1.0), first
+    if after:
+        start = max(v.sort_key for v in rows[after])
+    elif rows:
+        start = max(v.sort_key for cells in rows.values() for v in cells)
+    else:
+        start = keys[-1] if keys else 0.0
+    later = [k for k in keys if k > start]
+    return start, (later[0] if later else start + 1.0)

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
@@ -29,6 +30,32 @@ class FieldSpec:
 
 
 @dataclass(frozen=True)
+class TableSpec:
+    """要抽取的一张表（例如商品明细）：每行有同样的几列，行数不固定。"""
+
+    name: str
+    description: str
+    columns: tuple[FieldSpec, ...]
+
+
+_CELL = re.compile(r"^([a-z][a-z0-9_]*)\.(\d+)\.([a-z][a-z0-9_]*)$")
+
+
+def cell_name(table: str, index: int, column: str) -> str:
+    """表格里一格的字段名：items.2.amount 是商品明细第 2 行的金额。行号从 1 开始。
+
+    表格的每一格都当作一个普通字段：找出处、规则校验、人工审核、修改历史都不用另写一套。
+    """
+    return f"{table}.{index}.{column}"
+
+
+def split_cell_name(name: str) -> tuple[str, int, str] | None:
+    """cell_name 的反方向：items.2.amount → ("items", 2, "amount")。普通字段返回 None。"""
+    m = _CELL.match(name)
+    return (m[1], int(m[2]), m[3]) if m else None
+
+
+@dataclass(frozen=True)
 class ExtractedField:
     """抽出来的一个字段。value 为 None 表示原文里找不到。
 
@@ -36,6 +63,7 @@ class ExtractedField:
     """
 
     name: str
+    """字段名。表格里的格子是 items.2.amount 这样的名字（见 cell_name）。"""
     type: FieldType
     value: str | float | None
     row: int | None = None
@@ -62,6 +90,8 @@ class Extractor(Protocol):
 
     name: str
 
-    def extract(self, page: OcrPage, fields: Sequence[FieldSpec]) -> ExtractionResult:
-        """从一页 OCR 结果里抽出指定的字段。"""
+    def extract(
+        self, page: OcrPage, fields: Sequence[FieldSpec], tables: Sequence[TableSpec] = ()
+    ) -> ExtractionResult:
+        """从一页 OCR 结果里抽出指定的字段和表格。表格的每一格单独作为一个字段返回。"""
         ...

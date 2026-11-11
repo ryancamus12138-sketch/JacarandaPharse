@@ -26,6 +26,12 @@ class Rule:
 
     check 返回 None 表示通过，返回一句话表示不通过（这句话直接给人看）。
     needs 里的字段只要有一个没值，这条规则就跳过，不算错。
+
+    表格（商品明细）的两种规则：
+    - needs 里写 items.*.amount：表示"表里所有行的金额"，至少有一行有值才检查。
+    - per_row="items"：每一行单独检查一次，needs 写列名（quantity、amount），
+      check 拿到的是这一行的值。
+    flags：不通过时标黄哪些字段。不写就标 needs 里的全部。
     """
 
     id: str
@@ -33,6 +39,8 @@ class Rule:
     needs: tuple[str, ...]
     check: Callable[[Values], str | None]
     severity: Severity = "error"
+    per_row: str | None = None
+    flags: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,6 @@
 """流水线：一个文件 → 每一页的 DocumentReport。
 
-读取 → OCR → 抽取 → 对齐 → 校验。抽哪些字段、查哪些规则，由模板决定（templates/*.toml）。
+读取 → OCR → 抽取 → 对齐 → 校验。抽哪些字段和表格、查哪些规则，由模板决定（templates/*.toml）。
 命令行（jacara extract）和后台任务（jacara worker）用的是同一份代码，所以两边的结果一定一样。
 这里只计算、不打印、不碰数据库。
 """
@@ -37,7 +37,7 @@ class Pipeline:
     ) -> DocumentReport:
         """一页走完 抽取 → 对齐 → 校验。"""
         tpl = load_template(template)
-        result = self.extractor.extract(page, tpl.specs)
+        result = self.extractor.extract(page, tpl.specs, tpl.table_specs)
         return DocumentReport(
             source=source,
             extraction=result,
@@ -49,6 +49,7 @@ class Pipeline:
             text_source=page.engine if page.engine == "pdf-text" else "ocr",
             template=tpl.name,
             template_version=tpl.version,
+            ocr_page=page,
         )
 
     def run(

@@ -86,15 +86,15 @@ def to_markdown(result: EvalResult, meta: dict[str, object]) -> str:
         f"数据集 {meta['dataset']} · {meta['samples']} 张（失败 {meta['failed']}）· "
         f"模型 {meta['model']} · 提示词 {meta['prompt_version']} · 用时 {meta['seconds']} 秒\n\n"
     )
-    table = [
-        "| 字段 | 数量 | 准确率 | 出处覆盖率 | 错值拦截率 | 误报率 | 放行率 | 放行准确率 |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
-    ]
+    headers = ["字段", "数量", "准确率", "宽松准确率", "出处覆盖率"]
+    headers += ["错值拦截率", "误报率", "放行率", "放行准确率"]
+    table = ["| " + " | ".join(headers) + " |", "| " + " | ".join("---" for _ in headers) + " |"]
     for s in result.summaries:
         cells = [
             s.field,
             str(s.total),
             _pct(s.accuracy),
+            _pct(s.close_accuracy),
             _pct(s.evidence_rate),
             _pct(s.catch_rate),
             _pct(s.false_alarm_rate),

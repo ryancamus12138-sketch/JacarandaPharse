@@ -21,6 +21,7 @@ results/
 models/
 *.gguf
 data/
+.run/
 
 # ===== 前端 =====
 node_modules/

@@ -18,6 +18,7 @@ from jacara.modules.audit.router import router as audit_router
 from jacara.modules.auth.router import auth_router, users_router
 from jacara.modules.documents.router import router as documents_router
 from jacara.modules.fields.router import router as fields_router
+from jacara.modules.fields.router import rows_router
 from jacara.modules.templates.router import router as templates_router
 
 API_PREFIX = "/api/v1"
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
     api.include_router(auth_router)
     api.include_router(documents_router)
     api.include_router(fields_router)
+    api.include_router(rows_router)
     api.include_router(users_router)
     api.include_router(audit_router)
     api.include_router(templates_router)

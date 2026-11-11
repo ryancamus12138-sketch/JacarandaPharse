@@ -12,6 +12,8 @@
 - 误报率：对的值里，有多少也被标黄了（让人白看一眼）
 - 放行率：没标黄、直接放行的值占多少（省下的人工）
 - 放行准确率：直接放行的值有多准——用户能不能信任"没标黄的就是对的"，看的就是它
+- 宽松准确率：文字只差一两个字母（多半是 OCR 认错字，如 LJAN / LIAN）也算对。
+  和准确率的差距 = OCR 错字的影响；剩下的错才是"抽错了"（选错了值、多抄少抄）
 """
 
 from __future__ import annotations
@@ -20,11 +22,10 @@ import re
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import date
+from difflib import SequenceMatcher
 
+from jacara.core.textvalue import parse_date
 from jacara.plugins.exporters import DocumentReport
-
-_MONTH_NAMES = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
-_MONTHS = {m: i for i, m in enumerate(_MONTH_NAMES, 1)}
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,8 @@ class FieldScore:
     correct: bool
     has_evidence: bool
     flagged: bool
+    close: bool = False
+    """宽松地看对不对：文字相似度 ≥ 90%（只差 OCR 错字）。数字和日期和 correct 一样。"""
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -46,6 +49,7 @@ class Summary:
     field: str
     total: int
     accuracy: float
+    close_accuracy: float
     evidence_rate: float
     catch_rate: float | None
     """错的值一个都没有时，没法算拦截率，是 None。"""
@@ -72,6 +76,17 @@ def same(field_type: str, predicted: str | float | None, gold: str) -> bool:
     return _letters(str(predicted)) == _letters(gold)
 
 
+def close_enough(field_type: str, predicted: str | float | None, gold: str) -> bool:
+    """宽松比较：文字只看字母和数字，相似度 ≥ 90% 就算对；其他类型和 same() 一样。"""
+    if field_type != "string" or not gold or predicted is None:
+        return same(field_type, predicted, gold)
+    a, b = _letters(str(predicted)), _letters(gold)
+    return SequenceMatcher(None, a, b).ratio() >= CLOSE_RATIO
+
+
+CLOSE_RATIO = 0.9
+
+
 def score_report(
     sample_id: str, answers: dict[str, str], report: DocumentReport
 ) -> list[FieldScore]:
@@ -92,6 +107,7 @@ def score_report(
                 correct=same(aligned.field.type, value, answers[name]),
                 has_evidence=aligned.evidence is not None,
                 flagged=aligned.needs_review or name in rule_failed,
+                close=close_enough(aligned.field.type, value, answers[name]),
             )
         )
     return scores
@@ -114,6 +130,7 @@ def _summary(name: str, scores: Sequence[FieldScore]) -> Summary:
         field=name,
         total=len(scores),
         accuracy=_rate(right, scores),
+        close_accuracy=_rate([s for s in scores if s.correct or s.close], scores),
         evidence_rate=_rate([s for s in scores if s.has_evidence], scores),
         catch_rate=_rate([s for s in wrong if s.flagged], wrong) if wrong else None,
         false_alarm_rate=_rate([s for s in right if s.flagged], right) if right else None,
@@ -141,34 +158,5 @@ def _parse_number(text: str) -> float | None:
 
 
 def _parse_date(text: str) -> date | None:
-    """SROIE 的日期写法很多：25/12/2018、15-01-19、02 MAR 2018、OCT 3, 2016、20180304。
-
-    马来西亚一般是 日/月/年；月份大于 12 时说明这张是 月/日/年，就对调。
-    """
-    t = text.strip().upper()
-    try:
-        if m := re.search(r"(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})", t):
-            return date(int(m[1]), int(m[2]), int(m[3]))
-        if m := re.search(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})", t):
-            day, month = int(m[1]), int(m[2])
-            if month > 12:
-                day, month = month, day
-            return date(_year(m[3]), month, day)
-        if m := re.fullmatch(r"(\d{8})", t):
-            s = m[1]
-            if s[:2] in ("19", "20"):
-                return date(int(s[:4]), int(s[4:6]), int(s[6:]))
-            return date(int(s[4:]), int(s[2:4]), int(s[:2]))
-        if m := re.search(r"(\d{1,2})\s*[-/]?\s*([A-Z]{3})[A-Z]*\s*[-/,]?\s*(\d{2,4})", t):
-            month = _MONTHS.get(m[2])
-            return date(_year(m[3]), month, int(m[1])) if month else None
-        if m := re.search(r"([A-Z]{3})[A-Z]*\.?\s+(\d{1,2}),?\s+(\d{2,4})", t):
-            month = _MONTHS.get(m[1])
-            return date(_year(m[3]), month, int(m[2])) if month else None
-    except ValueError:
-        return None
-    return None
-
-
-def _year(text: str) -> int:
-    return int(text) + 2000 if len(text) == 2 else int(text)
+    """SROIE 的日期写法很多，读法和审核时"点原文填值"一样（core/textvalue.py）。"""
+    return parse_date(text)

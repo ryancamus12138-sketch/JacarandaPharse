@@ -26,6 +26,18 @@ class ValueRepository:
         )
         return self.session.scalars(query).one_or_none()
 
+    def get_extraction(self, extraction_id: uuid.UUID, team_id: uuid.UUID) -> Extraction | None:
+        """取一页的抽取结果，连同全部字段、审核记录和文档（增删行要看整张表）。"""
+        query = (
+            select(Extraction)
+            .where(Extraction.id == extraction_id, Extraction.team_id == team_id)
+            .options(
+                selectinload(Extraction.values).selectinload(ExtractedValue.revisions),
+                selectinload(Extraction.document),
+            )
+        )
+        return self.session.scalars(query).one_or_none()
+
     def add_revision(self, revision: ValueRevision) -> ValueRevision:
         self.session.add(revision)
         self.session.flush()  # 马上写入：seq 重复（两个人同时改）会在这里报错

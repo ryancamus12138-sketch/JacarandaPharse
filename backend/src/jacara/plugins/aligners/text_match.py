@@ -12,7 +12,7 @@ from datetime import date
 from difflib import SequenceMatcher
 
 from jacara.plugins.aligners.base import AlignedField, Evidence
-from jacara.plugins.extractors.base import ExtractedField, ExtractionResult
+from jacara.plugins.extractors.base import ExtractedField, ExtractionResult, split_cell_name
 from jacara.plugins.ocr.base import OcrLine, OcrPage
 from jacara.plugins.ocr.layout import OcrRow, group_rows
 
@@ -28,6 +28,9 @@ def number_variants(value: float, *, loose: bool) -> list[str]:
     loose=True 时加上不带小数的写法（9、1,234）。这种写法太容易撞上数量、编号，
     所以只在模型指定的那一行里用。
     """
+    if value < 0:
+        # 折扣：收据上常写成 6.00-、-6.00 或 (6.00)，找数字本身就行
+        return number_variants(-value, loose=loose)
     variants = [f"{value:.2f}", f"{value:,.2f}"]
     if loose and value == int(value):
         variants += [str(int(value)), f"{int(value):,}"]
@@ -35,22 +38,31 @@ def number_variants(value: float, *, loose: bool) -> list[str]:
 
 
 def date_variants(value: str) -> list[str]:
-    """一个 YYYY-MM-DD 日期在单据上可能的写法。"""
+    """一个 YYYY-MM-DD 日期在单据上可能的写法。
+
+    评测发现收据上的写法很多（docs/eval/README.md）：补不补 0（5/3/2018）、两位年份（18/03/18）、
+    月份写英文（28 MAR 18、02/JAN/2017）、不带分隔符（25032018、20180304）。
+    """
     try:
         d = date.fromisoformat(value)
     except ValueError:
         return [value]
     dd, mm, yyyy = f"{d.day:02d}", f"{d.month:02d}", f"{d.year}"
-    yy = yyyy[2:]  # 两位年份：收据上常写 18/03/18（评测发现，见 docs/eval/README.md）
+    day, month, yy = str(d.day), str(d.month), yyyy[2:]
     variants = [value]
     for sep in ("/", "-", "."):
-        variants += [f"{dd}{sep}{mm}{sep}{yyyy}", f"{mm}{sep}{dd}{sep}{yyyy}"]
         variants += [f"{yyyy}{sep}{mm}{sep}{dd}"]
-        variants += [f"{dd}{sep}{mm}{sep}{yy}", f"{mm}{sep}{dd}{sep}{yy}"]
+        for year in (yyyy, yy):
+            variants += [f"{dd}{sep}{mm}{sep}{year}", f"{mm}{sep}{dd}{sep}{year}"]
+            variants += [f"{day}{sep}{month}{sep}{year}", f"{month}{sep}{day}{sep}{year}"]
+    variants += [f"{dd}{mm}{yyyy}", f"{yyyy}{mm}{dd}"]
     variants += [f"{d.year}年{d.month}月{d.day}日", f"{yyyy}年{mm}月{dd}日"]
-    for month in (d.strftime("%B"), d.strftime("%b")):  # August、Aug
-        variants += [f"{month} {d.day}, {yyyy}", f"{d.day} {month} {yyyy}"]
-        variants += [f"{dd} {month} {yyyy}", f"{d.day}-{month}-{yyyy}", f"{dd}-{month}-{yyyy}"]
+    for name in (d.strftime("%B"), d.strftime("%b")):  # August、Aug
+        variants += [f"{name} {d.day}, {yyyy}", f"{name} {dd}, {yyyy}"]
+        for year in (yyyy, yy):
+            for first in (day, dd):
+                variants += [f"{first} {name} {year}", f"{first}-{name}-{year}"]
+                variants += [f"{first}/{name}/{year}", f"{first}{name}{year}"]
     return list(dict.fromkeys(variants))
 
 
@@ -99,6 +111,9 @@ class TextMatchAligner:
 
         claimed = [r for r in rows if r.index == field.row]
         others = [r for r in rows if r.index != field.row]
+        if field.row is not None:
+            # 先找模型说的那一行附近：同一个价格（9.99）在收据上常出现好几次
+            others.sort(key=lambda r: abs(r.index - (field.row or 0)))
 
         if field.type == "string":
             evidence = self._find_text(str(field.value), claimed + others)
@@ -118,10 +133,14 @@ class TextMatchAligner:
         notes: list[str] = []
         if evidence.similarity < 1.0:
             notes.append(f"原文里只有相似的文字（相似度 {evidence.similarity:.2f}）")
-        if field.row is not None and evidence.row != field.row:
+        if field.row is not None and abs(evidence.row - field.row) > _row_slack(field):
             notes.append(f"模型说在第 {field.row} 行，实际在第 {evidence.row} 行")
         if evidence.confidence < self.min_confidence:
             notes.append(f"原文这里 OCR 置信度只有 {evidence.confidence:.2f}")
+        if field.type == "number" and isinstance(field.value, float):
+            sign = _sign_mismatch(field.value, evidence)
+            if sign:
+                notes.append(sign)
 
         status = "matched" if evidence.similarity == 1.0 else "fuzzy"
         return AlignedField(field, status, evidence, bool(notes), "；".join(notes))
@@ -134,11 +153,16 @@ class TextMatchAligner:
         return None
 
     def _find_text(self, value: str, rows: list[OcrRow]) -> Evidence | None:
-        """文字字段：逐行找；地址这种长文字可能跨几行，所以也试连续 2～4 行拼起来。"""
+        """文字字段：逐行找；地址这种长文字可能跨几行，所以也试连续 2～4 行拼起来。
+
+        rows 的顺序就是优先顺序（模型说的那一行在最前，然后由近到远）。相似度一样时，
+        行数少的优先、排在前面的优先：短文字不会因为"拼了 4 行里包含它"就跑到远处去。
+        """
         needle = _squash(value)
         by_index = {r.index: r for r in rows}
-        best: tuple[float, list[OcrRow]] | None = None
-        for start in rows:
+        best: tuple[float, int, int, list[OcrRow]] | None = None
+        """(相似度, -行数, -优先顺序, 这几行)：越大越好。"""
+        for order, start in enumerate(rows):
             for size in range(1, _MAX_SPAN + 1):
                 span = [
                     by_index[i] for i in range(start.index, start.index + size) if i in by_index
@@ -146,18 +170,42 @@ class TextMatchAligner:
                 if len(span) < size:
                     break
                 score = _best_similarity(needle, _squash("".join(r.text for r in span)))
-                if score >= self.min_similarity and (best is None or score > best[0]):
-                    best = (score, span)
+                key = (score, -size, -order)
+                if score >= self.min_similarity and (best is None or key > best[:3]):
+                    best = (*key, span)
                 if score == 1.0:
                     break  # 再多拼几行也只会更长，没必要
-            if best is not None and best[0] == 1.0:
-                break
+            if best is not None and best[:2] == (1.0, -1):
+                break  # 一模一样、只占一行：后面的不可能更好
         if best is None:
             return None
-        score, span = best
+        score, _, _, span = best
         lines = tuple(ln for r in span for ln in r.lines)
         row_text = " / ".join(r.text for r in span)
         return Evidence(span[0].index, row_text, _lines_for(needle, lines), round(score, 3))
+
+
+def _sign_mismatch(value: float, evidence: Evidence) -> str | None:
+    """正负号对不上：原文写 "6.00-"（折扣、退款），值却是正的 6.0；或者反过来。
+
+    找出处时不看正负号（收据上负号的写法太多），所以单独查一次。
+    """
+    if value == 0:
+        return None
+    number = re.escape(f"{abs(value):.2f}")
+    text = " ".join(line.text for line in evidence.lines)
+    negative = re.search(rf"(-\s*{number}|\(\s*{number}\s*\)|{number}\s*-)(?![\d])", text)
+    if negative and value > 0:
+        return f"原文是 {negative[0].strip()}（负数，多半是折扣），值却是正的"
+    if not negative and value < 0 and re.search(rf"(?<![\d.]){number}(?![\d])", text):
+        return f"原文是 {abs(value):.2f}（正数），值却是负的"
+    return None
+
+
+def _row_slack(field: ExtractedField) -> int:
+    """行号允许差几行。表格的一行商品常占两行（上一行商品名，下一行数量和价格），
+    模型只给一个行号，所以格子差一行不算问题；普通字段必须是同一行。"""
+    return 1 if split_cell_name(field.name) else 0
 
 
 _MAX_SPAN = 4

@@ -4,8 +4,19 @@ from __future__ import annotations
 
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
-from jacara.modules.templates.schemas import TemplateFieldOut, TemplateOut, TemplateRuleOut
-from jacara.templates import Template, TemplateError, load_template, template_names
+from jacara.modules.templates.schemas import (
+    TemplateFieldOut,
+    TemplateOut,
+    TemplateRuleOut,
+    TemplateTableOut,
+)
+from jacara.templates import (
+    Template,
+    TemplateError,
+    TemplateField,
+    load_template,
+    template_names,
+)
 
 
 class TemplateNotFound(LookupError):
@@ -18,20 +29,26 @@ def to_out(t: Template) -> TemplateOut:
         version=t.version,
         title=t.title,
         description=t.description,
-        fields=[
-            TemplateFieldOut(
-                name=f.name,
-                label=f.label,
-                type=f.type,
-                required=f.required,
-                description=f.description,
-            )
-            for f in t.fields
-        ],
+        fields=[_field(f) for f in t.fields],
         rules=[
             TemplateRuleOut(id=r.id, title=r.title, needs=list(r.needs), severity=r.severity)
             for r in t.rules
         ],
+        tables=[
+            TemplateTableOut(
+                name=tb.name,
+                label=tb.label,
+                description=tb.description,
+                columns=[_field(c) for c in tb.columns],
+            )
+            for tb in t.tables
+        ],
+    )
+
+
+def _field(f: TemplateField) -> TemplateFieldOut:
+    return TemplateFieldOut(
+        name=f.name, label=f.label, type=f.type, required=f.required, description=f.description
     )
 
 
