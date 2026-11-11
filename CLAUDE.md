@@ -12,13 +12,14 @@
 
 ## 绝对不能破坏的规则
 
-1. **离线**：运行时不访问任何外部网络。不引入需要联网的依赖、遥测或在线 API。
+1. **离线**：运行时不访问任何外部网络。不引入需要联网的依赖、遥测或在线 API（包括短信、邮件验证）。
    接口文档页（/docs）的界面文件随包提供，不从 CDN 加载。前端也不从 CDN 加载字体、图标或脚本。
 2. **原始值不覆盖**：模型抽出的原始值永远保留，人工修改另存一条修改记录（`value_revisions`）。
 3. **审计日志只追加**：不提供修改或删除审计记录的代码路径。
 4. **每次抽取都记录来源**：模型名、模型版本、量化方式、提示词版本、模板版本、时间。
 5. **每个操作都过权限检查**：service 的每个公开方法先调用 `core/permissions.require()`。个人模式下总是通过，但调用不能省。
-   值得追查的操作（登录、上传、审核、导出、管理用户）还要调用 `modules/audit/service.record()` 记审计日志。
+   值得追查的操作（登录、上传、审核、导出、管理用户、改密码）还要调用 `modules/audit/service.record()` 记审计日志。
+   审计日志里不记密码、token、重设码。
 6. **数据带归属**：每条业务数据都有 user 和 team（个人模式用 `PERSONAL_OWNER`）。查询必须按 team 过滤。
 7. **插件不碰数据库**：插件只接收数据、返回结果，由 pipeline 负责保存。
 8. **前端只调用 `/api/v1`**：不直连数据库或对象存储。
@@ -35,7 +36,7 @@ backend/src/jacara/
     db.py           数据库：Base、混入类、session_scope
     owner.py        当前用户（Owner：user、team、角色、开通的权限；个人模式是 PERSONAL_OWNER）
     permissions.py  权限规则和 require()：管理员全部；使用者 = 基本权限 + 管理员开通的
-    security.py     密码哈希（Argon2id）、登录 token
+    security.py     密码哈希（Argon2id）、登录 token、一次性重设码
     storage.py      对象存储（S3 接口，SeaweedFS）
     queue.py        任务队列（Celery + Valkey）：API 只负责把任务放进去
     deps.py         FastAPI 依赖：数据库会话、存储、任务队列、当前用户（团队模式从 token 认人）
@@ -50,7 +51,7 @@ backend/src/jacara/
   modules/      业务功能，一个功能一个子包
     documents/      schemas → models → repository → service → router
     fields/         字段值与人工审核：修改、确认、修改历史（/api/v1/values）
-    auth/           团队、用户、登录会话（/api/v1/auth、/api/v1/users）
+    auth/           团队、用户、登录会话、重设码（/api/v1/auth、/api/v1/users）
     audit/          审计日志：只追加（/api/v1/audit-logs）
   models.py     汇总所有数据库表（给 Alembic 用）
   app.py        FastAPI 应用：create_app()，挂载 /api/v1
@@ -62,11 +63,12 @@ web/          前端（React + TypeScript + Vite + Ant Design + react-router + T
   vite.config.ts    开发服务器：只监听 127.0.0.1:5173，/api 转发给后端 127.0.0.1:8000
   src/main.tsx      入口：中文、主题色、QueryClient
   src/App.tsx       路由：哪个网址显示哪个页面
-  src/api/          调用后端的唯一地方：client.ts（api() 读 JSON、apiBlob() 读文件）、一个功能一个文件、types.ts
-  src/auth/         登录：AuthProvider（全站共用"现在是谁"）、useAuth()、RequireAuth（守门员）、登录页
-  src/components/   共用组件：AppLayout（菜单、用户名、退出）
-  src/features/     按功能分的页面：documents（列表、上传）、review（审核工作台）、admin
-  src/utils/        小工具：文件大小、时间格式
+  src/api/          调用后端的唯一地方：client.ts（api() 读 JSON、apiBlob() 读图片、apiDownload() 下载文件）、
+                    一个功能一个文件、types.ts
+  src/auth/         登录：AuthProvider（全站共用"现在是谁"）、useAuth()、RequireAuth（守门员）、登录页、忘记密码页
+  src/components/   共用组件：AppLayout（菜单、用户名、修改密码、退出）、ChangePassword、NewPasswordFields
+  src/features/     按功能分的页面：documents（列表、上传、导出）、review（审核工作台）、admin（用户管理、审计日志）
+  src/utils/        小工具：文件大小、时间格式、saveFile()
 deploy/       部署相关
 docs/adr/     架构决策记录
 compose.yaml  开发用基础设施：PostgreSQL、Valkey、SeaweedFS
@@ -106,12 +108,15 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 `reviews` 里带着每个字段最新的审核结果；格子写审核之后的值，改过的标蓝、批注写原值和原因。
 多个文档默认每份一个 Excel、打包成 zip（`export.zip`，重名加 (2)）；也可以汇总到一个 Excel（`export.xlsx`）。
 两种导出共用 `_exportable()` 的检查，都记审计日志（detail 里有 format）。
-前端下载要带 token：`apiDownload()` 取回文件和 Content-Disposition 里的文件名，`utils/download.saveFile()` 保存。
 
 **账号和权限：** `JACARA_MODE=personal`（默认）不用登录；`team` 模式必须登录，请求头带 `Authorization: Bearer <token>`。
 只有两种角色：管理员（admin）和使用者（member）。使用者默认能看、能下载、能导出，其余权限（`GRANTABLE`）
 由管理员勾选开通，`ADMIN_ONLY` 里的永远只有管理员有。token 和密码都只存哈希；用户只停用、不删除。
-第一个管理员用 `jacara user add 用户名 --role admin` 建。
+第一个管理员用 `jacara user add 用户名 --role admin` 建，之后在网页"用户管理"里建人、开通权限、停用。
+**密码只有本人知道**：自己改（`POST /auth/password`，要输原密码）；忘了的话，管理员生成一次性重设码
+（`POST /users/{id}/reset-code`，15 分钟、只能用一次、只存哈希），本人凭码自己设新密码（`POST /auth/reset-password`）。
+管理员没有"直接设别人密码"的接口；唯一的例外是能操作服务器的人用命令行 `jacara user password`。
+不用短信或邮件验证：要联网，违反规则 1（ADR 0021）。
 
 **前端：** 页面不直接写 `fetch`，都通过 `web/src/api/`。后端出错返回 `{"detail": "..."}`，
 `client.ts` 统一变成 `ApiError`，页面直接显示它的 message。`types.ts` 和后端的 schemas 字段名保持一样。
@@ -123,9 +128,9 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 审核页的图片要带 token，所以用 `apiBlob()` 取回来再变成 `blob:` 地址，不能直接 `<img src="/api/...">`。
 出处框用盖在图片上的 SVG 画，`viewBox` 设成图片的真实像素，`bbox` 拿来直接用。
 选中和悬停的字段放在 `ReviewPage`，左边 `PageViewer` 和右边 `FieldPanel` 都读它，所以两边联动。
-
 审核：选中字段展开 `ReviewForm`，"值是对的"发 confirm，"保存修改"发 edit（原因必填、原文没有发 null）；
 规则全在后端，前端只显示后端的错误原话。`useRevise()` 成功后刷新这个文档、文档列表和修改历史。
+下载（导出）同样要带 token：`apiDownload()` 取回文件和 Content-Disposition 里的文件名，`utils/download.saveFile()` 保存。
 
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 
@@ -176,7 +181,7 @@ cd web && npm run dev                                # 终端 4：前端，打�
 # 团队模式：.env 里 JACARA_MODE=team，然后建第一个管理员（密码会提示输入）
 uv run jacara user add admin --role admin
 uv run jacara user add xiaowang --allow document:create   # 新建使用者并开通"上传文件"
-uv run jacara user password admin                          # 忘了密码时重设
+uv run jacara user password admin                          # 唯一的管理员也忘了密码时（能操作服务器的人用）
 
 # 前端（在 web/ 文件夹里运行；后端要先启动）
 cd web && npm install                     # 第一次，或者 package.json 变了之后

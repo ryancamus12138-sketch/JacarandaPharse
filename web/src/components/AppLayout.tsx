@@ -1,13 +1,22 @@
-import { AuditOutlined, FileTextOutlined, LogoutOutlined, TeamOutlined } from '@ant-design/icons'
+import {
+  AuditOutlined,
+  FileTextOutlined,
+  KeyOutlined,
+  LogoutOutlined,
+  TeamOutlined,
+} from '@ant-design/icons'
 import { Button, Flex, Layout, Menu, type MenuProps, Tag, Typography } from 'antd'
+import { useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { useAuth } from '../auth/useAuth'
+import { ChangePassword } from './ChangePassword'
 
 /** 登录后所有页面共用的外框：左边菜单、顶上用户名和退出。中间的 <Outlet /> 放具体页面。 */
 export function AppLayout() {
   const { me, can, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const [changingPassword, setChangingPassword] = useState(false)
 
   // 菜单按权限显示：使用者看不到管理员的菜单
   const items: MenuProps['items'] = [
@@ -55,9 +64,14 @@ export function AppLayout() {
               {me?.role === 'admin' ? '管理员' : '使用者'}
             </Tag>
             {me?.mode === 'team' ? (
-              <Button icon={<LogoutOutlined />} onClick={() => void handleLogout()}>
-                退出
-              </Button>
+              <>
+                <Button icon={<KeyOutlined />} onClick={() => setChangingPassword(true)}>
+                  修改密码
+                </Button>
+                <Button icon={<LogoutOutlined />} onClick={() => void handleLogout()}>
+                  退出
+                </Button>
+              </>
             ) : (
               <Tag>个人模式</Tag>
             )}
@@ -66,6 +80,7 @@ export function AppLayout() {
         <Layout.Content style={{ padding: 24 }}>
           <Outlet />
         </Layout.Content>
+        <ChangePassword open={changingPassword} onClose={() => setChangingPassword(false)} />
       </Layout>
     </Layout>
   )

@@ -1,7 +1,7 @@
 import { LockOutlined, UserOutlined } from '@ant-design/icons'
 import { Alert, Button, Card, Flex, Form, Input, Typography } from 'antd'
 import { useState } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router'
 import { ApiError } from '../api/client'
 import { useAuth } from './useAuth'
 
@@ -66,7 +66,8 @@ export function LoginPage() {
           </Button>
         </Form>
         <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
-          忘了密码请找管理员重设。
+          忘了密码？请管理员给你一个重设码，然后在这里
+          <Link to="/reset-password">用重设码设新密码</Link>（重设码不能直接当密码登录）
         </Typography.Paragraph>
       </Card>
     </Flex>

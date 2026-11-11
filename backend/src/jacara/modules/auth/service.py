@@ -10,18 +10,31 @@ from sqlalchemy.orm import Session
 from jacara.core.config import get_settings
 from jacara.core.owner import PERSONAL_OWNER, Owner
 from jacara.core.permissions import GRANTABLE, allowed, require
-from jacara.core.security import hash_password, new_token, token_hash, verify_password
-from jacara.models import AuthSession, User
+from jacara.core.security import (
+    hash_password,
+    new_reset_code,
+    new_token,
+    normalize_reset_code,
+    token_hash,
+    verify_password,
+)
+from jacara.models import AuthSession, PasswordResetCode, User
 from jacara.modules.audit.service import record
 from jacara.modules.auth.repository import AuthRepository
 from jacara.modules.auth.schemas import (
+    CodeReset,
     LoginOut,
     MeOut,
+    PasswordChange,
     PermissionOut,
+    ResetCodeOut,
     UserCreate,
     UserOut,
     UserUpdate,
 )
+
+RESET_CODE_MINUTES = 15
+"""重设码多久内有效。"""
 
 
 class AuthError(Exception):
@@ -110,6 +123,40 @@ class AuthService:
             user=UserOut.model_validate(user) if user else None,
         )
 
+    def change_password(self, owner: Owner, token: str | None, data: PasswordChange) -> None:
+        """自己改密码。要先输原密码；改完以后别的设备上的登录都退出，正在用的这个不退出。"""
+        if get_settings().jacara_mode == "personal" or token is None:
+            raise AuthError("conflict", "个人模式没有账号，不用密码")
+        user = self.repo.user(owner.user_id, owner.team_id)
+        if user is None or not verify_password(user.password_hash, data.old_password):
+            raise AuthError("invalid", "原密码不对")
+        if verify_password(user.password_hash, data.new_password):
+            raise AuthError("invalid", "新密码不能和原来的一样")
+        user.password_hash = hash_password(data.new_password)
+        self.repo.revoke_sessions(user.id, datetime.now(UTC), keep=token_hash(token))
+        record(self.session, owner, "auth:password_change", "user", user.id)
+
+    def reset_with_code(self, data: CodeReset) -> None:
+        """忘记密码：凭管理员给的重设码，自己设新密码。设好后所有登录都退出，用新密码重新登录。"""
+        now = datetime.now(UTC)
+        user = self.repo.user_by_username(data.username)
+        code_hash = token_hash(normalize_reset_code(data.code))
+        reset = (
+            self.repo.live_reset_code(user.id, code_hash, now) if user and user.is_active else None
+        )
+        if user is None or reset is None:
+            # 和登录一样：不说是用户名不对还是码不对；失败要留记录，先提交再抛错
+            who = owner_of(user) if user else None
+            record(self.session, who, "auth:reset_failed", username=data.username.lower())
+            self.session.commit()
+            raise AuthError("bad_code", "用户名或重设码不对，或者重设码已经用过、过期了")
+        if verify_password(user.password_hash, data.password):
+            raise AuthError("invalid", "新密码不能和原来的一样")  # 码不作废，换一个密码再试
+        user.password_hash = hash_password(data.password)
+        reset.used_at = now
+        self.repo.revoke_sessions(user.id, now)
+        record(self.session, owner_of(user), "auth:password_reset", "user", user.id)
+
 
 class UserService:
     """管理员管理本团队的用户。"""
@@ -161,3 +208,30 @@ class UserService:
             self.repo.revoke_sessions(user.id, datetime.now(UTC))  # 停用后已登录的也马上失效
         record(self.session, self.owner, "user:update", "user", user.id, **changed)
         return UserOut.model_validate(user)
+
+    def create_reset_code(self, user_id: uuid.UUID) -> ResetCodeOut:
+        """给忘了密码的人生成一次性重设码。管理员只拿到码，不知道对方之后设的新密码。
+
+        同一个人之前没用的码会作废，只有最新的这个能用。
+        """
+        require(self.owner, "user:manage")
+        user = self.repo.user(user_id, self.owner.team_id)
+        if user is None:
+            raise AuthError("not_found", "找不到这个用户")
+        if not user.is_active:
+            raise AuthError("conflict", "这个用户已停用，先启用再生成重设码")
+        now = datetime.now(UTC)
+        self.repo.void_reset_codes(user.id, now)
+        code = new_reset_code()
+        expires_at = now + timedelta(minutes=RESET_CODE_MINUTES)
+        self.repo.add(
+            PasswordResetCode(
+                user_id=user.id,
+                code_hash=token_hash(normalize_reset_code(code)),
+                expires_at=expires_at,
+                created_by=self.owner.user_id,
+            )
+        )
+        # 审计日志里不记码本身，只记"谁给谁生成了"
+        record(self.session, self.owner, "user:reset_code", "user", user.id)
+        return ResetCodeOut(username=user.username, code=code, expires_at=expires_at)

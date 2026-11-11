@@ -43,3 +43,21 @@ def new_token() -> str:
 def token_hash(token: str) -> str:
     """数据库里存的是 token 的哈希。token 本身已经足够随机，用 SHA-256 就够了，不需要 Argon2。"""
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+RESET_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+"""重设码用的字：去掉了容易看错、念错的 0 O 1 I。"""
+
+
+def new_reset_code() -> str:
+    """一次性重设码，比如 "K7QM-3XWD"：8 个字，32 选 1，一共约 1 万亿种。
+
+    只在 15 分钟里有效、只能用一次，管理员当面或电话告诉对方，比登录 token 短得多也够安全。
+    """
+    raw = "".join(secrets.choice(RESET_CODE_ALPHABET) for _ in range(8))
+    return f"{raw[:4]}-{raw[4:]}"
+
+
+def normalize_reset_code(code: str) -> str:
+    """输入时不分大小写、不管横线和空格："k7qm 3xwd" 和 "K7QM-3XWD" 是同一个码。"""
+    return "".join(c for c in code.upper() if c.isalnum())

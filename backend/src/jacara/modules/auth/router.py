@@ -11,10 +11,13 @@ from sqlalchemy.orm import Session
 from jacara.core.deps import get_owner, get_session, get_token
 from jacara.core.owner import Owner
 from jacara.modules.auth.schemas import (
+    CodeReset,
     LoginIn,
     LoginOut,
     MeOut,
+    PasswordChange,
     PermissionOut,
+    ResetCodeOut,
     UserCreate,
     UserOut,
     UserUpdate,
@@ -26,8 +29,10 @@ users_router = APIRouter(prefix="/users", tags=["用户管理"])
 
 _STATUS = {
     "bad_credentials": status.HTTP_401_UNAUTHORIZED,
+    "bad_code": status.HTTP_400_BAD_REQUEST,
     "not_found": status.HTTP_404_NOT_FOUND,
     "conflict": status.HTTP_409_CONFLICT,
+    "invalid": status.HTTP_422_UNPROCESSABLE_CONTENT,
 }
 
 DbSession = Annotated[Session, Depends(get_session)]
@@ -62,6 +67,36 @@ def logout(session: DbSession, token: Annotated[str | None, Depends(get_token)])
 def me(session: DbSession, owner: CurrentOwner) -> MeOut:
     """现在是谁、什么角色、能做哪些操作、是个人模式还是团队模式。"""
     return AuthService(session).me(owner)
+
+
+@auth_router.post("/password", status_code=status.HTTP_204_NO_CONTENT, summary="修改自己的密码")
+def change_password(
+    body: PasswordChange,
+    session: DbSession,
+    owner: CurrentOwner,
+    token: Annotated[str | None, Depends(get_token)],
+) -> Response:
+    """登录后自己改密码：先输原密码。改完以后别的设备上的登录都会退出，当前这个不退出。"""
+    try:
+        AuthService(session).change_password(owner, token, body)
+    except AuthError as err:
+        raise _http_error(err) from err
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@auth_router.post(
+    "/reset-password", status_code=status.HTTP_204_NO_CONTENT, summary="用重设码设新密码"
+)
+def reset_password(body: CodeReset, session: DbSession) -> Response:
+    """忘记密码时用：用户名 + 管理员给的重设码 + 新密码。不用登录。
+
+    成功后这个账号所有登录都退出，用新密码重新登录。
+    """
+    try:
+        AuthService(session).reset_with_code(body)
+    except AuthError as err:
+        raise _http_error(err) from err
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @users_router.get("/permissions", summary="可开通的权限")
@@ -101,5 +136,20 @@ def update_user(
     """
     try:
         return UserService(session, owner).update(user_id, body)
+    except AuthError as err:
+        raise _http_error(err) from err
+
+
+@users_router.post(
+    "/{user_id}/reset-code", status_code=status.HTTP_201_CREATED, summary="生成重设码"
+)
+def create_reset_code(user_id: uuid.UUID, session: DbSession, owner: CurrentOwner) -> ResetCodeOut:
+    """给忘了密码的人生成一次性重设码（管理员）。15 分钟有效，只能用一次。
+
+    把码当面或电话告诉本人，本人在登录页点"忘记密码"，输入码，自己设新密码。
+    管理员不知道对方的新密码。重新生成的话，之前的码作废。
+    """
+    try:
+        return UserService(session, owner).create_reset_code(user_id)
     except AuthError as err:
         raise _http_error(err) from err

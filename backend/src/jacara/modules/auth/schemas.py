@@ -62,6 +62,30 @@ class UserUpdate(BaseModel):
     display_name: str | None = Field(default=None, max_length=100)
 
 
+class PasswordChange(BaseModel):
+    """自己改密码：先输原密码证明是本人。"""
+
+    old_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
+
+
+class ResetCodeOut(BaseModel):
+    """管理员生成的一次性重设码。只在这里出现一次，数据库里只有哈希。"""
+
+    username: str
+    code: str
+    """比如 K7QM-3XWD。当面或电话告诉本人，不要发到聊天群里。"""
+    expires_at: datetime
+
+
+class CodeReset(BaseModel):
+    """忘记密码：用户名 + 管理员给的重设码 + 自己想的新密码。"""
+
+    username: str = Field(min_length=1, max_length=64)
+    code: str = Field(min_length=1, max_length=32)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
+
+
 class MeOut(BaseModel):
     """现在是谁。前端靠 mode 决定要不要显示登录页。"""
 

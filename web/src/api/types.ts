@@ -147,3 +147,52 @@ export interface ValueHistory {
   value: FieldValue
   revisions: Revision[]
 }
+
+/** 管理员可以开通给使用者的一项权限（GET /users/permissions）。 */
+export interface PermissionOption {
+  name: string
+  label: string
+}
+
+export type Role = 'admin' | 'member'
+
+/** 新建用户（POST /users）。 */
+export interface UserCreate {
+  username: string
+  password: string
+  display_name: string
+  role: Role
+  permissions: string[]
+}
+
+/** 修改用户（PATCH /users/{id}）：只发要改的字段。 */
+export interface UserUpdate {
+  role?: Role
+  permissions?: string[]
+  is_active?: boolean
+  display_name?: string
+}
+
+/** 管理员生成的一次性重设码（只出现这一次）。 */
+export interface ResetCode {
+  username: string
+  code: string
+  expires_at: string
+}
+
+/** 一条审计日志。 */
+export interface AuditLog {
+  id: string
+  created_at: string
+  /** 谁做的。登录失败且用户名不存在时是 null。 */
+  user_id: string | null
+  action: string
+  target_type: string | null
+  target_id: string | null
+  detail: Record<string, unknown>
+}
+
+export interface AuditPage {
+  items: AuditLog[]
+  total: number
+}

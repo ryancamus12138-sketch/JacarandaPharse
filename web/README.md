@@ -32,10 +32,10 @@ npm run lint && npm run build
 | --- | --- |
 | `src/main.tsx` | 入口：中文、主题色、TanStack Query |
 | `src/App.tsx` | 路由：哪个网址显示哪个页面 |
-| `src/api/` | 调用后端的唯一地方：`client.ts` 发请求、自动带 token、统一错误（`api()` 读 JSON、`apiBlob()` 读图片、`apiDownload()` 下载文件并读出文件名）；一个功能一个文件（`auth.ts`、`documents.ts`、`values.ts`）；`types.ts` 和后端 schemas 对应 |
-| `src/auth/` | 登录：`AuthProvider`（全站共用"现在是谁"）、`useAuth()`、守门员 `RequireAuth`、登录页 |
-| `src/components/` | 共用组件：`AppLayout`（左边菜单、顶上用户名和退出） |
-| `src/features/` | 按功能分的页面：`documents/`（列表、上传、状态、导出按钮）、`review/`（审核工作台）、`admin/` |
+| `src/api/` | 调用后端的唯一地方：`client.ts` 发请求、自动带 token、统一错误（`api()` 读 JSON、`apiBlob()` 读图片、`apiDownload()` 下载文件并读出文件名）；一个功能一个文件（`auth.ts`、`documents.ts`、`values.ts`、`users.ts`、`audit.ts`）；`types.ts` 和后端 schemas 对应 |
+| `src/auth/` | 登录：`AuthProvider`（全站共用"现在是谁"）、`useAuth()`、守门员 `RequireAuth`、登录页、忘记密码页 |
+| `src/components/` | 共用组件：`AppLayout`（左边菜单、顶上用户名、修改密码、退出）、`ChangePassword`、`NewPasswordFields` |
+| `src/features/` | 按功能分的页面：`documents/`（列表、上传、状态、导出按钮）、`review/`（审核工作台）、`admin/`（用户管理、审计日志） |
 | `src/utils/` | 小工具：文件大小、时间格式、`saveFile()`（把下载回来的文件交给浏览器保存） |
 
 ## 页面
@@ -43,10 +43,13 @@ npm run lint && npm run build
 | 网址 | 页面 | 谁能看 |
 | --- | --- | --- |
 | `/login` | 登录 | 没登录的人 |
+| `/reset-password` | 忘记密码：用管理员给的重设码自己设新密码 | 不用登录 |
 | `/documents` | 文档列表：上传（要"上传文件"权限）、状态自动刷新、重试（要"重新处理"权限）、勾选导出（zip 或汇总 Excel） | 登录了就能看 |
 | `/documents/:id` | 审核工作台：左边原图和出处框（整页、缩放），右边字段；修改、确认（要"修改字段"权限）、修改历史、完成审核（要"完成审核"权限）、导出这一份；↑↓ 切换字段，Enter 确认 | 登录了就能看 |
-| `/admin/users` | 用户管理 | 管理员 |
-| `/admin/audit-logs` | 审计日志 | 管理员 |
+| `/admin/users` | 用户管理：新建用户、勾选开通权限（马上生效）、改角色、停用、生成重设码 | 管理员 |
+| `/admin/audit-logs` | 审计日志：谁、什么时候、做了什么；按操作筛选；只能看 | 管理员 |
+
+团队模式下，右上角有"修改密码"（要输原密码）。
 
 ## 取数据：TanStack Query
 
@@ -64,3 +67,8 @@ npm run lint && npm run build
 
 多个文档默认每份一个 Excel、打包成 zip（浏览器没法直接下载文件夹，解压后就是文件夹）；
 按钮旁边的下拉可以选"汇总到一个 Excel"，一行一张单据，方便对账。
+
+## 规则和提示文字都在后端
+
+前端不重写业务规则，后端出错时的 `{"detail": "..."}` 原样显示给人看。前端只做两种"提前检查"，为了少跑一趟：
+表单必填、密码长度和两次输入一样、上传文件的类型和大小。真正挡住的都是后端。

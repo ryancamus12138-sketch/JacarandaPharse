@@ -9,7 +9,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from jacara.core.owner import PERSONAL_OWNER
-from jacara.models import AuthSession, Team, User
+from jacara.models import AuthSession, PasswordResetCode, Team, User
 
 
 class AuthRepository:
@@ -45,7 +45,7 @@ class AuthRepository:
             )
         )
 
-    def add(self, row: User | AuthSession) -> None:
+    def add(self, row: User | AuthSession | PasswordResetCode) -> None:
         self.session.add(row)
         self.session.flush()
 
@@ -64,10 +64,35 @@ class AuthRepository:
         )
         return self.session.scalars(query).one_or_none()
 
-    def revoke_sessions(self, user_id: uuid.UUID, now: datetime) -> None:
-        """让这个用户所有还有效的登录都作废（停用用户、改密码时用）。"""
+    def revoke_sessions(self, user_id: uuid.UUID, now: datetime, keep: str | None = None) -> None:
+        """让这个用户所有还有效的登录都作废（停用用户、改密码时用）。
+
+        keep：留下这一个（token 哈希）。自己改密码时，别的设备退出，正在用的这个不退出。
+        """
+        query = update(AuthSession).where(
+            AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None)
+        )
+        if keep is not None:
+            query = query.where(AuthSession.token_hash != keep)
+        self.session.execute(query.values(revoked_at=now))
+
+    def live_reset_code(
+        self, user_id: uuid.UUID, code_hash: str, now: datetime
+    ) -> PasswordResetCode | None:
+        """这个用户的、对得上的、没过期、没用过的重设码。"""
+        return self.session.scalars(
+            select(PasswordResetCode).where(
+                PasswordResetCode.user_id == user_id,
+                PasswordResetCode.code_hash == code_hash,
+                PasswordResetCode.expires_at > now,
+                PasswordResetCode.used_at.is_(None),
+            )
+        ).one_or_none()
+
+    def void_reset_codes(self, user_id: uuid.UUID, now: datetime) -> None:
+        """让这个用户还没用的重设码都作废：新生成一个时，旧的就不能再用了。"""
         self.session.execute(
-            update(AuthSession)
-            .where(AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None))
-            .values(revoked_at=now)
+            update(PasswordResetCode)
+            .where(PasswordResetCode.user_id == user_id, PasswordResetCode.used_at.is_(None))
+            .values(used_at=now)
         )
