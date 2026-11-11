@@ -22,7 +22,7 @@
    审计日志里不记密码、token、重设码。
 6. **数据带归属**：每条业务数据都有 user 和 team（个人模式用 `PERSONAL_OWNER`）。查询必须按 team 过滤。
 7. **插件不碰数据库**：插件只接收数据、返回结果，由 pipeline 负责保存。
-8. **前端只调用 `/api/v1`**：不直连数据库或对象存储。
+8. **前端只调用 `/api/v1`**：不直连数据库或对象存储。后端接口都必须在 `/api/` 下面，其他网址都是网页。
 9. **接口只加字段、不删字段**：插件接口和 API 都有版本号。不兼容的改动走新版本（`/api/v2`）。
 10. **授权**：项目为 Apache 2.0。不引入 GPL/AGPL 依赖（例如 PyMuPDF）。
 11. **只监听本机**：所有服务（API、llama-server、前端开发服务器、Docker 里的数据库等）只绑定 `127.0.0.1`。
@@ -32,7 +32,7 @@
 ```text
 backend/src/jacara/
   core/         公共底座
-    config.py       配置（从 .env 读取，pydantic-settings）
+    config.py       配置（从 .env 读取，pydantic-settings）；weak_secrets() 找出还是 change-me 的密钥
     db.py           数据库：Base、混入类、session_scope
     owner.py        当前用户（Owner：user、team、角色、开通的权限；个人模式是 PERSONAL_OWNER）
     permissions.py  权限规则和 require()：管理员全部；使用者 = 基本权限 + 管理员开通的
@@ -40,7 +40,8 @@ backend/src/jacara/
     storage.py      对象存储（S3 接口，SeaweedFS）
     queue.py        任务队列（Celery + Valkey）：API 只负责把任务放进去
     deps.py         FastAPI 依赖：数据库会话、存储、任务队列、当前用户（团队模式从 token 认人）
-    health.py       jacara doctor 的各项检查
+    health.py       jacara doctor 的各项检查（.env 密钥、网页、数据库、队列、存储、模型）
+    web.py          提供打包好的网页（web/dist），SPA 回退
   plugins/      流水线插件，一个扩展点一个子包，各有 base.py（接口）和注册表
                 ocr model_backends extractors aligners validators exporters tables
   pipeline/     流水线
@@ -54,13 +55,14 @@ backend/src/jacara/
     auth/           团队、用户、登录会话、重设码（/api/v1/auth、/api/v1/users）
     audit/          审计日志：只追加（/api/v1/audit-logs）
   models.py     汇总所有数据库表（给 Alembic 用）
-  app.py        FastAPI 应用：create_app()，挂载 /api/v1
+  app.py        FastAPI 应用：create_app()，挂载 /api/v1，最后挂网页
   worker.py     后台 worker：Celery 任务定义，jacara worker 启动
-  cli.py        命令行入口
+  cli.py        命令行入口（jacara start 一起启动模型、worker、API）
 backend/migrations/   Alembic 数据库迁移
 backend/tests/        自动测试（pytest）
 web/          前端（React + TypeScript + Vite + Ant Design + react-router + TanStack Query）
   vite.config.ts    开发服务器：只监听 127.0.0.1:5173，/api 转发给后端 127.0.0.1:8000
+  dist/             npm run build 的产物，由后端直接提供；不进 Git
   src/main.tsx      入口：中文、主题色、QueryClient
   src/App.tsx       路由：哪个网址显示哪个页面
   src/api/          调用后端的唯一地方：client.ts（api() 读 JSON、apiBlob() 读图片、apiDownload() 下载文件）、
@@ -118,6 +120,14 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 管理员没有"直接设别人密码"的接口；唯一的例外是能操作服务器的人用命令行 `jacara user password`。
 不用短信或邮件验证：要联网，违反规则 1（ADR 0021）。
 
+**一个命令跑起来（ADR 0022）：** `jacara start` 用 subprocess 启动 llama-server（`--model` 时，直接启动、不经过 `jacara serve`）
+和 worker，API 在主进程。Ctrl + C 后 `_stop()` 先 terminate、10 秒后 kill，不留孤儿进程。
+启动前检查：`.env` 密钥不能是空的或 `change-me`（只报名字、不打印值），8000 / 8080 端口不能被占用。
+API 在所有接口之后用 `core/web.py` 挂一条兜底路由提供 `web/dist`：`/api/...` 不存在时是 404 JSON；
+`dist` 里有的文件直接发（`assets/` 长期缓存，`index.html` 用 no-cache）；其他网址都发 `index.html`（SPA 回退）；
+路径解析后必须还在 `dist` 里面。没打包时返回 503 和打包方法。`JACARA_API_DOCS=false` 关掉 `/docs` 和 `/openapi.json`；
+`JACARA_WEB_DIR` 可以指定别的网页文件夹。开发方式不变：`npm run dev`（5173）+ `jacara api --reload`。
+
 **前端：** 页面不直接写 `fetch`，都通过 `web/src/api/`。后端出错返回 `{"detail": "..."}`，
 `client.ts` 统一变成 `ApiError`，页面直接显示它的 message。`types.ts` 和后端的 schemas 字段名保持一样。
 登录后 token 存在 localStorage（`api/token.ts`），每个请求自动带上；带着 token 收到 401 就清掉 token、回登录页。
@@ -131,6 +141,7 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 审核：选中字段展开 `ReviewForm`，"值是对的"发 confirm，"保存修改"发 edit（原因必填、原文没有发 null）；
 规则全在后端，前端只显示后端的错误原话。`useRevise()` 成功后刷新这个文档、文档列表和修改历史。
 下载（导出）同样要带 token：`apiDownload()` 取回文件和 Content-Disposition 里的文件名，`utils/download.saveFile()` 保存。
+前端页面的网址不要用 `/api` 开头。
 
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 
@@ -149,6 +160,7 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
   测试不依赖 Docker 和模型：数据库用内存 SQLite，对象存储、任务队列、OCR、模型都用假的
   （`MemoryStorage`、`FakeQueue` 在 conftest.py），接口测试用 `dependency_overrides` 替换依赖。
   测试默认是个人模式（conftest 的 `personal_mode`），不受自己 `.env` 影响；要测团队模式的文件自己切过去。
+  测网页用临时文件夹造一个假的 dist（`JACARA_WEB_DIR`），不需要真的 npm run build。
 - 评测方案（准确率打分）尚未确定，暂不加入；不要自行添加 eval/。
 - 改了数据库表就生成一条迁移，检查后再提交；需要改已有数据时在迁移里手写 SQL。
 - 重要的技术选择写一条 ADR（`docs/adr/NNNN-标题.md`），格式参考 0002。
@@ -162,9 +174,9 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
 ```bash
 # 环境
 uv sync                                   # 安装依赖
-cp .env.example .env                      # 第一次：复制配置后修改密码
+cp .env.example .env                      # 第一次：复制配置后把 change-me 都改成随机值
 docker compose up -d                      # 启动数据库、任务队列、对象存储
-uv run jacara doctor                      # 检查各项服务是否连得上
+uv run jacara doctor                      # 检查 .env 密钥、网页、各项服务
 
 # 数据库迁移
 uv run alembic upgrade head               # 把数据库升级到最新
@@ -172,22 +184,28 @@ uv run alembic revision --autogenerate -m "说明"   # 改了表之后生成迁�
 uv run alembic check                      # 确认表和迁移一致
 uv run alembic current                    # 当前数据库在哪个版本
 
-# 运行完整服务：docker compose 之外，再开四个终端
-uv run jacara serve --model <模型文件>.gguf          # 终端 1：本地大模型
+# 日常使用：一个命令（先 cd web && npm run build），打开 http://127.0.0.1:8000，Ctrl + C 全部停止
+uv run jacara start --model models/Qwen3.5-9B-Q4_K_M.gguf
+
+# 开发：docker compose 之外，再开四个终端
+uv run jacara serve --model models/<模型文件>.gguf   # 终端 1：本地大模型
 uv run jacara worker                                 # 终端 2：后台任务，处理上传的文件
 uv run jacara api --reload                           # 终端 3：API，打开 http://127.0.0.1:8000/docs
 cd web && npm run dev                                # 终端 4：前端，打开 http://127.0.0.1:5173
+
+# 端口被占（之前的进程没关）
+lsof -i :8000 -i :8080 | grep LISTEN      # 第二列是 PID，然后 kill PID
 
 # 团队模式：.env 里 JACARA_MODE=team，然后建第一个管理员（密码会提示输入）
 uv run jacara user add admin --role admin
 uv run jacara user add xiaowang --allow document:create   # 新建使用者并开通"上传文件"
 uv run jacara user password admin                          # 唯一的管理员也忘了密码时（能操作服务器的人用）
 
-# 前端（在 web/ 文件夹里运行；后端要先启动）
+# 前端（在 web/ 文件夹里运行）
 cd web && npm install                     # 第一次，或者 package.json 变了之后
 npm install 包名                          # 加新包：一定要在 web/ 里
 npm run dev -- --force                    # 装了新包后页面异常：清掉 Vite 缓存再启动
-npm run lint && npm run build             # 前端检查（提交前）
+npm run lint && npm run build             # 前端检查（提交前）；build 同时生成 dist/ 给 jacara start 用
 
 # 不用 API，直接在命令行处理一个文件
 uv run jacara ocr <图片或PDF>                        # 只做文字识别

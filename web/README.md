@@ -2,7 +2,16 @@
 
 React + TypeScript + Vite + Ant Design。只通过 `/api/v1` 调用后端，不直连数据库或对象存储。
 
-## 运行
+## 两种运行方式
+
+| | 开发 | 使用 |
+| --- | --- | --- |
+| 命令 | `npm run dev` | `npm run build`，然后在根目录 `uv run jacara start` |
+| 网址 | <http://127.0.0.1:5173> | <http://127.0.0.1:8000> |
+| 改了代码 | 保存后马上更新 | 要重新 `npm run build`，再重启 `jacara start` |
+| 谁提供网页 | Vite 开发服务器（`/api` 转给 8000） | 后端直接提供 `dist/` 里的文件 |
+
+### 开发
 
 先在项目根目录启动后端：`uv run jacara api --reload`（上传后要处理文件，还要开 `jacara serve` 和 `jacara worker`）。
 然后在这个文件夹里：
@@ -11,6 +20,18 @@ React + TypeScript + Vite + Ant Design。只通过 `/api/v1` 调用后端，不�
 npm install        # 第一次，或者 package.json 变了之后
 npm run dev        # 开发服务器：http://127.0.0.1:5173（/api 自动转给 127.0.0.1:8000）
 ```
+
+### 打包给别人用
+
+```bash
+npm run build      # 先做 TypeScript 类型检查，再打包到 dist/
+```
+
+`dist/` 不进 Git，每次打包重新生成。后端（`backend/src/jacara/core/web.py`）这样提供它：
+
+- `/api/...` 永远是接口；
+- `dist/` 里真有的文件（`/assets/index-xxxx.js`）直接发，文件名带内容指纹，浏览器可以一直缓存；
+- 其他网址（`/documents/123`）都发 `index.html`，由前端路由显示对应页面，所以刷新不会 404。
 
 团队模式（`.env` 里 `JACARA_MODE=team`）会先显示登录页；个人模式直接进入。
 
@@ -23,8 +44,6 @@ npm run dev        # 开发服务器：http://127.0.0.1:5173（/api 自动转给
 ```bash
 npm run lint && npm run build
 ```
-
-`build` 会先做 TypeScript 类型检查，再把网页打包到 `dist/`。
 
 ## 目录
 
@@ -50,6 +69,8 @@ npm run lint && npm run build
 | `/admin/audit-logs` | 审计日志：谁、什么时候、做了什么；按操作筛选；只能看 | 管理员 |
 
 团队模式下，右上角有"修改密码"（要输原密码）。
+
+新加页面时网址不要用 `/api` 开头：那是留给后端接口的。
 
 ## 取数据：TanStack Query
 

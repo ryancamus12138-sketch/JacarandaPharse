@@ -1,4 +1,4 @@
-"""检查后端依赖的服务是否连得上：数据库、任务队列、对象存储、本地模型。
+"""检查后端依赖的服务是否连得上：数据库、任务队列、对象存储、本地模型；还有 .env 和网页是否准备好。
 
 每项检查都返回 Check：成功时写版本等信息，失败时写原因和怎么解决。
 检查只读不写，不会创建或修改任何东西。
@@ -23,6 +23,27 @@ class Check:
     ok: bool
     detail: str
     hint: str = ""
+
+
+def check_secrets(settings: Settings) -> Check:
+    """.env 里的密码不能还是空的或示例值 change-me：这样谁都猜得到。"""
+    weak = settings.weak_secrets()
+    if weak:
+        return Check(
+            ".env 密钥",
+            False,
+            "还是空的或 change-me：" + "、".join(weak),
+            "用 openssl rand -hex 16 生成随机值填进 .env",
+        )
+    return Check(".env 密钥", True, "都已改成自己的值")
+
+
+def check_web(settings: Settings) -> Check:
+    """网页有没有打包。没打包也能用 API 和 npm run dev，所以只是提醒。"""
+    index = settings.web_dist / "index.html"
+    if index.is_file():
+        return Check("网页", True, f"已打包（{settings.web_dist}）")
+    return Check("网页", False, "还没打包，打开 8000 只会看到提示", "cd web && npm run build")
 
 
 def check_postgres(settings: Settings) -> Check:
@@ -114,6 +135,8 @@ def check_model(settings: Settings) -> Check:
 
 
 CHECKS: tuple[Callable[[Settings], Check], ...] = (
+    check_secrets,
+    check_web,
     check_postgres,
     check_valkey,
     check_s3,

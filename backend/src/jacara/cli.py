@@ -5,11 +5,13 @@ uv run jacara ocr 图片或PDF                      识别文字（PDF 有文字
 uv run jacara serve --model 模型.gguf            启动本地大模型服务
 uv run jacara extract 图片或PDF                  识别、抽取字段并核对出处（要先启动模型服务）
 uv run jacara doctor                             检查数据库、队列、对象存储、本地模型是否连得上
-uv run jacara api                                启动 Web 服务，浏览器打开 http://127.0.0.1:8000/docs
-uv run jacara worker                             启动后台任务，处理通过 API 上传的文件
+uv run jacara start                              一起启动 Web 服务和后台任务，浏览器打开 http://127.0.0.1:8000
+uv run jacara start --model 模型.gguf            同时启动本地大模型：一个终端就够了
+uv run jacara api                                只启动 Web 服务（开发时加 --reload）
+uv run jacara worker                             只启动后台任务，处理通过 API 上传的文件
 uv run jacara user add 用户名 --role admin        新建用户（团队模式的第一个管理员用它建）
 uv run jacara user add 用户名 --allow value:review    新建使用者，并开通"修改和确认字段"
-uv run jacara user password 用户名                重设密码
+uv run jacara user password 用户名                重设密码（只给能操作服务器的人应急用）
 """
 
 from __future__ import annotations
@@ -23,6 +25,8 @@ from jacara import __version__
 
 if TYPE_CHECKING:
     # 只给类型检查用，运行时不导入：jacara --version 不用加载 OCR 和模型相关的库。
+    import subprocess
+
     from jacara.plugins.exporters import DocumentReport
 
 
@@ -68,6 +72,12 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("worker", help="启动后台任务：处理通过 API 上传的文件（要先运行 jacara serve）")
 
+    p_start = sub.add_parser("start", help="一起启动 Web 服务和后台任务（日常使用）")
+    p_start.add_argument("--port", type=int, default=8000, help="Web 服务的端口，默认 8000")
+    p_start.add_argument(
+        "--model", type=Path, help="同时启动本地大模型（.gguf），不写就要自己先启动"
+    )
+
     p_user = sub.add_parser("user", help="管理用户（团队模式）")
     user_sub = p_user.add_subparsers(dest="user_command", required=True)
     p_add = user_sub.add_parser("add", help="新建用户，密码会提示输入")
@@ -93,6 +103,8 @@ def main(argv: list[str] | None = None) -> int:
         return _api(args)
     if args.command == "worker":
         return _worker()
+    if args.command == "start":
+        return _start(args)
     if args.command == "user":
         return _user(args)
     if args.command == "ocr":
@@ -383,10 +395,98 @@ def _api(args: argparse.Namespace) -> int:
     import uvicorn
 
     print(f"接口文档：http://127.0.0.1:{args.port}/docs（Ctrl + C 停止）")
+    print("只启动了 API；日常使用请用 jacara start，开发网页请在 web/ 里 npm run dev")
     # 只监听本机。reload 模式要传"模块:变量"字符串，uvicorn 才能在改代码后重新导入。
     uvicorn.run("jacara.app:app", host="127.0.0.1", port=args.port, reload=args.reload)
     return 0
 
+
+def _start(args: argparse.Namespace) -> int:
+    """日常使用：一个命令启动全部。
+
+    worker（和大模型）是单独的进程，用 subprocess 在后台启动；API 在这个进程里运行。
+    按 Ctrl + C：终端会把停止信号发给这几个进程，这里再等它们都退出，不留下"孤儿进程"。
+    """
+    import subprocess
+
+    import uvicorn
+
+    from jacara.core.config import get_settings
+
+    settings = get_settings()
+    weak = settings.weak_secrets()
+    if weak:
+        print(_paint("不能启动：.env 里这些密钥还是空的或 change-me：" + "、".join(weak), _RED))
+        print("用 openssl rand -hex 16 生成随机值填进去。")
+        return 1
+    model: Path | None = args.model
+    if model is not None and not model.exists():
+        print(f"找不到模型文件：{model}")
+        return 1
+
+    ports = [args.port] if model is None else [args.port, MODEL_PORT]
+    busy = [port for port in ports if not _port_free(port)]
+    if busy:
+        print(_paint("不能启动：端口 " + "、".join(map(str, busy)) + " 已经被占用了", _RED))
+        print("多半是之前的 jacara api / serve / start 还开着：找到那个终端按 Ctrl + C。")
+        print("找不到的话，运行 lsof -i :端口号 看是哪个程序（PID 那一列），再 kill 那个 PID。")
+        return 1
+
+    web = settings.web_dist / "index.html"
+    if not web.is_file():
+        print(_paint("提醒：网页还没打包，先运行 cd web && npm run build（API 照常启动）", _YELLOW))
+
+    children: list[subprocess.Popen[bytes]] = []
+    if model is not None:
+        from jacara.plugins.model_backends.server import server_command, server_env
+
+        try:
+            command = server_command(model, port=MODEL_PORT)
+        except FileNotFoundError as err:
+            print(err)
+            return 1
+        # 直接启动 llama-server，不经过 jacara serve：停止时 terminate 发给它本人，不会漏掉。
+        children.append(subprocess.Popen(command, env=server_env()))  # noqa: S603
+        print(f"启动模型服务：{model.name} → http://127.0.0.1:{MODEL_PORT}")
+    children.append(subprocess.Popen([sys.executable, "-m", "jacara.cli", "worker"]))
+
+    print(f"打开 http://127.0.0.1:{args.port}（Ctrl + C 全部停止）")
+    try:
+        uvicorn.run("jacara.app:app", host="127.0.0.1", port=args.port)
+    finally:
+        _stop(children)
+    return 0
+
+
+def _port_free(port: int) -> bool:
+    """本机这个端口现在有没有人用。先查好，免得 worker 和模型都启动了，API 才发现端口被占。"""
+    import socket
+
+    with socket.socket() as sock:
+        try:
+            sock.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
+def _stop(children: list[subprocess.Popen[bytes]]) -> None:
+    """让后台的进程都停下来：先礼貌地请它停（terminate），10 秒还没停就强制结束（kill）。"""
+    import subprocess
+
+    for child in children:
+        if child.poll() is None:
+            child.terminate()
+    for child in children:
+        try:
+            child.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait()
+
+
+MODEL_PORT = 8080
+"""jacara start --model 启动的大模型用这个端口，和 .env 里 MODEL_SERVER 的默认值一样。"""
 
 _RED, _YELLOW, _GREEN = "31", "33", "32"
 
