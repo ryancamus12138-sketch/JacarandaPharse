@@ -2,9 +2,17 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>JacarandaParse</title>
+
+    <!-- 浏览器标签页：ico 里有 16、32、48 三种大小；新浏览器优先用 32 的 PNG -->
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png" />
+    <!-- iPhone、iPad 添加到主屏幕 -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- 安装为应用：名字和 192、512 的图标写在 manifest 里 -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#6a4fc4" />
   </head>
   <body>
     <div id="root"></div>
