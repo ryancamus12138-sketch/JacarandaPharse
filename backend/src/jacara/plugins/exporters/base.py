@@ -51,7 +51,10 @@ class DocumentReport:
     """这一页的文字怎么来的：ocr（OCR 识别）或 pdf-text（PDF 文字层）。"""
 
     template: str = "receipt"
-    """用的字段清单名。"""
+    """用的模板名（templates/*.toml）。"""
+
+    template_version: int = 1
+    """模板的版本号。模板改过之后，旧结果还能知道是按哪一版抽的。"""
 
     reviews: Mapping[str, Review] = field(default_factory=dict)
     """字段名 → 人工审核结果。刚处理完、还没人审核时是空的（命令行导出就是这样）。"""

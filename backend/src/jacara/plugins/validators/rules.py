@@ -1,6 +1,7 @@
 """按规则清单逐条检查的校验器，以及收据常用的规则。
 
-新增一条规则：写一个检查函数，再在 RECEIPT_RULES 里加一行 Rule(...)。
+新增一条规则：写一个检查函数，在 RECEIPT_RULES 里加一行 Rule(...)，
+再把它的编号写进要用它的模板（backend/src/jacara/templates/*.toml 的 rules）。
 """
 
 from __future__ import annotations
@@ -88,6 +89,9 @@ RECEIPT_RULES: tuple[Rule, ...] = (
     Rule("cash_covers_total", "现金不少于总额", ("cash", "total"), check_cash_covers_total),
     Rule("change", "现金 − 总额 = 找零", ("cash", "total", "change"), check_change),
 )
+
+RULES: dict[str, Rule] = {rule.id: rule for rule in RECEIPT_RULES}
+"""规则编号 → 规则。模板文件里按编号选规则。"""
 
 
 class RuleValidator:

@@ -44,6 +44,7 @@ backend/src/jacara/
     web.py          提供打包好的网页（web/dist），SPA 回退
   plugins/      流水线插件，一个扩展点一个子包，各有 base.py（接口）和注册表
                 ocr model_backends extractors aligners validators exporters tables
+  templates/    模板：一种单据抽哪些字段、查哪些规则，一个 .toml 一个模板（receipt、receipt_full）
   pipeline/     流水线
     run.py          组装插件，一个文件 → 每页的 DocumentReport（命令行和 worker 共用）
     process.py      后台处理一个上传的文档，负责状态变化 uploaded → processing → done / failed
@@ -54,6 +55,7 @@ backend/src/jacara/
     fields/         字段值与人工审核：修改、确认、修改历史（/api/v1/values）
     auth/           团队、用户、登录会话、重设码（/api/v1/auth、/api/v1/users）
     audit/          审计日志：只追加（/api/v1/audit-logs）
+    templates/      模板（只读）：/api/v1/templates；模板是文件、不存数据库，所以只有 schemas、service、router
   models.py     汇总所有数据库表（给 Alembic 用）
   app.py        FastAPI 应用：create_app()，挂载 /api/v1，最后挂网页
   worker.py     后台 worker：Celery 任务定义，jacara worker 启动
@@ -144,6 +146,11 @@ API 在所有接口之后用 `core/web.py` 挂一条兜底路由提供 `web/dist
 下载（导出）同样要带 token：`apiDownload()` 取回文件和 Content-Disposition 里的文件名，`utils/download.saveFile()` 保存。
 前端页面的网址不要用 `/api` 开头。
 
+**模板（ADR 0024）：** 抽哪些字段、字段的中文名和给模型的说明、查哪些规则，都写在 `backend/src/jacara/templates/*.toml`，
+不写在代码里。规则的检查函数仍在 `plugins/validators/rules.py`，模板按编号选用。流水线按模板名取模板（默认 `receipt`），
+每次抽取都把模板名和版本（`extractions.template`、`template_version`）存进数据库。
+**改了模板里的字段、说明或规则，就把 version 加 1，并跑一次评测。** 字段名只用小写英文、数字、下划线。
+
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 
 ## 技术栈
@@ -211,6 +218,7 @@ npm run lint && npm run build             # 前端检查（提交前）；build 
 
 # 不用 API，直接在命令行处理一个文件
 uv run jacara ocr <图片或PDF>                        # 只做文字识别
+uv run jacara templates                              # 列出所有模板：版本、字段、规则
 uv run jacara extract <图片或PDF> --excel out.xlsx --save   # 抽取字段，导出并存库
 
 # 评测（要先启动模型服务；数据和结果都不进 Git）

@@ -112,6 +112,7 @@ export interface Extraction {
   model: string
   prompt_version: string
   template: string
+  template_version: number
   checks: Checks
   values: FieldValue[]
 }

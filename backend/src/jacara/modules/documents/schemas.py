@@ -47,6 +47,7 @@ class ExtractionOut(BaseModel):
     model: str
     prompt_version: str
     template: str
+    template_version: int
     checks: dict[str, Any]
     values: list[ValueOut]
 
