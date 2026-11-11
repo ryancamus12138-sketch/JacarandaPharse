@@ -41,10 +41,12 @@ def date_variants(value: str) -> list[str]:
     except ValueError:
         return [value]
     dd, mm, yyyy = f"{d.day:02d}", f"{d.month:02d}", f"{d.year}"
+    yy = yyyy[2:]  # 两位年份：收据上常写 18/03/18（评测发现，见 docs/eval/README.md）
     variants = [value]
     for sep in ("/", "-", "."):
         variants += [f"{dd}{sep}{mm}{sep}{yyyy}", f"{mm}{sep}{dd}{sep}{yyyy}"]
         variants += [f"{yyyy}{sep}{mm}{sep}{dd}"]
+        variants += [f"{dd}{sep}{mm}{sep}{yy}", f"{mm}{sep}{dd}{sep}{yy}"]
     variants += [f"{d.year}年{d.month}月{d.day}日", f"{yyyy}年{mm}月{dd}日"]
     for month in (d.strftime("%B"), d.strftime("%b")):  # August、Aug
         variants += [f"{month} {d.day}, {yyyy}", f"{d.day} {month} {yyyy}"]

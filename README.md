@@ -121,6 +121,17 @@ uv run jacara user add admin --role admin
 **密码只有本人知道**：登录后自己改；忘了的话，管理员生成一次性重设码当面告诉本人，本人用它自己设新密码。
 登录、上传、审核、导出、用户管理、改密码都会记进审计日志。
 
+### 评测
+
+在有标准答案的收据（SROIE）上跑整条流水线，算准确率、出处覆盖率、错值拦截率和放行准确率：
+
+```bash
+uv run jacara eval download               # 第一次：下载评测集（要联网）
+uv run jacara eval sroie --limit 20       # 要先启动大模型
+```
+
+指标的意思和历次结果见 [docs/eval/README.md](docs/eval/README.md)。
+
 ### 检查与测试
 
 ```bash
@@ -140,6 +151,7 @@ cd web && npm run lint && npm run build
 | `backend/src/jacara/pipeline/` | 流水线组装、后台处理、保存结果 |
 | `backend/src/jacara/app.py` | Web 服务入口：接口 + 网页 |
 | `backend/src/jacara/worker.py` | 后台任务入口 |
+| `backend/src/jacara/eval/` | 评测（开发用） |
 | `backend/migrations/` | 数据库迁移 |
 | `backend/tests/` | 自动测试 |
 | `web/` | 前端（React + TypeScript），见 [web/README.md](web/README.md) |
