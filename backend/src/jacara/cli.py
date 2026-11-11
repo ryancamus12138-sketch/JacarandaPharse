@@ -4,6 +4,7 @@ uv run jacara --version
 uv run jacara ocr 图片或PDF                      识别文字（PDF 有文字层时直接读取）
 uv run jacara serve --model 模型.gguf            启动本地大模型服务
 uv run jacara extract 图片或PDF                  识别、抽取字段并核对出处（要先启动模型服务）
+uv run jacara templates                          列出所有模板
 uv run jacara doctor                             检查数据库、队列、对象存储、本地模型是否连得上
 uv run jacara start                              一起启动 Web 服务和后台任务，浏览器打开 http://127.0.0.1:8000
 uv run jacara start --model 模型.gguf            同时启动本地大模型：一个终端就够了
@@ -58,13 +59,14 @@ def main(argv: list[str] | None = None) -> int:
     p_ext.add_argument("--server", default="http://127.0.0.1:8080", help="模型服务地址")
     p_ext.add_argument("--show-prompt", action="store_true", help="同时打印发给模型的内容")
     p_ext.add_argument(
-        "--fields",
-        choices=["receipt", "full"],
+        "--template",
         default="receipt",
-        help="抽哪些字段：receipt 常用 4 个（默认），full 收据上所有单个字段",
+        help="用哪个模板：receipt 常用 4 个字段（默认），receipt_full 收据上所有单个字段",
     )
     p_ext.add_argument("--excel", type=Path, help="同时把结果导出成 Excel，例如 results/收据.xlsx")
     p_ext.add_argument("--save", action="store_true", help="同时把结果存进数据库")
+
+    sub.add_parser("templates", help="列出所有模板（backend/src/jacara/templates/*.toml）")
 
     sub.add_parser("doctor", help="检查数据库、任务队列、对象存储、本地模型是否连得上")
 
@@ -111,6 +113,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "doctor":
         return _doctor()
+    if args.command == "templates":
+        return _templates()
     if args.command == "api":
         return _api(args)
     if args.command == "worker":
@@ -198,11 +202,18 @@ def _extract(args: argparse.Namespace) -> int:
         return 1
 
     from jacara.pipeline.run import Pipeline, page_label
-    from jacara.plugins.extractors import PRESETS, ExtractionError, LlmExtractor
+    from jacara.plugins.extractors import ExtractionError, LlmExtractor
     from jacara.plugins.extractors.llm import build_messages
     from jacara.plugins.model_backends import ModelBackendError, ModelConfig, create_model_backend
     from jacara.plugins.ocr import create_ocr_engine
     from jacara.plugins.ocr.loader import UnsupportedFileError
+    from jacara.templates import TemplateError, load_template
+
+    try:
+        template = load_template(args.template)
+    except TemplateError as err:
+        print(err)
+        return 1
 
     backend = create_model_backend(ModelConfig(base_url=args.server))
     pipeline = Pipeline(ocr=create_ocr_engine(), extractor=LlmExtractor(backend))
@@ -219,12 +230,12 @@ def _extract(args: argparse.Namespace) -> int:
         how = page.models.get("source", "OCR 识别")
         print(f"读取：{how} · {len(page.lines)} 块文字 · 用时 {page.duration_ms} 毫秒")
         if args.show_prompt:
-            for message in build_messages(page, PRESETS[args.fields]):
+            for message in build_messages(page, template.specs):
                 print(f"\n----- {message.role} -----\n{message.content}")
             print("-----\n")
         source = page_label(path.name, number, len(pages))
         try:
-            report = pipeline.extract_page(page, source, number, args.fields)
+            report = pipeline.extract_page(page, source, number, template.name)
         except (ModelBackendError, ExtractionError) as err:
             print(err)
             return 1
@@ -305,6 +316,22 @@ def _print_report(report: DocumentReport) -> None:
 
     reviews = sum(a.needs_review or a.field.name in flagged for a in aligned)
     print(f"\n{len(aligned)} 个字段，{reviews} 个需要人工确认")
+
+
+def _templates() -> int:
+    from jacara.templates import TemplateError, load_template, template_names
+
+    for name in template_names():
+        try:
+            t = load_template(name)
+        except TemplateError as err:
+            print(_paint(f"✗ {err}", _RED))
+            continue
+        labels = "、".join(f.label for f in t.fields)
+        print(f"{t.name}  第 {t.version} 版  {t.title}")
+        print(f"  {len(t.fields)} 个字段：{labels}")
+        print(f"  {len(t.rules)} 条规则：{'、'.join(r.title for r in t.rules)}")
+    return 0
 
 
 def _doctor() -> int:

@@ -1,0 +1,44 @@
+# 收据模板：常用的 4 个字段。worker 处理上传的文件时用这个。
+#
+# 改了字段、说明或规则，就把 version 加 1：每份文档都会记下处理时用的模板名和版本，
+# 以后看到一条旧结果，能知道它是按哪一版模板抽的。改完跑一次评测（docs/eval/README.md）。
+#
+# fields  按顺序抽取、显示、导出。type 只能是 string（文字）、number（数字）、date（日期）。
+#         description 是写给大模型看的说明，直接影响抽取效果。
+#         required 现在只是记录，v2 后面做"必填"校验时才会用到。
+# rules   要检查的规则编号，规则本身写在 plugins/validators/rules.py。
+#         规则要用的字段这里没有时，那条规则自动跳过。
+
+name = "receipt"
+version = 1
+title = "收据（常用 4 个字段）"
+description = "商家、单号、日期、总额。"
+rules = ["total_positive", "date_exists", "date_not_future", "rounding", "cash_covers_total", "change"]
+
+[[fields]]
+name = "merchant"
+label = "商家"
+type = "string"
+required = true
+description = "商家（公司或店铺）名称，常带 SDN BHD、Ltd、有限公司等字样；不是收银员或顾客的人名"
+
+[[fields]]
+name = "document_no"
+label = "单号"
+type = "string"
+required = false
+description = "单号、收据号或发票号"
+
+[[fields]]
+name = "date"
+label = "日期"
+type = "date"
+required = true
+description = "开票或交易日期"
+
+[[fields]]
+name = "total"
+label = "总额"
+type = "number"
+required = true
+description = "最终应付总额（含税、四舍五入之后的金额）"

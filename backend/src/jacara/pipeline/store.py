@@ -68,6 +68,7 @@ def add_extractions(
             backend=e.backend,
             prompt_version=e.prompt_version,
             template=report.template,
+            template_version=report.template_version,
             duration_ms=e.duration_ms,
             raw_output=e.raw_output,
             checks=_checks_json(report.checks),

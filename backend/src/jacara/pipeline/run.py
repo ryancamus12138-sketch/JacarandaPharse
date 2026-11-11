@@ -1,23 +1,23 @@
 """流水线：一个文件 → 每一页的 DocumentReport。
 
-读取 → OCR → 抽取 → 对齐 → 校验。
+读取 → OCR → 抽取 → 对齐 → 校验。抽哪些字段、查哪些规则，由模板决定（templates/*.toml）。
 命令行（jacara extract）和后台任务（jacara worker）用的是同一份代码，所以两边的结果一定一样。
 这里只计算、不打印、不碰数据库。
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from jacara.plugins.aligners import TextMatchAligner
 from jacara.plugins.exporters import DocumentReport
-from jacara.plugins.extractors import PRESETS, Extractor, FieldSpec
+from jacara.plugins.extractors import Extractor
 from jacara.plugins.ocr import OcrEngine, OcrPage
 from jacara.plugins.ocr.loader import load_pages
 from jacara.plugins.validators import RuleValidator
+from jacara.templates import DEFAULT_TEMPLATE, load_template
 
 
 @dataclass
@@ -27,32 +27,32 @@ class Pipeline:
     ocr: OcrEngine
     extractor: Extractor
     aligner: TextMatchAligner = field(default_factory=TextMatchAligner)
-    validator: RuleValidator = field(default_factory=RuleValidator)
 
     def read(self, path: Path) -> list[OcrPage]:
         """读文件：图片走 OCR，PDF 有文字层直接读。"""
         return load_pages(path, self.ocr)
 
     def extract_page(
-        self, page: OcrPage, source: str, number: int, template: str = "receipt"
+        self, page: OcrPage, source: str, number: int, template: str = DEFAULT_TEMPLATE
     ) -> DocumentReport:
         """一页走完 抽取 → 对齐 → 校验。"""
-        fields: Sequence[FieldSpec] = PRESETS[template]
-        result = self.extractor.extract(page, fields)
+        tpl = load_template(template)
+        result = self.extractor.extract(page, tpl.specs)
         return DocumentReport(
             source=source,
             extraction=result,
             aligned=self.aligner.align(page, result),
-            checks=self.validator.validate(result.fields),
+            checks=RuleValidator(tpl.rules).validate(result.fields),
             ocr_engine=page.models.get("engine", page.engine),
             processed_at=datetime.now(),
             page=number,
             text_source=page.engine if page.engine == "pdf-text" else "ocr",
-            template=template,
+            template=tpl.name,
+            template_version=tpl.version,
         )
 
     def run(
-        self, path: Path, name: str | None = None, template: str = "receipt"
+        self, path: Path, name: str | None = None, template: str = DEFAULT_TEMPLATE
     ) -> list[DocumentReport]:
         """整个文件：每一页一份报告。name 是显示用的文件名（默认取 path 的文件名）。"""
         name = name or path.name

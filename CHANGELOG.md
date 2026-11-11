@@ -11,7 +11,12 @@ v2 开发中：先做收据和发票。评测基线、模板配置化、商品�
 
 ### 新增
 
+- 模板：字段、中文名、给模型的说明和规则从代码搬到 `templates/*.toml`；每次抽取记下模板名和版本；`GET /api/v1/templates` 查看模板，`jacara templates` 列出模板（ADR 0024）
 - 评测：`jacara eval sroie` 在 SROIE 收据上跑整条流水线，算准确率、出处覆盖率、错值拦截率、误报率、放行率和放行准确率（ADR 0023）
+
+### 改变
+
+- 命令行 `jacara extract` 的 `--fields full` 改为 `--template receipt_full`
 
 ### 修复
 

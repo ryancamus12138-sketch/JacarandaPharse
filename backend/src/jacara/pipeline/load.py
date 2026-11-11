@@ -72,6 +72,7 @@ def _report(extraction: Extraction, source: str) -> DocumentReport:
         page=extraction.page,
         text_source=extraction.source,
         template=extraction.template,
+        template_version=extraction.template_version,
         reviews=reviews,
     )
 

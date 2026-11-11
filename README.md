@@ -66,6 +66,8 @@ cd web && npm run dev                              # 4. 网页开发服务器
 ```bash
 uv run jacara ocr receipt.jpg                   # 只识别文字
 uv run jacara extract receipt.jpg --excel out.xlsx --save   # 要先启动大模型
+uv run jacara extract receipt.jpg --template receipt_full   # 用另一个模板：收据上全部 14 个字段
+uv run jacara templates                         # 列出所有模板
 ```
 
 ### 接口
@@ -102,6 +104,8 @@ uv run jacara extract receipt.jpg --excel out.xlsx --save   # 要先启动大模
 | POST | `/api/v1/users/{id}/reset-code` | 给忘了密码的人生成一次性重设码（管理员；15 分钟有效，只能用一次） |
 | GET | `/api/v1/users/permissions` | 可以开通的权限 |
 | GET | `/api/v1/audit-logs` | 审计日志：谁、什么时候、做了什么（管理员） |
+| GET | `/api/v1/templates` | 所有模板：字段、中文名、类型、规则 |
+| GET | `/api/v1/templates/{name}` | 一个模板 |
 
 给别人用时，可以在 `.env` 里写 `JACARA_API_DOCS=false` 关掉 `/docs`。
 
@@ -152,6 +156,7 @@ cd web && npm run lint && npm run build
 | `backend/src/jacara/app.py` | Web 服务入口：接口 + 网页 |
 | `backend/src/jacara/worker.py` | 后台任务入口 |
 | `backend/src/jacara/eval/` | 评测（开发用） |
+| `backend/src/jacara/templates/` | 模板：每种单据抽哪些字段、查哪些规则（.toml） |
 | `backend/migrations/` | 数据库迁移 |
 | `backend/tests/` | 自动测试 |
 | `web/` | 前端（React + TypeScript），见 [web/README.md](web/README.md) |

@@ -5,13 +5,15 @@ import json
 import pytest
 
 from jacara.plugins.extractors import (
-    RECEIPT_FIELDS,
     ExtractionError,
     FieldSpec,
     LlmExtractor,
     build_schema,
 )
 from jacara.plugins.model_backends import ChatMessage, ChatResult
+from jacara.templates import load_template
+
+RECEIPT_FIELDS = load_template("receipt").specs
 
 
 class FakeBackend:

@@ -1,0 +1,106 @@
+# 收据模板：收据上能找到的所有单个字段（14 个）。命令行 --template receipt_full 用。
+# 商品明细是表格，等表格字段做好后再加。说明见 receipt.toml。
+
+name = "receipt_full"
+version = 1
+title = "收据（全部 14 个单个字段）"
+description = "常用 4 个字段之外，再加公司注册号、地址、时间、收银员、会员、小计、税额、四舍五入、现金、找零。"
+rules = ["total_positive", "date_exists", "date_not_future", "rounding", "cash_covers_total", "change"]
+
+[[fields]]
+name = "merchant"
+label = "商家"
+type = "string"
+required = true
+description = "商家（公司或店铺）名称，常带 SDN BHD、Ltd、有限公司等字样；不是收银员或顾客的人名"
+
+[[fields]]
+name = "document_no"
+label = "单号"
+type = "string"
+required = false
+description = "单号、收据号或发票号"
+
+[[fields]]
+name = "date"
+label = "日期"
+type = "date"
+required = true
+description = "开票或交易日期"
+
+[[fields]]
+name = "total"
+label = "总额"
+type = "number"
+required = true
+description = "最终应付总额（含税、四舍五入之后的金额）"
+
+[[fields]]
+name = "company_reg_no"
+label = "公司注册号"
+type = "string"
+required = false
+description = "公司注册号，通常紧跟在商家名称下面，如 123456-X"
+
+[[fields]]
+name = "address"
+label = "地址"
+type = "string"
+required = false
+description = "商家地址，可能跨好几行，全部照抄并按原顺序连起来"
+
+[[fields]]
+name = "time"
+label = "时间"
+type = "string"
+required = false
+description = "交易时间，照抄原文，如 8:13:39 PM"
+
+[[fields]]
+name = "cashier"
+label = "收银员"
+type = "string"
+required = false
+description = "收银员名字"
+
+[[fields]]
+name = "member"
+label = "会员"
+type = "string"
+required = false
+description = "会员号或会员名"
+
+[[fields]]
+name = "subtotal"
+label = "小计"
+type = "number"
+required = false
+description = "四舍五入之前的总额（Total、Sub Total）"
+
+[[fields]]
+name = "tax"
+label = "税额"
+type = "number"
+required = false
+description = "税额（GST、SST、Tax）"
+
+[[fields]]
+name = "rounding"
+label = "四舍五入"
+type = "number"
+required = false
+description = "四舍五入调整金额（Rounding Adjustment）"
+
+[[fields]]
+name = "cash"
+label = "现金"
+type = "number"
+required = false
+description = "顾客付的现金"
+
+[[fields]]
+name = "change"
+label = "找零"
+type = "number"
+required = false
+description = "找零（Change）"

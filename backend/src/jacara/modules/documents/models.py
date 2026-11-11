@@ -57,7 +57,9 @@ class Extraction(Base, OwnedMixin, TimestampMixin):
     backend: Mapped[str] = mapped_column(String(32))
     prompt_version: Mapped[str] = mapped_column(String(32))
     template: Mapped[str] = mapped_column(String(64))
-    """用的字段清单，例如 receipt、full。以后有了模板功能，这里是模板名和版本。"""
+    """用的模板名，例如 receipt（templates/receipt.toml）。"""
+    template_version: Mapped[int] = mapped_column(default=1, server_default="1")
+    """模板的版本号。v2 之前处理的文档都按 1 记。"""
     duration_ms: Mapped[int]
 
     raw_output: Mapped[str] = mapped_column(Text)
