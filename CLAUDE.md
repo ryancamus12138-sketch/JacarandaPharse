@@ -58,6 +58,7 @@ backend/src/jacara/
   app.py        FastAPI 应用：create_app()，挂载 /api/v1，最后挂网页
   worker.py     后台 worker：Celery 任务定义，jacara worker 启动
   cli.py        命令行入口（jacara start 一起启动模型、worker、API）
+  eval/         评测（开发用）：sroie.py 读数据集，score.py 打分和指标，run.py 跑流水线、写结果
 backend/migrations/   Alembic 数据库迁移
 backend/tests/        自动测试（pytest）
 web/          前端（React + TypeScript + Vite + Ant Design + react-router + TanStack Query）
@@ -161,7 +162,8 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
   （`MemoryStorage`、`FakeQueue` 在 conftest.py），接口测试用 `dependency_overrides` 替换依赖。
   测试默认是个人模式（conftest 的 `personal_mode`），不受自己 `.env` 影响；要测团队模式的文件自己切过去。
   测网页用临时文件夹造一个假的 dist（`JACARA_WEB_DIR`），不需要真的 npm run build。
-- 评测方案（准确率打分）尚未确定，暂不加入；不要自行添加 eval/。
+- 评测（ADR 0023）：代码在 `backend/src/jacara/eval/`，`jacara eval` 运行，只在开发时用。数据集放 `datasets/`、结果放 `results/eval/`，都不进 Git。
+  改了提示词、模型、对齐规则或模板，都要跑一次评测，结果记进 `docs/eval/README.md`；最看重“放行准确率”（没标黄的值有多准）。
 - 改了数据库表就生成一条迁移，检查后再提交；需要改已有数据时在迁移里手写 SQL。
 - 重要的技术选择写一条 ADR（`docs/adr/NNNN-标题.md`），格式参考 0002。
 - 不提交 `.env`、数据集、模型文件、`node_modules/`、`web/dist/`。密钥只放在 `.env`。要提交 `web/package-lock.json`。
@@ -210,6 +212,10 @@ npm run lint && npm run build             # 前端检查（提交前）；build 
 # 不用 API，直接在命令行处理一个文件
 uv run jacara ocr <图片或PDF>                        # 只做文字识别
 uv run jacara extract <图片或PDF> --excel out.xlsx --save   # 抽取字段，导出并存库
+
+# 评测（要先启动模型服务；数据和结果都不进 Git）
+uv run jacara eval download               # 第一次：下载 SROIE 到 datasets/sroie（要联网）
+uv run jacara eval sroie --limit 20       # 先评 20 张；去掉 --limit 评全部，结果在 results/eval/<时间>/
 
 # 检查（提交前，在根目录）
 uv run ruff format . && uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest

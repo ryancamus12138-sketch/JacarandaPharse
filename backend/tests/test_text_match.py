@@ -24,6 +24,13 @@ def test_date_variants_include_common_spellings():
         assert expected in variants
 
 
+def test_two_digit_year_is_found_but_not_inside_a_longer_date():
+    """评测发现：收据上常写两位年份（18/03/18）。但 12-01-19 不能匹配到 12-01-1995 的前半截。"""
+    pattern = _exact_pattern(date_variants("2018-03-18"))
+    assert pattern.search("DATE: 18/03/18 10:21")
+    assert not _exact_pattern(date_variants("2019-01-12")).search("12-01-1995")
+
+
 @pytest.mark.parametrize(
     ("text", "found"),
     [

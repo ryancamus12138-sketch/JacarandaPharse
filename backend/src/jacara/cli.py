@@ -12,6 +12,8 @@ uv run jacara worker                             只启动后台任务，处理�
 uv run jacara user add 用户名 --role admin        新建用户（团队模式的第一个管理员用它建）
 uv run jacara user add 用户名 --allow value:review    新建使用者，并开通"修改和确认字段"
 uv run jacara user password 用户名                重设密码（只给能操作服务器的人应急用）
+uv run jacara eval download                      下载 SROIE 评测集（开发用，要联网）
+uv run jacara eval sroie --limit 20              在 SROIE 上评测前 20 张（要先启动模型服务）
 """
 
 from __future__ import annotations
@@ -78,6 +80,16 @@ def main(argv: list[str] | None = None) -> int:
         "--model", type=Path, help="同时启动本地大模型（.gguf），不写就要自己先启动"
     )
 
+    p_eval = sub.add_parser("eval", help="评测：在有标准答案的数据集上算准确率（开发用）")
+    eval_sub = p_eval.add_subparsers(dest="eval_command", required=True)
+    p_dl = eval_sub.add_parser("download", help="下载 SROIE 评测集（要联网、要装 git）")
+    p_dl.add_argument("--data", type=Path, default=Path("datasets/sroie"), help="放到哪里")
+    p_sroie = eval_sub.add_parser("sroie", help="在 SROIE 收据上评测（要先运行 jacara serve）")
+    p_sroie.add_argument("--data", type=Path, default=Path("datasets/sroie"), help="数据集在哪里")
+    p_sroie.add_argument("--limit", type=int, help="只评前 N 张，先少量试跑")
+    p_sroie.add_argument("--out", type=Path, default=Path("results/eval"), help="结果放在哪里")
+    p_sroie.add_argument("--server", default="http://127.0.0.1:8080", help="模型服务地址")
+
     p_user = sub.add_parser("user", help="管理用户（团队模式）")
     user_sub = p_user.add_subparsers(dest="user_command", required=True)
     p_add = user_sub.add_parser("add", help="新建用户，密码会提示输入")
@@ -107,6 +119,8 @@ def main(argv: list[str] | None = None) -> int:
         return _start(args)
     if args.command == "user":
         return _user(args)
+    if args.command == "eval":
+        return _eval(args)
     if args.command == "ocr":
         return _ocr(args)
     if args.command == "serve":
@@ -380,6 +394,50 @@ def _user(args: argparse.Namespace) -> int:
     except ProgrammingError:
         print("数据库里还没有表。先运行：uv run alembic upgrade head")
         return 1
+    return 0
+
+
+def _eval(args: argparse.Namespace) -> int:
+    import subprocess
+    from datetime import datetime
+
+    from jacara.eval.sroie import download_sroie, load_sroie
+
+    if args.eval_command == "download":
+        try:
+            count = download_sroie(args.data)
+        except (RuntimeError, subprocess.CalledProcessError) as err:
+            print(f"下载失败：{err}")
+            return 1
+        print(f"SROIE 已在 {args.data}，共 {count} 张")
+        return 0
+
+    try:
+        samples = load_sroie(args.data, args.limit)
+    except FileNotFoundError as err:
+        print(err)
+        return 1
+
+    from jacara.eval.run import run_eval, write_result
+    from jacara.pipeline.run import Pipeline
+    from jacara.plugins.extractors import LlmExtractor
+    from jacara.plugins.model_backends import ModelConfig, create_model_backend
+    from jacara.plugins.ocr import create_ocr_engine
+
+    backend = create_model_backend(ModelConfig(base_url=args.server))
+    pipeline = Pipeline(ocr=create_ocr_engine(), extractor=LlmExtractor(backend))
+
+    def progress(done: int, total: int, sample_id: str) -> None:
+        print(f"\r{done}/{total}  {sample_id}", end="", flush=True)
+
+    print(f"评测 {len(samples)} 张收据（Ctrl + C 中止）")
+    result = run_eval(samples, pipeline.run, progress)
+    out = args.out / datetime.now().strftime("%Y%m%d-%H%M%S")
+    write_result(result, out, "SROIE")
+    print("\n\n" + (out / "summary.md").read_text(encoding="utf-8"))
+    print(f"结果：{out}")
+    if result.failures:
+        print(f"{len(result.failures)} 张出错，原因见 summary.json 的 failures")
     return 0
 
 
