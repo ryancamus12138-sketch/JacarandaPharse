@@ -7,7 +7,7 @@ import json
 import pytest
 
 from jacara.eval.run import run_eval, write_result
-from jacara.eval.score import FieldScore, same, score_report, summarize
+from jacara.eval.score import FieldScore, close_enough, same, score_report, summarize
 from jacara.eval.sroie import load_sroie
 
 
@@ -35,6 +35,19 @@ from jacara.eval.sroie import load_sroie
 )
 def test_same_ignores_format_differences(kind, predicted, gold, expected):
     assert same(kind, predicted, gold) is expected
+
+
+@pytest.mark.parametrize(
+    ("predicted", "gold", "expected"),
+    [
+        ("LJAN HING STATIONERY SDN BHD", "LIAN HING STATIONERY SDN BHD", True),  # OCR 错一个字母
+        ("99 SPEED MART S/B (519537-X)", "99 SPEED MART S/B", False),  # 多抄了注册号
+        ("BAR WANG RICE", "UNIHAKKA INTERNATIONAL SDN BHD", False),  # 选了另一个名字
+        (None, "ABC", False),
+    ],
+)
+def test_close_enough_only_forgives_ocr_typos(predicted, gold, expected):
+    assert close_enough("string", predicted, gold) is expected
 
 
 def test_load_sroie_maps_field_names(tmp_path):
@@ -79,6 +92,7 @@ def test_summary_rates():
     total, overall = summarize(scores)
     assert total.field == "total" and overall.field == "全部"
     assert total.accuracy == 0.5
+    assert total.close_accuracy == 0.5
     assert total.catch_rate == 0.5
     assert total.false_alarm_rate == 0.5
     assert total.pass_rate == 0.5
@@ -104,4 +118,5 @@ def test_run_eval_records_failures_and_writes_files(tmp_path, report):
     summary = json.loads((tmp_path / "out" / "summary.json").read_text(encoding="utf-8"))
     assert summary["samples"] == 2 and summary["failed"] == 1
     assert len((tmp_path / "out" / "fields.jsonl").read_text().splitlines()) == 1
-    assert "放行准确率" in (tmp_path / "out" / "summary.md").read_text(encoding="utf-8")
+    markdown = (tmp_path / "out" / "summary.md").read_text(encoding="utf-8")
+    assert "放行准确率" in markdown and "宽松准确率" in markdown

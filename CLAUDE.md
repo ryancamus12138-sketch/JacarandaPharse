@@ -123,9 +123,13 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 管理员没有"直接设别人密码"的接口；唯一的例外是能操作服务器的人用命令行 `jacara user password`。
 不用短信或邮件验证：要联网，违反规则 1（ADR 0021）。
 
-**一个命令跑起来（ADR 0022）：** `jacara start` 用 subprocess 启动 llama-server（`--model` 时，直接启动、不经过 `jacara serve`）
-和 worker，API 在主进程。Ctrl + C 后 `_stop()` 先 terminate、10 秒后 kill，不留孤儿进程。
-启动前检查：`.env` 密钥不能是空的或 `change-me`（只报名字、不打印值），8000 / 8080 端口不能被占用。
+**一个命令跑起来（ADR 0022）：** `jacara start` 用 subprocess 启动 llama-server（直接启动、不经过 `jacara serve`）
+和 worker，API 在主进程，2 秒后打开浏览器（`--no-browser` 不开）。模型文件按 `--model` → `JACARA_MODEL` →
+`models/` 里唯一的 `.gguf` 的顺序找（`Settings.find_model()`）。Ctrl + C 或 `jacara stop` 后 `_stop()` 先 terminate、
+10 秒后 kill，不留孤儿进程；`jacara stop` 靠 `.run/jacara.json`（start 和子进程的进程号）给 start 发 SIGINT，
+再收拾剩下的子进程。start 把 SIGTERM 也当成 Ctrl + C：uvicorn 停下后会重发信号，默认处理会跳过 finally、留下孤儿进程。
+启动前检查：`.env` 密钥不能是空的或 `change-me`（只报名字、不打印值）。8000 被自己占着（`/api/v1/health` 能回答）
+就只打开浏览器；8080 上已有模型服务就直接用；被别的程序占着才报错。
 API 在所有接口之后用 `core/web.py` 挂一条兜底路由提供 `web/dist`：`/api/...` 不存在时是 404 JSON；
 `dist` 里有的文件直接发（`assets/` 长期缓存，`index.html` 用 no-cache）；其他网址都发 `index.html`（SPA 回退）；
 路径解析后必须还在 `dist` 里面。没打包时返回 503 和打包方法。`JACARA_API_DOCS=false` 关掉 `/docs` 和 `/openapi.json`；
@@ -150,6 +154,17 @@ API 在所有接口之后用 `core/web.py` 挂一条兜底路由提供 `web/dist
 不写在代码里。规则的检查函数仍在 `plugins/validators/rules.py`，模板按编号选用。流水线按模板名取模板（默认 `receipt`），
 每次抽取都把模板名和版本（`extractions.template`、`template_version`）存进数据库。
 **改了模板里的字段、说明或规则，就把 version 加 1，并跑一次评测。** 字段名只用小写英文、数字、下划线。
+给模型的说明里举例子时，**不要用评测集里的真实数据**（店名、注册号等），否则评测分数虚高。
+收据的商家（merchant）是开票的公司名，店名另有 store_name（ADR 0025）。
+
+**表格字段（ADR 0026）：** 模板里的 `[[tables]]`（如商品明细 items）每一格存成一个普通字段，
+名字是 `表名.第几行.列名`（`items.2.amount`，行号从 1 开始），用 `cell_name()` / `split_cell_name()` 拼和拆，
+不要自己写字符串处理。找出处、审核、修改历史、导出都按普通字段走；Excel 和审核页面再按表画出来。
+
+**审核工具（ADR 0027）：** 每页 OCR 结果存在 `extractions.ocr`。审核记录可以带新出处（`value_revisions.evidence`，
+从原文选取 `source_lines` 或框选 `source_box`），当前出处用 `current_evidence`。表格删行 = 每格一条 `delete` 记录，
+增行 = `origin="manual"` 的新字段，顺序看 `sort_key`，原有字段不改。审核之后的"当前结果"（跳过删掉的行、
+按显示顺序编号、规则重算）统一用 `pipeline/current.py`，审核页面（`current_checks`）和导出（`load.py`）都走它。
 
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 
@@ -193,8 +208,10 @@ uv run alembic revision --autogenerate -m "说明"   # 改了表之后生成迁�
 uv run alembic check                      # 确认表和迁移一致
 uv run alembic current                    # 当前数据库在哪个版本
 
-# 日常使用：一个命令（先 cd web && npm run build），打开 http://127.0.0.1:8000，Ctrl + C 全部停止
-uv run jacara start --model models/Qwen3.5-9B-Q4_K_M.gguf
+# 日常使用：一个命令（先 cd web && npm run build），自动打开浏览器，Ctrl + C 或 jacara stop 全部停止
+uv run jacara start
+uv run jacara stop
+uv run jacara backfill-ocr                    # 更新后：给以前处理的文档补上 OCR 结果（审核时点原文、框选要用）
 
 # 开发：docker compose 之外，再开四个终端
 uv run jacara serve --model models/<模型文件>.gguf   # 终端 1：本地大模型

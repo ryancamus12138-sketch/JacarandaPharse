@@ -19,7 +19,13 @@ export function useRevise(documentId: string) {
   return useMutation({
     mutationFn: ({ valueId, change }: ReviseVars) => reviseValue(valueId, change),
     onSuccess: (_, { valueId, change }) => {
-      void message.success(change.action === 'confirm' ? '已确认' : '已保存修改')
+      void message.success(
+        change.action === 'confirm'
+          ? '已确认'
+          : change.source_lines
+            ? '已从原文填入'
+            : '已保存修改',
+      )
       void queryClient.invalidateQueries({ queryKey: ['document', documentId] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
       void queryClient.invalidateQueries({ queryKey: ['value-history', valueId] })

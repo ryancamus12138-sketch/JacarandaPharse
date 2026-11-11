@@ -9,7 +9,8 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import JSON, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from jacara.core.db import Base, OwnedMixin, TimestampMixin, new_id
@@ -66,8 +67,17 @@ class Extraction(Base, OwnedMixin, TimestampMixin):
     """模型的原始回答，原样保存（项目规则 2）。"""
     checks: Mapped[dict[str, Any]]
     """规则校验结果：通过、跳过、不通过的规则和说明。"""
+    ocr: Mapped[dict[str, Any] | None] = mapped_column(
+        # none_as_null：没有 OCR 结果存成 SQL 的 NULL（而不是 JSON 的 null），
+        # jacara backfill-ocr 才能用 "ocr IS NULL" 找出要补的
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"),
+        deferred=True,
+    )
+    """这一页的 OCR 结果：{"lines": [{"text", "box": [x0, y0, x1, y1], "polygon", "confidence"}]}。
+    审核时"点原文填值"用。只在要用时才从数据库读（deferred）。2026-11 之前处理的文档没有。"""
 
     document: Mapped[Document] = relationship(back_populates="extractions")
     values: Mapped[list[ExtractedValue]] = relationship(
-        back_populates="extraction", order_by="ExtractedValue.position"
+        back_populates="extraction",
+        order_by="[ExtractedValue.sort_key, ExtractedValue.position]",
     )

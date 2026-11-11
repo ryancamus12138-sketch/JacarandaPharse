@@ -59,7 +59,7 @@ def process_document(
         data = storage.get(key)
         with tempfile.TemporaryDirectory() as tmp:
             # 流水线按后缀判断文件类型，所以临时文件的后缀按 content_type 取
-            path = Path(tmp) / f"original{_suffix(filename, content_type)}"
+            path = Path(tmp) / f"original{suffix_for(filename, content_type)}"
             path.write_bytes(data)
             reports = pipeline.run(path, name=filename)
 
@@ -119,6 +119,6 @@ def describe_error(err: Exception) -> str:
     return f"处理时出现意外错误（{type(err).__name__}），详情见 worker 日志"
 
 
-def _suffix(filename: str, content_type: str | None) -> str:
+def suffix_for(filename: str, content_type: str | None) -> str:
     guessed = mimetypes.guess_extension(content_type) if content_type else None
     return guessed or Path(filename).suffix

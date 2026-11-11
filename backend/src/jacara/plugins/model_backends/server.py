@@ -26,7 +26,15 @@ def server_env() -> dict[str, str]:
     return env
 
 
-def server_command(model: Path, *, port: int = 8080, context: int = 8192) -> list[str]:
+DEFAULT_CONTEXT = 32768
+"""上下文长度：提示词和回答加起来最多多少个 token。
+
+回答不设上限（商品明细必须完整），所以真正的上限是它。一张很长的收据，提示词约 3000、
+回答每行商品约 30 个 token，32768 能放下几百行。原来是 8192。
+"""
+
+
+def server_command(model: Path, *, port: int = 8080, context: int = DEFAULT_CONTEXT) -> list[str]:
     """拼出启动命令。找不到 llama-server 时报错并说明怎么安装。"""
     exe = shutil.which("llama-server")
     if exe is None:
@@ -41,7 +49,7 @@ def server_command(model: Path, *, port: int = 8080, context: int = 8192) -> lis
     ]  # fmt: skip
 
 
-def run_server(model: Path, *, port: int = 8080, context: int = 8192) -> int:
+def run_server(model: Path, *, port: int = 8080, context: int = DEFAULT_CONTEXT) -> int:
     """在前台运行 llama-server，按 Ctrl + C 停止。返回退出码。"""
     command = server_command(model, port=port, context=context)
     try:

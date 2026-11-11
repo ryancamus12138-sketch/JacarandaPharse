@@ -15,7 +15,7 @@ from sqlalchemy.pool import StaticPool
 from jacara.app import create_app
 from jacara.core.config import get_settings
 from jacara.core.db import Base, session_scope
-from jacara.core.deps import get_queue, get_session, get_storage
+from jacara.core.deps import get_ocr, get_queue, get_session, get_storage
 from jacara.core.queue import QueueError
 from jacara.core.storage import StorageError
 from jacara.plugins.aligners import TextMatchAligner
@@ -132,6 +132,37 @@ class FakeQueue:
         self.sent.append(document_id)
 
 
+class RegionOcr:
+    """假的 OCR：不管给什么图，都认出 lines 里的文字。"重新识别这块"的测试改它。"""
+
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.lines: list[str] = ["9.99"]
+        self.seen: list[tuple[int, int]] = []
+        """每次识别的图片大小，看裁得对不对、放大了没有。"""
+
+    def recognize(self, image):
+        from PIL import Image
+
+        with Image.open(image) as picture:
+            self.seen.append(picture.size)
+        lines = tuple(
+            make_line(text, 0, i * 30, 100, i * 30 + 20, conf=0.9)
+            for i, text in enumerate(self.lines)
+        )
+        return OcrPage(width=100, height=100, lines=lines, engine="fake", models={}, duration_ms=0)
+
+    line: tuple[str, float] | None = None
+    """不检测、整块当一行直接识别时认出的文字（检测一个字都没找到时才用）。"""
+
+    def read_line(self, image):
+        return self.line
+
+
+region_ocr = RegionOcr()
+
+
 @pytest.fixture
 def storage() -> MemoryStorage:
     return MemoryStorage()
@@ -154,5 +185,6 @@ def client(factory, storage, queue) -> Iterator[TestClient]:
     app.dependency_overrides[get_session] = test_session
     app.dependency_overrides[get_storage] = lambda: storage
     app.dependency_overrides[get_queue] = lambda: queue
+    app.dependency_overrides[get_ocr] = lambda: region_ocr
     with TestClient(app) as test_client:
         yield test_client

@@ -4,6 +4,11 @@ extracted_values   模型抽出的每个字段：值、出处、对齐状态。�
 value_revisions    人工审核：每次修改或确认都新增一条，不修改、不删除（项目规则 2、3）。
 
 当前值 = 最新一条审核记录里的值；一条记录都没有，就是模型的原值。
+
+表格（商品明细）的行可以人工增删（ADR 0027）：
+- 删除一行 = 这一行每一格都新增一条 action="delete" 的记录，不真的删；恢复 = 再新增一条 restore。
+- 增加一行 = 新增几条 origin="manual" 的字段，值是空的，再用审核记录填值。
+- 显示顺序看 sort_key：插在两行中间的新行取两边的中间数，原有的行不用改。
 """
 
 from __future__ import annotations
@@ -11,7 +16,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from jacara.core.db import Base, OwnedMixin, TimestampMixin, new_id
@@ -26,7 +31,11 @@ class ExtractedValue(Base, OwnedMixin, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     extraction_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("extractions.id"), index=True)
     position: Mapped[int]
-    """在字段清单里的顺序，显示时按这个排。"""
+    """在字段清单里的顺序（抽取时定下）。"""
+    sort_key: Mapped[float] = mapped_column(Float, server_default="0")
+    """显示顺序，按这个排。抽取时等于 position；人工插入的行取前后两行的中间数。"""
+    origin: Mapped[str] = mapped_column(String(16), default="model", server_default="model")
+    """model：模型抽的；manual：审核时人工增加的（表格新增的行）。"""
 
     name: Mapped[str] = mapped_column(String(64))
     type: Mapped[str] = mapped_column(String(16))
@@ -48,12 +57,28 @@ class ExtractedValue(Base, OwnedMixin, TimestampMixin):
         back_populates="original", order_by="ValueRevision.seq"
     )
 
-    # 下面三个不是表里的列，是根据审核记录算出来的。用之前要先把 revisions 查出来。
+    # 下面几个不是表里的列，是根据审核记录算出来的。用之前要先把 revisions 查出来。
 
     @property
     def current_value(self) -> str | None:
         """当前值：最新一条审核记录里的值；没人审核过就是原值。"""
         return self.revisions[-1].new_value if self.revisions else self.value
+
+    @property
+    def current_evidence(self) -> dict[str, Any] | None:
+        """当前出处：最近一次"从原文选取"记下的出处；没有就是抽取时找到的出处。
+
+        只改了值（手打的）的时候，出处还是原来的：值已经和原文对不上了，要靠审核记录说明。
+        """
+        for revision in reversed(self.revisions):
+            if revision.evidence is not None:
+                return revision.evidence
+        return self.evidence
+
+    @property
+    def deleted(self) -> bool:
+        """这一格所在的行被删除了（表格才有）。"""
+        return bool(self.revisions) and self.revisions[-1].action == "delete"
 
     @property
     def reviewed(self) -> bool:
@@ -80,9 +105,11 @@ class ValueRevision(Base, OwnedMixin, TimestampMixin):
     seq: Mapped[int] = mapped_column(server_default="1")
     """同一个字段的第几次审核：1、2、3……两个人同时改同一个字段，只有一个能成功。"""
     action: Mapped[str] = mapped_column(String(16), server_default="edit")
-    """edit（修改）或 confirm（确认原来的值是对的）。"""
+    """edit（修改）、confirm（确认原来的值是对的）、delete（删除这一行）、restore（恢复这一行）。"""
     new_value: Mapped[str | None] = mapped_column(Text)
     """这次审核之后的值。确认时就是确认的那个值，这样每条记录单独看也完整。"""
     reason: Mapped[str] = mapped_column(Text, default="")
+    evidence: Mapped[dict[str, Any] | None]
+    """从原文选取时的新出处（和 extracted_values.evidence 一样的格式）；手打的值没有。"""
 
     original: Mapped[ExtractedValue] = relationship(back_populates="revisions")

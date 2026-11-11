@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from jacara.modules.fields.schemas import ValueOut
 
@@ -49,6 +49,9 @@ class ExtractionOut(BaseModel):
     template: str
     template_version: int
     checks: dict[str, Any]
+    """抽取时的规则结果，永远不变。"""
+    current_checks: dict[str, Any] | None = None
+    """按审核之后的当前值重新检查的结果（删掉的行不算）。审核页面显示这个。"""
     values: list[ValueOut]
 
 
@@ -63,3 +66,37 @@ class DocumentPage(BaseModel):
 
     items: list[DocumentOut]
     total: int
+
+
+class OcrLineOut(BaseModel):
+    """原图上的一个文字块。index 是它在这一页里的编号，"从原文选取"时用。"""
+
+    index: int
+    text: str
+    box: list[float]
+    """外接框 [x0, y0, x1, y1]，像素，和页面图片一样的坐标。"""
+    polygon: list[list[float]]
+    confidence: float
+    row: int | None = None
+    """在第几个视觉行（和模型看到的行号一样）。"""
+
+
+class RegionIn(BaseModel):
+    """页面上的一块区域：[x0, y0, x1, y1]，和页面图片一样的像素坐标。"""
+
+    box: list[float] = Field(min_length=4, max_length=4)
+
+
+class RegionOut(BaseModel):
+    """重新识别的结果。text 为空表示这块区域里没认出文字。"""
+
+    text: str
+    confidence: float | None
+    """认出的文字里最低的 OCR 置信度。"""
+
+
+class PageOcr(BaseModel):
+    """一页的 OCR 结果。available=false：这一页处理时还没保存 OCR 结果（重新处理后才有）。"""
+
+    available: bool
+    lines: list[OcrLineOut]

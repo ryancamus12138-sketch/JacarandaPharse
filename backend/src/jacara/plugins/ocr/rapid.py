@@ -68,7 +68,9 @@ class RapidOcrEngine:
         width, height = exif_size(image)
 
         started = time.perf_counter()
-        result = engine(str(image))
+        # 三个开关每次都写明：RapidOCR 会记住上一次传的值（read_line 关掉了检测），
+        # 不写的话，用过一次 read_line 之后，整页识别也不找字了
+        result = engine(str(image), use_det=True, use_cls=self.config.use_angle_cls, use_rec=True)
         duration_ms = round((time.perf_counter() - started) * 1000)
 
         lines: list[OcrLine] = []
@@ -90,6 +92,18 @@ class RapidOcrEngine:
             models=self._models(),
             duration_ms=duration_ms,
         )
+
+    def read_line(self, image: Path) -> tuple[str, float] | None:
+        """整张图当成一行字直接识别，不先找文字在哪（跳过"检测"）。
+
+        框选的小块图片，"检测"那一步有时一个字都找不到（字贴着边、太小），
+        直接识别反而能认出来。认不出返回 None。
+        """
+        result = self._load()(str(image), use_det=False, use_cls=False, use_rec=True)
+        texts = [t for t in (result.txts or ()) if t and t.strip()]
+        if not texts:
+            return None
+        return " ".join(texts), float(min(result.scores or (0.0,)))
 
 
 def exif_size(image: Path) -> tuple[int, int]:

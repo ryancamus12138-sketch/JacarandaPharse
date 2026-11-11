@@ -32,7 +32,11 @@ def _source(filename: str, page: int, pages: int) -> str:
 
 
 def _report(extraction: Extraction, source: str) -> DocumentReport:
-    fields = tuple(_field(v) for v in extraction.values)
+    """当前的结果：删掉的行不导出，表格按显示顺序编号，规则按审核之后的值重新检查。"""
+    from jacara.pipeline.current import current_checks, current_values
+
+    current = current_values(extraction)
+    fields = tuple(_field(v, name) for v, name in current)
     result = ExtractionResult(
         fields=fields,
         raw_output=extraction.raw_output,
@@ -46,27 +50,27 @@ def _report(extraction: Extraction, source: str) -> DocumentReport:
             field=f,
             # cast：告诉类型检查"数据库里存的就是这几个值之一"，运行时什么都不做
             status=cast(AlignStatus, v.status),
-            evidence=_evidence(v.evidence),
+            evidence=_evidence(v.current_evidence),
             needs_review=v.needs_review,
             note=v.note,
         )
-        for f, v in zip(fields, extraction.values, strict=True)
+        for f, (v, _) in zip(fields, current, strict=True)
     )
     reviews = {
-        v.name: Review(
+        name: Review(
             action=v.revisions[-1].action,
             value=v.revisions[-1].new_value,
             reason=v.revisions[-1].reason,
             reviewed_at=v.revisions[-1].created_at,
         )
-        for v in extraction.values
+        for v, name in current
         if v.revisions
     }
     return DocumentReport(
         source=source,
         extraction=result,
         aligned=aligned,
-        checks=_checks(extraction.checks),
+        checks=current_checks(extraction),
         ocr_engine=extraction.ocr_engine,
         processed_at=extraction.created_at,
         page=extraction.page,
@@ -77,13 +81,16 @@ def _report(extraction: Extraction, source: str) -> DocumentReport:
     )
 
 
-def _field(value: ExtractedValue) -> ExtractedField:
-    """数据库里的值都是文字；数字还原成数字，规则和导出才能按数字处理。"""
+def _field(value: ExtractedValue, name: str) -> ExtractedField:
+    """数据库里的值都是文字；数字还原成数字，规则和导出才能按数字处理。
+
+    人工新增的行没有模型原值，原值就是空的；导出时用审核之后的值。
+    """
     raw: str | float | None = value.value
     if value.type == "number" and raw is not None:
         with suppress(ValueError):  # 转不成数字就保持原样（规则校验会标出来）
             raw = float(raw)
-    return ExtractedField(value.name, cast(FieldType, value.type), raw, value.row_no)
+    return ExtractedField(name, cast(FieldType, value.type), raw, value.row_no)
 
 
 def _evidence(data: dict[str, Any] | None) -> Evidence | None:
@@ -96,10 +103,10 @@ def _evidence(data: dict[str, Any] | None) -> Evidence | None:
         polygon=(Point(x0, y0), Point(x1, y0), Point(x1, y1), Point(x0, y1)),
         confidence=data["confidence"],
     )
-    return Evidence(data["row"], data["row_text"], (line,), data["similarity"])
+    return Evidence(data.get("row") or 0, data["row_text"], (line,), data["similarity"])
 
 
-def _checks(data: dict[str, Any]) -> ValidationResult:
+def stored_checks(data: dict[str, Any]) -> ValidationResult:
     return ValidationResult(
         issues=tuple(
             Issue(i["rule"], i["title"], i["message"], tuple(i["fields"]), i["severity"])

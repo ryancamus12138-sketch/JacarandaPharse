@@ -1,4 +1,9 @@
-# 收据模板：常用的 4 个字段。worker 处理上传的文件时用这个。
+# 收据模板：常用的 5 个字段。worker 处理上传的文件时用这个。
+#
+# 版本记录（改了什么、为什么，评测结果见 docs/eval/README.md）：
+#   1  v1.0.0 的 4 个字段原样搬过来
+#   2  商家改成"开票的公司"，说明写清楚不带注册号；新增店名 store_name
+#   3  新增商品明细表 items（商品、数量、单价、金额）和两条规则 items_sum、item_line
 #
 # 改了字段、说明或规则，就把 version 加 1：每份文档都会记下处理时用的模板名和版本，
 # 以后看到一条旧结果，能知道它是按哪一版模板抽的。改完跑一次评测（docs/eval/README.md）。
@@ -6,21 +11,30 @@
 # fields  按顺序抽取、显示、导出。type 只能是 string（文字）、number（数字）、date（日期）。
 #         description 是写给大模型看的说明，直接影响抽取效果。
 #         required 现在只是记录，v2 后面做"必填"校验时才会用到。
+# tables  表格（[[tables]]，列写在 [[tables.columns]]），每行的列和 fields 的写法一样。
 # rules   要检查的规则编号，规则本身写在 plugins/validators/rules.py。
 #         规则要用的字段这里没有时，那条规则自动跳过。
 
 name = "receipt"
-version = 1
-title = "收据（常用 4 个字段）"
-description = "商家、单号、日期、总额。"
-rules = ["total_positive", "date_exists", "date_not_future", "rounding", "cash_covers_total", "change"]
+version = 3
+title = "收据（常用 5 个字段 + 商品明细）"
+description = "公司名、店名、单号、日期、总额，以及每一行商品。"
+rules = ["total_positive", "date_exists", "date_not_future", "rounding", "cash_covers_total", "change",
+         "items_sum", "item_line"]
 
 [[fields]]
 name = "merchant"
-label = "商家"
+label = "商家（公司）"
 type = "string"
 required = true
-description = "商家（公司或店铺）名称，常带 SDN BHD、Ltd、有限公司等字样；不是收银员或顾客的人名"
+description = "开这张收据的公司的名称，一般在最上面几行，常带 SDN BHD、S/B、BHD、ENTERPRISE、TRADING、有限公司等字样。只抄公司名本身：不要带后面括号里的公司注册号（如 (123456-X)）、分店名、地址或电话。收据上同时有店名和公司名时，这里填公司名；只有店名时才填店名。不是收银员或顾客的人名"
+
+[[fields]]
+name = "store_name"
+label = "店名"
+type = "string"
+required = false
+description = "顾客看到的店名或品牌名（招牌名），如 STARBUCKS、喜茶。常在公司名上面或旁边，字更大。和公司名一样、或收据上没有单独的店名时，照抄公司名"
 
 [[fields]]
 name = "document_no"
@@ -42,3 +56,34 @@ label = "总额"
 type = "number"
 required = true
 description = "最终应付总额（含税、四舍五入之后的金额）"
+
+# 表格：行数不固定，每行同样的几列。每一格都当作一个字段存（items.2.amount = 第 2 行的金额），
+# 和普通字段一样找出处、校验、审核。
+[[tables]]
+name = "items"
+label = "商品明细"
+description = "买的每一样商品或服务，一样一行，按收据上的顺序，一样都不能漏。一样商品在收据上常占两行：上一行是商品名，下一行是商品编号、数量（如 1x、3x）、单价、金额，这时合成一行，row 填价格那一行。商品名只填名称，不要把商品编号、数量或价格当成商品名。金额后面带 - 的是折扣，金额填负数。不包括小计、税、服务费、调整、总额、现金、找零这些汇总行"
+
+[[tables.columns]]
+name = "name"
+label = "商品"
+type = "string"
+description = "商品名称，照抄原文。不是商品编号（一串数字）"
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+type = "number"
+description = "数量，如 3x 填 3。收据上没写时填 null"
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+type = "number"
+description = "单价，收据上没写时填 null"
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+type = "number"
+description = "这一行的金额（一般是数量 × 单价）"

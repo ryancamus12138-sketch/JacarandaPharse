@@ -16,6 +16,7 @@ from jacara.core.owner import PERSONAL_OWNER, Owner
 from jacara.models import Document, ExtractedValue, Extraction
 from jacara.plugins.aligners.base import AlignedField
 from jacara.plugins.exporters.base import DocumentReport
+from jacara.plugins.ocr.base import OcrPage
 from jacara.plugins.validators.base import ValidationResult
 
 
@@ -72,6 +73,7 @@ def add_extractions(
             duration_ms=e.duration_ms,
             raw_output=e.raw_output,
             checks=_checks_json(report.checks),
+            ocr=ocr_json(report.ocr_page),
             **who,
         )
         session.add(extraction)
@@ -93,6 +95,7 @@ def _value_row(
     return ExtractedValue(
         extraction=extraction,
         position=position,
+        sort_key=float(position),
         name=field.field.name,
         type=field.field.type,
         value=None if value is None else str(value),
@@ -115,6 +118,50 @@ def _evidence_json(field: AlignedField) -> dict[str, Any] | None:
         "bbox": [round(v, 1) for v in ev.bbox],
         "confidence": round(ev.confidence, 4),
         "similarity": ev.similarity,
+    }
+
+
+def ocr_json(page: OcrPage | None) -> dict[str, Any] | None:
+    """一页 OCR 结果存成 JSON：每个文字块的文字、外接框、四个角、置信度，还有它在第几个视觉行。
+
+    审核页面"点原文填值"要用：点哪一块，就用哪一块的文字和位置。
+    """
+    if page is None:
+        return None
+    from jacara.plugins.ocr.layout import group_rows
+
+    row_of = {id(line): row.index for row in group_rows(page) for line in row.lines}
+    return {
+        "width": page.width,
+        "height": page.height,
+        "lines": [
+            {
+                "text": line.text,
+                "box": [round(v, 1) for v in line.bbox],
+                "polygon": [[round(p.x, 1), round(p.y, 1)] for p in line.polygon],
+                "confidence": round(line.confidence, 4),
+                "row": row_of.get(id(line)),
+            }
+            for line in page.lines
+        ],
+    }
+
+
+def evidence_from_ocr(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """几个文字块（ocr_json 里的格式）→ 出处，格式和抽取时找到的出处一样。"""
+    boxes = [line["box"] for line in lines]
+    rows = [line["row"] for line in lines if line.get("row") is not None]
+    return {
+        "row": min(rows) if rows else None,
+        "row_text": "  ".join(line["text"] for line in lines),
+        "bbox": [
+            min(b[0] for b in boxes),
+            min(b[1] for b in boxes),
+            max(b[2] for b in boxes),
+            max(b[3] for b in boxes),
+        ],
+        "confidence": min(line["confidence"] for line in lines),
+        "similarity": 1.0,
     }
 
 

@@ -6,8 +6,10 @@ uv run jacara serve --model 模型.gguf            启动本地大模型服务
 uv run jacara extract 图片或PDF                  识别、抽取字段并核对出处（要先启动模型服务）
 uv run jacara templates                          列出所有模板
 uv run jacara doctor                             检查数据库、队列、对象存储、本地模型是否连得上
-uv run jacara start                              一起启动 Web 服务和后台任务，浏览器打开 http://127.0.0.1:8000
-uv run jacara start --model 模型.gguf            同时启动本地大模型：一个终端就够了
+uv run jacara start                              一起启动模型、后台任务和 Web 服务，自动打开浏览器
+uv run jacara start --model 模型.gguf            指定模型文件（不写就用 models/ 里唯一的 .gguf）
+uv run jacara stop                               停掉 jacara start 启动的全部（在别的终端也行）
+uv run jacara backfill-ocr                       给更新前处理的文档补上 OCR 结果，不用重新上传
 uv run jacara api                                只启动 Web 服务（开发时加 --reload）
 uv run jacara worker                             只启动后台任务，处理通过 API 上传的文件
 uv run jacara user add 用户名 --role admin        新建用户（团队模式的第一个管理员用它建）
@@ -52,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     p_serve = sub.add_parser("serve", help="启动本地大模型服务（llama-server），Ctrl + C 停止")
     p_serve.add_argument("--model", type=Path, required=True, help="模型文件（.gguf）")
     p_serve.add_argument("--port", type=int, default=8080, help="端口，默认 8080")
-    p_serve.add_argument("--context", type=int, default=8192, help="上下文长度，默认 8192")
+    p_serve.add_argument("--context", type=int, default=32768, help="上下文长度，默认 32768")
 
     p_ext = sub.add_parser("extract", help="识别图片或 PDF 并抽取字段（要先运行 jacara serve）")
     p_ext.add_argument("image", type=Path, help="图片或 PDF 路径")
@@ -76,10 +78,21 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("worker", help="启动后台任务：处理通过 API 上传的文件（要先运行 jacara serve）")
 
-    p_start = sub.add_parser("start", help="一起启动 Web 服务和后台任务（日常使用）")
+    p_start = sub.add_parser("start", help="一起启动模型、后台任务和 Web 服务（日常使用）")
     p_start.add_argument("--port", type=int, default=8000, help="Web 服务的端口，默认 8000")
     p_start.add_argument(
-        "--model", type=Path, help="同时启动本地大模型（.gguf），不写就要自己先启动"
+        "--model",
+        type=Path,
+        help="模型文件（.gguf）。不写就用 .env 的 JACARA_MODEL，或 models/ 里唯一的 .gguf",
+    )
+    p_start.add_argument(
+        "--no-model", action="store_true", help="不启动模型（模型已经在别处运行时用）"
+    )
+    p_start.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
+    sub.add_parser("stop", help="停掉 jacara start 启动的全部（模型、后台任务、Web 服务）")
+    sub.add_parser(
+        "backfill-ocr",
+        help="给更新前处理的文档补上 OCR 结果，不用重新上传（不改抽取结果和审核记录）",
     )
 
     p_eval = sub.add_parser("eval", help="评测：在有标准答案的数据集上算准确率（开发用）")
@@ -121,6 +134,10 @@ def main(argv: list[str] | None = None) -> int:
         return _worker()
     if args.command == "start":
         return _start(args)
+    if args.command == "stop":
+        return _stop_running()
+    if args.command == "backfill-ocr":
+        return _backfill_ocr()
     if args.command == "user":
         return _user(args)
     if args.command == "eval":
@@ -330,6 +347,9 @@ def _templates() -> int:
         labels = "、".join(f.label for f in t.fields)
         print(f"{t.name}  第 {t.version} 版  {t.title}")
         print(f"  {len(t.fields)} 个字段：{labels}")
+        for table in t.tables:
+            columns = "、".join(c.label for c in table.columns)
+            print(f"  表格 {table.label}：{columns}")
         print(f"  {len(t.rules)} 条规则：{'、'.join(r.title for r in t.rules)}")
     return 0
 
@@ -468,6 +488,34 @@ def _eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def _backfill_ocr() -> int:
+    """jacara backfill-ocr：重新 OCR 原始文件，把结果补进去。抽取的值和审核记录都不动。"""
+    from jacara.core.storage import get_storage
+    from jacara.pipeline.backfill import backfill_document, missing_ocr
+    from jacara.plugins.ocr import create_ocr_engine
+    from jacara.plugins.ocr.loader import load_pages
+
+    ids = missing_ocr()
+    if not ids:
+        print(_paint("所有文档都有 OCR 结果了，不用补", _GREEN))
+        return 0
+    print(f"有 {len(ids)} 个文档要补 OCR 结果（每页几秒钟）……")
+    storage, engine = get_storage(), create_ocr_engine()
+    failed = 0
+    for n, document_id in enumerate(ids, start=1):
+        try:
+            pages = backfill_document(
+                document_id, storage=storage, read=lambda path: load_pages(path, engine)
+            )
+            print(f"  [{n}/{len(ids)}] {document_id}：补了 {pages} 页")
+        except Exception as err:  # 一个出错不影响其他的
+            failed += 1
+            print(_paint(f"  [{n}/{len(ids)}] {document_id}：没补上（{err}）", _RED))
+    print(_paint("完成", _GREEN) if not failed else _paint(f"完成，{failed} 个没补上", _YELLOW))
+    print('刷新审核页面，就能用"原文文字"和框选了。')
+    return 0 if not failed else 1
+
+
 def _worker() -> int:
     from jacara.worker import run_worker
 
@@ -487,12 +535,17 @@ def _api(args: argparse.Namespace) -> int:
 
 
 def _start(args: argparse.Namespace) -> int:
-    """日常使用：一个命令启动全部。
+    """日常使用：一个命令启动全部，并打开浏览器。
 
-    worker（和大模型）是单独的进程，用 subprocess 在后台启动；API 在这个进程里运行。
-    按 Ctrl + C：终端会把停止信号发给这几个进程，这里再等它们都退出，不留下"孤儿进程"。
+    worker 和大模型是单独的进程，用 subprocess 在后台启动；API 在这个进程里运行。
+    按 Ctrl + C（或在别的终端运行 jacara stop）：这里等它们都退出，不留下"孤儿进程"。
     """
+    import json
+    import os
+    import signal
     import subprocess
+    import threading
+    import webbrowser
 
     import uvicorn
 
@@ -504,18 +557,45 @@ def _start(args: argparse.Namespace) -> int:
         print(_paint("不能启动：.env 里这些密钥还是空的或 change-me：" + "、".join(weak), _RED))
         print("用 openssl rand -hex 16 生成随机值填进去。")
         return 1
-    model: Path | None = args.model
+
+    # 先查自己写错的（模型文件不存在），再查端口：不管系统有没有在运行，结果都一样
+    model = None if args.no_model else (args.model or settings.find_model())
     if model is not None and not model.exists():
         print(f"找不到模型文件：{model}")
         return 1
 
-    ports = [args.port] if model is None else [args.port, MODEL_PORT]
-    busy = [port for port in ports if not _port_free(port)]
-    if busy:
-        print(_paint("不能启动：端口 " + "、".join(map(str, busy)) + " 已经被占用了", _RED))
-        print("多半是之前的 jacara api / serve / start 还开着：找到那个终端按 Ctrl + C。")
-        print("找不到的话，运行 lsof -i :端口号 看是哪个程序（PID 那一列），再 kill 那个 PID。")
+    url = f"http://127.0.0.1:{args.port}"
+    if not _port_free(args.port):
+        if _answers(f"{url}/api/v1/health"):
+            # 已经开着了：再开一个没有意义，直接把网页打开
+            print(_paint(f"JacarandaParse 已经在运行了：{url}", _GREEN))
+            print("要重启的话，先运行 uv run jacara stop，再运行 uv run jacara start。")
+            if not args.no_browser:
+                webbrowser.open(url)
+            return 0
+        print(_paint(f"不能启动：端口 {args.port} 被别的程序占用了", _RED))
+        print(f"运行 lsof -i :{args.port} 看是哪个程序（PID 那一列），再 kill 那个 PID。")
         return 1
+
+    if model is not None and not _wait_free(MODEL_PORT):
+        if _answers(f"http://127.0.0.1:{MODEL_PORT}/health", loading_ok=True):
+            print(f"{MODEL_PORT} 端口上已经有模型服务在运行，直接用它")
+            model = None
+        else:
+            print(_paint(f"不能启动模型：端口 {MODEL_PORT} 被别的程序占用了", _RED))
+            print(
+                f"运行 lsof -i :{MODEL_PORT} 看是哪个程序（PID 那一列），kill 那个 PID 后再启动；"
+            )
+            print("或者加 --no-model 不启动模型。")
+            return 1
+    if model is None and _port_free(MODEL_PORT):
+        # 没有模型文件、8080 上也没有模型服务：能启动，但上传的文件全都会处理失败
+        print(
+            _paint(
+                f"提醒：没有模型服务（{MODEL_PORT} 端口没人在用），上传的文件会处理失败。", _YELLOW
+            )
+        )
+        print("把模型文件放进 models/ 文件夹，或者加 --model 模型文件.gguf。")
 
     web = settings.web_dist / "index.html"
     if not web.is_file():
@@ -535,19 +615,129 @@ def _start(args: argparse.Namespace) -> int:
         print(f"启动模型服务：{model.name} → http://127.0.0.1:{MODEL_PORT}")
     children.append(subprocess.Popen([sys.executable, "-m", "jacara.cli", "worker"]))
 
-    print(f"打开 http://127.0.0.1:{args.port}（Ctrl + C 全部停止）")
+    # 记下自己和子进程的进程号：jacara stop 先请这里停，万一这里已经没了，也能把子进程收拾掉
+    RUN_FILE.parent.mkdir(exist_ok=True)
+    run = {"main": os.getpid(), "children": [c.pid for c in children]}
+    RUN_FILE.write_text(json.dumps(run), encoding="utf-8")
+    # 收到 SIGTERM（kill、关机）也走 Ctrl + C 的路：uvicorn 停下后会把信号再发一次，
+    # 默认处理是立刻结束进程，下面 finally 里停模型和 worker 的代码就跑不到，留下孤儿进程。
+    previous = signal.signal(signal.SIGTERM, _interrupt)
+    print(f"打开 {url}（Ctrl + C 或 uv run jacara stop 全部停止）")
+    if not args.no_browser:
+        # 等 Web 服务起来再开浏览器；模型可能还要十几秒才加载完，上传的文件会排队等它
+        threading.Timer(2.0, webbrowser.open, [url]).start()
     try:
         uvicorn.run("jacara.app:app", host="127.0.0.1", port=args.port)
+    except KeyboardInterrupt:
+        pass  # Ctrl + C 或 jacara stop：正常停止
     finally:
         _stop(children)
+        RUN_FILE.unlink(missing_ok=True)
+        signal.signal(signal.SIGTERM, previous)
     return 0
 
 
+def _interrupt(signum: int, frame: object) -> None:
+    """把 SIGTERM 当成 Ctrl + C。"""
+    raise KeyboardInterrupt
+
+
+def _stop_running() -> int:
+    """jacara stop：请 jacara start 停下（它会把模型和 worker 一起停掉），再检查有没有剩下的子进程。
+
+    发 SIGINT（和按 Ctrl + C 一样），start 会按正常流程收尾。
+    """
+    import json
+    import os
+    import signal
+    import time
+
+    try:
+        run = json.loads(RUN_FILE.read_text(encoding="utf-8"))
+        main, children = int(run["main"]), [int(p) for p in run["children"]]
+    except (FileNotFoundError, ValueError, KeyError, TypeError):
+        print("没有找到正在运行的 jacara start。")
+        return 0
+
+    if _alive(main):
+        os.kill(main, signal.SIGINT)
+        print("正在停止……")
+        for _ in range(60):  # 最多等 30 秒：worker 可能正在处理一个文件
+            if not _alive(main):
+                break
+            time.sleep(0.5)
+        else:
+            print(_paint(f"30 秒还没停下来，可以运行 kill -9 {main}", _YELLOW))
+            return 1
+
+    # start 正常退出时会停掉子进程；万一它是被强制结束的，子进程还在，这里补上
+    left = [pid for pid in children if _alive(pid)]
+    for pid in left:
+        os.kill(pid, signal.SIGTERM)
+    for _ in range(20):
+        if not any(_alive(pid) for pid in left):
+            break
+        time.sleep(0.5)
+    for pid in left:
+        if _alive(pid):
+            os.kill(pid, signal.SIGKILL)
+    RUN_FILE.unlink(missing_ok=True)
+    print(_paint("已经全部停止", _GREEN))
+    return 0
+
+
+def _alive(pid: int) -> bool:
+    """这个进程还在不在。发 0 号信号只检查、不打扰它。"""
+    import os
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # 在，但不是我们的进程
+    return True
+
+
+def _answers(url: str, *, loading_ok: bool = False) -> bool:
+    """这个地址能不能正常回答（用来判断占着端口的是不是我们自己的服务）。
+
+    loading_ok：llama-server 加载模型时 /health 回答 503，也算"是模型服务"。
+    trust_env=False：本机地址不走代理（系统设了代理时，httpx 默认会把请求交给代理）。
+    """
+    import httpx
+
+    try:
+        status = httpx.get(url, timeout=3, trust_env=False).status_code
+    except httpx.HTTPError:
+        return False
+    return status == 200 or (loading_ok and status == 503)
+
+
+def _wait_free(port: int, seconds: float = 10.0) -> bool:
+    """等端口空出来：刚按了 Ctrl + C 时，上一次的模型可能还在退出，占着端口几秒钟。"""
+    import time
+
+    deadline = time.monotonic() + seconds
+    while True:
+        if _port_free(port):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.5)
+
+
 def _port_free(port: int) -> bool:
-    """本机这个端口现在有没有人用。先查好，免得 worker 和模型都启动了，API 才发现端口被占。"""
+    """本机这个端口现在有没有人用。先查好，免得 worker 和模型都启动了，API 才发现端口被占。
+
+    SO_REUSEADDR：刚停掉的服务会让端口在 TIME_WAIT 状态留一两分钟（lsof 看不到任何程序）。
+    这时 llama-server 和 uvicorn 其实都能正常启动（它们也开了这个选项），
+    只有真的有程序在监听才算占用。
+    """
     import socket
 
     with socket.socket() as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind(("127.0.0.1", port))
         except OSError:
@@ -571,7 +761,11 @@ def _stop(children: list[subprocess.Popen[bytes]]) -> None:
 
 
 MODEL_PORT = 8080
-"""jacara start --model 启动的大模型用这个端口，和 .env 里 MODEL_SERVER 的默认值一样。"""
+"""jacara start 启动的大模型用这个端口，和 .env 里 MODEL_SERVER 的默认值一样。"""
+
+
+RUN_FILE = Path(__file__).resolve().parents[3] / ".run" / "jacara.json"
+"""jacara start 运行时把进程号写在这里（.run/ 在 .gitignore 里），jacara stop 靠它找到进程。"""
 
 _RED, _YELLOW, _GREEN = "31", "33", "32"
 

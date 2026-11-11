@@ -10,6 +10,9 @@ from jacara.plugins.extractors.base import (
     Extractor,
     FieldSpec,
     FieldType,
+    TableSpec,
+    cell_name,
+    split_cell_name,
 )
 from jacara.plugins.extractors.llm import PROMPT_VERSION, LlmExtractor, build_schema
 
@@ -22,5 +25,8 @@ __all__ = [
     "FieldSpec",
     "FieldType",
     "LlmExtractor",
+    "TableSpec",
     "build_schema",
+    "cell_name",
+    "split_cell_name",
 ]

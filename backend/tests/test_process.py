@@ -19,6 +19,7 @@ from jacara.plugins.model_backends import ChatResult, ModelBackendError
 ANSWER = json.dumps(
     {
         "merchant": {"value": "BOOK TA _K (TAMAN DAYA) SDN BHD", "row": 1},
+        "store_name": {"value": "BOOK TA _K (TAMAN DAYA) SDN BHD", "row": 1},
         "document_no": {"value": None, "row": None},
         "date": {"value": "2018-12-25", "row": 4},
         "total": {"value": 9.0, "row": 6},

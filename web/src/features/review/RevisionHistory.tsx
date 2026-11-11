@@ -1,8 +1,31 @@
 import { useQuery } from '@tanstack/react-query'
 import { Spin, Timeline, Typography } from 'antd'
+import type { Revision } from '../../api/types'
 import { getValueHistory } from '../../api/values'
 import { useAuth } from '../../auth/useAuth'
 import { formatTime } from '../../utils/format'
+
+const COLORS: Record<Revision['action'], string> = {
+  edit: 'blue',
+  confirm: 'green',
+  delete: 'red',
+  restore: 'gray',
+}
+
+function describe(r: Revision): string {
+  switch (r.action) {
+    case 'confirm':
+      return ' 确认值是对的'
+    case 'delete':
+      return ' 删除了这一行'
+    case 'restore':
+      return ' 恢复了这一行'
+    default:
+      return r.evidence
+        ? ` 从原文选取「${r.evidence.row_text}」→ ${r.new_value ?? '（空）'}`
+        : ` 改成 ${r.new_value ?? '（原文没有）'}`
+  }
+}
 
 /** 一个字段的经历：模型抽出了什么，之后谁、什么时候、改成了什么、为什么。 */
 export function RevisionHistory({ valueId }: { valueId: string }) {
@@ -25,7 +48,7 @@ export function RevisionHistory({ valueId }: { valueId: string }) {
   const original = history.data.value.value
 
   return (
-    <div style={{ margin: '12px 0 0 88px' }}>
+    <div style={{ margin: '12px 0 0 0' }}>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         修改历史
       </Typography.Text>
@@ -34,16 +57,19 @@ export function RevisionHistory({ valueId }: { valueId: string }) {
         items={[
           {
             color: 'gray',
-            content: `模型抽出：${original ?? '（原文没有）'}`,
+            content:
+              history.data.value.origin === 'manual'
+                ? '审核时人工增加'
+                : `模型抽出：${original ?? '（原文没有）'}`,
           },
           ...history.data.revisions.map((r) => ({
             key: r.id,
-            color: r.action === 'confirm' ? 'green' : 'blue',
+            color: COLORS[r.action],
             content: (
               <>
                 <div>
                   #{r.seq} {who(r.user_id)}
-                  {r.action === 'confirm' ? ' 确认值是对的' : ` 改成 ${r.new_value ?? '（原文没有）'}`}
+                  {describe(r)}
                 </div>
                 {r.reason && <Typography.Text type="secondary">原因：{r.reason}</Typography.Text>}
                 <div>

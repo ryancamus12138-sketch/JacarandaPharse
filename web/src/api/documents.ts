@@ -1,7 +1,14 @@
 /** 文档相关的接口：/api/v1/documents。 */
 
 import { api, apiBlob, apiDownload, type DownloadedFile } from './client'
-import type { DocumentDetail, DocumentPage, DocumentSummary } from './types'
+import type {
+  Box,
+  DocumentDetail,
+  DocumentPage,
+  DocumentSummary,
+  PageOcr,
+  RegionOut,
+} from './types'
 
 export function listDocuments(limit: number, offset: number): Promise<DocumentPage> {
   const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
@@ -28,6 +35,19 @@ export function getDocument(id: string): Promise<DocumentDetail> {
 /** 某一页的图片（PNG）。出处框的坐标就是这张图上的像素。 */
 export function getPageImage(id: string, page: number): Promise<Blob> {
   return apiBlob(`/documents/${id}/pages/${page}/image`)
+}
+
+/** 某一页的 OCR 结果：每个文字块的文字和位置。审核时"从原文选取"用。 */
+export function getPageOcr(id: string, page: number): Promise<PageOcr> {
+  return api<PageOcr>(`/documents/${id}/pages/${page}/ocr`)
+}
+
+/** 重新识别页面上的一块区域：裁下来、放大，再 OCR 一次。只返回文字，不保存。 */
+export function ocrRegion(id: string, page: number, box: Box): Promise<RegionOut> {
+  return api<RegionOut>(`/documents/${id}/pages/${page}/ocr-region`, {
+    method: 'POST',
+    json: { box },
+  })
 }
 
 /** 完成审核：所有标黄的字段都处理过之后，文档变成"已审核"。 */

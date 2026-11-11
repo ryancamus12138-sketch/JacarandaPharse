@@ -15,7 +15,7 @@ BASE = [
 def test_all_rules_pass_on_a_correct_receipt():
     result = RuleValidator().validate([*BASE, F("change", "number", 1.0)])
     assert result.issues == ()
-    assert result.skipped == ()
+    assert set(result.skipped) == {"items_sum", "item_line"}  # 没有商品明细
 
 
 def test_ocr_mistake_in_change_is_caught():
@@ -28,7 +28,13 @@ def test_ocr_mistake_in_change_is_caught():
 def test_rules_without_enough_fields_are_skipped():
     result = RuleValidator().validate([F("date", "date", "2018-12-25"), F("total", "number", 9.0)])
     assert result.issues == ()
-    assert set(result.skipped) == {"rounding", "cash_covers_total", "change"}
+    assert set(result.skipped) == {
+        "rounding",
+        "cash_covers_total",
+        "change",
+        "items_sum",
+        "item_line",
+    }
 
 
 def test_impossible_date():

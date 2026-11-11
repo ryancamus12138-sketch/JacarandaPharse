@@ -14,12 +14,20 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, UploadFile, 
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from jacara.core.deps import get_owner, get_queue, get_session, get_storage
+from jacara.core.deps import get_ocr, get_owner, get_queue, get_session, get_storage
 from jacara.core.owner import Owner
 from jacara.core.queue import TaskQueue
 from jacara.core.storage import ObjectStorage
-from jacara.modules.documents.schemas import DocumentDetail, DocumentOut, DocumentPage
+from jacara.modules.documents.schemas import (
+    DocumentDetail,
+    DocumentOut,
+    DocumentPage,
+    PageOcr,
+    RegionIn,
+    RegionOut,
+)
 from jacara.modules.documents.service import DocumentError, DocumentService
+from jacara.plugins.ocr.base import OcrEngine
 
 router = APIRouter(prefix="/documents", tags=["文档"])
 
@@ -34,6 +42,7 @@ _STATUS = {
     "empty": status.HTTP_422_UNPROCESSABLE_CONTENT,
     "unreadable": status.HTTP_422_UNPROCESSABLE_CONTENT,
     "invalid": status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "unavailable": status.HTTP_503_SERVICE_UNAVAILABLE,
     "conflict": status.HTTP_409_CONFLICT,
     "storage": status.HTTP_503_SERVICE_UNAVAILABLE,
     "queue": status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -45,8 +54,9 @@ def get_service(
     storage: Annotated[ObjectStorage, Depends(get_storage)],
     queue: Annotated[TaskQueue, Depends(get_queue)],
     owner: Annotated[Owner, Depends(get_owner)],
+    ocr: Annotated[OcrEngine, Depends(get_ocr)],
 ) -> DocumentService:
-    return DocumentService(session, storage, queue, owner)
+    return DocumentService(session, storage, queue, owner, ocr)
 
 
 Service = Annotated[DocumentService, Depends(get_service)]
@@ -159,6 +169,36 @@ def page_image(
     return Response(
         content=data, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"}
     )
+
+
+@router.get("/{document_id}/pages/{page}/ocr", summary="某一页的 OCR 结果")
+def page_ocr(document_id: uuid.UUID, page: Annotated[int, Path(ge=1)], service: Service) -> PageOcr:
+    """这一页 OCR 认出的每个文字块：文字、在图上的位置、置信度。坐标和页面图片一样。
+
+    审核页面"从原文选取"用：点哪一块，就把它的编号（index）交给"审核字段"。
+    """
+    try:
+        return service.page_ocr(document_id, page)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/{document_id}/pages/{page}/ocr-region", summary="重新识别一块区域")
+def ocr_region(
+    document_id: uuid.UUID,
+    page: Annotated[int, Path(ge=1)],
+    region: RegionIn,
+    service: Service,
+) -> RegionOut:
+    """把这一页上的一块区域（box，像素坐标）裁下来、放大，重新做一次 OCR，返回认出的文字。
+
+    审核时"框选 → 重新识别这块"用：原来 OCR 认错或漏认的地方，单独放大再认一次常常就对了。
+    只返回文字，不保存；确认后再用"审核字段"保存（带上 source_box）。
+    """
+    try:
+        return service.ocr_region(document_id, page, region.box)
+    except DocumentError as err:
+        raise _http_error(err) from err
 
 
 @router.get("/{document_id}/export.xlsx", summary="导出 Excel", response_class=Response)

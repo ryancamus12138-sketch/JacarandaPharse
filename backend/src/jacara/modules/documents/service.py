@@ -26,9 +26,19 @@ from jacara.core.storage import ObjectStorage, StorageError
 from jacara.models import Document
 from jacara.modules.audit.service import record
 from jacara.modules.documents.repository import DocumentRepository
-from jacara.modules.documents.schemas import DocumentDetail, DocumentOut, DocumentPage
+from jacara.modules.documents.schemas import (
+    DocumentDetail,
+    DocumentOut,
+    DocumentPage,
+    OcrLineOut,
+    PageOcr,
+    RegionOut,
+)
+from jacara.pipeline.current import current_checks_json
 from jacara.pipeline.load import load_reports
+from jacara.pipeline.region import read_region
 from jacara.plugins.exporters import create_exporter
+from jacara.plugins.ocr.base import OcrEngine
 from jacara.plugins.ocr.loader import page_png
 
 log = logging.getLogger(__name__)
@@ -62,12 +72,19 @@ class DocumentError(Exception):
 
 class DocumentService:
     def __init__(
-        self, session: Session, storage: ObjectStorage, queue: TaskQueue, owner: Owner
+        self,
+        session: Session,
+        storage: ObjectStorage,
+        queue: TaskQueue,
+        owner: Owner,
+        ocr: OcrEngine | None = None,
     ) -> None:
         self.session = session
         self.repo = DocumentRepository(session)
         self.storage = storage
         self.queue = queue
+        self.ocr = ocr
+        """只有"重新识别这块"用到。"""
         self.owner = owner
 
     def upload(self, filename: str, content_type: str, data: bytes) -> DocumentOut:
@@ -141,7 +158,24 @@ class DocumentService:
         require(self.owner, "document:read", document.team_id)
         detail = DocumentDetail.model_validate(document)
         reviews = sum(v.pending_review for e in detail.extractions for v in e.values)
-        return detail.model_copy(update={"review_count": reviews})
+        extractions = [
+            out.model_copy(update={"current_checks": current_checks_json(e)})
+            for out, e in zip(detail.extractions, document.extractions, strict=True)
+        ]
+        return detail.model_copy(update={"review_count": reviews, "extractions": extractions})
+
+    def page_ocr(self, document_id: uuid.UUID, page: int) -> PageOcr:
+        """第 page 页的 OCR 结果：每个文字块的文字和位置。审核页面"从原文选取"用。"""
+        document = self._find(document_id)
+        require(self.owner, "document:read", document.team_id)
+        extraction = next((e for e in document.extractions if e.page == page), None)
+        if extraction is None:
+            raise DocumentError("not_found", f"第 {page} 页没有抽取结果")
+        lines = (extraction.ocr or {}).get("lines", [])
+        return PageOcr(
+            available=extraction.ocr is not None,
+            lines=[OcrLineOut(index=i, **line) for i, line in enumerate(lines)],
+        )
 
     def review(self, document_id: uuid.UUID) -> DocumentOut:
         """完成审核：所有需要确认的字段都处理过了，文档状态 done → reviewed。"""
@@ -246,6 +280,19 @@ class DocumentService:
             return page_png(data, document.content_type == "application/pdf", page)
         except Exception as err:
             raise DocumentError("unreadable", "这个文件打不开，可能已损坏") from err
+
+    def ocr_region(self, document_id: uuid.UUID, page: int, box: list[float]) -> RegionOut:
+        """把页面上的一块区域裁下来重新 OCR。要能看文档，也要能改字段（不然认出来也没用）。"""
+        document = self._find(document_id)
+        require(self.owner, "value:review", document.team_id)
+        if self.ocr is None:
+            raise DocumentError("unavailable", "OCR 引擎没有准备好")
+        image = self.page_image(document_id, page)
+        try:
+            text, confidence = read_region(image, box, self.ocr)
+        except ValueError as err:
+            raise DocumentError("invalid", str(err)) from err
+        return RegionOut(text=text, confidence=confidence)
 
     def _enqueue(self, document: Document) -> bool:
         """先提交，再放进队列。

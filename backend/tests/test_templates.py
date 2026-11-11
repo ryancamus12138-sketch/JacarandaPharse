@@ -20,12 +20,21 @@ def test_builtin_templates_all_load():
         assert template.name == name and template.version >= 1 and template.fields
 
 
-def test_receipt_template_is_what_v1_used():
-    """v1 的字段清单原样搬进了 receipt.toml：字段、顺序、给模型的说明都没变，抽取结果才会一样。"""
+def test_receipt_template_v3():
+    """第 2 版：商家是开票的公司，另加店名（评测发现商家常多抄注册号、或选了店名）。
+    第 3 版：加商品明细表和两条明细规则。"""
     receipt = load_template("receipt")
-    assert [f.name for f in receipt.fields] == ["merchant", "document_no", "date", "total"]
-    assert [f.label for f in receipt.fields] == ["商家", "单号", "日期", "总额"]
-    assert receipt.specs[3].description == "最终应付总额（含税、四舍五入之后的金额）"
+    assert receipt.version == 3
+    assert [f.name for f in receipt.fields] == [
+        "merchant",
+        "store_name",
+        "document_no",
+        "date",
+        "total",
+    ]
+    assert [f.label for f in receipt.fields] == ["商家（公司）", "店名", "单号", "日期", "总额"]
+    assert "注册号" in receipt.fields[0].description
+    assert receipt.specs[4].description == "最终应付总额（含税、四舍五入之后的金额）"
     assert [r.id for r in receipt.rules] == [
         "total_positive",
         "date_exists",
@@ -33,13 +42,20 @@ def test_receipt_template_is_what_v1_used():
         "rounding",
         "cash_covers_total",
         "change",
+        "items_sum",
+        "item_line",
     ]
+    [items] = receipt.tables
+    assert items.name == "items" and items.label == "商品明细"
+    assert [c.name for c in items.columns] == ["name", "quantity", "unit_price", "amount"]
+    assert receipt.table_specs[0].columns[3].type == "number"
 
 
 def test_full_template_starts_with_the_receipt_fields():
     full, receipt = load_template("receipt_full"), load_template("receipt")
-    assert len(full.fields) == 14
-    assert full.fields[:4] == receipt.fields
+    assert len(full.fields) == 15
+    assert full.fields[:5] == receipt.fields
+    assert full.tables == receipt.tables
 
 
 def test_unknown_template_lists_what_exists():
@@ -68,6 +84,14 @@ def _raw(**changes):
         ({"fields": [{"name": "总额", "type": "number"}]}, "英文字母"),
         ({"fields": [{"name": "a", "type": "string"}, {"name": "a", "type": "string"}]}, "重复"),
         ({"rules": ["no_such_rule"]}, "no_such_rule"),
+        (
+            {"tables": [{"name": "Items", "columns": [{"name": "a", "type": "string"}]}]},
+            "第 1 张表",
+        ),
+        ({"tables": [{"name": "total", "columns": [{"name": "a", "type": "string"}]}]}, "重名"),
+        ({"tables": [{"name": "items", "columns": []}]}, "至少要有一列"),
+        ({"tables": [{"name": "items", "columns": [{"name": "a", "type": "x"}]}]}, "表 items"),
+        ({"tables": [{"name": "items", "columns": [{"name": "row", "type": "number"}]}]}, "row"),
     ],
 )
 def test_bad_template_says_what_is_wrong(changes, message):
@@ -98,17 +122,20 @@ def test_templates_api(client):
     response = client.get("/api/v1/templates")
     assert response.status_code == 200
     receipt = next(t for t in response.json() if t["name"] == "receipt")
-    assert receipt["version"] == 1
+    assert receipt["version"] == 3
     assert receipt["fields"][0] == {
         "name": "merchant",
-        "label": "商家",
+        "label": "商家（公司）",
         "type": "string",
         "required": True,
         "description": load_template("receipt").fields[0].description,
     }
-    assert {"id": "change", "title": "现金 − 总额 = 找零"}.items() <= receipt["rules"][-1].items()
+    change = next(r for r in receipt["rules"] if r["id"] == "change")
+    assert change["title"] == "现金 − 总额 = 找零"
+    assert receipt["tables"][0]["name"] == "items"
+    assert receipt["tables"][0]["columns"][3]["label"] == "金额"
 
-    assert client.get("/api/v1/templates/receipt_full").json()["version"] == 1
+    assert client.get("/api/v1/templates/receipt_full").json()["version"] == 3
     missing = client.get("/api/v1/templates/nope")
     assert missing.status_code == 404
     assert "receipt" in missing.json()["detail"]
