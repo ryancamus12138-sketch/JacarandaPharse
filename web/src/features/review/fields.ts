@@ -1,6 +1,6 @@
 /** 字段的中文名和状态说明。后端只给英文字段名，显示给人看的名字放在这里。 */
 
-import type { Evidence, FieldValue } from '../../api/types'
+import type { CheckState, Evidence, EvidenceState, FieldValue, Level } from '../../api/types'
 
 const LABELS: Record<string, string> = {
   merchant: '商家（公司）',
@@ -59,15 +59,69 @@ export function fieldLabel(name: string): string {
   return LABELS[name] ?? name
 }
 
-/** 出处框的颜色：等人确认的黄色，审核过的绿色，其他紫色。 */
+/** 四种颜色：红 = 先看，黄 = 要看一眼，灰 = 原文没有，绿 = 没问题（ADR 0028）。 */
+export const LEVEL_COLORS: Record<Level, string> = {
+  red: '#ff4d4f',
+  yellow: '#faad14',
+  grey: '#bfbfbf',
+  green: '#52c41a',
+}
+
+/** 字段的颜色。后端算好的（证据 × 校验 × 有没有人审核过）；老接口没有时按"等不等人确认"。 */
+export function levelOf(v: FieldValue): Level {
+  if (v.level) {
+    return v.level
+  }
+  return v.pending_review ? 'yellow' : v.current_value === null ? 'grey' : 'green'
+}
+
+/** 出处框、左边色条的颜色。 */
 export function boxColor(value: FieldValue): string {
-  if (value.pending_review) {
-    return '#faad14'
+  return LEVEL_COLORS[levelOf(value)]
+}
+
+export const EVIDENCE_TEXT: Record<EvidenceState, string> = {
+  verified: '原文一致',
+  pending: '出处有疑点',
+  missing: '原文里找不到',
+  empty: '原文没有',
+}
+
+export const CHECK_TEXT: Record<CheckState, string> = {
+  ok: '规则通过',
+  warn: '规则有疑问',
+  fail: '规则不通过',
+}
+
+/** 字段怎么排：按单据上的顺序，或者按状态（先红、再黄、再灰、最后绿）。 */
+export type SortMode = 'document' | 'status'
+
+/**
+ * 按状态排序时的先后。只看证据和校验、不看审核过没有：确认完一个字段它会变绿，
+ * 但不会突然跳到最下面，审核员 ↑↓ 走的时候位置不乱。
+ */
+function rank(v: FieldValue): number {
+  if (v.check_state === 'fail' || v.evidence_state === 'missing') {
+    return 0
   }
-  if (value.reviewed) {
-    return '#52c41a'
+  if (v.check_state === 'warn' || v.evidence_state === 'pending') {
+    return 1
   }
-  return '#7b5cc4'
+  return v.evidence_state === 'empty' ? 2 : 3
+}
+
+/**
+ * 字段的先后顺序。只排普通字段；表格的格子留在原来的顺序（表格里的行不重新排）。
+ * 列表、键盘 ↑↓、"下一个待确认"都按这个顺序。
+ */
+export function orderFields(values: FieldValue[], mode: SortMode): FieldValue[] {
+  if (mode === 'document') {
+    return values
+  }
+  const plain = values.filter((v) => splitCell(v.name) === null)
+  const cells = values.filter((v) => splitCell(v.name) !== null)
+  // sort 是稳定的：同一种颜色里还是单据上的顺序
+  return [...[...plain].sort((a, b) => rank(a) - rank(b)), ...cells]
 }
 
 /** 表格的一行：真实编号（字段名里的数字，接口用）和显示编号（页面上的第几行，删掉的行没有）。 */

@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     # 只给类型检查用，运行时不导入：jacara --version 不用加载 OCR 和模型相关的库。
     import subprocess
 
+    from jacara.core.config import Settings
     from jacara.plugins.exporters import DocumentReport
 
 
@@ -63,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     p_ext.add_argument(
         "--template",
         default="receipt",
-        help="用哪个模板：receipt 常用 4 个字段（默认），receipt_full 收据上所有单个字段",
+        help="用哪个模板：receipt 常用 5 个字段（默认），receipt_full 收据上全部 15 个字段",
     )
     p_ext.add_argument("--excel", type=Path, help="同时把结果导出成 Excel，例如 results/收据.xlsx")
     p_ext.add_argument("--save", action="store_true", help="同时把结果存进数据库")
@@ -488,6 +489,50 @@ def _eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def _infra_problems(settings: Settings) -> list[tuple[str, str]]:
+    """启动前检查：数据库、任务队列连得上吗？数据库是不是最新版本？返回（问题，怎么解决）。"""
+    from jacara.core.health import check_postgres, check_valkey
+
+    docker = "打开 Docker Desktop（open -a Docker），等它启动好，再运行 docker compose up -d"
+    problems = [
+        (f"{check.name} 连不上（{check.detail}）", docker)
+        for check in (check_postgres(settings), check_valkey(settings))
+        if not check.ok
+    ]
+    if not problems and _migration_behind():
+        problems.append(
+            ("数据库还不是最新版本（新版本加了表或列）", "运行 uv run alembic upgrade head")
+        )
+    return problems
+
+
+def _migration_behind() -> bool:
+    """数据库的版本（alembic_version）和代码里最新的迁移不一样：要先 alembic upgrade head。"""
+    from alembic.config import Config
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    from jacara.core.db import get_engine
+
+    ini = Path("alembic.ini")
+    if not ini.is_file():
+        return False  # 不在项目根目录运行：查不了，不拦
+    heads = set(ScriptDirectory.from_config(Config(str(ini))).get_heads())
+    with get_engine().connect() as connection:
+        current = set(MigrationContext.configure(connection).get_current_heads())
+    return current != heads
+
+
+def _web_outdated(dist: Path) -> bool:
+    """web/src 里有文件比打包好的 dist/index.html 新：改了网页代码却没重新 npm run build。"""
+    src = dist.parent / "src"
+    index = dist / "index.html"
+    if not src.is_dir() or not index.is_file():
+        return False
+    built = index.stat().st_mtime
+    return any(f.stat().st_mtime > built for f in src.rglob("*") if f.is_file())
+
+
 def _backfill_ocr() -> int:
     """jacara backfill-ocr：重新 OCR 原始文件，把结果补进去。抽取的值和审核记录都不动。"""
     from jacara.core.storage import get_storage
@@ -577,6 +622,14 @@ def _start(args: argparse.Namespace) -> int:
         print(f"运行 lsof -i :{args.port} 看是哪个程序（PID 那一列），再 kill 那个 PID。")
         return 1
 
+    # 数据库和任务队列在 Docker 里：电脑重启后 Docker 没开，这里先说清楚，不要等打开网页才报一堆错
+    problems = _infra_problems(settings)
+    if problems:
+        for problem, fix in problems:
+            print(_paint(f"不能启动：{problem}", _RED))
+            print(f"  → {fix}")
+        return 1
+
     if model is not None and not _wait_free(MODEL_PORT):
         if _answers(f"http://127.0.0.1:{MODEL_PORT}/health", loading_ok=True):
             print(f"{MODEL_PORT} 端口上已经有模型服务在运行，直接用它")
@@ -600,6 +653,14 @@ def _start(args: argparse.Namespace) -> int:
     web = settings.web_dist / "index.html"
     if not web.is_file():
         print(_paint("提醒：网页还没打包，先运行 cd web && npm run build（API 照常启动）", _YELLOW))
+    elif _web_outdated(settings.web_dist):
+        print(
+            _paint(
+                "提醒：网页代码改过了，还没重新打包，浏览器里看到的是旧页面。"
+                "先 Ctrl + C，运行 cd web && npm run build，再启动",
+                _YELLOW,
+            )
+        )
 
     children: list[subprocess.Popen[bytes]] = []
     if model is not None:

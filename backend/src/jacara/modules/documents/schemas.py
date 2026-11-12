@@ -14,7 +14,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from jacara.modules.fields.schemas import ValueOut
 
-__all__ = ["DocumentDetail", "DocumentOut", "DocumentPage", "ExtractionOut", "ValueOut"]
+__all__ = [
+    "Dashboard",
+    "DocumentDetail",
+    "DocumentNeighbors",
+    "DocumentOut",
+    "DocumentPage",
+    "ExtractionOut",
+    "ValueOut",
+]
 """ValueOut 搬到了 fields 模块；这里继续导出，原来从这里 import 的代码不用改。"""
 
 
@@ -36,6 +44,14 @@ class DocumentOut(BaseModel):
     created_at: datetime
     review_count: int = 0
     """还在等人确认的字段数（已经修改或确认过的不算）。"""
+    stage: str | None = None
+    """处理到哪一步，例如"抽取第 2 / 3 页"。只有处理中才有。"""
+    progress: int | None = None
+    """处理进度 0～100。只有处理中才有。"""
+    processed_at: datetime | None = None
+    """处理完（成功或失败）的时间。"""
+    reviewed_at: datetime | None = None
+    """完成审核的时间。"""
 
 
 class ExtractionOut(BaseModel):
@@ -100,3 +116,41 @@ class PageOcr(BaseModel):
 
     available: bool
     lines: list[OcrLineOut]
+
+
+class DocumentNeighbors(BaseModel):
+    """审核页面的"上一份 / 下一份"：按列表顺序，前后两份待审核的文档。没有就是 null。"""
+
+    previous: uuid.UUID | None
+    next: uuid.UUID | None
+    remaining: int
+    """除了这一份，还有几份待审核。"""
+
+
+class DashboardCounts(BaseModel):
+    queued: int
+    """排队中（uploaded）"""
+    processing: int
+    to_review: int
+    """处理完、待审核（done）"""
+    failed: int
+    reviewed: int
+    total: int
+    pending_fields: int
+    """待审核的文档里，一共还有多少字段等人确认。"""
+    processed_today: int
+    reviewed_today: int
+    average_page_seconds: float | None
+    """最近 7 天每页平均处理用时（秒）。"""
+
+
+class Dashboard(BaseModel):
+    """工作台：统计卡、处理队列、需要先处理。"""
+
+    counts: DashboardCounts
+    queue: list[DocumentOut]
+    """排队中和处理中的（处理中的在前，带进度）。"""
+    failed: list[DocumentOut]
+    """处理失败的（最新的几份）。"""
+    to_review: list[DocumentOut]
+    """待审核里等人确认的字段最多的几份（review_count）。"""

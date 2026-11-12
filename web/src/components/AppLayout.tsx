@@ -1,11 +1,15 @@
 import {
   AuditOutlined,
+  DashboardOutlined,
+  ExportOutlined,
   FileTextOutlined,
+  InfoCircleOutlined,
   KeyOutlined,
   LogoutOutlined,
+  MenuOutlined,
   TeamOutlined,
 } from '@ant-design/icons'
-import { Button, Flex, Layout, Menu, type MenuProps, Tag, Typography } from 'antd'
+import { Button, Flex, Grid, Layout, Menu, type MenuProps, Tag, Typography } from 'antd'
 import { useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { useAuth } from '../auth/useAuth'
@@ -17,10 +21,17 @@ export function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [changingPassword, setChangingPassword] = useState(false)
+  // 窄屏（小于 992 像素，比如笔记本分屏、平板）：左边菜单收起，点左上角的小按钮再打开
+  const screens = Grid.useBreakpoint()
+  const narrow = screens.lg === false
+  const [collapsed, setCollapsed] = useState(true)
 
   // 菜单按权限显示：使用者看不到管理员的菜单
   const items: MenuProps['items'] = [
+    { key: '/dashboard', icon: <DashboardOutlined />, label: '工作台' },
     { key: '/documents', icon: <FileTextOutlined />, label: '文档' },
+    { key: '/exports', icon: <ExportOutlined />, label: '导出记录' },
+    { key: '/system', icon: <InfoCircleOutlined />, label: '系统信息' },
     ...(can('user:manage')
       ? [{ key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' }]
       : []),
@@ -42,7 +53,20 @@ export function AppLayout() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Layout.Sider theme="light" width={216} style={{ borderRight: '1px solid #f0f0f0' }}>
+      <Layout.Sider
+        theme="light"
+        width={216}
+        breakpoint="lg"
+        collapsedWidth={0}
+        collapsed={narrow && collapsed}
+        onCollapse={setCollapsed}
+        trigger={null} // 窄屏时用顶栏左边的按钮打开菜单
+        // 窄屏时菜单浮在页面上面，不把内容挤窄
+        style={{
+          borderRight: '1px solid #f0f0f0',
+          ...(narrow ? { position: 'fixed', height: '100vh', zIndex: 100 } : {}),
+        }}
+      >
         <Flex align="center" gap={8} style={{ padding: '20px 16px 8px' }}>
           {/* 图标在 web/public 里，和浏览器标签页上的是同一个 */}
           <img src="/icon-192.png" alt="" width={24} height={24} style={{ flexShrink: 0 }} />
@@ -55,16 +79,32 @@ export function AppLayout() {
           mode="inline"
           items={items}
           selectedKeys={selected}
-          onClick={({ key }) => void navigate(key)}
+          onClick={({ key }) => {
+            void navigate(key)
+            if (narrow) setCollapsed(true) // 窄屏：选好就收起来
+          }}
           style={{ borderInlineEnd: 'none' }}
         />
       </Layout.Sider>
       <Layout>
         <Layout.Header
-          style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', paddingInline: 24 }}
+          style={{
+            background: '#fff',
+            borderBottom: '1px solid #f0f0f0',
+            paddingInline: narrow ? 12 : 24,
+          }}
         >
           <Flex justify="end" align="center" gap={12} style={{ height: '100%' }}>
-            <Typography.Text>{name}</Typography.Text>
+            {narrow && (
+              <Button
+                type="text"
+                icon={<MenuOutlined />}
+                aria-label="菜单"
+                onClick={() => setCollapsed((c) => !c)}
+                style={{ marginInlineEnd: 'auto' }}
+              />
+            )}
+            {!narrow && <Typography.Text>{name}</Typography.Text>}
             <Tag color={me?.role === 'admin' ? 'purple' : 'default'}>
               {me?.role === 'admin' ? '管理员' : '使用者'}
             </Tag>
@@ -82,7 +122,7 @@ export function AppLayout() {
             )}
           </Flex>
         </Layout.Header>
-        <Layout.Content style={{ padding: 24 }}>
+        <Layout.Content style={{ padding: narrow ? 12 : 24 }}>
           <Outlet />
         </Layout.Content>
         <ChangePassword open={changingPassword} onClose={() => setChangingPassword(false)} />

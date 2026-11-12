@@ -13,6 +13,7 @@ export const ACTION_LABELS: Record<string, string> = {
   'document:process': '重新处理',
   'document:review': '完成审核',
   'document:export': '导出',
+  'export:download': '重新下载导出文件',
   'value:edit': '修改字段',
   'value:confirm': '确认字段',
   'user:create': '新建用户',

@@ -3,16 +3,41 @@
 import { api, apiBlob, apiDownload, type DownloadedFile } from './client'
 import type {
   Box,
+  Dashboard,
   DocumentDetail,
+  DocumentFilters,
+  DocumentNeighbors,
   DocumentPage,
   DocumentSummary,
   PageOcr,
   RegionOut,
 } from './types'
 
-export function listDocuments(limit: number, offset: number): Promise<DocumentPage> {
+export function listDocuments(
+  limit: number,
+  offset: number,
+  filters: DocumentFilters = {},
+): Promise<DocumentPage> {
   const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  for (const status of filters.status ?? []) {
+    query.append('status', status)
+  }
+  if (filters.template) query.set('template', filters.template)
+  if (filters.date_from) query.set('date_from', filters.date_from)
+  if (filters.date_to) query.set('date_to', filters.date_to)
+  if (filters.q?.trim()) query.set('q', filters.q.trim())
+  if (filters.pending) query.set('pending', 'true')
   return api<DocumentPage>(`/documents?${query}`)
+}
+
+/** 上一份、下一份待审核的文档（按列表顺序）。 */
+export function getNeighbors(id: string): Promise<DocumentNeighbors> {
+  return api<DocumentNeighbors>(`/documents/${id}/neighbors`)
+}
+
+/** 工作台：统计、处理队列、需要先处理的。 */
+export function getDashboard(): Promise<Dashboard> {
+  return api<Dashboard>('/dashboard')
 }
 
 /** 上传一个文件。文件用 FormData 发（和 /docs 里选文件上传一样），字段名必须叫 file。 */

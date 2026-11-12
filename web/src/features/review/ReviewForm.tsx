@@ -1,4 +1,4 @@
-import { CheckOutlined, SaveOutlined } from '@ant-design/icons'
+import { CheckOutlined, FileTextOutlined, SaveOutlined } from '@ant-design/icons'
 import { Button, Checkbox, Flex, Form, Input } from 'antd'
 import type { FieldValue } from '../../api/types'
 import type { Revise } from './useRevise'
@@ -22,7 +22,19 @@ interface Props {
   onDone: () => void
 }
 
-/** 选中一个字段后展开：要么确认"值是对的"，要么填新值和原因保存修改。 */
+/** "采用原文值"时自动填的原因：说清楚原文是怎么写的。 */
+function adoptReason(v: FieldValue): string {
+  if (v.type === 'number') {
+    return Number(v.source_value) < 0 ? '采用原文值：原文是负数（折扣或退款）' : '采用原文值：原文是正数'
+  }
+  return '采用原文值：按原文的写法'
+}
+
+/**
+ * 选中一个字段后展开：要么确认"值是对的"，要么填新值和原因保存修改。
+ * 有"原文值"（模型写的和原文不完全一样）时，多一个"采用原文值"：把原文的写法和原因填好，
+ * 看一眼再点保存（原文那几块可能多带了别的字，可以先删掉）。
+ */
 export function ReviewForm({ value: v, revise, onDone }: Props) {
   const [form] = Form.useForm<ReviewFormValues>()
   const missing = Form.useWatch('missing', form)
@@ -63,6 +75,22 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
         onFinish={save}
         requiredMark={false}
       >
+        {v.source_value ? (
+          <Flex align="center" gap={6} wrap style={{ marginBottom: 8 }}>
+            <Button
+              size="small"
+              icon={<FileTextOutlined />}
+              onClick={() =>
+                form.setFieldsValue({ value: v.source_value ?? '', missing: false, reason: adoptReason(v) })
+              }
+            >
+              采用原文值
+            </Button>
+            <span style={{ fontSize: 12, color: '#666', overflowWrap: 'anywhere' }}>
+              原文：{v.source_value}
+            </span>
+          </Flex>
+        ) : null}
         <Form.Item
           name="value"
           label="正确的值"

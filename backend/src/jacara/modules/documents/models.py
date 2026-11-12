@@ -7,9 +7,10 @@ extractions   对文档某一页的一次抽取：用的模型、提示词、规
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, ForeignKey, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,6 +37,14 @@ class Document(Base, OwnedMixin, TimestampMixin):
     """处理状态：uploaded（已上传，排队中）→ processing（处理中）→ done（完成）/ failed（失败）。"""
     error: Mapped[str | None] = mapped_column(Text)
     """处理失败的原因（给人看的说明）。成功或还没处理时为空。"""
+    stage: Mapped[str | None] = mapped_column(String(64))
+    """处理到哪一步（给人看的），例如"识别文字""抽取第 2 / 3 页"。不在处理中时为空。"""
+    progress: Mapped[int | None]
+    """处理进度 0～100。不在处理中时为空。"""
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    """处理完（成功或失败）的时间。工作台"今天处理了几份"用。"""
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    """点"完成审核"的时间。"""
 
     extractions: Mapped[list[Extraction]] = relationship(
         back_populates="document", order_by="Extraction.page"

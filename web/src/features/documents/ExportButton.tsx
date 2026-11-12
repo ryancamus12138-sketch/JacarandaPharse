@@ -1,5 +1,5 @@
 import { DownloadOutlined, DownOutlined } from '@ant-design/icons'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { App, Button, type ButtonProps, Dropdown, Space } from 'antd'
 import { ApiError } from '../../api/client'
 import { type ExportMode, exportDocuments } from '../../api/documents'
@@ -19,11 +19,13 @@ interface Props {
  */
 export function ExportButton({ ids, type }: Props) {
   const { message } = App.useApp()
+  const queryClient = useQueryClient()
   const download = useMutation({
     mutationFn: (mode: ExportMode) => exportDocuments(ids, mode),
     onSuccess: ({ blob, filename }) => {
       saveFile(blob, filename)
-      void message.success(`已导出 ${filename}`)
+      void message.success(`已导出 ${filename}（导出记录里可以重新下载）`)
+      void queryClient.invalidateQueries({ queryKey: ['exports'] })
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })

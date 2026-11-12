@@ -6,6 +6,7 @@ router 只做三件事：读请求、调用 service、把结果或错误变成 H
 from __future__ import annotations
 
 import uuid
+from datetime import date, timedelta
 from pathlib import PurePath
 from typing import Annotated
 from urllib.parse import quote
@@ -18,18 +19,22 @@ from jacara.core.deps import get_ocr, get_owner, get_queue, get_session, get_sto
 from jacara.core.owner import Owner
 from jacara.core.queue import TaskQueue
 from jacara.core.storage import ObjectStorage
+from jacara.modules.documents.repository import DocumentFilter
 from jacara.modules.documents.schemas import (
+    Dashboard,
     DocumentDetail,
+    DocumentNeighbors,
     DocumentOut,
     DocumentPage,
     PageOcr,
     RegionIn,
     RegionOut,
 )
-from jacara.modules.documents.service import DocumentError, DocumentService
+from jacara.modules.documents.service import DocumentError, DocumentService, day_start
 from jacara.plugins.ocr.base import OcrEngine
 
 router = APIRouter(prefix="/documents", tags=["文档"])
+dashboard_router = APIRouter(prefix="/dashboard", tags=["文档"])
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ZIP = "application/zip"
@@ -66,7 +71,7 @@ def _http_error(err: DocumentError) -> HTTPException:
     return HTTPException(status_code=_STATUS.get(err.code, 400), detail=err.message)
 
 
-def _attachment(filename: str, data: bytes, media_type: str) -> Response:
+def attachment(filename: str, data: bytes, media_type: str) -> Response:
     """让浏览器把响应当成文件下载，并用 filename 作为文件名。
 
     文件名可能有中文：filename* 按标准（RFC 6266）写成 UTF-8 编码；
@@ -97,9 +102,35 @@ def list_documents(
     service: Service,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
+    status_: Annotated[
+        list[str] | None, Query(alias="status", description="状态，可以写多个")
+    ] = None,
+    template: Annotated[str | None, Query(description="用哪个模板抽取的")] = None,
+    date_from: Annotated[date | None, Query(description="上传日期从（含）")] = None,
+    date_to: Annotated[date | None, Query(description="上传日期到（含）")] = None,
+    q: Annotated[str, Query(max_length=100, description="文件名里包含")] = "",
+    pending: Annotated[bool, Query(description="只看还有字段等人确认的")] = False,
 ) -> DocumentPage:
-    """按上传时间倒序。limit 是每页几条，offset 是跳过几条（翻页用）。"""
-    return service.page(limit, offset)
+    """按上传时间倒序。limit 是每页几条，offset 是跳过几条（翻页用）。
+
+    筛选：`?status=done&status=failed&template=receipt&date_from=2026-11-01&q=costco&pending=true`。
+    日期按这台电脑的时区算。
+    """
+    filters = DocumentFilter(
+        statuses=tuple(status_ or ()),
+        template=template or None,
+        since=day_start(date_from) if date_from else None,
+        until=day_start(date_to + timedelta(days=1)) if date_to else None,
+        search=q,
+        pending_only=pending,
+    )
+    return service.page(limit, offset, filters)
+
+
+@dashboard_router.get("", summary="工作台")
+def dashboard(service: Service) -> Dashboard:
+    """首页的统计和待办：各状态多少份、今天处理和审核了多少、处理队列（带进度）、需要先处理的。"""
+    return service.dashboard()
 
 
 @router.get("/export.xlsx", summary="导出多个文档", response_class=Response)
@@ -115,7 +146,7 @@ def export_documents(
         filename, data = service.export(ids)
     except DocumentError as err:
         raise _http_error(err) from err
-    return _attachment(filename, data, XLSX)
+    return attachment(filename, data, XLSX)
 
 
 @router.get("/export.zip", summary="导出多个文档（每个一个 Excel）", response_class=Response)
@@ -131,7 +162,7 @@ def export_documents_zip(
         filename, data = service.export_zip(ids)
     except DocumentError as err:
         raise _http_error(err) from err
-    return _attachment(filename, data, ZIP)
+    return attachment(filename, data, ZIP)
 
 
 @router.get("/{document_id}", summary="文档详情")
@@ -139,6 +170,15 @@ def get_document(document_id: uuid.UUID, service: Service) -> DocumentDetail:
     """文档信息，加上每一页抽出的字段、出处和规则校验结果。"""
     try:
         return service.get(document_id)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.get("/{document_id}/neighbors", summary="上一份、下一份")
+def document_neighbors(document_id: uuid.UUID, service: Service) -> DocumentNeighbors:
+    """按列表顺序（上传时间倒序），这份前后两份待审核的文档。审核完一份直接跳到下一份。"""
+    try:
+        return service.neighbors(document_id)
     except DocumentError as err:
         raise _http_error(err) from err
 
@@ -208,7 +248,7 @@ def export_document(document_id: uuid.UUID, service: Service) -> Response:
         filename, data = service.export([document_id])
     except DocumentError as err:
         raise _http_error(err) from err
-    return _attachment(filename, data, XLSX)
+    return attachment(filename, data, XLSX)
 
 
 @router.post("/{document_id}/review", summary="完成审核")

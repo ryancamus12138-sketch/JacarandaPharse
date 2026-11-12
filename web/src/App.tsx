@@ -7,8 +7,11 @@ import { RequireAuth, RequirePermission } from './auth/RequireAuth'
 import { AppLayout } from './components/AppLayout'
 import { AuditLogPage } from './features/admin/AuditLogPage'
 import { UsersPage } from './features/admin/UsersPage'
+import { DashboardPage } from './features/dashboard/DashboardPage'
 import { DocumentListPage } from './features/documents/DocumentListPage'
+import { ExportsPage } from './features/exports/ExportsPage'
 import { ReviewPage } from './features/review/ReviewPage'
+import { SystemPage } from './features/system/SystemPage'
 
 /** 路由：哪个网址显示哪个页面。 */
 export default function App() {
@@ -25,9 +28,12 @@ export default function App() {
               </RequireAuth>
             }
           >
-            <Route index element={<Navigate to="/documents" replace />} />
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardPage />} />
             <Route path="documents" element={<DocumentListPage />} />
             <Route path="documents/:id" element={<ReviewPage />} />
+            <Route path="exports" element={<ExportsPage />} />
+            <Route path="system" element={<SystemPage />} />
             <Route
               path="admin/users"
               element={

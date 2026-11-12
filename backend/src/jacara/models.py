@@ -9,6 +9,7 @@ from jacara.core.db import Base
 from jacara.modules.audit.models import AuditLog
 from jacara.modules.auth.models import AuthSession, PasswordResetCode, Team, User
 from jacara.modules.documents.models import Document, Extraction
+from jacara.modules.exports.models import Export
 from jacara.modules.fields.models import ExtractedValue, ValueRevision
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "AuthSession",
     "Base",
     "Document",
+    "Export",
     "ExtractedValue",
     "Extraction",
     "PasswordResetCode",

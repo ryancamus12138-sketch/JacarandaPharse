@@ -115,6 +115,7 @@ def _evidence_json(field: AlignedField) -> dict[str, Any] | None:
     return {
         "row": ev.row,
         "row_text": ev.row_text,
+        "text": " ".join(line.text for line in ev.lines),
         "bbox": [round(v, 1) for v in ev.bbox],
         "confidence": round(ev.confidence, 4),
         "similarity": ev.similarity,
@@ -154,6 +155,7 @@ def evidence_from_ocr(lines: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "row": min(rows) if rows else None,
         "row_text": "  ".join(line["text"] for line in lines),
+        "text": " ".join(line["text"] for line in lines),
         "bbox": [
             min(b[0] for b in boxes),
             min(b[1] for b in boxes),

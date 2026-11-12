@@ -13,7 +13,7 @@ import mimetypes
 import tempfile
 import uuid
 import zipfile
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path, PurePath
 
 from sqlalchemy.orm import Session
@@ -23,18 +23,29 @@ from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.queue import QueueError, TaskQueue
 from jacara.core.storage import ObjectStorage, StorageError
-from jacara.models import Document
+from jacara.models import Document, Extraction
 from jacara.modules.audit.service import record
-from jacara.modules.documents.repository import DocumentRepository
+from jacara.modules.documents.repository import DocumentFilter, DocumentRepository
 from jacara.modules.documents.schemas import (
+    Dashboard,
+    DashboardCounts,
     DocumentDetail,
+    DocumentNeighbors,
     DocumentOut,
     DocumentPage,
+    ExtractionOut,
     OcrLineOut,
     PageOcr,
     RegionOut,
 )
-from jacara.pipeline.current import current_checks_json
+from jacara.modules.exports.service import save_export
+from jacara.pipeline.current import (
+    current_checks_json,
+    evidence_text,
+    field_states,
+    source_value,
+    wants_source,
+)
 from jacara.pipeline.load import load_reports
 from jacara.pipeline.region import read_region
 from jacara.plugins.exporters import create_exporter
@@ -59,6 +70,20 @@ ALLOWED_TYPES = {
     "image/tiff": ".tiff",
     "application/pdf": ".pdf",
 }
+
+
+DASHBOARD_LIMIT = 8
+"""工作台"需要先处理"每类最多列几份。"""
+
+
+def start_of_today() -> datetime:
+    """今天 0 点（按本机时区的日期，换成 UTC）。工作台的"今天"按用户这台电脑的日期算。"""
+    return day_start(datetime.now().astimezone().date())
+
+
+def day_start(day: date) -> datetime:
+    """本机时区某一天的 0 点，换成 UTC（数据库里的时间按 UTC 比较）。"""
+    return datetime.combine(day, datetime.min.time()).astimezone().astimezone(UTC)
 
 
 class DocumentError(Exception):
@@ -143,15 +168,55 @@ class DocumentService:
             raise DocumentError("queue", "任务队列暂时不可用，请稍后再试")
         return DocumentOut.model_validate(document)
 
-    def page(self, limit: int, offset: int) -> DocumentPage:
+    def page(self, limit: int, offset: int, filters: DocumentFilter | None = None) -> DocumentPage:
         require(self.owner, "document:read")
-        documents, total = self.repo.page(self.owner.team_id, limit, offset)
+        documents, total = self.repo.page(self.owner.team_id, limit, offset, filters)
+        return DocumentPage(items=self._with_counts(documents), total=total)
+
+    def _with_counts(self, documents: list[Document]) -> list[DocumentOut]:
+        """文档 + 每份还有几个字段等人确认。"""
         counts = self.repo.review_counts([d.id for d in documents])
-        items = [
+        return [
             DocumentOut.model_validate(d).model_copy(update={"review_count": counts.get(d.id, 0)})
             for d in documents
         ]
-        return DocumentPage(items=items, total=total)
+
+    def neighbors(self, document_id: uuid.UUID) -> DocumentNeighbors:
+        """审核页面的"上一份 / 下一份"：按列表顺序，前后两份待审核（done）的文档。"""
+        document = self._find(document_id)
+        require(self.owner, "document:read", document.team_id)
+        previous, following, remaining = self.repo.neighbors(document, ("done",))
+        return DocumentNeighbors(previous=previous, next=following, remaining=remaining)
+
+    def dashboard(self) -> Dashboard:
+        """工作台：各状态多少份、今天处理和审核了多少、处理队列、需要先处理的。"""
+        require(self.owner, "document:read")
+        team = self.owner.team_id
+        status = self.repo.status_counts(team)
+        today = start_of_today()
+        average = self.repo.average_page_ms(team, today - timedelta(days=7))
+        counts = DashboardCounts(
+            queued=status.get("uploaded", 0),
+            processing=status.get("processing", 0),
+            to_review=status.get("done", 0),
+            failed=status.get("failed", 0),
+            reviewed=status.get("reviewed", 0),
+            total=sum(status.values()),
+            pending_fields=self.repo.pending_fields(team),
+            processed_today=self.repo.processed_since(team, today),
+            reviewed_today=self.repo.reviewed_since(team, today),
+            average_page_seconds=None if average is None else round(average / 1000, 1),
+        )
+        to_review = [
+            DocumentOut.model_validate(d).model_copy(update={"review_count": n})
+            for d, n in self.repo.most_pending(team, DASHBOARD_LIMIT)
+        ]
+        return Dashboard(
+            counts=counts,
+            queue=[DocumentOut.model_validate(d) for d in self.repo.in_progress(team, 20)],
+            failed=[DocumentOut.model_validate(d) for d in self.repo.failed(team, DASHBOARD_LIMIT)],
+            to_review=to_review,
+        )
 
     def get(self, document_id: uuid.UUID) -> DocumentDetail:
         document = self._find(document_id)
@@ -159,7 +224,7 @@ class DocumentService:
         detail = DocumentDetail.model_validate(document)
         reviews = sum(v.pending_review for e in detail.extractions for v in e.values)
         extractions = [
-            out.model_copy(update={"current_checks": current_checks_json(e)})
+            _with_states(out, e)
             for out, e in zip(detail.extractions, document.extractions, strict=True)
         ]
         return detail.model_copy(update={"review_count": reviews, "extractions": extractions})
@@ -189,6 +254,7 @@ class DocumentService:
         if pending:
             raise DocumentError("conflict", f"还有 {pending} 个字段等待确认")
         document.status = "reviewed"
+        document.reviewed_at = datetime.now(UTC)
         record(self.session, self.owner, "document:review", "document", document.id)
         return DocumentOut.model_validate(document)
 
@@ -203,7 +269,7 @@ class DocumentService:
             name = f"{PurePath(documents[0].filename).stem}.xlsx"
         else:
             name = f"jacara-{date.today():%Y%m%d}-{len(documents)}份.xlsx"
-        self._record_export(documents, "xlsx")
+        self._record_export(documents, "xlsx", name, data)
         return name, data
 
     def export_zip(self, document_ids: list[uuid.UUID]) -> tuple[str, bytes]:
@@ -220,8 +286,10 @@ class DocumentService:
             for document in documents:
                 name = _unique(f"{PurePath(document.filename).stem}.xlsx", used)
                 archive.writestr(name, _workbook([document]))
-        self._record_export(documents, "zip")
-        return f"jacara-{date.today():%Y%m%d}-{len(documents)}份.zip", out.getvalue()
+        name = f"jacara-{date.today():%Y%m%d}-{len(documents)}份.zip"
+        data = out.getvalue()
+        self._record_export(documents, "zip", name, data)
+        return name, data
 
     def _exportable(self, document_ids: list[uuid.UUID]) -> list[Document]:
         """导出前的检查（两种导出都一样）：有权限、数量对、都找得到、都处理完了。按用户选的顺序返回。"""
@@ -242,12 +310,20 @@ class DocumentService:
             raise DocumentError("conflict", f"这些文档还没处理完，不能导出：{', '.join(not_ready)}")
         return documents
 
-    def _record_export(self, documents: list[Document], file_format: str) -> None:
-        # 导出是"数据离开系统"，要留记录：谁、什么时候、导出了哪些文档、什么格式
+    def _record_export(
+        self, documents: list[Document], file_format: str, filename: str, data: bytes
+    ) -> None:
+        # 导出是"数据离开系统"，要留记录：谁、什么时候、导出了哪些文档、什么格式。
+        # 文件也存一份，导出记录页可以重新下载（ADR 0029）
+        export = save_export(
+            self.session, self.storage, self.owner, filename, file_format, data, documents
+        )
         record(
             self.session,
             self.owner,
             "document:export",
+            "export",
+            export.id,
             documents=[str(d.id) for d in documents],
             format=file_format,
         )
@@ -314,6 +390,27 @@ class DocumentService:
         if document is None:
             raise DocumentError("not_found", "找不到这个文档")
         return document
+
+
+def _with_states(out: ExtractionOut, extraction: Extraction) -> ExtractionOut:
+    """按当前值重新检查规则，再给每个字段标上校验状态和颜色（ADR 0028）。"""
+    checks = current_checks_json(extraction)
+    states = field_states(extraction, checks)
+    by_id = {v.id: v for v in extraction.values}
+    # 更新前处理的文档，出处里没存文字，要用这一页的 OCR 结果找（只在需要时才读）
+    needs_ocr = any(wants_source(v) and "text" not in (v.evidence or {}) for v in extraction.values)
+    lines = (extraction.ocr or {}).get("lines") if needs_ocr else None
+    values = [
+        v.model_copy(
+            update={
+                "check_state": states[v.id][0],
+                "level": states[v.id][1],
+                "source_value": source_value(by_id[v.id], evidence_text(by_id[v.id], lines)),
+            }
+        )
+        for v in out.values
+    ]
+    return out.model_copy(update={"current_checks": checks, "values": values})
 
 
 def _count_pages(content_type: str, data: bytes) -> int:
