@@ -7,7 +7,8 @@ SQLAlchemy 要在所有表都导入之后才能把它们连起来。用到数据
 
 from jacara.core.db import Base
 from jacara.modules.audit.models import AuditLog
-from jacara.modules.auth.models import AuthSession, PasswordResetCode, Team, User
+from jacara.modules.auth.models import AuthSession, PasswordResetCode, Profile, Team, User
+from jacara.modules.comments.models import Comment
 from jacara.modules.documents.models import Document, Extraction
 from jacara.modules.exports.models import Export
 from jacara.modules.fields.models import ExtractedValue, ValueRevision
@@ -17,11 +18,13 @@ __all__ = [
     "AuditLog",
     "AuthSession",
     "Base",
+    "Comment",
     "Document",
     "Export",
     "ExtractedValue",
     "Extraction",
     "PasswordResetCode",
+    "Profile",
     "Team",
     "TemplateRecord",
     "TemplateVersion",

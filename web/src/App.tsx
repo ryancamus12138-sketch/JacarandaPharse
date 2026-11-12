@@ -41,6 +41,10 @@ const TemplateEditorPage = lazy(() =>
   })),
 )
 
+const ProfilePage = lazy(() =>
+  import('./features/profile/ProfilePage').then((m) => ({ default: m.ProfilePage })),
+)
+
 /** 页面还在下载时显示转圈。 */
 function Page({ children }: { children: ReactNode }) {
   return (
@@ -110,6 +114,9 @@ export default function App() {
             />
             <Route path="system" element={<Page>
                   <SystemPage />
+                </Page>} />
+            <Route path="profile" element={<Page>
+                  <ProfilePage />
                 </Page>} />
             <Route
               path="admin/users"

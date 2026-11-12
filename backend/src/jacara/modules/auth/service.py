@@ -18,7 +18,7 @@ from jacara.core.security import (
     token_hash,
     verify_password,
 )
-from jacara.models import AuthSession, PasswordResetCode, User
+from jacara.models import AuthSession, PasswordResetCode, Profile, User
 from jacara.modules.audit.service import record
 from jacara.modules.auth.repository import AuthRepository
 from jacara.modules.auth.schemas import (
@@ -113,14 +113,26 @@ class AuthService:
     def me(self, owner: Owner) -> MeOut:
         settings = get_settings()
         can: list[str] = sorted(allowed(owner))
+        profile = self.session.get(Profile, owner.user_id)
+        avatar_at = profile.avatar_at if profile else None
         if settings.jacara_mode == "personal":
-            return MeOut(mode="personal", role=PERSONAL_OWNER.role, permissions=can, user=None)
+            name = (profile.display_name if profile else None) or "本机用户"
+            return MeOut(
+                mode="personal",
+                role=PERSONAL_OWNER.role,
+                permissions=can,
+                user=None,
+                shown_name=name,
+                avatar_at=avatar_at,
+            )
         user = self.repo.user(owner.user_id, owner.team_id)
         return MeOut(
             mode="team",
             role=owner.role,
             permissions=can,
             user=UserOut.model_validate(user) if user else None,
+            shown_name=(user.display_name or user.username) if user else "",
+            avatar_at=avatar_at,
         )
 
     def change_password(self, owner: Owner, token: str | None, data: PasswordChange) -> None:

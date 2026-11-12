@@ -31,6 +31,17 @@ class DocumentFilter:
     """文件名里包含这些字（不分大小写）。"""
     pending_only: bool = False
     """只要还有字段等人确认的。"""
+    value_search: str = ""
+    """字段内容里包含这些字（当前这一轮的任意字段，不分大小写）。例如发票号码、商家名的一部分。"""
+    field: str | None = None
+    """和 value_search 一起用：只在这个字段里找（字段 ID，例如 invoice_no）。"""
+    skipped: bool | None = None
+    """True：只看跳过的；False：不看跳过的；None：都看。"""
+
+
+def _like(text: str) -> str:
+    """用户输入里的 % 和 _ 当普通字符，不当通配符。"""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 ORDER = (Document.created_at.desc(), Document.id)
@@ -98,11 +109,32 @@ class DocumentRepository:
         if f.until is not None:
             conditions.append(Document.created_at < f.until)
         if f.search.strip():
-            # 用户输入里的 % 和 _ 当普通字符，不当通配符
-            text = f.search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            text = _like(f.search.strip())
             conditions.append(Document.filename.ilike(f"%{text}%", escape="\\"))
         if f.pending_only:
             conditions.append(exists().where(*self._pending_value()))
+        if f.value_search.strip():
+            text = _like(f.value_search.strip())
+            found = [
+                Extraction.document_id == Document.id,
+                Extraction.run == Document.current_run,
+                ExtractedValue.extraction_id == Extraction.id,
+                # 模型抽的值或者人改过的值里有（改过几次的，任何一次的值都算）
+                or_(
+                    ExtractedValue.value.ilike(f"%{text}%", escape="\\"),
+                    exists().where(
+                        ValueRevision.value_id == ExtractedValue.id,
+                        ValueRevision.new_value.ilike(f"%{text}%", escape="\\"),
+                    ),
+                ),
+            ]
+            if f.field:
+                found.append(ExtractedValue.name == f.field)
+            conditions.append(exists().where(*found))
+        if f.skipped is True:
+            conditions.append(Document.skipped_at.is_not(None))
+        elif f.skipped is False:
+            conditions.append(Document.skipped_at.is_(None))
         return conditions
 
     @staticmethod
@@ -125,6 +157,7 @@ class DocumentRepository:
             Document.team_id == document.team_id,
             Document.status.in_(statuses),
             Document.id != document.id,
+            Document.skipped_at.is_(None),  # 先跳过的不算进"下一份"
         ]
         # 列表是 created_at 倒序、id 正序：排在后面 = 更早上传，或者同一时间但 id 更大
         later = or_(
@@ -150,6 +183,13 @@ class DocumentRepository:
             .group_by(Document.status)
         )
         return {status: n for status, n in self.session.execute(query)}
+
+    def skipped_count(self, team_id: uuid.UUID) -> int:
+        """待审核里先跳过的有几份。"""
+        query = select(func.count()).where(
+            Document.team_id == team_id, Document.status == "done", Document.skipped_at.is_not(None)
+        )
+        return self.session.scalar(query.select_from(Document)) or 0
 
     def processed_since(self, team_id: uuid.UUID, since: datetime) -> int:
         """since 之后处理完的文档数（成功的，不算失败的）。"""
@@ -199,6 +239,7 @@ class DocumentRepository:
             .where(
                 Document.team_id == team_id,
                 Document.status == "done",
+                Document.skipped_at.is_(None),  # 先跳过的不催
                 Extraction.run == Document.current_run,
                 ExtractedValue.needs_review,
                 ~reviewed,

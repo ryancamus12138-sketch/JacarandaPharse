@@ -114,7 +114,11 @@ export function DashboardPage() {
             icon={<FileSearchOutlined />}
             color="#faad14"
             to="/documents?status=done"
-            note={c ? `${c.pending_fields} 个字段等你确认` : null}
+            note={
+              c
+                ? `${c.pending_fields} 个字段等你确认${c.skipped ? `，先跳过 ${c.skipped} 份` : ''}`
+                : null
+            }
           />
         </Col>
         <Col xs={12} md={8} xl={4}>

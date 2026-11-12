@@ -3,6 +3,7 @@ import {
   ArrowUpOutlined,
   CheckOutlined,
   DeleteOutlined,
+  MessageOutlined,
   UndoOutlined,
   MoreOutlined,
   PlusOutlined,
@@ -49,6 +50,8 @@ interface Props {
   onRestoreRow: (row: TableRow) => void
   /** 批量确认这些格子（值是对的）。 */
   onConfirm: (ids: string[]) => void
+  /** 每一格还没解决的备注几条（字段 ID → 条数）。 */
+  comments?: Record<string, number>
 }
 
 /**
@@ -66,6 +69,7 @@ export function ItemsTable({
   onDeleteRow,
   onRestoreRow,
   onConfirm,
+  comments = {},
 }: Props) {
   const { table, columns, rows } = layout
   // 删掉的行留在原位（灰色、划掉，不占行号，可以恢复）
@@ -243,6 +247,12 @@ export function ItemsTable({
                         }}
                       >
                         {v.current_value ?? <span style={{ color: '#bbb' }}>—</span>}
+                        {(comments[v.name] ?? 0) > 0 && (
+                          <MessageOutlined
+                            aria-label="有备注"
+                            style={{ marginInlineStart: 4, color: '#7c5cbf', fontSize: 11 }}
+                          />
+                        )}
                       </td>
                     )
                   })}

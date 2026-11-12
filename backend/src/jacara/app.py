@@ -16,6 +16,7 @@ from jacara.core.permissions import PermissionDenied
 from jacara.core.web import mount_web
 from jacara.modules.audit.router import router as audit_router
 from jacara.modules.auth.router import auth_router, users_router
+from jacara.modules.comments.router import comments_router, document_comments_router
 from jacara.modules.documents.router import dashboard_router
 from jacara.modules.documents.router import router as documents_router
 from jacara.modules.exports.router import router as exports_router
@@ -50,6 +51,8 @@ def create_app() -> FastAPI:
     api = APIRouter(prefix=API_PREFIX)
     api.include_router(auth_router)
     api.include_router(documents_router)
+    api.include_router(document_comments_router)
+    api.include_router(comments_router)
     api.include_router(dashboard_router)
     api.include_router(exports_router)
     api.include_router(fields_router)

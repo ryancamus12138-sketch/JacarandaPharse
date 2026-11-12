@@ -1,4 +1,9 @@
-import { ClearOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
+import {
+  ClearOutlined,
+  MessageOutlined,
+  ReloadOutlined,
+  SearchOutlined,
+} from '@ant-design/icons'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Alert,
@@ -10,9 +15,11 @@ import {
   Input,
   Progress,
   Select,
+  Space,
   Table,
   type TableProps,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd'
 import { useState } from 'react'
@@ -60,6 +67,9 @@ function filtersFrom(params: URLSearchParams): DocumentFilters {
     date_to: params.get('date_to') ?? undefined,
     q: params.get('q') ?? undefined,
     pending: params.get('pending') === 'true',
+    value_q: params.get('value_q') ?? undefined,
+    field: params.get('field') ?? undefined,
+    skipped: params.has('skipped') ? params.get('skipped') === 'true' : undefined,
   }
 }
 
@@ -71,6 +81,9 @@ function paramsFrom(f: DocumentFilters): URLSearchParams {
   if (f.date_to) params.set('date_to', f.date_to)
   if (f.q) params.set('q', f.q)
   if (f.pending) params.set('pending', 'true')
+  if (f.value_q) params.set('value_q', f.value_q)
+  if (f.field) params.set('field', f.field)
+  if (f.skipped !== undefined) params.set('skipped', String(f.skipped))
   return params
 }
 
@@ -87,7 +100,18 @@ export function DocumentListPage() {
   const filtered = params.toString() !== ''
   // 搜索框打字时先不查，按回车或点搜索再查
   const [search, setSearch] = useState(filters.q ?? '')
+  const [valueSearch, setValueSearch] = useState(filters.value_q ?? '')
   const templates = useQuery({ queryKey: ['templates'], queryFn: listTemplates, staleTime: Infinity })
+
+  // "在哪个字段里找"的选项：选了模板就是这个模板的字段，没选就是所有模板的字段（同一个 ID 只列一次）
+  const fieldOptions = (() => {
+    const seen = new Map<string, string>()
+    for (const t of templates.data ?? []) {
+      if (filters.template && t.name !== filters.template) continue
+      for (const f of t.fields) if (!seen.has(f.name)) seen.set(f.name, f.label || f.name)
+    }
+    return [...seen].map(([value, label]) => ({ value, label }))
+  })()
 
   function setFilters(change: Partial<DocumentFilters>) {
     setParams(paramsFrom({ ...filters, ...change }), { replace: true })
@@ -114,13 +138,32 @@ export function DocumentListPage() {
       title: '文件名',
       dataIndex: 'filename',
       ellipsis: true,
-      render: (filename: string, d) =>
-        // 处理完的才有结果可看
-        d.status === 'done' || d.status === 'reviewed' ? (
-          <Link to={`/documents/${d.id}`}>{filename}</Link>
-        ) : (
-          filename
-        ),
+      render: (filename: string, d) => (
+        <Flex gap={6} align="center" style={{ minWidth: 0 }}>
+          {/* 处理完的才有结果可看 */}
+          <Typography.Text ellipsis style={{ minWidth: 0 }}>
+            {d.status === 'done' || d.status === 'reviewed' ? (
+              <Link to={`/documents/${d.id}`}>{filename}</Link>
+            ) : (
+              filename
+            )}
+          </Typography.Text>
+          {d.skipped_at && (
+            <Tooltip title={d.skip_reason ? `跳过原因：${d.skip_reason}` : '审核时先跳过了'}>
+              <Tag color="orange" style={{ marginInlineEnd: 0 }}>
+                已跳过
+              </Tag>
+            </Tooltip>
+          )}
+          {(d.open_comments ?? 0) > 0 && (
+            <Tooltip title={`${d.open_comments} 条备注没解决`}>
+              <Tag icon={<MessageOutlined />} style={{ marginInlineEnd: 0 }}>
+                {d.open_comments}
+              </Tag>
+            </Tooltip>
+          )}
+        </Flex>
+      ),
     },
     {
       title: '状态',
@@ -241,6 +284,41 @@ export function DocumentListPage() {
           enterButton={<SearchOutlined />}
           style={{ width: 200 }}
         />
+        {/* 选字段 + 输入内容放在一起，换行时也不分开 */}
+        <Space.Compact>
+          <Select<string>
+            allowClear
+            showSearch={{ optionFilterProp: 'label' }}
+            placeholder="所有字段"
+            aria-label="在哪个字段里找"
+            value={filters.field}
+            onChange={(field) => setFilters({ field })}
+            options={fieldOptions}
+            style={{ width: 140 }}
+            popupMatchSelectWidth={false}
+          />
+          <Input.Search
+            allowClear
+            placeholder="字段内容，如发票号码、商家"
+            aria-label="按字段内容找"
+            value={valueSearch}
+            onChange={(e) => setValueSearch(e.target.value)}
+            onSearch={(v) => setFilters({ value_q: v.trim() || undefined })}
+            enterButton={<SearchOutlined />}
+            style={{ width: 240 }}
+          />
+        </Space.Compact>
+        <Select<string>
+          aria-label="跳过的文档"
+          value={filters.skipped === undefined ? 'all' : filters.skipped ? 'only' : 'hide'}
+          onChange={(v) => setFilters({ skipped: v === 'all' ? undefined : v === 'only' })}
+          options={[
+            { value: 'all', label: '跳过的也显示' },
+            { value: 'only', label: '只看跳过的' },
+            { value: 'hide', label: '不看跳过的' },
+          ]}
+          style={{ width: 130 }}
+        />
         <Checkbox
           checked={filters.pending}
           onChange={(e) => setFilters({ pending: e.target.checked })}
@@ -253,6 +331,7 @@ export function DocumentListPage() {
             icon={<ClearOutlined />}
             onClick={() => {
               setSearch('')
+              setValueSearch('')
               setParams(new URLSearchParams(), { replace: true })
               setPage(1)
             }}

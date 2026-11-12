@@ -52,6 +52,8 @@ import {
 import { PageViewer } from './PageViewer'
 import { ReasonDialog, type ReasonRequest } from './ReasonDialog'
 import { RegionPanel } from './RegionPanel'
+import { openCommentsOnPage, useComments } from './comments'
+import { CommentsButton, SkipButton, SkippedNotice } from './ReviewExtras'
 import { ReprocessButton, RunSwitcher } from './RunControls'
 import { SaveAsTemplate } from './SaveAsTemplate'
 import { useConfirmMany } from './useConfirmMany'
@@ -144,6 +146,7 @@ function ReviewWorkspace({ id }: { id: string }) {
     staleTime: Infinity, // OCR 结果处理完就不会变
   })
   const revise = useRevise(id)
+  const comments = useComments(id)
   const rows = useRows(id)
   const confirmMany = useConfirmMany(id)
   // 上一份、下一份（只算待审核的，按列表顺序）
@@ -483,6 +486,10 @@ function ReviewWorkspace({ id }: { id: string }) {
         </Button>
       )}
       {!viewingOld && can('document:process') && <ReprocessButton doc={doc} />}
+      {doc.status === 'done' && !viewingOld && !doc.skipped_at && can('document:review') && (
+        <SkipButton doc={doc} next={() => goTo(neighbors.data?.next ?? neighbors.data?.previous)} />
+      )}
+      <CommentsButton doc={doc} selected={selected} page={page} />
       {doc.status === 'done' && !viewingOld && (
         <Tooltip title={finishBlocked}>
           <Button
@@ -587,6 +594,7 @@ function ReviewWorkspace({ id }: { id: string }) {
       styles={{ body: { paddingTop: 16 } }}
     >
       <div style={{ marginBottom: 12 }}>{toolbar}</div>
+      <SkippedNotice doc={doc} canUndo={can('document:review') && !viewingOld} />
       {!doneOrReviewed && (
         <Alert
           type="info"
@@ -802,6 +810,7 @@ function ReviewWorkspace({ id }: { id: string }) {
             <FieldPanel
               extraction={{ ...extraction, values }}
               sortMode={sortMode}
+              comments={openCommentsOnPage(comments.data, page)}
               onSortMode={(mode) => {
                 setSortMode(mode)
                 saveSortMode(mode)

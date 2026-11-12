@@ -30,6 +30,7 @@ from jacara.modules.documents.schemas import (
     RegionIn,
     RegionOut,
     ReprocessIn,
+    SkipIn,
 )
 from jacara.modules.documents.service import DocumentError, DocumentService, day_start
 from jacara.modules.fields.schemas import AdoptOut
@@ -117,10 +118,20 @@ def list_documents(
     date_to: Annotated[date | None, Query(description="上传日期到（含）")] = None,
     q: Annotated[str, Query(max_length=100, description="文件名里包含")] = "",
     pending: Annotated[bool, Query(description="只看还有字段等人确认的")] = False,
+    value_q: Annotated[
+        str, Query(max_length=100, description="字段内容里包含（例如发票号码、商家名）")
+    ] = "",
+    field: Annotated[
+        str | None, Query(max_length=64, description="和 value_q 一起用：只在这个字段里找")
+    ] = None,
+    skipped: Annotated[
+        bool | None, Query(description="true 只看跳过的，false 不看跳过的，不填都看")
+    ] = None,
 ) -> DocumentPage:
     """按上传时间倒序。limit 是每页几条，offset 是跳过几条（翻页用）。
 
     筛选：`?status=done&status=failed&template=receipt&date_from=2026-11-01&q=costco&pending=true`。
+    按字段内容找：`?value_q=044031900111&field=invoice_no`（不填 field 就在所有字段里找）。
     日期按这台电脑的时区算。
     """
     filters = DocumentFilter(
@@ -130,6 +141,9 @@ def list_documents(
         until=day_start(date_to + timedelta(days=1)) if date_to else None,
         search=q,
         pending_only=pending,
+        value_search=value_q,
+        field=field or None,
+        skipped=skipped,
     )
     return service.page(limit, offset, filters)
 
@@ -273,6 +287,24 @@ def review_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
     """
     try:
         return service.review(document_id)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/{document_id}/skip", summary="先跳过")
+def skip_document(document_id: uuid.UUID, data: SkipIn, service: Service) -> DocumentOut:
+    """审核时拿不准的先跳过：不算进"下一份"，列表里用 `?skipped=true` 筛出来，过后再回来。"""
+    try:
+        return service.skip(document_id, data)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/{document_id}/unskip", summary="取消跳过")
+def unskip_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
+    """回到待审核里。完成审核、重新处理时也会自动取消跳过。"""
+    try:
+        return service.unskip(document_id)
     except DocumentError as err:
         raise _http_error(err) from err
 

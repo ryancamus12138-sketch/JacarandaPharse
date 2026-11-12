@@ -56,6 +56,12 @@ class DocumentOut(BaseModel):
     """现在用的是第几轮处理的结果。"""
     discover: bool = False
     """下一次（或这一次）处理不用模板，抽出所有键值对。"""
+    skipped_at: datetime | None = None
+    """审核时点了"先跳过"的时间；没跳过是 null。"""
+    skip_reason: str | None = None
+    """跳过的原因（可以没有）。"""
+    open_comments: int = 0
+    """还没解决的备注有几条。"""
 
 
 class ExtractionOut(BaseModel):
@@ -185,6 +191,8 @@ class DashboardCounts(BaseModel):
     failed: int
     reviewed: int
     total: int
+    skipped: int = 0
+    """待审核里先跳过的有几份。"""
     pending_fields: int
     """待审核的文档里，一共还有多少字段等人确认。"""
     processed_today: int
@@ -203,3 +211,10 @@ class Dashboard(BaseModel):
     """处理失败的（最新的几份）。"""
     to_review: list[DocumentOut]
     """待审核里等人确认的字段最多的几份（review_count）。"""
+
+
+class SkipIn(BaseModel):
+    """先跳过这份：拿不准的先放一放，过后再回来。"""
+
+    reason: str = Field(default="", max_length=500)
+    """为什么跳过，可以不填。"""
