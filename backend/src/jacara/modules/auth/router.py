@@ -5,11 +5,13 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
-from jacara.core.deps import get_owner, get_session, get_token
+from jacara.core.deps import get_owner, get_session, get_storage, get_token
 from jacara.core.owner import Owner
+from jacara.core.storage import ObjectStorage
+from jacara.modules.auth.profile import ProfileService
 from jacara.modules.auth.schemas import (
     CodeReset,
     LoginIn,
@@ -17,6 +19,8 @@ from jacara.modules.auth.schemas import (
     MeOut,
     PasswordChange,
     PermissionOut,
+    ProfileOut,
+    ProfileUpdate,
     ResetCodeOut,
     UserCreate,
     UserOut,
@@ -37,6 +41,7 @@ _STATUS = {
 
 DbSession = Annotated[Session, Depends(get_session)]
 CurrentOwner = Annotated[Owner, Depends(get_owner)]
+Storage = Annotated[ObjectStorage, Depends(get_storage)]
 
 
 def _http_error(err: AuthError) -> HTTPException:
@@ -97,6 +102,56 @@ def reset_password(body: CodeReset, session: DbSession) -> Response:
     except AuthError as err:
         raise _http_error(err) from err
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@auth_router.get("/profile", summary="个人资料")
+def get_profile(session: DbSession, owner: CurrentOwner) -> ProfileOut:
+    """自己的昵称、头像、用户名、团队、角色和能做的事。"""
+    return ProfileService(session, owner).get()
+
+
+@auth_router.patch("/profile", summary="改昵称")
+def update_profile(body: ProfileUpdate, session: DbSession, owner: CurrentOwner) -> ProfileOut:
+    """改自己的昵称。空字符串 = 不用昵称（显示用户名）。"""
+    try:
+        return ProfileService(session, owner).update(body)
+    except AuthError as err:
+        raise _http_error(err) from err
+
+
+@auth_router.get(
+    "/profile/avatar",
+    summary="自己的头像",
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}}},
+)
+def get_avatar(session: DbSession, owner: CurrentOwner, storage: Storage) -> Response:
+    """256 × 256 的 PNG。没有头像时 404。"""
+    try:
+        data = ProfileService(session, owner, storage).avatar()
+    except AuthError as err:
+        raise _http_error(err) from err
+    return Response(content=data, media_type="image/png", headers={"Cache-Control": "private"})
+
+
+@auth_router.put("/profile/avatar", summary="换头像")
+def set_avatar(
+    session: DbSession,
+    owner: CurrentOwner,
+    storage: Storage,
+    file: Annotated[UploadFile, File(description="PNG、JPG 或 WEBP，5 MB 以内")],
+) -> ProfileOut:
+    """上传一张图片当头像。会裁成正方形、缩到 256 × 256，去掉照片里的拍摄信息。"""
+    try:
+        return ProfileService(session, owner, storage).set_avatar(file.file.read())
+    except AuthError as err:
+        raise _http_error(err) from err
+
+
+@auth_router.delete("/profile/avatar", summary="去掉头像")
+def remove_avatar(session: DbSession, owner: CurrentOwner) -> ProfileOut:
+    """不用头像了，之后显示名字的第一个字。"""
+    return ProfileService(session, owner).remove_avatar()
 
 
 @users_router.get("/permissions", summary="可开通的权限")

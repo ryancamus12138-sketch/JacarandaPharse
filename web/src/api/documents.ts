@@ -8,6 +8,7 @@ import type {
   DocumentFilters,
   DocumentNeighbors,
   DocumentPage,
+  DocComment,
   DocumentSummary,
   PageOcr,
   RegionOut,
@@ -28,6 +29,9 @@ export function listDocuments(
   if (filters.date_to) query.set('date_to', filters.date_to)
   if (filters.q?.trim()) query.set('q', filters.q.trim())
   if (filters.pending) query.set('pending', 'true')
+  if (filters.value_q?.trim()) query.set('value_q', filters.value_q.trim())
+  if (filters.field) query.set('field', filters.field)
+  if (filters.skipped !== undefined) query.set('skipped', String(filters.skipped))
   return api<DocumentPage>(`/documents?${query}`)
 }
 
@@ -114,4 +118,41 @@ export function exportDocuments(ids: string[], mode: ExportMode): Promise<Downlo
   return mode === 'separate'
     ? apiDownload(`/documents/export.zip?${query}`, 'export.zip')
     : apiDownload(`/documents/export.xlsx?${query}`, 'export.xlsx')
+}
+
+/** 先跳过：拿不准的先放一放，不算进"下一份"。 */
+export function skipDocument(id: string, reason: string): Promise<DocumentSummary> {
+  return api<DocumentSummary>(`/documents/${id}/skip`, { method: 'POST', json: { reason } })
+}
+
+/** 取消跳过：回到待审核里。 */
+export function unskipDocument(id: string): Promise<DocumentSummary> {
+  return api<DocumentSummary>(`/documents/${id}/unskip`, { method: 'POST' })
+}
+
+/** 一份文档的全部备注。 */
+export function listComments(id: string): Promise<DocComment[]> {
+  return api<DocComment[]>(`/documents/${id}/comments`)
+}
+
+/** 写备注。field 不写 = 整份文档；写在字段上要给第几页。 */
+export function addComment(
+  id: string,
+  body: string,
+  field?: { name: string; page: number },
+): Promise<DocComment> {
+  return api<DocComment>(`/documents/${id}/comments`, {
+    method: 'POST',
+    json: { body, field_name: field?.name ?? null, page: field?.page ?? null },
+  })
+}
+
+export function resolveComment(commentId: string, resolved: boolean): Promise<DocComment> {
+  return api<DocComment>(`/comments/${commentId}/${resolved ? 'resolve' : 'reopen'}`, {
+    method: 'POST',
+  })
+}
+
+export function deleteComment(commentId: string): Promise<void> {
+  return api<void>(`/comments/${commentId}`, { method: 'DELETE' })
 }

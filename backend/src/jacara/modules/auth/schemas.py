@@ -97,8 +97,37 @@ class MeOut(BaseModel):
     """现在能做的全部操作（包括每人都有的）。前端用它决定显示哪些按钮。"""
     user: UserOut | None
     """个人模式下没有用户账号，是 null。"""
+    shown_name: str = ""
+    """右上角显示的名字：昵称，没有昵称就是用户名；个人模式没设昵称是"本机用户"。"""
+    avatar_at: datetime | None = None
+    """最后一次换头像的时间（也当头像的版本号）；没有头像是 null。"""
 
 
 class PermissionOut(BaseModel):
     name: str
     label: str
+
+
+class ProfileOut(BaseModel):
+    """个人资料页显示的内容。"""
+
+    mode: Literal["personal", "team"]
+    username: str | None
+    """登录用的名字。个人模式没有。"""
+    display_name: str
+    """昵称（可以是空的）。"""
+    shown_name: str
+    """实际显示的名字：昵称 → 用户名 → "本机用户"。"""
+    role: str
+    team: str
+    """所在团队的名字。个人模式是空的。"""
+    permissions: list[str]
+    """能做的（可开通的那几项里已经有的），中文名。管理员是全部。"""
+    avatar_at: datetime | None
+    member_since: datetime | None
+    """账号是什么时候建的。个人模式没有。"""
+
+
+class ProfileUpdate(BaseModel):
+    display_name: str = Field(max_length=100)
+    """新的昵称。空字符串 = 不用昵称，显示用户名。"""

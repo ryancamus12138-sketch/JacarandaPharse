@@ -1,4 +1,4 @@
-import { CloseOutlined, DeleteOutlined, ScanOutlined } from '@ant-design/icons'
+import { CloseOutlined, DeleteOutlined, MessageOutlined, ScanOutlined } from '@ant-design/icons'
 import { Alert, Button, Flex, Segmented, Tag, Tooltip, Typography } from 'antd'
 import { useEffect, useRef } from 'react'
 import type { Extraction, FieldValue, Level } from '../../api/types'
@@ -35,6 +35,8 @@ interface Props {
   /** 字段按单据顺序还是按状态排（extraction.values 已经按这个排好了）。 */
   sortMode: SortMode
   onSortMode: (mode: SortMode) => void
+  /** 这一页每个字段还没解决的备注几条（字段 ID → 条数）。 */
+  comments?: Record<string, number>
 }
 
 const LEVEL_SUMMARY: [Level, string, string][] = [
@@ -62,6 +64,7 @@ export function FieldPanel({
   onConfirmMany,
   sortMode,
   onSortMode,
+  comments = {},
 }: Props) {
   const { values } = extraction
   // 规则按审核之后的值重新检查过（删掉的行不算）；老接口没有时用抽取时的结果
@@ -133,6 +136,7 @@ export function FieldPanel({
             onHover={(on) => onHover(on ? v.id : null)}
             canEdit={canEdit}
             onClear={() => onClear(v, fieldLabel(v.name))}
+            comments={comments[v.name] ?? 0}
           />
         ))}
       </Flex>
@@ -149,6 +153,7 @@ export function FieldPanel({
           onDeleteRow={(row) => onDeleteRow(layout.table, row)}
           onRestoreRow={(row) => onRestoreRow(layout.table, row)}
           onConfirm={onConfirmMany}
+          comments={comments}
         />
       ))}
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -260,6 +265,7 @@ function FieldRow({
   onHover,
   canEdit,
   onClear,
+  comments,
 }: {
   value: FieldValue
   label: string
@@ -269,6 +275,8 @@ function FieldRow({
   onHover: (on: boolean) => void
   canEdit: boolean
   onClear: () => void
+  /** 这个字段还没解决的备注几条。 */
+  comments: number
 }) {
   return (
     <div
@@ -295,6 +303,11 @@ function FieldRow({
           style={{ minWidth: 80, flexShrink: 0, whiteSpace: 'nowrap' }}
         >
           {label}
+          {comments > 0 && (
+            <Tooltip title={`${comments} 条备注没解决，点上面的"备注"看`}>
+              <MessageOutlined style={{ marginInlineStart: 4, color: '#7c5cbf' }} aria-label="有备注" />
+            </Tooltip>
+          )}
         </Typography.Text>
         <ShownValue value={v} />
         <Flex gap={4} wrap justify="end">

@@ -26,6 +26,7 @@ from jacara.core.queue import QueueError, TaskQueue
 from jacara.core.storage import ObjectStorage, StorageError
 from jacara.models import Document, Extraction, TemplateVersion
 from jacara.modules.audit.service import record
+from jacara.modules.comments.repository import CommentRepository
 from jacara.modules.documents.repository import DocumentFilter, DocumentRepository
 from jacara.modules.documents.schemas import (
     REPROCESS_REASONS,
@@ -41,6 +42,7 @@ from jacara.modules.documents.schemas import (
     RegionOut,
     ReprocessIn,
     RunOut,
+    SkipIn,
 )
 from jacara.modules.exports.service import save_export
 from jacara.modules.fields.schemas import AdoptOut, SuggestionOut
@@ -240,6 +242,7 @@ class DocumentService:
         document.status = "uploaded"
         document.error = None
         document.reviewed_at = None
+        _clear_skip(document)
         record(
             self.session,
             self.owner,
@@ -290,10 +293,14 @@ class DocumentService:
         return DocumentPage(items=self._with_counts(documents), total=total)
 
     def _with_counts(self, documents: list[Document]) -> list[DocumentOut]:
-        """文档 + 每份还有几个字段等人确认。"""
-        counts = self.repo.review_counts([d.id for d in documents])
+        """文档 + 每份还有几个字段等人确认、几条备注没解决。"""
+        ids = [d.id for d in documents]
+        counts = self.repo.review_counts(ids)
+        comments = CommentRepository(self.session).open_counts(ids)
         return [
-            DocumentOut.model_validate(d).model_copy(update={"review_count": counts.get(d.id, 0)})
+            DocumentOut.model_validate(d).model_copy(
+                update={"review_count": counts.get(d.id, 0), "open_comments": comments.get(d.id, 0)}
+            )
             for d in documents
         ]
 
@@ -318,6 +325,7 @@ class DocumentService:
             failed=status.get("failed", 0),
             reviewed=status.get("reviewed", 0),
             total=sum(status.values()),
+            skipped=self.repo.skipped_count(team),
             pending_fields=self.repo.pending_fields(team),
             processed_today=self.repo.processed_since(team, today),
             reviewed_today=self.repo.reviewed_since(team, today),
@@ -396,8 +404,37 @@ class DocumentService:
             raise DocumentError("conflict", f"还有 {pending} 个字段等待确认")
         document.status = "reviewed"
         document.reviewed_at = datetime.now(UTC)
+        _clear_skip(document)
         record(self.session, self.owner, "document:review", "document", document.id)
         return DocumentOut.model_validate(document)
+
+    def skip(self, document_id: uuid.UUID, data: SkipIn) -> DocumentOut:
+        """先跳过：拿不准的先放一放。跳过的不算进"下一份"，列表里可以筛出来，过后再回来审。"""
+        document = self._find(document_id)
+        require(self.owner, "document:review", document.team_id)
+        if document.status != "done":
+            raise DocumentError("conflict", "只有处理完、还没完成审核的文档可以跳过")
+        document.skipped_at = datetime.now(UTC)
+        document.skip_reason = data.reason.strip() or None
+        document.skipped_by = self.owner.user_id
+        record(
+            self.session,
+            self.owner,
+            "document:skip",
+            "document",
+            document.id,
+            reason=document.skip_reason or "",
+        )
+        return self._with_counts([document])[0]
+
+    def unskip(self, document_id: uuid.UUID) -> DocumentOut:
+        """取消跳过：回到待审核里，"下一份"又会轮到它。"""
+        document = self._find(document_id)
+        require(self.owner, "document:review", document.team_id)
+        if document.skipped_at is not None:
+            _clear_skip(document)
+            record(self.session, self.owner, "document:unskip", "document", document.id)
+        return self._with_counts([document])[0]
 
     def export(self, document_ids: list[uuid.UUID]) -> tuple[str, bytes]:
         """把一个或多个文档导出成一个 Excel（汇总表一行一张单据），返回（文件名，文件内容）。
@@ -551,6 +588,12 @@ class DocumentService:
         if document is None:
             raise DocumentError("not_found", "找不到这个文档")
         return document
+
+
+def _clear_skip(document: Document) -> None:
+    document.skipped_at = None
+    document.skip_reason = None
+    document.skipped_by = None
 
 
 def _runs(document: Document) -> list[RunOut]:

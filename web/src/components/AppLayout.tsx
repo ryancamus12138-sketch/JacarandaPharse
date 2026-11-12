@@ -5,7 +5,6 @@ import {
   ExportOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
-  KeyOutlined,
   LogoutOutlined,
   MenuOutlined,
   TeamOutlined,
@@ -14,14 +13,13 @@ import { Button, Flex, Grid, Layout, Menu, type MenuProps, Tag, Typography } fro
 import { useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { useAuth } from '../auth/useAuth'
-import { ChangePassword } from './ChangePassword'
+import { UserAvatar } from './UserAvatar'
 
 /** 登录后所有页面共用的外框：左边菜单、顶上用户名和退出。中间的 <Outlet /> 放具体页面。 */
 export function AppLayout() {
   const { me, can, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const [changingPassword, setChangingPassword] = useState(false)
   // 窄屏（小于 992 像素，比如笔记本分屏、平板）：左边菜单收起，点左上角的小按钮再打开
   const screens = Grid.useBreakpoint()
   const narrow = screens.lg === false
@@ -51,7 +49,17 @@ export function AppLayout() {
     void navigate('/login', { replace: true })
   }
 
-  const name = me?.user ? me.user.display_name || me.user.username : '本机用户'
+  const name =
+    me?.shown_name || (me?.user ? me.user.display_name || me.user.username : '本机用户')
+  const roleTag = (
+    <Tag color={me?.role === 'admin' ? 'purple' : 'default'} style={{ marginInlineEnd: 0 }}>
+      {me?.role === 'admin' ? '管理员' : '使用者'}
+    </Tag>
+  )
+  function openProfile() {
+    void navigate('/profile')
+    if (narrow) setCollapsed(true)
+  }
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -76,6 +84,33 @@ export function AppLayout() {
           <Typography.Title level={5} style={{ margin: 0, whiteSpace: 'nowrap' }}>
             JacarandaParse
           </Typography.Title>
+        </Flex>
+        {/* 头像和昵称：点进去是个人资料 */}
+        <Flex
+          role="button"
+          tabIndex={0}
+          aria-label="个人资料"
+          align="center"
+          gap={10}
+          onClick={openProfile}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') openProfile()
+          }}
+          style={{
+            margin: '8px 12px 4px',
+            padding: '8px',
+            borderRadius: 8,
+            cursor: 'pointer',
+            background: location.pathname === '/profile' ? '#f4f0fb' : undefined,
+          }}
+        >
+          <UserAvatar size={36} />
+          <Flex vertical style={{ minWidth: 0 }}>
+            <Typography.Text strong ellipsis style={{ maxWidth: 140 }}>
+              {name}
+            </Typography.Text>
+            <span>{roleTag}</span>
+          </Flex>
         </Flex>
         <Menu
           mode="inline"
@@ -106,19 +141,22 @@ export function AppLayout() {
                 style={{ marginInlineEnd: 'auto' }}
               />
             )}
-            {!narrow && <Typography.Text>{name}</Typography.Text>}
-            <Tag color={me?.role === 'admin' ? 'purple' : 'default'}>
-              {me?.role === 'admin' ? '管理员' : '使用者'}
-            </Tag>
+            {/* 宽屏时左边菜单顶上已经有头像和昵称，这里不重复；窄屏菜单收起了，才在这里放一个头像 */}
+            {narrow && (
+              <Button
+                type="text"
+                shape="circle"
+                onClick={openProfile}
+                aria-label="个人资料"
+                style={{ width: 36, height: 36, padding: 0 }}
+              >
+                <UserAvatar size={28} />
+              </Button>
+            )}
             {me?.mode === 'team' ? (
-              <>
-                <Button icon={<KeyOutlined />} onClick={() => setChangingPassword(true)}>
-                  修改密码
-                </Button>
-                <Button icon={<LogoutOutlined />} onClick={() => void handleLogout()}>
-                  退出
-                </Button>
-              </>
+              <Button icon={<LogoutOutlined />} onClick={() => void handleLogout()}>
+                退出
+              </Button>
             ) : (
               <Tag>个人模式</Tag>
             )}
@@ -127,7 +165,6 @@ export function AppLayout() {
         <Layout.Content style={{ padding: narrow ? 12 : 24 }}>
           <Outlet />
         </Layout.Content>
-        <ChangePassword open={changingPassword} onClose={() => setChangingPassword(false)} />
       </Layout>
     </Layout>
   )

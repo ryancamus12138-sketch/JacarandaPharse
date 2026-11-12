@@ -49,6 +49,12 @@ class Document(Base, OwnedMixin, TimestampMixin):
     """处理完（成功或失败）的时间。工作台"今天处理了几份"用。"""
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     """点"完成审核"的时间。"""
+    skipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    """审核时点了"先跳过"的时间。跳过的文档不算进"下一份"，取消跳过或完成审核后清空。"""
+    skip_reason: Mapped[str | None] = mapped_column(Text)
+    """为什么跳过（可以不填）。"""
+    skipped_by: Mapped[uuid.UUID | None]
+    """谁跳过的。"""
 
     template_version_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("template_versions.id")

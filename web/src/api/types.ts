@@ -21,6 +21,44 @@ export interface Me {
   role: string
   permissions: string[]
   user: User | null
+  /** 右上角显示的名字：昵称 → 用户名；个人模式没设昵称是"本机用户"。 */
+  shown_name?: string
+  /** 最后一次换头像的时间（也当头像的版本号）；没有头像是 null。 */
+  avatar_at?: string | null
+}
+
+/** 个人资料页（GET /auth/profile）。 */
+export interface Profile {
+  mode: 'personal' | 'team'
+  /** 登录用的名字。个人模式没有。 */
+  username: string | null
+  /** 昵称，可以是空的。 */
+  display_name: string
+  shown_name: string
+  role: string
+  /** 所在团队的名字。个人模式是空的。 */
+  team: string
+  /** 能做的事（中文名）。 */
+  permissions: string[]
+  avatar_at: string | null
+  member_since: string | null
+}
+
+/** 备注：留给同事的话，挂在整份文档（field_name 为空）或某个字段上。 */
+export interface DocComment {
+  id: string
+  document_id: string
+  /** 字段在第几页；整份文档的备注是 null。 */
+  page: number | null
+  /** 字段 ID；表格里的一格是 items.2.amount。 */
+  field_name: string | null
+  body: string
+  author: string
+  /** 是不是自己写的（自己写的才能删，管理员都能删）。 */
+  mine: boolean
+  created_at: string
+  resolved_at: string | null
+  resolved_by: string | null
 }
 
 /** POST /auth/login 的返回。token 只在这里出现一次。 */
@@ -56,6 +94,11 @@ export interface DocumentSummary {
   current_run?: number
   /** 不用模板、抽出所有键值对（"用样例建模板"的第一步）。 */
   discover?: boolean
+  /** 审核时点了"先跳过"的时间；没跳过是 null。 */
+  skipped_at?: string | null
+  skip_reason?: string | null
+  /** 还没解决的备注几条。 */
+  open_comments?: number
 }
 
 /** 文档列表的筛选条件。都不填 = 全部。 */
@@ -69,6 +112,12 @@ export interface DocumentFilters {
   q?: string
   /** 只看还有字段等人确认的 */
   pending?: boolean
+  /** 字段内容里包含（例如发票号码、商家名） */
+  value_q?: string
+  /** 和 value_q 一起用：只在这个字段里找 */
+  field?: string
+  /** true 只看跳过的，false 不看跳过的 */
+  skipped?: boolean
 }
 
 /** 审核页面的"上一份 / 下一份"（只算待审核的）。 */
@@ -88,6 +137,8 @@ export interface Dashboard {
     failed: number
     reviewed: number
     total: number
+    /** 待审核里先跳过的有几份。 */
+    skipped?: number
     pending_fields: number
     processed_today: number
     reviewed_today: number
