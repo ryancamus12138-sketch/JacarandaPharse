@@ -8,6 +8,9 @@ export const TYPE_OPTIONS: { value: FieldType; label: string }[] = [
   { value: 'date', label: '日期' },
 ]
 
+/** 地区的名字：模板和地区规则都用（ADR 0035）。 */
+export const REGION_TEXT: Record<string, string> = { '': '通用', cn: '中国', au: '澳洲' }
+
 /** 模板的类型（上传时按它分组）。可以自己写别的。 */
 export const CATEGORIES = ['发票', '交通', '收据', '住宿', '其他']
 

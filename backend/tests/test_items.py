@@ -76,7 +76,7 @@ def test_schema_has_a_list_for_each_table():
     items = schema["properties"]["items"]  # type: ignore[index]
     assert items["type"] == "array"
     assert "maxItems" not in items  # 行数不设上限：表格必须完整
-    assert items["items"]["required"] == ["row", "name", "quantity", "unit_price", "amount"]
+    assert items["items"]["required"] == ["name", "quantity", "unit_price", "amount"]
     # 没有表格时和以前一模一样
     assert build_schema(TOTAL) == build_schema(TOTAL, ())
 

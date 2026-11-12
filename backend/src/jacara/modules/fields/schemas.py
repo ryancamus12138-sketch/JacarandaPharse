@@ -28,6 +28,8 @@ class ValueOut(BaseModel):
     type: str
     value: str | None
     """模型抽出的原值，永远不变。"""
+    rejected_value: str | None = None
+    """模型给了、但原文里核对不上、按规则没有填的值（ADR 0034）。人核对后可以一键采用。"""
     current_value: str | None = None
     """当前值：最新一次审核的结果；没人审核过就等于 value。界面上显示这个。"""
     status: str
@@ -43,7 +45,7 @@ class ValueOut(BaseModel):
     current_evidence: dict[str, Any] | None = None
     """当前出处：从原文选取过就是选的那几块，否则等于 evidence。原图上画的是这个。"""
     origin: str = "model"
-    """model：模型抽的；manual：审核时人工增加的行。"""
+    """model：模型抽的；manual：人工填的；computed：按模板的公式算的（ADR 0035）。"""
     deleted: bool = False
     """这一格所在的行被删除了（表格才有）。"""
     evidence_state: str = "empty"

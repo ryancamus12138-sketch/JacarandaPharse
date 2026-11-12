@@ -176,6 +176,8 @@ export interface SystemInfo {
   mode: 'personal' | 'team'
   model: { server: string; file: string | null; loaded: string | null; context: number | null }
   ocr: { engine: string; version: string | null }
+  /** 页面结构分析用的模型（ADR 0034）。null：没开。 */
+  structure?: { layout: string | null; table: string | null } | null
   templates: { name: string; title: string; version: number }[]
   data: {
     documents: number
@@ -208,10 +210,15 @@ export interface Evidence {
   similarity: number
   /** 出处那几块的原文文字。更新前处理的文档没有。 */
   text?: string
+  /** 模型说用了哪几个文字块（编号，ADR 0034）。v3 之前处理的没有。 */
+  blocks?: number[]
 }
 
-/** matched 找到一样的；fuzzy 只找到相似的；not_found 原文里找不到；empty 模型说原文里没有。 */
-export type AlignStatus = 'matched' | 'fuzzy' | 'not_found' | 'empty'
+/**
+ * matched 找到一样的；fuzzy 只找到相似的；not_found 原文里找不到；empty 模型说原文里没有；
+ * rejected 模型给了值、原文里核对不上，按规则没有填（ADR 0034）。
+ */
+export type AlignStatus = 'matched' | 'fuzzy' | 'not_found' | 'empty' | 'rejected' | 'computed'
 
 /** 一个字段（后端的 ValueOut）。 */
 export interface FieldValue {
@@ -220,6 +227,8 @@ export interface FieldValue {
   type: 'string' | 'number' | 'date'
   /** 模型抽出的原值，永远不变。 */
   value: string | null
+  /** 模型给了、但原文里核对不上、按规则没有填的值（ADR 0034）。核对原图后可以采用。 */
+  rejected_value?: string | null
   /** 当前值：审核之后的值，界面上显示这个。 */
   current_value: string | null
   status: AlignStatus
@@ -235,7 +244,7 @@ export interface FieldValue {
   /** 当前出处：从原文选取过就是选的那几块，否则等于 evidence。原图上画这个。 */
   current_evidence: Evidence | null
   /** model：模型抽的；manual：审核时人工增加的行。 */
-  origin: 'model' | 'manual'
+  origin: 'model' | 'manual' | 'computed'
   /** 这一格所在的行被删除了（表格才有）。 */
   deleted: boolean
   /** 证据（抽取时的出处）：原文一致、有疑点、原文里找不到、原文没有（ADR 0028）。 */
@@ -359,6 +368,8 @@ export interface TemplateField {
   options: string[]
   /** false = 人工填：不交给模型，审核时填。 */
   extract: boolean
+  /** 计算字段的公式（ADR 0035），例如 check_out - check_in。空 = 不是计算字段。 */
+  compute?: string
 }
 
 export interface TemplateTable {
@@ -380,6 +391,20 @@ export interface TemplateRule {
 /** 规则库里的一条规则（编辑器里选）。 */
 export interface RuleInfo extends TemplateRule {
   per_row: string | null
+  /** 地区规则：cn 中国、au 澳洲；通用的是空的。编辑器默认只列通用规则。 */
+  region: string
+}
+
+/** 模板的地区：空 = 通用；cn 中国、au 澳洲。 */
+export type TemplateRegion = '' | 'cn' | 'au'
+
+/** 自己写的规则（ADR 0035）：条件例如 sum(items.amount) == total。 */
+export interface CustomRule {
+  title: string
+  check: string
+  severity: 'error' | 'warning'
+  /** 写表名：每一行单独检查，条件里写这张表的列名。 */
+  per_row: string | null
 }
 
 /** mine：我的模板；starter：起步模板库；builtin：内置（评测、命令行用）。 */
@@ -399,6 +424,11 @@ export interface Template {
   fields: TemplateField[]
   tables: TemplateTable[]
   rules: TemplateRule[]
+  custom_rules?: CustomRule[]
+  /** 地区：空 = 通用；cn 中国、au 澳洲。通用模板只用通用规则。 */
+  region?: TemplateRegion
+  /** 从起步模板复制的：起步模板后来加的公式（字段 ID → 公式），这份还没有。 */
+  starter_formulas?: Record<string, string>
   versions: { version: number; note: string; created_at: string }[]
   used: number
   /** 对象：几份单据说的同一个人、同一家公司，导出时按编号合并成一行。 */
@@ -485,6 +515,8 @@ export interface TemplateIn {
   fields: TemplateField[]
   tables: TemplateTable[]
   rules: string[]
+  custom_rules: CustomRule[]
+  region?: TemplateRegion
   note: string
 }
 
@@ -548,8 +580,8 @@ export interface PageOcr {
 export interface Revision {
   id: string
   seq: number
-  /** edit 修改、confirm 确认、delete 删除这一行、restore 恢复这一行。 */
-  action: 'edit' | 'confirm' | 'delete' | 'restore'
+  /** edit 修改、confirm 确认、delete 删除这一行、restore 恢复这一行、compute 按公式重算（ADR 0035）。 */
+  action: 'edit' | 'confirm' | 'delete' | 'restore' | 'compute'
   new_value: string | null
   reason: string
   /** 从原文选取时的新出处。 */
@@ -612,4 +644,21 @@ export interface AuditLog {
 export interface AuditPage {
   items: AuditLog[]
   total: number
+}
+
+/** 某一页的结构（ADR 0034）：版面区域、表格的格子、标题 → 值。审核页"版面结构"画在原图上。 */
+export interface PageStructure {
+  /** 2026-11-14 之前处理的没有。 */
+  available: boolean
+  sources: Record<string, string>
+  regions: { kind: string; box: Box }[]
+  tables: {
+    box: Box
+    rows: number
+    cols: number
+    /** model：表格结构模型认的；rule：按文字位置划分的。 */
+    by: string
+    cells: { row: number; col: number; row_span: number; col_span: number; box: Box; text: string }[]
+  }[]
+  pairs: { key: string; key_box: Box; value: string; value_box: Box; rule: string }[]
 }

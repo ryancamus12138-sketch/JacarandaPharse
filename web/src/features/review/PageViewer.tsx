@@ -1,4 +1,5 @@
 import {
+  ApartmentOutlined,
   SelectOutlined,
   ColumnHeightOutlined,
   FontSizeOutlined,
@@ -14,7 +15,7 @@ import {
   useState,
 } from 'react'
 import { ApiError } from '../../api/client'
-import type { Box, FieldValue, PageOcr } from '../../api/types'
+import type { Box, FieldValue, PageOcr, PageStructure } from '../../api/types'
 import { boxColor, evidenceOf, fieldLabel, splitCell } from './fields'
 import { usePageImage } from './usePageImage'
 
@@ -52,6 +53,11 @@ interface Props {
   onDraftDone: (box: Box) => void
   /** 工具栏最前面多放的按钮（例如"确认"）。 */
   extra?: ReactNode
+  /** 这一页的结构（版面区域、表格、标题 → 值）。还没取到是 undefined。 */
+  structure?: PageStructure
+  /** 显示版面结构：看系统认出了哪些区域、表格的格子、标题和值。 */
+  showStructure?: boolean
+  onToggleStructure?: () => void
 }
 
 type Handle = 'new' | 'move' | 'nw' | 'ne' | 'sw' | 'se'
@@ -86,6 +92,9 @@ export function PageViewer({
   onDraft,
   onDraftDone,
   extra,
+  structure,
+  showStructure = false,
+  onToggleStructure,
 }: Props) {
   const image = usePageImage(documentId, page)
   const [zoom, setZoom] = useState(1)
@@ -234,6 +243,25 @@ export function PageViewer({
               原文文字
             </Button>
           </Tooltip>
+          {onToggleStructure && (
+            <Tooltip
+              title={
+                structure && !structure.available
+                  ? '这一页是更新前处理的，没有版面结构；重新处理后才有'
+                  : '看系统认出了什么：版面区域（虚线）、表格的格子（紫色）、标题（橙色）→ 值（绿色）'
+              }
+            >
+              <Button
+                size="small"
+                icon={<ApartmentOutlined />}
+                type={showStructure ? 'primary' : 'default'}
+                onClick={onToggleStructure}
+                disabled={!structure?.available}
+              >
+                版面结构
+              </Button>
+            </Tooltip>
+          )}
           {canDraw && (
             <Tooltip title="在原图上拖出一个框，或者拖动、拉伸选中字段的框；然后用框里的文字，或者重新识别这块">
               <Button
@@ -389,6 +417,90 @@ export function PageViewer({
                     </rect>
                   )
                 })}
+                {showStructure && structure?.available && (
+                  // 只是看，不能点：鼠标照样能点到下面的字段框
+                  <g style={{ pointerEvents: 'none' }}>
+                    {structure.regions.map((r, i) => (
+                      <g key={`region-${i}`}>
+                        <rect
+                          x={r.box[0]}
+                          y={r.box[1]}
+                          width={r.box[2] - r.box[0]}
+                          height={r.box[3] - r.box[1]}
+                          fill="none"
+                          stroke="#8c8c8c"
+                          strokeWidth={1}
+                          strokeDasharray="6 4"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                        <text x={r.box[0] + 4} y={r.box[1] - 4} fontSize={16} fill="#595959">
+                          {r.kind}
+                        </text>
+                      </g>
+                    ))}
+                    {structure.tables.flatMap((t, ti) =>
+                      t.cells.map((c) => (
+                        <rect
+                          key={`cell-${ti}-${c.row}-${c.col}`}
+                          x={c.box[0] - 2}
+                          y={c.box[1] - 2}
+                          width={c.box[2] - c.box[0] + 4}
+                          height={c.box[3] - c.box[1] + 4}
+                          fill="#722ed1"
+                          fillOpacity={0.06}
+                          stroke="#722ed1"
+                          strokeWidth={1}
+                          vectorEffect="non-scaling-stroke"
+                        >
+                          <title>{`第 ${c.row} 行第 ${c.col} 列：${c.text}`}</title>
+                        </rect>
+                      )),
+                    )}
+                    {structure.pairs.map((pair, i) => {
+                      const [k0, k1, k2, k3] = pair.key_box
+                      const [v0, v1, v2, v3] = pair.value_box
+                      const same = k0 === v0 && k1 === v1 && k2 === v2 && k3 === v3
+                      return (
+                        <g key={`pair-${i}`}>
+                          {!same && (
+                            <line
+                              x1={(k0 + k2) / 2}
+                              y1={(k1 + k3) / 2}
+                              x2={(v0 + v2) / 2}
+                              y2={(v1 + v3) / 2}
+                              stroke="#fa8c16"
+                              strokeWidth={1.5}
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          )}
+                          <rect
+                            x={k0 - 3}
+                            y={k1 - 3}
+                            width={k2 - k0 + 6}
+                            height={k3 - k1 + 6}
+                            fill="none"
+                            stroke="#fa8c16"
+                            strokeWidth={1.5}
+                            vectorEffect="non-scaling-stroke"
+                          />
+                          {!same && (
+                            <rect
+                              x={v0 - 3}
+                              y={v1 - 3}
+                              width={v2 - v0 + 6}
+                              height={v3 - v1 + 6}
+                              fill="#52c41a"
+                              fillOpacity={0.08}
+                              stroke="#52c41a"
+                              strokeWidth={1.5}
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          )}
+                        </g>
+                      )
+                    })}
+                  </g>
+                )}
                 {showOcr &&
                   !drawOn &&
                   ocr?.lines.map((line) => {

@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from jacara.plugins.ocr.base import OcrPage
 
@@ -69,6 +69,10 @@ class ExtractedField:
     row: int | None = None
     label: str | None = None
     """单据上的原名（键值对发现时才有，例如 kv.3 是"Check-in"）。"""
+    row_end: int | None = None
+    """值跨几行时（商品名、地址折行），最后一行的行号。只占一行时是 None。"""
+    blocks: tuple[int, ...] = ()
+    """模型说这个值用了哪几个文字块（编号，ADR 0034）。证据对齐按它核对。"""
 
 
 @dataclass(frozen=True)
@@ -93,15 +97,24 @@ class Extractor(Protocol):
     name: str
 
     def extract(
-        self, page: OcrPage, fields: Sequence[FieldSpec], tables: Sequence[TableSpec] = ()
+        self,
+        page: OcrPage,
+        fields: Sequence[FieldSpec],
+        tables: Sequence[TableSpec] = (),
+        structure: PageStructure | None = None,
     ) -> ExtractionResult:
-        """从一页 OCR 结果里抽出指定的字段和表格。表格的每一格单独作为一个字段返回。"""
+        """从一页 OCR 结果里抽出指定的字段和表格。表格的每一格单独作为一个字段返回。
+
+        structure 是这一页的结构（文字块编号、表格、标题 → 值）；不给就只按规则分析一次。"""
         ...
 
-    def discover(self, page: OcrPage) -> ExtractionResult:
+    def discover(self, page: OcrPage, structure: PageStructure | None = None) -> ExtractionResult:
         """不给字段清单，找出单据上所有的"名称：值"。字段名是 kv.1、kv.2……，label 是原名。"""
         ...
 
+
+if TYPE_CHECKING:
+    from jacara.structure.graph import PageStructure
 
 DISCOVER = "discover"
 """键值对发现的"模板名"：存在 extractions.template 里，表示这一轮没有用模板。"""

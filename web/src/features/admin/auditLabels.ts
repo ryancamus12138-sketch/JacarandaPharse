@@ -28,6 +28,7 @@ export const ACTION_LABELS: Record<string, string> = {
   'value:edit': '修改字段',
   'value:confirm': '确认字段',
   'value:confirm_many': '批量确认字段',
+  'value:compute': '按公式重算',
   'template:create': '新建模板',
   'template:save': '保存模板新版本',
   'template:archive': '归档模板',
@@ -90,6 +91,8 @@ export function describe(log: AuditLog, permission: (name: string) => string): s
       return `${fieldLabel(String(d.field))} 改成 ${d.value === null ? '（原文没有）' : String(d.value)}`
     case 'value:confirm':
       return `${fieldLabel(String(d.field))}：${d.value === null ? '（原文没有）' : String(d.value)}`
+    case 'value:compute':
+      return `参与计算的值改了：${Array.isArray(d.fields) ? d.fields.map((f) => fieldLabel(String(f))).join('、') : ''}`
     case 'auth:login_failed':
     case 'auth:reset_failed':
       return `用户名：${String(d.username)}`

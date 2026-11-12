@@ -10,6 +10,7 @@ const COLORS: Record<Revision['action'], string> = {
   confirm: 'green',
   delete: 'red',
   restore: 'gray',
+  compute: 'cyan',
 }
 
 function describe(r: Revision): string {
@@ -20,6 +21,8 @@ function describe(r: Revision): string {
       return ' 删除了这一行'
     case 'restore':
       return ' 恢复了这一行'
+    case 'compute':
+      return ` 改了参与计算的值，按公式重算 → ${r.new_value ?? '（算不出来）'}`
     default:
       return r.evidence
         ? ` 从原文选取「${r.evidence.row_text}」→ ${r.new_value ?? '（空）'}`
@@ -60,7 +63,9 @@ export function RevisionHistory({ valueId }: { valueId: string }) {
             content:
               history.data.value.origin === 'manual'
                 ? '审核时人工增加'
-                : `模型抽出：${original ?? '（原文没有）'}`,
+                : history.data.value.origin === 'computed'
+                  ? `按公式算出：${original ?? '（算不出来）'}`
+                  : `模型抽出：${original ?? '（原文没有）'}`,
           },
           ...history.data.revisions.map((r) => ({
             key: r.id,

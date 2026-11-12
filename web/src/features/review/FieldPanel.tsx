@@ -182,7 +182,7 @@ function StatusTags({ value: v, full = false }: { value: FieldValue; full?: bool
         <Tag color="red">{EVIDENCE_TEXT.missing}</Tag>
       ) : v.evidence_state === 'pending' ? (
         <Tag color="gold">{EVIDENCE_TEXT.pending}</Tag>
-      ) : full && v.evidence_state === 'verified' ? (
+      ) : full && v.evidence_state === 'verified' && v.origin !== 'computed' ? (
         <Tag color="green">{EVIDENCE_TEXT.verified}</Tag>
       ) : null
     ) : null
@@ -196,6 +196,11 @@ function StatusTags({ value: v, full = false }: { value: FieldValue; full?: bool
     ) : null
   return (
     <>
+      {v.origin === 'computed' && (
+        <Tooltip title="不是从单据上找的，是按模板的公式由别的字段算出来的；那些字段改了会跟着重算">
+          <Tag color="cyan">按公式算</Tag>
+        </Tooltip>
+      )}
       {evidence}
       {check}
       {v.pending_review && <Tag color="gold">待确认</Tag>}
@@ -231,7 +236,13 @@ function ShownValue({ value: v }: { value: FieldValue }) {
     <Typography.Text strong style={{ flex: 1, overflowWrap: 'anywhere' }}>
       {v.current_value ?? (
         <Typography.Text type="secondary">
-          {v.origin === 'manual' ? '（待填写）' : '（原文没有）'}
+          {v.origin === 'manual'
+            ? '（待填写）'
+            : v.origin === 'computed'
+              ? '（算不出来）'
+            : v.rejected_value
+              ? `（没有填：模型给的「${v.rejected_value}」原文里对不上）`
+              : '（原文没有）'}
         </Typography.Text>
       )}
     </Typography.Text>
@@ -384,7 +395,13 @@ export function FieldDetail({
       )}
       {ev && (
         <Typography.Paragraph type="secondary" style={indent}>
-          出处：{ev.row ? `第 ${ev.row} 行` : ''}「{ev.row_text}」 · OCR 置信度{' '}
+          出处：
+          {ev.blocks?.length
+            ? `文字块 ${ev.blocks.map((n) => `⟨${n}⟩`).join('')}`
+            : ev.row
+              ? `第 ${ev.row} 行`
+              : ''}
+          「{ev.row_text}」 · OCR 置信度{' '}
           {Math.round(ev.confidence * 100)}%
         </Typography.Paragraph>
       )}
@@ -402,7 +419,7 @@ export function FieldDetail({
       {canEdit && !v.deleted && (
         <ReviewForm key={`${v.id}:${v.current_value}`} value={v} revise={revise} onDone={onReviewed} />
       )}
-      {v.reviewed && <RevisionHistory valueId={v.id} />}
+      {(v.reviewed || v.origin === 'computed') && <RevisionHistory valueId={v.id} />}
     </div>
   )
 }

@@ -84,6 +84,7 @@ def add_extractions(
             raw_output=e.raw_output,
             checks=checks_json(report.checks),
             ocr=ocr_json(report.ocr_page),
+            structure=report.structure.to_json() if report.structure else None,
             **who,
         )
         session.add(extraction)
@@ -93,6 +94,8 @@ def add_extractions(
             if field.field.name in report.manual:
                 row.origin = "manual"  # 人工填的：不是模型说"原文没有"，是等人填
                 row.needs_review = False
+            elif field.field.name in report.computed:
+                row.origin = "computed"  # 按公式算的（ADR 0035）
             session.add(row)
 
     session.flush()  # 让数据库现在就分配好 ID、检查约束，有错马上报
@@ -106,6 +109,7 @@ def _value_row(
     who: dict[str, Any],
 ) -> ExtractedValue:
     value = field.field.value
+    rejected = field.status == "rejected" and value is not None
     return ExtractedValue(
         extraction=extraction,
         position=position,
@@ -113,7 +117,9 @@ def _value_row(
         name=field.field.name,
         label=field.field.label,
         type=field.field.type,
-        value=None if value is None else str(value),
+        # 核对不上、按规则没有填的（ADR 0034）：值存成空的，模型给的值另外记下
+        value=None if value is None or rejected else str(value),
+        rejected_value=str(value) if rejected else None,
         row_no=field.field.row,
         status=field.status,
         needs_review=field.needs_review or rule_failed,
@@ -129,6 +135,7 @@ def _evidence_json(field: AlignedField) -> dict[str, Any] | None:
         return None
     return {
         "row": ev.row,
+        "blocks": list(field.field.blocks),
         "row_text": ev.row_text,
         "text": " ".join(line.text for line in ev.lines),
         "bbox": [round(v, 1) for v in ev.bbox],

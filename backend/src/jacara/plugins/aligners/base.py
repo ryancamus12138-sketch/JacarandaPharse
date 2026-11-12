@@ -12,9 +12,12 @@ from typing import Literal, Protocol
 from jacara.plugins.extractors.base import ExtractedField, ExtractionResult
 from jacara.plugins.ocr.base import OcrLine, OcrPage
 
-AlignStatus = Literal["matched", "fuzzy", "not_found", "empty"]
+AlignStatus = Literal["matched", "fuzzy", "not_found", "empty", "rejected", "computed"]
 """matched：原文里找到了一样的值。fuzzy：只找到相似的值。
-not_found：原文里找不到，可能是模型编的。empty：模型说原文里没有这个字段。"""
+not_found：原文里找不到，可能是模型编的。empty：模型说原文里没有这个字段。
+rejected：模型给了值，但它说用到的文字块里没有、原文别处也找不到，按 LMDX 的做法丢掉（ADR 0034）；
+存的值是空的，模型给的值另外记下，人核对后可以一键采用。
+computed：不是从原文找的，是按模板的公式由别的字段算出来的（ADR 0035），没有出处框。"""
 
 
 @dataclass(frozen=True)

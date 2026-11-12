@@ -499,19 +499,33 @@ def test_used_template_cannot_be_deleted(client, factory, storage, receipt_page,
 
 
 def test_generic_starters_have_no_regional_rules():
-    """通用收据、通用发票不带任何地区的规定（澳洲的放在澳洲税务发票里）。"""
-    regional = {
-        "ato_evidence",
-        "ato_gst_credit",
-        "gst_eleventh",
-        "merchant_abn",
-        "seller_abn",
-        "au_buyer_1000",
-        "au_tax_invoice_title",
-        "au_gst_eleventh",
-        "buyer_abn",
-    }
-    for name in ("receipt_general", "intl_invoice"):
-        assert not {r.id for r in load_starter(name).rules} & regional, name
+    """通用模板只用通用规则；中国、澳洲的模板只用通用规则和本地区的规则（ADR 0035）。"""
+    from jacara.plugins.validators import REGIONS
+
+    regions = {name: load_starter(name).region for name in STARTERS}
+    assert regions["receipt_shopping"] == regions["receipt_restaurant"] == ""
+    assert regions["receipt_general"] == regions["intl_invoice"] == regions["hotel_folio"] == ""
+    assert regions["au_tax_invoice"] == "au"
+    assert (
+        regions["cn_einvoice"] == regions["cn_rail_ticket"] == regions["cn_air_itinerary"] == "cn"
+    )
+    for name in STARTERS:
+        template = load_starter(name)
+        assert template.region_problem() is None, name
+        used = {REGIONS.get(r.id, "") for r in template.rules}
+        assert used <= {"", template.region}, name
+        if not template.region:
+            text = template.description + "".join(f.description for f in template.fields)
+            assert "ATO" not in text and "澳元" not in text, name
     au = {r.id for r in load_starter("au_tax_invoice").rules}
     assert {"seller_abn", "au_buyer_1000", "au_tax_invoice_title"} <= au
+
+
+def test_generic_template_cannot_use_regional_rules(client, mine):
+    body = client.get(f"/api/v1/templates/{mine}").json()
+    response = client.put(
+        f"/api/v1/templates/{mine}",
+        json={"title": "x", "fields": body["fields"], "rules": ["ato_evidence"]},
+    )
+    assert response.status_code == 422
+    assert "通用模板，不能用别的地区的规则" in response.json()["detail"]

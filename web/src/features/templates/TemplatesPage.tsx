@@ -43,6 +43,7 @@ import type { Template } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
 import { saveFile } from '../../utils/download'
 import { formatTime } from '../../utils/format'
+import { REGION_TEXT } from './templateFields'
 
 const CATEGORY_COLORS: Record<string, string> = {
   发票: 'purple',
@@ -231,6 +232,7 @@ export function TemplatesPage() {
                 title={
                   <Flex gap={8} align="center">
                     <CategoryTag category={t.category} />
+                    {t.region && <Tag color="geekblue">{REGION_TEXT[t.region]}</Tag>}
                     <Typography.Text strong ellipsis>
                       {t.title}
                     </Typography.Text>
@@ -313,6 +315,7 @@ export function TemplatesPage() {
               title={
                 <Flex gap={8} align="center">
                   <CategoryTag category={t.category} />
+                  <Tag color={t.region ? 'geekblue' : undefined}>{REGION_TEXT[t.region ?? '']}</Tag>
                   <Typography.Text strong ellipsis>
                     {t.title}
                   </Typography.Text>

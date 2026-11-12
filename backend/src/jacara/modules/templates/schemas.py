@@ -23,6 +23,8 @@ class TemplateFieldOut(BaseModel):
     sensitive: bool = False
     options: list[str] = []
     extract: bool = True
+    compute: str = ""
+    """计算字段的公式（ADR 0035），空 = 不是计算字段。"""
 
 
 class TemplateRuleOut(BaseModel):
@@ -91,6 +93,35 @@ class TemplateVersionOut(BaseModel):
     created_at: datetime
 
 
+class CustomRuleIO(BaseModel):
+    """自己写的规则（ADR 0035）：条件例如 sum(items.amount) == total。"""
+
+    title: str = Field(default="", max_length=100)
+    check: str = Field(min_length=1, max_length=500)
+    severity: Literal["error", "warning"] = "error"
+    per_row: str | None = None
+    """写表名：每一行单独检查，条件里写这张表的列名。"""
+
+
+class FormulaCheckIn(BaseModel):
+    """编辑器里边写边检查公式或规则条件：用编辑区现在的字段（还没保存也行）。"""
+
+    text: str = Field(max_length=500)
+    kind: Literal["formula", "condition"] = "formula"
+    fields: list[TemplateFieldIn] = Field(default=[], max_length=80)
+    tables: list[TemplateTableIn] = Field(default=[], max_length=5)
+    row: str | None = None
+    """表格的列的公式、"每一行"的规则：写表名，名字按这张表的列找。"""
+
+
+class FormulaCheckOut(BaseModel):
+    ok: bool
+    readable: str = ""
+    """换成中文名的写法：check_out - check_in → 离店日期 − 入住日期。"""
+    message: str = ""
+    """写错了哪里。"""
+
+
 class TemplateOut(BaseModel):
     name: str
     """内置和起步模板是文件名（receipt、cn_einvoice）；我的模板是 id。"""
@@ -99,6 +130,9 @@ class TemplateOut(BaseModel):
     description: str
     fields: list[TemplateFieldOut]
     rules: list[TemplateRuleOut]
+    custom_rules: list[CustomRuleIO] = []
+    region: str = ""
+    """地区：空 = 通用；cn 中国、au 澳洲。"""
     tables: list[TemplateTableOut] = []
     """表格（例如商品明细）。每一格存成 items.2.amount 这样名字的字段。"""
     kind: TemplateKind = "builtin"
@@ -110,6 +144,9 @@ class TemplateOut(BaseModel):
     updated_at: datetime | None = None
     versions: list[TemplateVersionOut] = []
     """我的模板的历史版本（只在"一个模板"里有）。"""
+    starter_formulas: dict[str, str] = {}
+    """从起步模板复制的：起步模板后来给哪些字段加了公式（字段 ID → 公式），我的这份还没有。
+    编辑器里提示"套用"（ADR 0035）。表格的列写成 items.amount。"""
     used: int = 0
     """有几份文档现在用的是这个模板（只在"一个模板"里有）。"""
     entities: list[EntityOut] = []
@@ -125,6 +162,8 @@ class RuleInfo(BaseModel):
     needs: list[str]
     severity: str
     per_row: str | None = None
+    region: str = ""
+    """地区规则：cn 中国、au 澳洲；通用的是空的。编辑器默认只列通用规则。"""
 
 
 class TemplateFieldIn(BaseModel):
@@ -141,6 +180,9 @@ class TemplateFieldIn(BaseModel):
     """可选值：抽到的值不在里面就提醒。空 = 不限。"""
     extract: bool = True
     """False = 人工填：不交给模型，审核时填。"""
+    compute: str = Field(default="", max_length=500)
+    """计算字段的公式（ADR 0035），例如 check_out - check_in。
+    有公式就不交给模型，由别的字段算出来。"""
 
 
 class TemplateTableIn(BaseModel):
@@ -161,6 +203,9 @@ class TemplateIn(BaseModel):
     fields: list[TemplateFieldIn] = Field(min_length=1, max_length=80)
     tables: list[TemplateTableIn] = Field(default=[], max_length=5)
     rules: list[str] = []
+    custom_rules: list[CustomRuleIO] = Field(default=[], max_length=30)
+    region: Literal["", "cn", "au"] = ""
+    """地区：从起步模板带过来，编辑器里不改。"""
     note: str = Field(default="", max_length=500)
     """这一版改了什么。"""
 
@@ -256,6 +301,8 @@ class TemplateFile(BaseModel):
     fields: list[TemplateFieldIn] = Field(min_length=1, max_length=80)
     tables: list[TemplateTableIn] = Field(default=[], max_length=5)
     rules: list[str] = []
+    custom_rules: list[CustomRuleIO] = []
+    region: Literal["", "cn", "au"] = ""
     entities: list[dict[str, Any]] = []
     references: list[dict[str, Any]] = []
     """参照表的全部数据（columns、rows）。"""

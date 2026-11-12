@@ -605,6 +605,38 @@ ALL_RULES = RECEIPT_RULES + TEMPLATE_RULES
 RULES: dict[str, Rule] = {rule.id: rule for rule in ALL_RULES}
 """规则编号 → 规则。模板文件里按编号选规则。"""
 
+REGIONS: dict[str, str] = {
+    **dict.fromkeys(
+        (
+            "cn_invoice_no",
+            "cn_tax_balance",
+            "cn_items_amount",
+            "cn_items_tax",
+            "cn_words",
+            "fare_tax_balance",
+            "air_total",
+            "air_vat",
+        ),
+        "cn",
+    ),
+    **dict.fromkeys(
+        (
+            "au_buyer_1000",
+            "seller_abn",
+            "buyer_abn",
+            "au_tax_invoice_title",
+            "au_gst_eleventh",
+            "merchant_abn",
+            "ato_evidence",
+            "ato_gst_credit",
+            "gst_eleventh",
+        ),
+        "au",
+    ),
+}
+"""只适用于某个地区的规则：cn 中国（发票、行程单）、au 澳洲（税务局 ATO、GST、ABN）。
+其他规则是通用的。模板编辑器默认只列通用规则，通用模板里不放地区规则。"""
+
 REQUIRED = "required"
 """必填检查的编号：模板里 required = true 的字段没抽到值。"""
 OPTIONS = "options"

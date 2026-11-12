@@ -34,6 +34,13 @@ uv run jacara doctor         # 检查 .env、网页和各项服务
 
 模型文件（`.gguf`）放在 `models/` 里，不进 Git。
 
+表格结构模型（可选，ADR 0034）：在浏览器里下载
+<https://www.modelscope.cn/models/RapidAI/RapidTable/resolve/v2.0.0/slanet-plus.onnx>
+（约 7 MB，Apache-2.0），放到 `models/table/slanet-plus.onnx`。SHA-256 应该是
+`d57a942af6a2f57d6a4a0372573c696a2379bf5857c45e2ac69993f3b334514b`（`shasum -a 256 models/table/slanet-plus.onnx` 查看）。
+没有这个文件时，表格的格子按文字位置划分。版面模型随 rapid-layout 一起安装，不用另外下载。
+系统信息页能看到两个模型有没有用上。
+
 ## 日常使用：一个命令
 
 ```bash

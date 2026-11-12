@@ -30,6 +30,15 @@ class OcrInfo(BaseModel):
     version: str | None
 
 
+class StructureInfo(BaseModel):
+    """页面结构分析用的模型（ADR 0034）。"""
+
+    layout: str | None
+    """版面模型；关掉了（JACARA_LAYOUT=false）是 null。"""
+    table: str | None
+    """表格结构模型文件名；没有放模型是 null（表格的格子按文字位置划分）。"""
+
+
 class TemplateInfo(BaseModel):
     name: str
     title: str
@@ -55,6 +64,7 @@ class SystemInfo(BaseModel):
     """personal（个人模式）或 team（团队模式）。"""
     model: ModelInfo
     ocr: OcrInfo
+    structure: StructureInfo | None = None
     templates: list[TemplateInfo]
     data: DataInfo
     services: list[ServiceCheck]

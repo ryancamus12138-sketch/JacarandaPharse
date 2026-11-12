@@ -124,6 +124,13 @@ class Extraction(Base, OwnedMixin, TimestampMixin):
     """这一页的 OCR 结果：{"lines": [{"text", "box": [x0, y0, x1, y1], "polygon", "confidence"}]}。
     审核时"点原文填值"用。只在要用时才从数据库读（deferred）。2026-11 之前处理的文档没有。"""
 
+    structure: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"),
+        deferred=True,
+    )
+    """这一页的结构（ADR 0034）：文字块、行、版面区域、表格、标题 → 值，格式见 structure/graph.py。
+    审核页"版面结构"显示它，试跑时直接用它。2026-11-14 之前处理的文档没有。"""
+
     document: Mapped[Document] = relationship(back_populates="all_extractions")
     template_def: Mapped[TemplateVersion | None] = relationship(lazy="selectin")
     """用的模板版本（template_version_id 指向的那条）。"""

@@ -17,7 +17,6 @@ import {
   Select,
   Space,
   Spin,
-  Switch,
   Table,
   Tag,
   Typography,
@@ -34,12 +33,13 @@ import {
   saveTemplate,
   trialTemplate,
 } from '../../api/templates'
-import type { RuleInfo, Template, TemplateIn, TemplateTable, TrialResult } from '../../api/types'
+import type { Template, TemplateIn, TemplateTable, TrialResult } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
 import { formatTime } from '../../utils/format'
 import { FieldsEditor } from './FieldsEditor'
+import { RulesCard } from './RulesCard'
 import { StructureCard } from './StructureCard'
-import { blankField, CATEGORIES, FIELD_ID, fieldsProblem } from './templateFields'
+import { blankField, CATEGORIES, FIELD_ID, fieldsProblem, REGION_TEXT } from './templateFields'
 
 
 const STATUS_TEXT: Record<string, [string, string]> = {
@@ -57,23 +57,10 @@ function draftOf(t: Template): TemplateIn {
     fields: t.fields,
     tables: t.tables,
     rules: t.rules.map((r) => r.id),
+    custom_rules: t.custom_rules ?? [],
+    region: t.region ?? '',
     note: '',
   }
-}
-
-/** 规则要用的字段这个模板里有没有：没有的话这条规则永远跳过。 */
-function missingFor(rule: RuleInfo, draft: TemplateIn): string[] {
-  const names = new Set(draft.fields.map((f) => f.name))
-  for (const t of draft.tables) {
-    names.add(t.name)
-    for (const c of t.columns) names.add(`${t.name}.*.${c.name}`)
-  }
-  if (rule.per_row) {
-    const table = draft.tables.find((t) => t.name === rule.per_row)
-    if (!table) return [rule.per_row]
-    return rule.needs.filter((n) => !table.columns.some((c) => c.name === n))
-  }
-  return rule.needs.filter((n) => !names.has(n))
 }
 
 /**
@@ -108,6 +95,7 @@ const BLANK: Template = {
   ],
   tables: [],
   rules: [],
+  custom_rules: [],
   versions: [],
   used: 0,
 }
@@ -229,16 +217,6 @@ function Editor({ template }: { template: Template }) {
   const setTable = (i: number, patch: Partial<TemplateTable>) =>
     set({ tables: draft.tables.map((t, j) => (j === i ? { ...t, ...patch } : t)) })
 
-  // 选了的在前，其次是这个模板能用的（字段都有），最后是缺字段的
-  const ruleGroups = (rules.data ?? [])
-    .map((rule) => ({
-      rule,
-      missing: missingFor(rule, draft),
-      on: template.rules.some((r) => r.id === rule.id),
-    }))
-    .sort((a, b) => Number(b.on) - Number(a.on) || a.missing.length - b.missing.length)
-    .map((g) => ({ ...g, on: draft.rules.includes(g.rule.id) }))
-
   return (
     <Flex vertical gap={16}>
       <Card
@@ -250,6 +228,7 @@ function Editor({ template }: { template: Template }) {
             <Typography.Text strong>{isNew ? '新建模板' : template.title}</Typography.Text>
             {isNew ? <Tag color="orange">还没保存</Tag> : <Tag>第 {template.version} 版</Tag>}
             {template.archived && <Tag>已归档</Tag>}
+            <Tag color={template.region ? 'geekblue' : undefined}>{REGION_TEXT[template.region ?? '']}</Tag>
             {template.kind !== 'mine' && <Tag color="blue">只读（{template.kind === 'starter' ? '起步模板' : '内置模板'}）</Tag>}
           </Flex>
         }
@@ -313,6 +292,7 @@ function Editor({ template }: { template: Template }) {
             description="保存新版本不会改它们已有的结果；想按新版本重新抽，在审核页面点“重新处理”。"
           />
         )}
+        {!readOnly && <StarterFormulas template={template} draft={draft} set={set} />}
         <Descriptions column={{ xs: 1, md: 3 }} size="small">
           <Descriptions.Item label="模板名">
             <Input value={draft.title} disabled={readOnly} onChange={(e) => set({ title: e.target.value })} />
@@ -342,6 +322,7 @@ function Editor({ template }: { template: Template }) {
           onChange={(fields) => set({ fields })}
           locked={locked}
           readOnly={readOnly}
+          scope={{ fields: draft.fields, tables: draft.tables, row: null }}
         />
       </Card>
 
@@ -439,6 +420,7 @@ function Editor({ template }: { template: Template }) {
                     )
                   }
                   readOnly={readOnly}
+                  scope={{ fields: draft.fields, tables: draft.tables, row: t.name }}
                 />
               </Card>
             ))}
@@ -446,42 +428,14 @@ function Editor({ template }: { template: Template }) {
         )}
       </Card>
 
-      <Card title={`规则（选了 ${draft.rules.length} 条）`} size="small">
-        <Typography.Paragraph type="secondary">
-          规则用单据上的数字互相验证（例如 合计金额 + 合计税额 = 价税合计）。规则按字段 ID 找值，
-          模板里缺它要的字段时，这条规则会自动跳过。必填字段没值也会标红。
-        </Typography.Paragraph>
-        <List
-          size="small"
-          loading={rules.isPending}
-          dataSource={ruleGroups.filter((g) => !readOnly || g.on)}
-          renderItem={({ rule, missing, on }) => (
-            <List.Item>
-              <Flex gap={8} align="center" wrap style={{ width: '100%' }}>
-                <Switch
-                  size="small"
-                  checked={on}
-                  disabled={readOnly}
-                  onChange={(checked) =>
-                    set({
-                      rules: checked ? [...draft.rules, rule.id] : draft.rules.filter((r) => r !== rule.id),
-                    })
-                  }
-                />
-                <Typography.Text>{rule.title}</Typography.Text>
-                <Tag color={rule.severity === 'error' ? 'red' : 'gold'}>
-                  {rule.severity === 'error' ? '错误' : '警告'}
-                </Tag>
-                {on && missing.length > 0 && (
-                  <Typography.Text type="warning" style={{ fontSize: 12 }}>
-                    缺字段 {missing.join('、')}，会跳过
-                  </Typography.Text>
-                )}
-              </Flex>
-            </List.Item>
-          )}
-        />
-      </Card>
+      <RulesCard
+        template={template}
+        draft={draft}
+        set={set}
+        rules={rules.data ?? []}
+        loading={rules.isPending}
+        readOnly={readOnly}
+      />
 
       {(template.workbook || (template.entities ?? []).length > 0 || (template.references ?? []).length > 0) && (
         <StructureCard template={template} />
@@ -619,5 +573,68 @@ function TrialView({ result }: { result: TrialResult }) {
         </Flex>
       ))}
     </Flex>
+  )
+}
+
+/**
+ * 从起步模板复制的模板：起步模板后来给字段加了公式（例如酒店账单的晚数 = 离店 − 入住），
+ * 这份还没有。提示一下，点"套用"填进编辑区，再保存成新版本（ADR 0035）。
+ */
+function StarterFormulas({
+  template,
+  draft,
+  set,
+}: {
+  template: Template
+  draft: TemplateIn
+  set: (patch: Partial<TemplateIn>) => void
+}) {
+  const labels = new Map<string, string>()
+  for (const f of draft.fields) labels.set(f.name, f.label)
+  for (const t of draft.tables) for (const c of t.columns) labels.set(`${t.name}.${c.name}`, `${t.label}的${c.label}`)
+  const current = (key: string) => {
+    const [table, column] = key.split('.')
+    if (column === undefined) return draft.fields.find((f) => f.name === key)?.compute
+    return draft.tables.find((t) => t.name === table)?.columns.find((c) => c.name === column)?.compute
+  }
+  const pending = Object.entries(template.starter_formulas ?? {}).filter(
+    ([key]) => labels.has(key) && !current(key)?.trim(),
+  )
+  if (pending.length === 0) return null
+  const apply = () => {
+    const formulas = new Map(pending)
+    set({
+      fields: draft.fields.map((f) => (formulas.has(f.name) ? { ...f, compute: formulas.get(f.name) } : f)),
+      tables: draft.tables.map((t) => ({
+        ...t,
+        columns: t.columns.map((c) => {
+          const formula = formulas.get(`${t.name}.${c.name}`)
+          return formula ? { ...c, compute: formula } : c
+        }),
+      })),
+    })
+  }
+  return (
+    <Alert
+      type="warning"
+      showIcon
+      style={{ marginBottom: 12 }}
+      title="起步模板后来加了公式，这份模板还没有"
+      description={
+        <>
+          {pending.map(([key, formula]) => (
+            <div key={key}>
+              {labels.get(key)} = <Typography.Text code>{formula}</Typography.Text>
+            </div>
+          ))}
+          <div>套用后这些字段按公式算，不再让模型从单据上找。套用后点右上角保存。</div>
+        </>
+      }
+      action={
+        <Button size="small" type="primary" onClick={apply}>
+          套用
+        </Button>
+      }
+    />
   )
 }

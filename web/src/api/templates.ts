@@ -7,7 +7,9 @@ import type {
   RuleInfo,
   SampleField,
   Template,
+  TemplateField,
   TemplateIn,
+  TemplateTable,
   TrialResult,
 } from './types'
 
@@ -31,6 +33,24 @@ export function listStarters(): Promise<Template[]> {
 
 export function listRules(): Promise<RuleInfo[]> {
   return api<RuleInfo[]>('/templates/rules')
+}
+
+export interface FormulaCheck {
+  ok: boolean
+  /** 换成中文名的写法：离店日期 − 入住日期。 */
+  readable: string
+  message: string
+}
+
+/** 边写边检查公式或规则条件（用编辑区现在的字段，不保存）。 */
+export function checkFormula(body: {
+  text: string
+  kind: 'formula' | 'condition'
+  fields: TemplateField[]
+  tables: TemplateTable[]
+  row: string | null
+}): Promise<FormulaCheck> {
+  return api<FormulaCheck>('/templates/formula-check', { method: 'POST', json: body })
 }
 
 /** 一个模板。我的模板带历史版本和"有几份文档在用"。 */

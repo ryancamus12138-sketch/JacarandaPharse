@@ -27,6 +27,7 @@ from jacara.modules.documents.schemas import (
     DocumentOut,
     DocumentPage,
     PageOcr,
+    PageStructureOut,
     RegionIn,
     RegionOut,
     ReprocessIn,
@@ -237,6 +238,23 @@ def page_image(
     return Response(
         content=data, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"}
     )
+
+
+@router.get("/{document_id}/pages/{page}/structure", summary="某一页的结构")
+def page_structure(
+    document_id: uuid.UUID,
+    page: Annotated[int, Path(ge=1)],
+    service: Service,
+    run: Annotated[int | None, Query(ge=1)] = None,
+) -> PageStructureOut:
+    """这一页认出的版面区域、表格的格子（第几行第几列）、"标题 → 值"（ADR 0034）。
+
+    审核页"版面结构"在原图上画出来。2026-11-14 之前处理的文档 available 是 false。
+    """
+    try:
+        return service.page_structure(document_id, page, run)
+    except DocumentError as err:
+        raise _http_error(err) from err
 
 
 @router.get("/{document_id}/pages/{page}/ocr", summary="某一页的 OCR 结果")

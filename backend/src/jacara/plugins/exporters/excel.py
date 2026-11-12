@@ -44,9 +44,16 @@ _STATUS_NAMES = {
     "fuzzy": "相似",
     "not_found": "找不到出处",
     "empty": "原文没有",
+    "rejected": "原文里对不上，没有填",
+    "computed": "按公式算",
 }
 
-_ACTION_NAMES = {"edit": "人工修改", "confirm": "人工确认"}
+_ACTION_NAMES = {
+    "edit": "人工修改",
+    "confirm": "人工确认",
+    "restore": "恢复这一行",
+    "compute": "按公式重算",
+}
 
 
 def typed(type_: str, value: str | float | None) -> str | float | date | None:
@@ -101,6 +108,11 @@ def _review_note(field: AlignedField, review: Review) -> str:
         old = "（空）" if field.field.value is None else field.field.value
         new = "（空）" if review.value is None else review.value
         text = f"人工修改：原值 {old} → {new}"
+    elif review.action == "compute":
+        new = "（空）" if review.value is None else review.value
+        text = f"参与计算的值改了，按公式重算 → {new}"
+    elif review.action == "restore":
+        text = "恢复了删掉的行"
     else:
         text = "人工确认：值无误"
     if review.reason:
@@ -133,7 +145,7 @@ def _mark(cell: Cell | MergedCell, field: AlignedField, report: DocumentReport) 
         if review.action == "edit":
             cell.fill = BLUE
         notes.append(_review_note(field, review))
-    elif field.status == "not_found":
+    elif field.status in ("not_found", "rejected"):
         cell.fill = RED
     elif reasons:
         cell.fill = YELLOW
@@ -323,7 +335,7 @@ class ExcelExporter:
                         confidence,
                         "是" if pending else "",
                         "；".join(reasons),
-                        _ACTION_NAMES[review.action] if review else "",
+                        _ACTION_NAMES.get(review.action, review.action) if review else "",
                         review.reason if review else "",
                     ]
                 )
@@ -334,7 +346,7 @@ class ExcelExporter:
                 if review is not None and review.action == "edit":
                     fill = BLUE
                 elif pending:
-                    fill = RED if field.status == "not_found" else YELLOW
+                    fill = RED if field.status in ("not_found", "rejected") else YELLOW
                 else:
                     continue
                 for column in range(1, len(headers) + 1):

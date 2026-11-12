@@ -1,6 +1,7 @@
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { Button, Flex, Input, Select, Switch, Table, type TableProps, Tooltip } from 'antd'
-import type { TemplateField } from '../../api/types'
+import type { TemplateField, TemplateTable } from '../../api/types'
+import { FormulaInput } from './FormulaInput'
 import { blankField, FIELD_ID, TYPE_OPTIONS } from './templateFields'
 
 /**
@@ -12,11 +13,14 @@ export function FieldsEditor({
   onChange,
   locked,
   readOnly,
+  scope,
 }: {
   fields: TemplateField[]
   onChange: (fields: TemplateField[]) => void
   locked: Set<string>
   readOnly: boolean
+  /** 公式里能用的字段：整个模板的字段和表格；row 是这些列所在的表（普通字段是 null）。 */
+  scope: { fields: TemplateField[]; tables: TemplateTable[]; row: string | null }
 }) {
   const update = (i: number, patch: Partial<TemplateField>) =>
     onChange(fields.map((f, j) => (j === i ? { ...f, ...patch } : f)))
@@ -101,6 +105,28 @@ export function FieldsEditor({
           checked={f.extract}
           disabled={readOnly}
           onChange={(extract) => update(i, { extract })}
+        />
+      ),
+    },
+    {
+      title: (
+        <Tooltip title="按别的字段算出来，不让模型去单据上找。点输入框右边的按钮选字段，例如 离店日期 − 入住日期、数量 × 单价、明细金额合计。只能是数字字段">
+          公式
+        </Tooltip>
+      ),
+      dataIndex: 'compute',
+      width: 240,
+      render: (_, f, i) => (
+        <FormulaInput
+          value={f.compute ?? ''}
+          disabled={readOnly}
+          kind="formula"
+          fields={scope.fields}
+          tables={scope.tables}
+          row={scope.row}
+          self={f.name}
+          placeholder="不算"
+          onChange={(compute) => update(i, { compute, ...(compute.trim() ? { type: 'number' as const } : {}) })}
         />
       ),
     },
