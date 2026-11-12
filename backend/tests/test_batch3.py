@@ -254,8 +254,8 @@ def test_time_and_dotless_change_are_found():
         ExtractedField(
             "time", "string", "20:13:39", blocks=(number_of(structure, "25/12/2018 8:13:39 PM"),)
         ),
-        # 模型说找零在手写的 9.00 那块（说错了块），值是 1
-        ExtractedField("change", "number", 1.0, blocks=(number_of(structure, "9.00"),)),
+        # 模型说找零在手写的 9.00 那块（说错了块），抄的原文是 100、理解成 1（ADR 0040）
+        ExtractedField("change", "number", 1.0, blocks=(number_of(structure, "9.00"),), text="100"),
     )
     result = ExtractionResult(fields, "{}", "m", "b", "v", 0)
     time, change = BlockAligner().align(page, result, structure)
@@ -310,3 +310,123 @@ def test_look_at_a_region(client):
     question = backend.asked[-1]
     assert question.images and question.images[0].startswith(b"\x89PNG")
     assert "找零（数字）" in question.content
+
+
+def test_extra_blocks_and_quoted_dates():
+    text = "This invoice is for the billing period July 1 - July 31 , 2014"
+    page = make_page(
+        make_line("Bill to Address:", 10, 100, 120, 115),
+        make_line("ATTN:", 10, 120, 50, 135),
+        make_line("iViveLabs Limited", 55, 120, 160, 135),
+        make_line("TOTAL AMOUNT DUE ON August 3 , 2014", 250, 118, 450, 133),
+        make_line("$4.11", 460, 118, 490, 133),
+        make_line("93B Sai Yu Chung", 10, 140, 130, 155),
+        make_line("Yuen Long, N.T., 0000, HK", 10, 160, 180, 175),
+        make_line(text, 10, 300, 450, 320),
+    )
+    structure = analyze_page(page)
+    cited = tuple(
+        number_of(structure, t)
+        for t in (
+            "Bill to Address:",
+            "ATTN:",
+            "iViveLabs Limited",
+            "TOTAL AMOUNT DUE ON August 3 , 2014",
+            "93B Sai Yu Chung",
+            "Yuen Long, N.T., 0000, HK",
+        )
+    )
+    fields = (
+        ExtractedField(
+            "kv.1",
+            "string",
+            "ATTN: iViveLabs Limited 93B Sai Yu Chung Yuen Long, N.T., 0000, HK",
+            blocks=cited,
+        ),
+        ExtractedField(
+            "kv.2",
+            "date_range",
+            "2014-07-01 ~ 2014-07-31",
+            blocks=(number_of(structure, text),),
+            text="July 1 - July 31 , 2014",
+        ),
+    )
+    result = ExtractionResult(fields, "{}", "m", "b", "v", 0)
+    address, period = BlockAligner().align(page, result, structure)
+    assert address.status == "matched" and not address.needs_review
+    assert address.evidence is not None and len(address.evidence.lines) == 4
+    assert period.status == "matched" and not period.needs_review
+
+
+def test_discovered_date_copied_from_the_page_is_found():
+    """键值对发现：模型把单个日期照抄原文（August 3 , 2014）还标成 date：
+    换成 2014-08-03，按日期核对。"""
+    from jacara.plugins.extractors import LlmExtractor
+
+    page = make_page(
+        make_line("Invoice Date:", 10, 10, 120, 30),
+        make_line("August 3 , 2014", 300, 10, 420, 30),
+        make_line("July 1 - July 31 , 2014", 10, 60, 200, 80),
+    )
+    structure = analyze_page(page)
+    pairs = [
+        {
+            "key": "Invoice Date",
+            "value": "August 3 , 2014",
+            "type": "date",
+            "blocks": [number_of(structure, "August 3 , 2014")],
+        },
+        {
+            "key": "Billing Period",
+            "value": "July 1 - July 31 , 2014",
+            "type": "date_range",
+            "blocks": [number_of(structure, "July 1 - July 31 , 2014")],
+        },
+    ]
+    result = LlmExtractor(SchemaBackend(pairs=pairs)).discover(page, structure)  # type: ignore[arg-type]
+    day, period = result.fields
+    assert (day.type, day.value, day.text) == ("date", "2014-08-03", "August 3 , 2014")
+    assert (period.type, period.value) == ("date_range", "2014-07-01 ~ 2014-07-31")
+    assert period.text == "July 1 - July 31 , 2014"
+    aligned = BlockAligner().align(page, result, structure)
+    assert [a.status for a in aligned] == ["matched", "matched"]
+
+
+def test_dates_written_like_the_page_are_accepted():
+    from jacara.core.textvalue import parse_date
+    from jacara.modules.fields.service import normalize
+
+    assert parse_date("August 3 , 2014") == parse_date("2014-08-03")
+    assert normalize("date", "August 3 , 2014") == "2014-08-03"
+    assert normalize("date", "25/12/2018") == "2018-12-25"
+
+
+def test_cross_check_value_against_the_quoted_text():
+    from jacara.plugins.aligners.crosscheck import cross_check
+
+    assert cross_check("number", 4.11, "$4.11").verdict == "ok"
+    assert cross_check("number", 1234.5, "RM 1,234.50").verdict == "ok"
+    assert cross_check("number", 4.0, "$4.11").verdict == "mismatch"
+    assert cross_check("number", 4.11, "四元一角一分").verdict == "unknown"
+    assert cross_check("date", "2014-08-03", "August 3 , 2014").verdict == "ok"
+    assert cross_check("date", "2014-07-01", "01/07/2014").verdict == "unsure"
+    assert cross_check("date", "2014-07-01", "01/07/2014", day_first=True).verdict == "ok"
+    assert cross_check("date", "2014-01-07", "01/07/2014", day_first=True).verdict == "mismatch"
+    assert cross_check("date", "2014-08-03", "三日").verdict == "unknown"
+    period = "2014-07-01 ~ 2014-07-31"
+    assert cross_check("date_range", period, "July 1 - July 31 , 2014").verdict == "ok"
+    assert cross_check("date_range", period, "July 2 - July 31 , 2014").verdict == "mismatch"
+    assert cross_check("date_range", period, "上个月").verdict == "unknown"
+
+
+def test_new_format_is_kept_and_flagged_not_dropped():
+    """系统没见过的写法：值照样留着，标黄让人看一眼（ADR 0040）。"""
+    page = make_page(make_line("Paid on the third of August, twenty fourteen", 10, 10, 400, 30))
+    structure = analyze_page(page)
+    field = ExtractedField(
+        "paid", "date", "2014-08-03", blocks=(1,), text="the third of August, twenty fourteen"
+    )
+    result = ExtractionResult((field,), "{}", "m", "b", "v", 0)
+    [paid] = BlockAligner().align(page, result, structure)
+    assert paid.status == "fuzzy" and paid.needs_review and paid.field.value == "2014-08-03"
+    assert "读不出日期" in paid.note

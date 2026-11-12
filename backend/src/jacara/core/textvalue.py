@@ -48,7 +48,7 @@ def parse_date(text: str) -> date | None:
 
     一般是 日/月/年；月份大于 12 时说明是 月/日/年，就对调。读不出返回 None。
     """
-    t = text.strip().upper()
+    t = re.sub(r"\s+(?=[,.])", "", text.strip().upper())  # "August 3 , 2014" 逗号前的空格
     try:
         if m := re.search(r"(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})", t):
             return date(int(m[1]), int(m[2]), int(m[3]))

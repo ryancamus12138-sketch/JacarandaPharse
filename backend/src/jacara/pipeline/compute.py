@@ -50,7 +50,7 @@ def compute(template: Template, values: Mapping[str, Any]) -> list[Computed]:
             row = _row(current, table, index)
             for column, formula in columns.items():
                 name = cell_name(table, index, column)
-                outcome = evaluate(formula, Inputs(current, {}, row))
+                outcome = evaluate(formula, Inputs(current, {}, row, template.day_first))
                 done = _result(name, formula, outcome, row_labels)
                 results.append(done)
                 current[name] = done.value
@@ -60,7 +60,7 @@ def compute(template: Template, values: Mapping[str, Any]) -> list[Computed]:
         t.name: [_row(current, t.name, i) for i in _rows(current, t.name)] for t in template.tables
     }
     for name, formula in formulas.fields.items():
-        outcome = evaluate(formula, Inputs(current, tables))
+        outcome = evaluate(formula, Inputs(current, tables, day_first=template.day_first))
         done = _result(name, formula, outcome, labels)
         results.append(done)
         current[name] = done.value

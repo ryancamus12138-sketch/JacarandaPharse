@@ -55,7 +55,15 @@ export function ExportsPage() {
       dataIndex: 'format',
       width: 150,
       render: (f: ExportRecord['format']) =>
-        f === 'zip' ? <Tag>每份一个 Excel（zip）</Tag> : <Tag color="purple">汇总 Excel</Tag>,
+        f === 'zip' ? (
+          <Tag>每份一个 Excel（zip）</Tag>
+        ) : f === 'csv' ? (
+          <Tag color="cyan">CSV</Tag>
+        ) : f === 'csv-zip' ? (
+          <Tag color="cyan">CSV（zip）</Tag>
+        ) : (
+          <Tag color="purple">汇总 Excel</Tag>
+        ),
     },
     { title: '文档', key: 'documents', width: 90, render: (_, r) => <DocumentsCell record={r} /> },
     { title: '大小', dataIndex: 'size_bytes', width: 100, align: 'right', render: formatBytes },

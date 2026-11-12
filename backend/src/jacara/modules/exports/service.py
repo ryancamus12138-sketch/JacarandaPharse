@@ -25,6 +25,8 @@ log = logging.getLogger(__name__)
 CONTENT_TYPES = {
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "zip": "application/zip",
+    "csv": "text/csv; charset=utf-8",
+    "csv-zip": "application/zip",
 }
 
 

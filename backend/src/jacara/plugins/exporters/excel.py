@@ -26,8 +26,9 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from jacara.core.daterange import parse_date_range
 from jacara.plugins.aligners.base import AlignedField
-from jacara.plugins.exporters.base import DocumentReport, Review
+from jacara.plugins.exporters.base import DocumentReport, RangeSetting, Review
 from jacara.plugins.extractors.base import split_cell_name
 
 RED = PatternFill("solid", fgColor="FFC7CE")
@@ -74,10 +75,67 @@ def typed(type_: str, value: str | float | None) -> str | float | date | None:
     return " ".join(str(value).split())
 
 
-def cell_value(field: AlignedField, review: Review | None = None) -> str | float | date | None:
-    """格子里写的值：有人工审核就用审核之后的值，否则用模型抽出的值。"""
+def cell_value(
+    field: AlignedField, review: Review | None = None, report: DocumentReport | None = None
+) -> str | float | date | None:
+    """格子里写的值：有人工审核就用审核之后的值，否则用模型抽出的值。
+    日期范围（ADR 0039）按模板的设置写统一格式或原文（拆成两列的在汇总表里另外处理）。"""
     value = review.value if review is not None else field.field.value
+    if field.field.type == "date_range":
+        cells = range_cells(field, review, _setting(report, field.field.name))
+        return cells[0] if len(cells) == 1 else _joined(cells, _setting(report, field.field.name))
     return typed(field.field.type, value)
+
+
+def _setting(report: DocumentReport | None, name: str) -> RangeSetting:
+    if report is None:
+        return RangeSetting()
+    cell = split_cell_name(name)
+    key = f"{cell[0]}.{cell[2]}" if cell else name
+    return report.ranges.get(key, RangeSetting())
+
+
+def _joined(cells: list[str | date | None], setting: RangeSetting) -> str | None:
+    if all(c is None for c in cells):
+        return None
+    return setting.separator.join("" if c is None else str(c) for c in cells).strip()
+
+
+def range_cells(
+    field: AlignedField, review: Review | None, setting: RangeSetting
+) -> list[str | date | None]:
+    """日期范围写成几格（ADR 0039）：统一格式、原文各一格；拆成两列是开始、结束两格（真正的日期）。
+    拆不开时统一格式写原文，两列写空的（批注里有原文）。"""
+    raw = review.value if review is not None else field.field.value
+    columns = setting.export == "columns"
+    if raw is None or str(raw).strip() == "":
+        return [None, None] if columns else [None]
+    text = " ".join(str(raw).split())
+    if setting.export == "original":
+        # 原文：模型抄的写法（ADR 0040）；人改过值就用改过的
+        edited = review is not None and review.action == "edit"
+        return [field.field.text if field.field.text and not edited else text]
+    found = parse_date_range(text, setting.day_first).range
+    if columns:
+        return [found.start, found.end] if found else [None, None]
+    if found is None or found.start is None or found.end is None:
+        return [text]
+    return [found.text(setting.separator)]
+
+
+def _range_note(field: AlignedField, report: DocumentReport) -> str:
+    """日期范围的批注：原文和拆开的开始、结束。"""
+    review = report.reviews.get(field.field.name)
+    raw = review.value if review is not None else field.field.value
+    if raw is None:
+        return ""
+    setting = _setting(report, field.field.name)
+    parsed = parse_date_range(str(raw), setting.day_first)
+    found = parsed.range
+    split = f"开始 {found.start or '？'}，结束 {found.end or '？'}" if found else "拆不开"
+    problem = f"（{parsed.problem}）" if parsed.problem else ""
+    quote = field.field.text or " ".join(str(raw).split())
+    return f"原文：{quote}\n{split}{problem}"
 
 
 def _where(field: AlignedField) -> str:
@@ -135,7 +193,7 @@ def _mark(cell: Cell | MergedCell, field: AlignedField, report: DocumentReport) 
     """一个格子的格式、颜色和批注：没确认的标黄（找不到出处标红），人工改过的标蓝。"""
     if field.field.type == "number":
         cell.number_format = MONEY_FORMAT
-    elif field.field.type == "date":
+    elif field.field.type == "date" or isinstance(cell.value, date):
         cell.number_format = DATE_FORMAT
 
     review = report.reviews.get(field.field.name)
@@ -152,6 +210,9 @@ def _mark(cell: Cell | MergedCell, field: AlignedField, report: DocumentReport) 
         cell.fill = YELLOW
     if review is not None or reasons:
         notes += [*reasons, _where(field)]
+    if field.field.type == "date_range":
+        notes.insert(0, _range_note(field, report))
+    if notes:
         text = "\n".join(n for n in notes if n)
         cell.comment = Comment(text, "JacarandaParse", width=320, height=140)
 
@@ -254,19 +315,36 @@ class ExcelExporter:
                 if split_cell_name(a.field.name) is None  # 表格的格子放在单独的表里
             )
         )
-        headers = [_label(reports, n) for n in names]
-        _setup(sheet, ["文件", *headers, "需要确认"], [18] + [16] * len(names) + [10])
+        # 日期范围设成"拆成两列"的（ADR 0039）：开始、结束各一列
+        split = {
+            n
+            for n in names
+            if any(r.ranges.get(n, RangeSetting()).export == "columns" for r in reports)
+        }
+        slots = [(n, part) for n in names for part in ((0, 1) if n in split else (None,))]
+        headers = [
+            _label(reports, n) if part is None else f"{_label(reports, n)} {('开始', '结束')[part]}"
+            for n, part in slots
+        ]
+        _setup(sheet, ["文件", *headers, "需要确认"], [18] + [16] * len(slots) + [10])
 
         for report in reports:
             by_name = {a.field.name: a for a in report.aligned}
             row: list[object] = [report.source]
-            row += [
-                cell_value(by_name[n], report.reviews.get(n)) if n in by_name else None
-                for n in names
-            ]
+            for n, part in slots:
+                field = by_name.get(n)
+                if field is None:
+                    row.append(None)
+                elif part is not None and field.field.type == "date_range":
+                    setting = _setting(report, n)
+                    if setting.export != "columns":
+                        setting = RangeSetting("columns", setting.separator, setting.day_first)
+                    row.append(range_cells(field, report.reviews.get(n), setting)[part])
+                else:
+                    row.append(cell_value(field, report.reviews.get(n), report))
             row.append(_pending(report))
             sheet.append(row)
-            for column, name in enumerate(names, start=2):
+            for column, (name, _) in enumerate(slots, start=2):
                 if (field := by_name.get(name)) is not None:
                     _mark(sheet.cell(row=sheet.max_row, column=column), field, report)
 
@@ -289,7 +367,7 @@ class ExcelExporter:
                         report.source,
                         index,
                         *(
-                            cell_value(cells[c], report.reviews.get(cells[c].field.name))
+                            cell_value(cells[c], report.reviews.get(cells[c].field.name), report)
                             if c in cells
                             else None
                             for c in columns
@@ -329,8 +407,8 @@ class ExcelExporter:
                     [
                         report.source,
                         _field_label(report, field.field.name),
-                        cell_value(field, review),
-                        cell_value(field),
+                        cell_value(field, review, report),
+                        cell_value(field, None, report),
                         _STATUS_NAMES[field.status],
                         _where(field),
                         confidence,
@@ -364,7 +442,7 @@ class ExcelExporter:
                     [
                         report.source,
                         report.labels.get(field.field.name, field.field.name),
-                        cell_value(field, review),
+                        cell_value(field, review, report),
                     ]
                 )
                 _mark(sheet.cell(row=sheet.max_row, column=3), field, report)

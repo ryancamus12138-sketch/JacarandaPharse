@@ -18,6 +18,17 @@ class SuggestionOut(BaseModel):
     """来自第几轮。"""
 
 
+class RangeOut(BaseModel):
+    """日期范围拆开的结果（ADR 0039）：按当前值、用代码拆的。"""
+
+    start: str | None
+    end: str | None
+    days: int | None
+    """一共几天，首尾都算。"""
+    problem: str | None
+    """拆不开、日月分不清、结束早于开始；没问题是 null。"""
+
+
 class ValueOut(BaseModel):
     """一个字段。value 是模型的原值，current_value 是审核之后的当前值。"""
 
@@ -60,6 +71,8 @@ class ValueOut(BaseModel):
     """中文名：模板里的 label；键值对发现时是单据上的原名。只有文档详情里有。"""
     suggestion: SuggestionOut | None = None
     """重新处理之后：上一轮人审核过、可以直接沿用的结果。只有文档详情里有。"""
+    range: RangeOut | None = None
+    """日期范围字段拆开的开始、结束（ADR 0039）。只有文档详情里有。"""
 
 
 class AdoptOut(BaseModel):

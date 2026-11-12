@@ -27,7 +27,7 @@ from jacara.structure.analyze import analyze_page
 from jacara.structure.graph import PageStructure
 from jacara.structure.serialize import spatial_text, structure_text
 
-PROMPT_VERSION = "extract-v7"
+PROMPT_VERSION = "extract-v8"
 """提示词的版本号。改了下面的提示词就要改这个号，结果里会记录它。
 
 v1：OCR 文字逐块拼接。v2：按视觉行合并、加行号，并要求模型给出值所在的行号。
@@ -39,6 +39,9 @@ v6：按文字块（ADR 0034）：每块带编号、按版面原样排开，附�
     每个值回答用了哪几块（blocks），不再给行号。
 v7：一张单据可以有好几页（ADR 0036）：几页接在一起给，页与页之间写"第 n 页"分隔，
     并提醒跨页的表格接着写、每页重复的表头和页眉页脚不算。只有一页的单据，提示词和 v6 一样。
+v8：数字、日期、日期范围除了 value（理解后的标准值），还要 text（原文一字不差的写法，ADR 0040）。
+    系统按 text 在原文里核对，再看 value 和 text 对不对得上，不再靠把 value 还原成各种写法去找。
+    日期范围的 value 是 {start, end}。
 """
 
 SYSTEM_PROMPT = """你是文档信息抽取助手。用户会给你一张单据的文字和要抽取的字段。
@@ -53,8 +56,13 @@ SYSTEM_PROMPT = """你是文档信息抽取助手。用户会给你一张单据�
    值跨好几块（地址、长的商品名折成两行）时，把这几块里属于它的文字按顺序连起来（中间加一个空格），
    blocks 写这几块。一块里只有一部分是值（"Date: 31/12/2017" 里的日期），
    blocks 写这一块，value 只写值。
-4. 数字字段只填数字，不带货币符号和千分位逗号。
-5. 日期字段统一写成 YYYY-MM-DD。
+4. 数字、日期、日期范围字段多回答一个 text：原文里这个值一字不差的写法
+   （包括货币符号、空格、标点、月份英文，
+   例如 "$4.11"、"August 3 , 2014"、"July 1 - July 31 , 2014"）；
+   value 写你理解后的标准值：数字只填数字，不带货币符号和千分位逗号；日期写成 YYYY-MM-DD；
+   日期范围的 value 写 start 和 end（都是 YYYY-MM-DD），原文只写了一次年份的，两边都用这个年份。
+   原文看不出年份或者日月顺序的，不要猜：value 填 null，text 照抄。
+5. 找不到的字段 value、text 都填 null。
 6. 看清值在哪个标题下面、属于哪一栏：例如 Rooms 下面的数字是房间数，不是晚数。
 7. 表格按原文顺序，一行一个对象，每一格回答 value 和 blocks；没有表格就给空列表。
    不要把小计、税、总额、找零当成表格的行，同一行商品不要重复写。商品名折成两行仍是同一行商品。"""
@@ -85,27 +93,38 @@ CLASSIFY_SCHEMA: dict[str, object] = {
     "required": ["choice", "reason"],
 }
 
-_TYPE_NAMES = {"string": "文字", "number": "数字", "date": "日期"}
+_TYPE_NAMES = {"string": "文字", "number": "数字", "date": "日期", "date_range": "日期范围"}
 
 _BLOCKS: dict[str, object] = {"type": "array", "items": {"type": "integer"}}
 """用到的文字块编号。"""
+_DATE: dict[str, object] = {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}
+_TEXT: dict[str, object] = {"anyOf": [{"type": "string"}, {"type": "null"}]}
+"""原文的写法（ADR 0040）：一字不差，或者 null。"""
 
-DISCOVER_PROMPT_VERSION = "discover-v3"
-"""键值对发现的提示词版本。v2：值跨几行（row_end）。v3：按文字块（blocks），和 extract-v6 一样。"""
+DISCOVER_PROMPT_VERSION = "discover-v5"
+"""键值对发现的提示词版本。v2：值跨几行（row_end）。v3：按文字块（blocks），和 extract-v6 一样。
+v4：日期范围、夹在句子里的日期照抄原文，不要改写成 YYYY-MM-DD；
+blocks 只写值用到的块，不写名称那块。日期范围的 type 是 date_range（ADR 0039）。
+v5：每一项多回答 text（原文一字不差的写法，ADR 0040），value 写理解后的标准值。"""
 
 DISCOVER_PROMPT = """你是文档信息抽取助手。用户会给你一张单据的文字。
 文字是按单据上的位置排开的，每块文字前面的 ⟨数字⟩ 是这块的编号；后面可能还有按位置找出来的
 "标题 → 值"和表格，帮你看清结构，以原文为准。
 任务：找出单据上所有"名称：值"形式的信息（例如 发票号码、日期、合计、地址、电话），
-每一项给出 key（单据上印的名称，照抄原文）、value（值，照抄原文）、type、
+每一项给出 key（单据上印的名称，照抄原文）、value（值）、text（值在原文里一字不差的写法）、type、
 blocks（值用到的文字块编号）。
 规则：
 1. 只根据给出的文字回答，不要猜，不要补充文字里没有的信息。
 2. key 用单据上的原话；单据上没有印名称、但意思明确的值（例如最上面的商家名），
    key 用简短的中文说明，例如"商家名称"。值写在标题下面的，key 用那个标题。
-3. type：金额、数量这类纯数字写 number，value 只填数字，不带货币符号和千分位逗号；
-   日期写 date，value 写成 YYYY-MM-DD；其他写 string，value 照抄原文。
-4. 值跨几块（例如地址折成两行）时连起来写（中间加一个空格），blocks 写这几块。
+3. text 永远照抄原文（包括货币符号、空格、标点、月份英文）。value 和 type：
+   金额、数量这类纯数字写 number，value 只填数字，不带货币符号和千分位逗号；
+   单独一个日期写 date，value 写成 YYYY-MM-DD；
+   日期范围（July 1 - July 31, 2014、2014年7月1日至31日）写 date_range，
+   value 写成 "开始 ~ 结束"（都是 YYYY-MM-DD，原文只写了一次年份的两边都用这个年份）；
+   其他写 string，value 和 text 一样照抄原文。看不出年份或日月顺序的，不要猜，type 写 string。
+4. 值跨几块（例如地址折成两行）时连起来写（中间加一个空格），blocks 写这几块；
+   只写值用到的块，不写印着名称的那块，也不写旁边别的栏的块。
 5. 商品明细这种表格不要逐格列出，每一行商品也不要当成键值对；同一项不要重复写。"""
 
 DISCOVER_SCHEMA: dict[str, object] = {
@@ -118,10 +137,11 @@ DISCOVER_SCHEMA: dict[str, object] = {
                 "properties": {
                     "key": {"type": "string"},
                     "value": {"anyOf": [{"type": "string"}, {"type": "number"}, {"type": "null"}]},
-                    "type": {"enum": ["string", "number", "date"]},
+                    "text": _TEXT,
+                    "type": {"enum": ["string", "number", "date", "date_range"]},
                     "blocks": _BLOCKS,
                 },
-                "required": ["key", "value", "type", "blocks"],
+                "required": ["key", "value", "text", "type", "blocks"],
                 "additionalProperties": False,
             },
         }
@@ -143,11 +163,33 @@ def _plain_schema(f: FieldSpec) -> dict[str, object]:
 
 
 def _value_schema(f: FieldSpec) -> dict[str, object]:
-    """一个值：{"value": 值或 null, "blocks": [文字块编号]}，两个都必须有。"""
+    """一个值：{"value", "blocks"}；数字、日期、日期范围再加 text（原文的写法，ADR 0040）。"""
+    if f.type == "string":
+        return {
+            "type": "object",
+            "properties": {"value": _plain_schema(f), "blocks": _BLOCKS},
+            "required": ["value", "blocks"],
+            "additionalProperties": False,
+        }
+    if f.type == "date_range":
+        either: dict[str, object] = {"anyOf": [_DATE, {"type": "null"}]}
+        value: dict[str, object] = {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {"start": either, "end": either},
+                    "required": ["start", "end"],
+                    "additionalProperties": False,
+                },
+                {"type": "null"},
+            ]
+        }
+    else:
+        value = _plain_schema(f)
     return {
         "type": "object",
-        "properties": {"value": _plain_schema(f), "blocks": _BLOCKS},
-        "required": ["value", "blocks"],
+        "properties": {"value": value, "text": _TEXT, "blocks": _BLOCKS},
+        "required": ["value", "text", "blocks"],
         "additionalProperties": False,
     }
 
@@ -420,8 +462,27 @@ def _discover(self: LlmExtractor, page: OcrPage, structure: PageStructure) -> Ex
             value = _as_number(value)
             if value is None:
                 type_, value = "string", str(item.get("value"))
+        elif type_ == "date":
+            # 模型有时把单个日期照抄原文（August 3 , 2014），换成 YYYY-MM-DD；读不出就当文字
+            value = str(value).strip()
+            day = _as_date(value)
+            if day is None:
+                type_ = "string"
+            else:
+                value = day
+        elif type_ == "date_range":
+            ranged = _range_value(str(value))
+            if ranged is None or "~" not in ranged:
+                type_, value = "string", str(value).strip()
+            else:
+                value = ranged
         else:
             value = str(value).strip()
+        text = item.get("text")
+        text = " ".join(text.split()) if isinstance(text, str) and text.strip() else None
+        original = str(item.get("value")).strip()
+        if text is None and type_ != "string" and original != str(value):
+            text = " ".join(original.split())  # 模型把原文写进了 value：原文就是它
         if (key, str(value)) in seen:
             continue  # 同一项写了两遍
         seen.add((key, str(value)))
@@ -436,6 +497,7 @@ def _discover(self: LlmExtractor, page: OcrPage, structure: PageStructure) -> Ex
                 label=key[:200],
                 row_end=row_end,
                 blocks=blocks,
+                text=text if type_ != "string" else None,
             )
         )
     return ExtractionResult(
@@ -446,6 +508,19 @@ def _discover(self: LlmExtractor, page: OcrPage, structure: PageStructure) -> Ex
         prompt_version=DISCOVER_PROMPT_VERSION,
         duration_ms=result.duration_ms,
     )
+
+
+def _as_date(value: str) -> str | None:
+    """日期写成 YYYY-MM-DD；读不出返回 None。"""
+    from datetime import date
+
+    from jacara.core.textvalue import parse_date
+
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        day = parse_date(value)
+        return day.isoformat() if day else None
 
 
 def _as_number(value: object) -> float | None:
@@ -487,15 +562,65 @@ def _field(
         raise ExtractionError(f"模型的回答缺少字段 {name}：{raw[:200]}")
     item = cast(dict[str, Any], item)
     value = item["value"]
+    # 模型没给 text、value 却是照抄的原文（老格式、或者没听话）：原文就是它
+    copied = value.strip() if isinstance(value, str) and spec.type != "string" else None
     if spec.type == "number" and isinstance(value, int) and not isinstance(value, bool):
         value = float(value)
+    if spec.type == "date" and isinstance(value, str):
+        # 日期统一存成 YYYY-MM-DD：模型照抄了原文（August 3 , 2014）也换过来；
+        # 读不出就原样，核对时标出来
+        value = _as_date(value.strip()) or value
+    if spec.type == "date_range":
+        value = _range_value(value)
+    text = item.get("text")
+    text = " ".join(text.split()) if isinstance(text, str) and text.strip() else None
+    if text is None and copied and copied != value:
+        text = " ".join(copied.split())
+    if value is None and text is not None and spec.type != "string":
+        value = _from_text(spec.type, text)  # 模型看不准没填，按原文读一次；读不出还是空
     blocks = _blocks(item, structure) if value is not None else ()
     row, row_end = _rows_of(blocks, structure)
     if not blocks and value is not None:
         row, row_end = _legacy_rows(item)
     return ExtractedField(
-        name=name, type=spec.type, value=value, row=row, row_end=row_end, blocks=blocks
+        name=name,
+        type=spec.type,
+        value=value,
+        row=row,
+        row_end=row_end,
+        blocks=blocks,
+        text=text if value is not None else None,
     )
+
+
+def _range_value(value: object) -> str | None:
+    """日期范围的 value：{"start", "end"} → "2014-07-01 ~ 2014-07-31"（老格式的原文字符串也认）。"""
+    from jacara.core.daterange import parse_date_range
+
+    if isinstance(value, dict):
+        start = _as_date(str(value.get("start") or "")) if value.get("start") else None
+        end = _as_date(str(value.get("end") or "")) if value.get("end") else None
+        if start is None and end is None:
+            return None
+        return f"{start or ''} ~ {end or ''}".strip()
+    if isinstance(value, str) and value.strip():
+        found = parse_date_range(value).range
+        return found.text() if found and found.start and found.end else value.strip()
+    return None
+
+
+def _from_text(type_: str, text: str) -> str | float | None:
+    """模型 value 填了 null、只给了原文：按规则读一次（读不出就是 None）。"""
+    from jacara.core.daterange import parse_date_range
+
+    if type_ == "number":
+        return _as_number(text)
+    if type_ == "date":
+        return _as_date(text)
+    found = parse_date_range(text).range
+    if found is None or found.start is None or found.end is None:
+        return None
+    return found.text()
 
 
 def _cell(row: dict[str, Any], column: str) -> object:
@@ -526,6 +651,7 @@ def _renamed(cell: ExtractedField, name: str) -> ExtractedField:
         label=cell.label,
         row_end=cell.row_end,
         blocks=cell.blocks,
+        text=cell.text,
     )
 
 

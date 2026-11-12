@@ -2,7 +2,7 @@ import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined } from
 import { Button, Flex, Input, Select, Switch, Table, type TableProps, Tooltip } from 'antd'
 import type { TemplateField, TemplateTable } from '../../api/types'
 import { FormulaInput } from './FormulaInput'
-import { blankField, FIELD_ID, TYPE_OPTIONS } from './templateFields'
+import { blankField, FIELD_ID, RANGE_EXPORTS, TYPE_OPTIONS } from './templateFields'
 
 /**
  * 字段（或表格的列）编辑表：中文名、字段 ID、类型、必填、导出、敏感、别名、给模型的说明。
@@ -65,17 +65,44 @@ export function FieldsEditor({
       ),
     },
     {
-      title: '类型',
+      title: (
+        <Tooltip title="日期范围（2014-07-01 ~ 2014-07-31 这种）：模型照抄原文，系统拆成开始、结束；导出时可以选统一格式、原文或拆成两列">
+          类型
+        </Tooltip>
+      ),
       dataIndex: 'type',
-      width: 130,
+      width: 150,
       render: (_, f, i) => (
-        <Select
-          value={f.type}
-          disabled={readOnly}
-          options={TYPE_OPTIONS}
-          onChange={(type) => update(i, { type })}
-          style={{ width: '100%' }}
-        />
+        <Flex vertical gap={4}>
+          <Select
+            value={f.type}
+            disabled={readOnly}
+            options={TYPE_OPTIONS}
+            onChange={(type) => update(i, { type })}
+            style={{ width: '100%' }}
+          />
+          {f.type === 'date_range' && (
+            <>
+              <Select
+                size="small"
+                value={f.range_export ?? 'normalized'}
+                disabled={readOnly}
+                options={RANGE_EXPORTS.map((o) => ({ ...o, label: `导出：${o.label}` }))}
+                onChange={(range_export) => update(i, { range_export })}
+              />
+              {(f.range_export ?? 'normalized') === 'normalized' && (
+                <Input
+                  size="small"
+                  addonBefore="分隔"
+                  value={f.range_separator ?? ' ~ '}
+                  disabled={readOnly}
+                  maxLength={10}
+                  onChange={(e) => update(i, { range_separator: e.target.value || ' ~ ' })}
+                />
+              )}
+            </>
+          )}
+        </Flex>
       ),
     },
     {

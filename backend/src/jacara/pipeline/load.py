@@ -11,6 +11,7 @@ from contextlib import suppress
 from typing import Any, cast
 
 from jacara.models import Document, ExtractedValue, Extraction
+from jacara.pipeline.ranges import range_settings
 from jacara.plugins.aligners.base import AlignedField, AlignStatus, Evidence
 from jacara.plugins.exporters.base import DocumentReport, Review
 from jacara.plugins.extractors.base import ExtractedField, ExtractionResult, FieldType
@@ -83,6 +84,7 @@ def _report(extraction: Extraction, source: str) -> DocumentReport:
         reviews=reviews,
         labels=labels_of(extraction),
         hidden=_hidden(template_of(extraction)),
+        ranges=range_settings(template_of(extraction)),
     )
 
 
@@ -107,7 +109,15 @@ def _field(value: ExtractedValue, name: str) -> ExtractedField:
     if value.type == "number" and raw is not None:
         with suppress(ValueError):  # 转不成数字就保持原样（规则校验会标出来）
             raw = float(raw)
-    return ExtractedField(name, cast(FieldType, value.type), raw, value.row_no, value.label)
+    quote = (value.evidence or {}).get("quote")
+    return ExtractedField(
+        name,
+        cast(FieldType, value.type),
+        raw,
+        value.row_no,
+        value.label,
+        text=quote if isinstance(quote, str) else None,
+    )
 
 
 def _evidence(data: dict[str, Any] | None) -> Evidence | None:

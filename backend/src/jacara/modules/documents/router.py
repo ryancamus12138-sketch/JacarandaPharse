@@ -221,6 +221,23 @@ def export_documents(
     return attachment(filename, data, XLSX)
 
 
+@router.get("/export.csv", summary="导出 CSV", response_class=Response)
+def export_documents_csv(
+    service: Service,
+    ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
+) -> Response:
+    """导出 CSV（UTF-8），内容和汇总 Excel 一样：一行一张单据。
+
+    只有汇总一张表时是一个 .csv；有明细表、键值对时每张表一个 .csv，打包成 zip。
+    写法：`/api/v1/documents/export.csv?ids=第一个id&ids=第二个id`
+    """
+    try:
+        filename, data, kind = service.export_csv(ids)
+    except DocumentError as err:
+        raise _http_error(err) from err
+    return attachment(filename, data, "text/csv; charset=utf-8" if kind == "csv" else ZIP)
+
+
 @router.get("/export.zip", summary="导出多个文档（每个一个 Excel）", response_class=Response)
 def export_documents_zip(
     service: Service,

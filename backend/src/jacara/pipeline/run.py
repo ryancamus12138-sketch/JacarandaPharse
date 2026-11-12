@@ -19,6 +19,7 @@ import numpy as np
 from jacara.pipeline.classify import AutoChoice, Chooser, classify, head_text
 from jacara.pipeline.compute import compute
 from jacara.pipeline.pages import stack_images, stack_pages, stacked_engines
+from jacara.pipeline.ranges import range_settings
 from jacara.pipeline.segment import Judge, segments
 from jacara.pipeline.vision import MAX_IMAGES, VisionMode, to_png, vision_reason
 from jacara.plugins.aligners import BlockAligner
@@ -115,7 +116,9 @@ class Pipeline:
                 manual = frozenset(f.name for f in tpl.manual_fields)
             name, version = tpl.name, tpl.version
             validator = tpl.validator()
-        aligned = self.aligner.align(page, result, structure)
+        aligned = self.aligner.align(
+            page, result, structure, tpl.day_first if tpl is not None else None
+        )
         if tpl is not None and tpl.formulas():
             # 计算字段（ADR 0035）：用核对过的值算，按规则没有填的（rejected）当作没有
             now = {a.field.name: None if a.status == "rejected" else a.field.value for a in aligned}
@@ -153,6 +156,7 @@ class Pipeline:
             manual=manual,
             computed=computed,
             structure=structure,
+            ranges=range_settings(tpl),
         )
 
     def extract_pages(

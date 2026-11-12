@@ -88,7 +88,17 @@ export function FormulaInput({
     groups.push({
       type: 'group',
       label: '字段（只列数字和日期）',
-      children: fields.filter(usable).map((f) => item(f.name, f.label, f.name)),
+      children: [
+        ...fields.filter(usable).map((f) => item(f.name, f.label, f.name)),
+        // 日期范围（ADR 0039）：开始、结束是日期，天数是数字
+        ...fields
+          .filter((f) => f.type === 'date_range' && f.name !== self)
+          .flatMap((f) => [
+            item(`${f.name}.start`, `${f.label}的开始`, `${f.name}.start`),
+            item(`${f.name}.end`, `${f.label}的结束`, `${f.name}.end`),
+            item(`${f.name}.days`, `${f.label}的天数`, `${f.name}.days`),
+          ]),
+      ],
     })
   }
   if (!rowTable) {

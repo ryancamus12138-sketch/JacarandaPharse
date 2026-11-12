@@ -306,7 +306,9 @@ def test_entity_merge_conflict_and_lookup(client, factory, storage, receipt_page
     assert patients.max_row == 2  # 同一个病人合并成一行
     assert patients["C2"].value == "男" and patients["C2"].comment is not None
     data = book["实验数据"]
-    assert [c.value for c in data[2]] == ["P001", "第一实验室", "L01", "血糖", 9.0]
+    # 表头像检验报告：按起步模板"检验报告"把结果当文字（阴性、<0.1 也要能写），照原样导出
+    assert analysis["starter"] == "lab_report"
+    assert [c.value for c in data[2]] == ["P001", "第一实验室", "L01", "血糖", "9.0"]
     assert data["C3"].value is None  # 对照不上，编号留空
     assert book["实验室名单"].max_row == 3  # 参照表原样不动
 
@@ -371,3 +373,32 @@ def test_not_an_excel(client):
     response = client.post("/api/v1/templates/excel", files={"file": ("x.xlsx", b"nope", XLSX)})
     assert response.status_code == 422
     assert ".xlsx" in response.json()["detail"]
+
+
+def test_editor_maps_a_column_to_the_start_of_a_date_range(client):
+    """原表的"日期"一列改成填日期范围字段的开始（ADR 0039）；改了随模板一起保存。"""
+    template = build(client, upload_excel(client, reimbursement()))
+    period = {
+        "name": "period",
+        "label": "报销期间",
+        "type": "date_range",
+        "range_export": "normalized",
+        "range_separator": " ~ ",
+    }
+    body = {
+        "title": template["title"],
+        "fields": [*template["fields"], period],
+        "tables": template["tables"],
+        "rules": [],
+        "column_refs": {
+            "报销汇总::日期": "period.start",
+            "报销汇总::商家": "nope",
+            "报销汇总::单号": "",
+        },
+    }
+    saved = client.put(f"/api/v1/templates/{template['id']}", json=body)
+    assert saved.status_code == 200, saved.text
+    columns = {c["header"]: c["ref"] for c in saved.json()["workbook"]["sheets"][0]["columns"]}
+    assert columns["日期"] == "period.start"
+    assert columns["商家"] == ""  # 不存在的字段：留空
+    assert columns["单号"] == ""  # 改成留空

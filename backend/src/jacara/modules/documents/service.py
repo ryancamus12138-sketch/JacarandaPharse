@@ -20,6 +20,7 @@ from typing import Any, cast
 from sqlalchemy.orm import Session
 
 from jacara.core.config import get_settings
+from jacara.core.daterange import parse_date_range
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.queue import QueueError, TaskQueue
@@ -55,7 +56,7 @@ from jacara.modules.documents.schemas import (
     StructureTable,
 )
 from jacara.modules.exports.service import save_export
-from jacara.modules.fields.schemas import AdoptOut, SuggestionOut
+from jacara.modules.fields.schemas import AdoptOut, RangeOut, SuggestionOut
 from jacara.modules.fields.service import FieldService
 from jacara.modules.templates.service import Pick, TemplateFailure, TemplateService
 from jacara.pipeline.current import (
@@ -76,6 +77,7 @@ from jacara.pipeline.pages import covering, ocr_page_json, page_slice, pages_jso
 from jacara.pipeline.region import read_region, region_png
 from jacara.pipeline.segment import SplitError, normalize_split
 from jacara.plugins.exporters import create_exporter
+from jacara.plugins.exporters.csv_files import workbook_to_csv
 from jacara.plugins.exporters.excel import cell_value
 from jacara.plugins.extractors import ExtractionError
 from jacara.plugins.extractors.base import DISCOVER, split_cell_name
@@ -582,6 +584,30 @@ class DocumentService:
         self._record_export(documents, "zip", name, data)
         return name, data
 
+    def export_csv(self, document_ids: list[uuid.UUID]) -> tuple[str, bytes, str]:
+        """导出 CSV：内容和标准格式的 Excel 一样（汇总一行一张单据，明细表、键值对各一张）。
+
+        只有汇总一张表时下载一个 .csv；还有明细表、键值对时，每张表一个 .csv 打包成 zip。
+        返回（文件名，内容，格式 csv 或 zip）。
+        """
+        documents = self._exportable(document_ids)
+        files = workbook_to_csv(_workbook(documents))
+        if len(documents) == 1:
+            stem = PurePath(documents[0].filename).stem
+        else:
+            stem = f"jacara-{date.today():%Y%m%d}-{len(documents)}份"
+        if len(files) == 1:
+            name, data, kind = f"{stem}.csv", files[0][1], "csv"
+        else:
+            out = io.BytesIO()
+            used: set[str] = set()
+            with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+                for title, content in files:
+                    archive.writestr(_unique(f"{title}.csv", used), content)
+            name, data, kind = f"{stem}-csv.zip", out.getvalue(), "zip"
+        self._record_export(documents, "csv" if kind == "csv" else "csv-zip", name, data)
+        return name, data, kind
+
     def _excel(self, documents: list[Document]) -> tuple[bytes, str]:
         """导出成 Excel：模板有原表样式（从 Excel 建的模板）就填回原表，否则用标准格式。
 
@@ -877,6 +903,20 @@ def _runs(document: Document) -> list[RunOut]:
     ]
 
 
+def range_out(value: str | None, day_first: bool | None) -> RangeOut | None:
+    """日期范围拆开（ADR 0039）：审核页显示"2014-07-01 ~ 2014-07-31（31 天）"。"""
+    if not value:
+        return None
+    parsed = parse_date_range(value, day_first)
+    found = parsed.range
+    return RangeOut(
+        start=found.start.isoformat() if found and found.start else None,
+        end=found.end.isoformat() if found and found.end else None,
+        days=found.days if found else None,
+        problem=parsed.problem,
+    )
+
+
 def _template_title(extraction: Extraction) -> str:
     if extraction.template == DISCOVER:
         return "抽取所有键值对"
@@ -905,9 +945,12 @@ def _with_states(
     # 更新前处理的文档，出处里没存文字，要用这一页的 OCR 结果找（只在需要时才读）
     needs_ocr = any(wants_source(v) and "text" not in (v.evidence or {}) for v in extraction.values)
     lines = (extraction.ocr or {}).get("lines") if needs_ocr else None
+    shape = template if template is not None else template_of(extraction)
+    day_first = shape.day_first if shape is not None else None
     values = [
         v.model_copy(
             update={
+                "range": range_out(v.current_value, day_first) if v.type == "date_range" else None,
                 "check_state": states[v.id][0],
                 "level": states[v.id][1],
                 "source_value": source_value(by_id[v.id], evidence_text(by_id[v.id], lines)),

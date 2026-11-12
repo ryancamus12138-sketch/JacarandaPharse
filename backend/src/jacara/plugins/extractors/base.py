@@ -13,7 +13,8 @@ from typing import TYPE_CHECKING, Literal, Protocol
 
 from jacara.plugins.ocr.base import OcrPage
 
-FieldType = Literal["string", "number", "date"]
+FieldType = Literal["string", "number", "date", "date_range"]
+"""date_range：日期范围（ADR 0039），值是照抄的原文，开始、结束日期由代码拆出来。"""
 
 
 class ExtractionError(RuntimeError):
@@ -73,6 +74,10 @@ class ExtractedField:
     """值跨几行时（商品名、地址折行），最后一行的行号。只占一行时是 None。"""
     blocks: tuple[int, ...] = ()
     """模型说这个值用了哪几个文字块（编号，ADR 0034）。证据对齐按它核对。"""
+    text: str | None = None
+    """原文里这个值一字不差的写法（ADR 0040）：数字、日期、日期范围才有，
+    例如 value 是 2014-08-03，text 是 "August 3 , 2014"。
+    证据对齐先按 text 在原文里找，再看 value 和它对不对得上。"""
 
 
 @dataclass(frozen=True)

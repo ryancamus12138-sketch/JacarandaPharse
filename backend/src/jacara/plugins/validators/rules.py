@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import fnmatch
+import re
 from collections.abc import Callable, Sequence
 from datetime import date
 
@@ -600,7 +601,66 @@ TEMPLATE_RULES: tuple[Rule, ...] = (
     ),
 )
 
-ALL_RULES = RECEIPT_RULES + TEMPLATE_RULES
+_LAB_NUMBER = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*$")
+_LAB_RANGE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*(?:-|－|–|—|~|～|至|--)\s*(-?\d+(?:\.\d+)?)\s*$")
+_LAB_BOUND = re.compile(r"^\s*(<=?|≤|＜|>=?|≥|＞)\s*(-?\d+(?:\.\d+)?)\s*$")
+
+
+def _lab_reference(text: str) -> tuple[float | None, float | None] | None:
+    """参考范围 → (下限, 上限)：3.5-9.5、<5.0、≥1.0。定性的（阴性）、读不出的返回 None。"""
+    if m := _LAB_RANGE.match(text):
+        return float(m[1]), float(m[2])
+    if m := _LAB_BOUND.match(text):
+        value = float(m[2])
+        return (None, value) if m[1] in ("<", "<=", "≤", "＜") else (value, None)
+    return None
+
+
+def _lab_flag(text: str) -> str | None:
+    """异常提示 → "high"、"low"、"other"（阳性、*）；没有提示是 None。"""
+    t = text.strip().upper()
+    if not t:
+        return None
+    if "↑" in t or "高" in t or t in ("H", "HH", "HIGH"):
+        return "high"
+    if "↓" in t or "低" in t or t in ("L", "LL", "LOW"):
+        return "low"
+    return "other"
+
+
+def check_lab_flag(values: Values) -> str | None:
+    """检验结果超出参考范围却没标高低、或者在范围内却标了高低（只查数字结果和数字参考范围）。"""
+    result = _LAB_NUMBER.match(str(values.get("result") or ""))
+    reference = _lab_reference(str(values.get("reference") or ""))
+    if result is None or reference is None:
+        return None  # 定性结果、<0.1 这种、读不出的参考范围不查
+    value = float(result[1])
+    low, high = reference
+    flag = _lab_flag(str(values.get("flag") or ""))
+    shown = str(values.get("reference")).strip()
+    if high is not None and value > high and flag != "high":
+        return f"结果 {value:g} 高于参考范围 {shown}，但没有标 ↑（偏高）"
+    if low is not None and value < low and flag != "low":
+        return f"结果 {value:g} 低于参考范围 {shown}，但没有标 ↓（偏低）"
+    inside = (low is None or value >= low) and (high is None or value <= high)
+    if inside and flag in ("high", "low"):
+        return f"结果 {value:g} 在参考范围 {shown} 内，却标了{'偏高' if flag == 'high' else '偏低'}"
+    return None
+
+
+LAB_RULES: tuple[Rule, ...] = (
+    Rule(
+        "lab_flag",
+        "超出参考范围的结果标了高低",
+        ("result", "reference"),
+        check_lab_flag,
+        "warning",
+        per_row="results",
+        flags=("result", "flag"),
+    ),
+)
+
+ALL_RULES = RECEIPT_RULES + TEMPLATE_RULES + LAB_RULES
 
 RULES: dict[str, Rule] = {rule.id: rule for rule in ALL_RULES}
 """规则编号 → 规则。模板文件里按编号选规则。"""

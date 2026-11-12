@@ -46,7 +46,13 @@ def date_variants(value: str) -> list[str]:
     try:
         d = date.fromisoformat(value)
     except ValueError:
-        return [value]
+        # 不是 YYYY-MM-DD（模型照抄了原文 August 3 , 2014）：读得出就按日期找，读不出按原样找
+        from jacara.core.textvalue import parse_date
+
+        parsed = parse_date(value)
+        if parsed is None:
+            return [_tidy(value)]
+        d = parsed
     dd, mm, yyyy = f"{d.day:02d}", f"{d.month:02d}", f"{d.year}"
     day, month, yy = str(d.day), str(d.month), yyyy[2:]
     variants = [value]
@@ -146,7 +152,7 @@ class TextMatchAligner:
         if clock is not None:
             # 时间：原文写 8:13:39 PM、模型写 20:13:39 也算一样
             evidence = self._find_exact(clock, claimed + others)
-        elif field.type == "string":
+        elif field.type in ("string", "date_range"):
             span = (last - field.row + 1) if field.row is not None and last is not None else 1
             evidence = self._find_text(str(field.value), claimed + others, span)
         elif field.type == "number" and isinstance(field.value, float):

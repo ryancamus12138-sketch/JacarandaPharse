@@ -170,6 +170,7 @@ def _evidence_json(field: AlignedField, report: DocumentReport) -> dict[str, Any
         "bbox": [round(v, 1) for v in bbox],
         "confidence": round(ev.confidence, 4),
         "similarity": ev.similarity,
+        **({"quote": field.field.text} if field.field.text else {}),
     }
 
 

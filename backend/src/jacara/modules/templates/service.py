@@ -179,18 +179,33 @@ def _field(f: TemplateField) -> TemplateFieldOut:
         extract=f.extract,
         compute=f.compute,
         unique=f.unique,
+        range_export=f.range_export,
+        range_separator=f.range_separator,
     )
 
 
-def carry_over(definition: dict[str, Any], previous: dict[str, Any]) -> dict[str, Any]:
+def carry_over(
+    definition: dict[str, Any],
+    previous: dict[str, Any],
+    column_refs: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """编辑器保存时不改对象、参照表、工作簿样式：从上一版带过来。
 
     编辑器里删掉的字段，它们在这几处的引用跟着去掉（不报错）：
     对象的编号字段没了，这个对象就不要了；参照表的对照字段没了，只是不再对照；
     工作簿里填这个字段的列，导出时留空。
+    column_refs：编辑器里改了原表某一列填什么（"sheet 名::表头" → 字段），先改再检查。
     """
     fields = {f["name"] for f in definition["fields"]}
     refs = fields | {f"{t['name']}.{c['name']}" for t in definition["tables"] for c in t["columns"]}
+    # 日期范围字段的开始、结束、天数也能填进原表的一列（ADR 0039）
+    refs |= {
+        f"{f['name']}.{part}"
+        for f in definition["fields"]
+        if f.get("type") == "date_range"
+        for part in ("start", "end", "days")
+    }
+    overrides = column_refs or {}
     tables = {t["name"] for t in definition["tables"]}
     entities = [
         {**e, "fields": [f for f in e["fields"] if f in fields]}
@@ -216,7 +231,13 @@ def carry_over(definition: dict[str, Any], previous: dict[str, Any]) -> dict[str
 
         sheets = []
         for sheet in workbook.get("sheets", []):
-            sheet = {**sheet, "columns": [{**c, "ref": keep(c["ref"])} for c in sheet["columns"]]}
+            sheet = {
+                **sheet,
+                "columns": [
+                    {**c, "ref": keep(_override(overrides, sheet["name"], c))}
+                    for c in sheet["columns"]
+                ],
+            }
             if (sheet["role"] == "items" and sheet.get("table") not in tables) or (
                 sheet["role"] == "entity" and sheet.get("entity") not in names
             ):
@@ -226,11 +247,28 @@ def carry_over(definition: dict[str, Any], previous: dict[str, Any]) -> dict[str
     return {**definition, "entities": entities, "references": references, "workbook": workbook}
 
 
+def _override(overrides: dict[str, str], sheet: str, column: dict[str, Any]) -> str:
+    """编辑器改了这一列填什么就用改的（改成空 = 留空），没改用原来的。"""
+    key = f"{sheet}::{column['header']}"
+    return overrides[key] if key in overrides else str(column.get("ref") or "")
+
+
+def _field_dump(f: TemplateFieldIn) -> dict[str, Any]:
+    """字段存进定义：日期范围的导出设置只有日期范围字段才写（别的字段写了也没用）。"""
+    data = f.model_dump()
+    if f.type != "date_range":
+        data.pop("range_export", None)
+        data.pop("range_separator", None)
+    return data
+
+
 def definition_of(data: TemplateIn) -> dict[str, Any]:
     """编辑器提交的内容 → 存进数据库的定义（和 .toml 一样结构）。"""
     return {
-        "fields": [f.model_dump() for f in data.fields],
-        "tables": [t.model_dump() for t in data.tables],
+        "fields": [_field_dump(f) for f in data.fields],
+        "tables": [
+            {**t.model_dump(), "columns": [_field_dump(c) for c in t.columns]} for t in data.tables
+        ],
         "rules": list(dict.fromkeys(data.rules)),
         "custom_rules": [c.model_dump() for c in data.custom_rules],
     }
@@ -408,7 +446,7 @@ class TemplateService:
         require(self.owner, "template:manage")
         found = self._find(template_id)
         latest = self.repo.latest(found)
-        definition = carry_over(definition_of(data), latest.definition)
+        definition = carry_over(definition_of(data), latest.definition, data.column_refs)
         # 只改了名字、说明、标签（定义没变）：不出新版本，用过它的文档也不用重新处理
         changed = definition != latest.definition
         version = found.latest_version + 1 if changed else found.latest_version

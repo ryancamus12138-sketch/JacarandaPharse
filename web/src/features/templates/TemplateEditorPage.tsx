@@ -447,7 +447,14 @@ function Editor({ template }: { template: Template }) {
       />
 
       {(template.workbook || (template.entities ?? []).length > 0 || (template.references ?? []).length > 0) && (
-        <StructureCard template={template} />
+        <StructureCard
+          template={template}
+          fields={draft.fields}
+          tables={draft.tables}
+          columnRefs={draft.column_refs ?? {}}
+          readOnly={readOnly}
+          onChangeRef={(key, ref) => set({ column_refs: { ...(draft.column_refs ?? {}), [key]: ref } })}
+        />
       )}
 
       {!readOnly && !isNew && (

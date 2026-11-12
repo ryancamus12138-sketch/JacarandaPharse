@@ -17,7 +17,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from jacara.plugins.validators import ALL_RULES
 
 FORMAT = "jacarandaparse-template"
-TYPES = {"string": "文字", "number": "数字", "date": "日期"}
+TYPES = {"string": "文字", "number": "数字", "date": "日期", "date_range": "日期范围"}
 TYPES_BACK = {v: k for k, v in TYPES.items()} | {k: k for k in TYPES}
 FIELD_HEADERS = [
     "中文名",
@@ -178,7 +178,7 @@ def _choices(ws: Worksheet, rows: int, offset: int) -> None:
     """类型、是/否 列加下拉框，填的人不容易写错。offset：前面有几列（表格表多 5 列）。"""
     from openpyxl.utils import get_column_letter
 
-    kinds = DataValidation(type="list", formula1='"文字,数字,日期"', allow_blank=True)
+    kinds = DataValidation(type="list", formula1='"文字,数字,日期,日期范围"', allow_blank=True)
     ws.add_data_validation(kinds)
     kinds.add(f"{get_column_letter(offset + 3)}2:{get_column_letter(offset + 3)}{rows}")
     for col in (4, 5, 6, 7):
@@ -314,7 +314,7 @@ def _field(row: dict[str, Any], where: str, n: int, default_id: str) -> dict[str
         raise StandardError(f"{where}第 {n} 行：没有写中文名")
     kind = TYPES_BACK.get(_str(row.get("类型")) or "文字")
     if kind is None:
-        raise StandardError(f"{where}第 {n} 行：类型只能填 文字、数字、日期")
+        raise StandardError(f"{where}第 {n} 行：类型只能填 文字、数字、日期、日期范围")
     sensitive = _bool(row.get("敏感"), False, where, n)
     return {
         "name": _str(row.get("字段ID")) or default_id,

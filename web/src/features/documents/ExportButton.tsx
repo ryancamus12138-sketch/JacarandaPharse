@@ -34,17 +34,32 @@ export function ExportButton({ ids, type }: Props) {
   const disabled = ids.length === 0 || tooMany
   const title = tooMany ? `一次最多导出 ${MAX_EXPORT} 个` : undefined
 
+  const csv = {
+    key: 'csv',
+    label: '导出 CSV（UTF-8，给别的系统用；有明细表时打包成 zip）',
+  }
+
   if (ids.length <= 1) {
     return (
-      <Button
-        type={type}
-        icon={<DownloadOutlined />}
-        disabled={disabled}
-        loading={download.isPending}
-        onClick={() => download.mutate('separate')}
-      >
-        导出 Excel
-      </Button>
+      <Space.Compact>
+        <Button
+          type={type}
+          icon={<DownloadOutlined />}
+          disabled={disabled}
+          loading={download.isPending && download.variables === 'separate'}
+          onClick={() => download.mutate('separate')}
+        >
+          导出 Excel
+        </Button>
+        <Dropdown disabled={disabled} menu={{ items: [csv], onClick: () => download.mutate('csv') }}>
+          <Button
+            type={type}
+            icon={<DownOutlined />}
+            aria-label="更多导出格式"
+            loading={download.isPending && download.variables === 'csv'}
+          />
+        </Dropdown>
+      </Space.Compact>
     )
   }
 
@@ -64,14 +79,15 @@ export function ExportButton({ ids, type }: Props) {
       <Dropdown
         disabled={disabled}
         menu={{
-          items: [{ key: 'summary', label: '汇总到一个 Excel（一行一张单据，方便对账）' }],
-          onClick: () => download.mutate('summary'),
+          items: [{ key: 'summary', label: '汇总到一个 Excel（一行一张单据，方便对账）' }, csv],
+          onClick: ({ key }) => download.mutate(key === 'csv' ? 'csv' : 'summary'),
         }}
       >
         <Button
           type={type}
           icon={<DownOutlined />}
-          loading={download.isPending && download.variables === 'summary'}
+          aria-label="更多导出格式"
+          loading={download.isPending && download.variables !== 'separate'}
         />
       </Dropdown>
     </Space.Compact>

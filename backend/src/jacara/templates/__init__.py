@@ -18,8 +18,9 @@ import tomllib
 from dataclasses import dataclass, replace
 from functools import cache
 from importlib.resources import files
-from typing import Any, get_args
+from typing import Any, Literal, get_args
 
+from jacara.core.daterange import ORDER_PROBLEM, Parsed, day_first_for, parse_date_range
 from jacara.formulas import (
     Formula,
     FormulaError,
@@ -93,6 +94,10 @@ class TemplateError(ValueError):
     """找不到模板，或者模板文件写得不对。说明直接给人看。"""
 
 
+RangeExport = Literal["normalized", "original", "columns"]
+"""日期范围导出成：统一格式、原文、拆成两列（ADR 0039）。"""
+
+
 @dataclass(frozen=True)
 class TemplateField:
     name: str
@@ -118,6 +123,11 @@ class TemplateField:
     compute: str = ""
     """计算字段的公式（ADR 0035），例如 check_out - check_in。
     有公式就不交给模型，由别的字段算出来。"""
+    range_export: RangeExport = "normalized"
+    """日期范围（ADR 0039）导出成什么样：normalized 统一格式（2014-07-01 ~ 2014-07-31）、
+    original 原文、columns 拆成开始、结束两列。别的类型用不到。"""
+    range_separator: str = " ~ "
+    """统一格式里开始、结束之间写什么。"""
 
     @property
     def asks_model(self) -> bool:
@@ -132,6 +142,8 @@ class TemplateField:
             description = f"{description}（单据上可能写作：{'、'.join(self.aliases)}）".lstrip()
         if self.options:
             description = f"{description}（只能是以下之一：{'、'.join(self.options)}）".lstrip()
+        if self.type == "date_range":
+            description = f"{description}（日期范围：照抄原文，不要改格式、不要补年份）".lstrip()
         return FieldSpec(self.name, self.type, description)
 
 
@@ -214,6 +226,18 @@ class Template:
     domains: tuple[str, ...] = ()
     """功能领域（发票、交通、收据、住宿……），可以有几个。"""
 
+    @property
+    def day_first(self) -> bool | None:
+        """数字日期是不是 日/月/年（按国家，ADR 0039）：拆日期范围时用。不知道是 None。"""
+        return day_first_for(self.countries)
+
+    def ranges(self) -> dict[str, TemplateField]:
+        """日期范围字段（ADR 0039）：字段 ID → 字段；表格的列写成 items.period。"""
+        found = {f.name: f for f in self.fields if f.type == "date_range"}
+        for t in self.tables:
+            found |= {f"{t.name}.{c.name}": c for c in t.columns if c.type == "date_range"}
+        return found
+
     def foreign_rules(self) -> list[str]:
         """选了不属于这个模板国家的规则（起步模板库要求：国家模板只用通用规则和本国规则，
         通用模板只用通用规则）。我的模板不限制，这个只给起步模板检查用。"""
@@ -222,10 +246,55 @@ class Template:
         ]
 
     def all_rules(self) -> tuple[Rule, ...]:
-        """选的内置规则 + 自己写的规则（编号 custom_1、custom_2……）。"""
-        return self.rules + tuple(
-            self._custom(i, c) for i, c in enumerate(self.custom_rules, start=1)
+        """选的内置规则 + 自己写的规则（编号 custom_1、custom_2……）+ 日期范围的检查（ADR 0039）。"""
+        return (
+            self.rules
+            + tuple(self._custom(i, c) for i, c in enumerate(self.custom_rules, start=1))
+            + self._range_rules()
         )
+
+    def _range_rules(self) -> tuple[Rule, ...]:
+        """每个日期范围字段两条检查：拆不开或日月分不清（警告）、结束早于开始（错误）。"""
+        day_first = self.day_first
+        rules: list[Rule] = []
+        places = [(f, f.name, None, f.label) for f in self.fields]
+        places += [
+            (c, c.name, t.name, f"{t.label}的{c.label}") for t in self.tables for c in t.columns
+        ]
+        for field, name, per_row, label in places:
+            if field.type != "date_range":
+                continue
+
+            def parsed(values: dict[str, Any], name: str = name) -> Parsed | None:
+                raw = values.get(name)
+                return parse_date_range(str(raw), day_first) if raw not in (None, "") else None
+
+            def readable(values: dict[str, Any], label: str = label, parsed=parsed) -> str | None:
+                found = parsed(values)
+                if found is None or found.problem is None or found.problem == ORDER_PROBLEM:
+                    return None
+                return f"{label}：{found.problem}，请核对开始和结束日期"
+
+            def ordered(values: dict[str, Any], label: str = label, parsed=parsed) -> str | None:
+                found = parsed(values)
+                if found is None or found.problem != ORDER_PROBLEM or found.range is None:
+                    return None
+                return f"{label}：结束 {found.range.end} 早于开始 {found.range.start}"
+
+            rules.append(
+                Rule(f"range_{name}", f"{label}拆得开", (name,), readable, "warning", per_row)
+            )
+            rules.append(
+                Rule(
+                    f"range_order_{name}",
+                    f"{label}结束不早于开始",
+                    (name,),
+                    ordered,
+                    "error",
+                    per_row,
+                )
+            )
+        return tuple(rules)
 
     def _scope(self, per_row: str | None) -> Scope:
         fields = {f.name: f.type for f in self.fields}
@@ -258,7 +327,11 @@ class Template:
         per_row = custom.per_row
 
         def check(values: dict[str, Any]) -> str | None:
-            inputs = Inputs({}, {}, values) if per_row else Inputs(values, _tables_of(values))
+            inputs = (
+                Inputs({}, {}, values, self.day_first)
+                if per_row
+                else Inputs(values, _tables_of(values), day_first=self.day_first)
+            )
             verdict = check_condition(condition, inputs)
             if verdict.passed is not False:
                 return None
@@ -393,6 +466,11 @@ def _field_dict(f: TemplateField) -> dict[str, Any]:
         "extract": f.extract,
         "compute": f.compute,
         "unique": f.unique,
+        **(
+            {"range_export": f.range_export, "range_separator": f.range_separator}
+            if f.type == "date_range"
+            else {}
+        ),
     }
 
 
@@ -415,6 +493,7 @@ STARTERS = (
     "receipt_shopping",
     "receipt_restaurant",
     "hotel_folio",
+    "lab_report",
 )
 """起步模板库，按这个顺序显示（ADR 0030）。"""
 
@@ -512,9 +591,16 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
     try:
         entities = parse_entities(raw.get("entities"), field_ids, where)
         references = parse_references(raw.get("references"), refs, where)
+        # 原表的一列可以填日期范围的开始、结束、天数（ADR 0039）
+        range_parts = {
+            f"{f.name}.{part}"
+            for f in fields
+            if f.type == "date_range"
+            for part in ("start", "end", "days")
+        }
         workbook = parse_workbook(
             raw.get("workbook"),
-            refs,
+            refs | range_parts,
             {t.name for t in tables},
             {e.name for e in entities},
             {r.name: r for r in references},
@@ -620,7 +706,9 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
         if not isinstance(field_name, str) or not _FIELD_NAME.match(field_name):
             raise TemplateError(f"{where}：第 {i} 个字段的 name 只能用小写英文字母、数字和下划线")
         if item.get("type") not in get_args(FieldType):
-            raise TemplateError(f"{where}：字段 {field_name} 的 type 只能是 string、number、date")
+            raise TemplateError(
+                f"{where}：字段 {field_name} 的 type 只能是 string、number、date、date_range"
+            )
         if any(f.name == field_name for f in fields):
             raise TemplateError(f"{where}：字段 {field_name} 重复了")
         aliases = item.get("aliases", [])
@@ -635,6 +723,14 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
             raise TemplateError(f"{where}：字段 {field_name} 的 compute 应该是一条公式")
         if compute.strip() and item["type"] != "number":
             raise TemplateError(f"{where}：字段 {field_name} 有公式，type 要是 number")
+        range_export = item.get("range_export", "normalized")
+        if range_export not in get_args(RangeExport):
+            raise TemplateError(
+                f"{where}：字段 {field_name} 的 range_export 只能是 normalized、original、columns"
+            )
+        separator = item.get("range_separator", " ~ ")
+        if not isinstance(separator, str) or not separator.strip() or len(separator) > 10:
+            raise TemplateError(f"{where}：字段 {field_name} 的分隔符要写 1～10 个字")
         fields.append(
             TemplateField(
                 name=field_name,
@@ -650,6 +746,8 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
                 extract=bool(item.get("extract", True)),
                 compute=compute.strip(),
                 unique=bool(item.get("unique", False)),
+                range_export=range_export,
+                range_separator=separator,
             )
         )
     return fields

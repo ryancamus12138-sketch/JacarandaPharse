@@ -8,6 +8,7 @@
 - 数字、+ - * /、括号
 - 日期相减得到相差几天（check_out - check_in）
 - 函数：sum(items.amount)、count(items)、round(x)、round(x, 2)、abs(x)、min(a, b, …)、max(a, b, …)
+- 日期范围（ADR 0039）：period.start、period.end 是日期，period.days 是一共几天（首尾都算）
 文字字段不能参与计算。算的结果是数字。
 """
 
@@ -20,10 +21,15 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+from jacara.core.daterange import parse_date_range
 from jacara.core.textvalue import parse_date
 
 Kind = str
 """表达式的类型："number" 或 "date"。"""
+
+_RANGE_PARTS = {"start": "date", "end": "date", "days": "number"}
+"""日期范围字段能取的部分（ADR 0039）。"""
+_RANGE_NAMES = {"start": "开始", "end": "结束", "days": "天数"}
 
 _AGGREGATES = {"sum", "count"}
 _FUNCTIONS = {"round", "abs", "min", "max"}
@@ -110,8 +116,22 @@ def _check(node: ast.expr, scope: Scope, used: dict[str, set[str]]) -> Kind:
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and not node.keywords:
         return _call(node.func.id, node.args, scope, used)
     if isinstance(node, ast.Attribute):
+        if isinstance(node.value, ast.Name) and _kind_of(node.value.id, scope) == "date_range":
+            if node.attr not in _RANGE_PARTS:
+                raise FormulaError(f"日期范围只能取 .start、.end、.days，不能取 .{node.attr}")
+            if scope.row is not None and node.value.id in scope.row:
+                used["columns"].add(node.value.id)
+            else:
+                used["fields"].add(node.value.id)
+            return _RANGE_PARTS[node.attr]
         raise FormulaError("表格的列要放在 sum() 里，例如 sum(items.amount)")
     raise FormulaError("公式里只能用字段、数字、+ - * /、括号和 sum、count、round、abs、min、max")
+
+
+def _kind_of(name: str, scope: Scope) -> str | None:
+    if scope.row is not None and name in scope.row:
+        return scope.row[name]
+    return scope.fields.get(name)
 
 
 def _name(name: str, scope: Scope, used: dict[str, set[str]]) -> Kind:
@@ -125,6 +145,8 @@ def _name(name: str, scope: Scope, used: dict[str, set[str]]) -> Kind:
         raise FormulaError(f"{name} 是一张表，要写成 sum({name}.列名) 或 count({name})")
     else:
         raise FormulaError(f"没有叫 {name} 的字段")
+    if kind == "date_range":
+        raise FormulaError(f"{name} 是日期范围，要写 {name}.start、{name}.end 或 {name}.days")
     if kind not in ("number", "date"):
         raise FormulaError(f"{name} 是文字字段，不能参与计算")
     return kind
@@ -189,6 +211,8 @@ class Inputs:
     tables: Mapping[str, Sequence[Mapping[str, Any]]]
     """表名 → 每一行 {列名 → 值}（已经去掉删掉的行）。"""
     row: Mapping[str, Any] | None = None
+    day_first: bool | None = None
+    """拆日期范围时，数字日期是不是 日/月（按模板的国家，ADR 0039）。"""
 
 
 @dataclass(frozen=True)
@@ -220,6 +244,20 @@ def _eval(node: ast.expr, inputs: Inputs) -> Any:
         if inputs.row is not None and node.id in inputs.row:
             return _value(node.id, inputs.row[node.id])
         return _value(node.id, inputs.fields.get(node.id))
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+        name = node.value.id
+        raw = inputs.row[name] if inputs.row is not None and name in inputs.row else None
+        if raw is None:
+            raw = inputs.fields.get(name)
+        if raw is None or raw == "":
+            raise Missing(name)
+        found = parse_date_range(str(raw), inputs.day_first).range
+        if found is None:
+            raise Missing(name)
+        part = found.days if node.attr == "days" else getattr(found, node.attr)
+        if part is None:
+            raise Missing(name)
+        return float(part) if node.attr == "days" else part
     if isinstance(node, ast.UnaryOp):
         operand = _eval(node.operand, inputs)
         return -operand if isinstance(node.op, ast.USub) else operand
@@ -287,7 +325,8 @@ def _readable(node: ast.expr, labels: Mapping[str, str]) -> str:
         return labels.get(node.id, node.id)
     if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
         key = f"{node.value.id}.{node.attr}"
-        return f"{labels.get(node.value.id, node.value.id)}的{labels.get(key, node.attr)}"
+        part = labels.get(key) or _RANGE_NAMES.get(node.attr, node.attr)
+        return f"{labels.get(node.value.id, node.value.id)}的{part}"
     if isinstance(node, ast.UnaryOp):
         return f"-{_readable(node.operand, labels)}"
     if isinstance(node, ast.BinOp):

@@ -175,7 +175,7 @@ export interface Dashboard {
 export interface ExportRecord {
   id: string
   filename: string
-  format: 'xlsx' | 'zip'
+  format: 'xlsx' | 'zip' | 'csv' | 'csv-zip'
   size_bytes: number
   document_count: number
   documents: { id: string; filename: string }[]
@@ -243,6 +243,8 @@ export interface Evidence {
   similarity: number
   /** 出处那几块的原文文字。更新前处理的文档没有。 */
   text?: string
+  /** 模型抄的原文写法（ADR 0040），数字、日期、日期范围才有。 */
+  quote?: string
   /** 模型说用了哪几个文字块（编号，ADR 0034）。v3 之前处理的没有。 */
   blocks?: number[]
   /** 在文件的第几页（ADR 0036：一张单据可以占好几页）。更新前处理的没有，就是这张单据的第一页。 */
@@ -267,7 +269,9 @@ export type AlignStatus =
 export interface FieldValue {
   id: string
   name: string
-  type: 'string' | 'number' | 'date'
+  type: FieldType
+  /** 日期范围拆开的开始、结束（ADR 0039）：按当前值、后端用代码拆的。 */
+  range?: { start: string | null; end: string | null; days: number | null; problem: string | null } | null
   /** 模型抽出的原值，永远不变。 */
   value: string | null
   /** 模型给了、但原文里核对不上、按规则没有填的值（ADR 0034）。核对原图后可以采用。 */
@@ -409,7 +413,10 @@ export const REPROCESS_REASONS: Record<ReprocessReason, string> = {
   other: '其他',
 }
 
-export type FieldType = 'string' | 'number' | 'date'
+export type FieldType = 'string' | 'number' | 'date' | 'date_range'
+
+/** 日期范围导出成（ADR 0039）：统一格式、原文、拆成两列。 */
+export type RangeExport = 'normalized' | 'original' | 'columns'
 
 /** 模板里的一个字段（或表格的一列）。 */
 export interface TemplateField {
@@ -433,6 +440,10 @@ export interface TemplateField {
   compute?: string
   /** 不能重复（ADR 0036）：发票号码这类，别的单据里有一样的值就提醒可能重复报销。 */
   unique?: boolean
+  /** 日期范围导出成什么样（ADR 0039），默认统一格式。 */
+  range_export?: RangeExport
+  /** 统一格式里开始、结束之间写什么，默认 " ~ "。 */
+  range_separator?: string
 }
 
 export interface TemplateTable {
@@ -586,6 +597,8 @@ export interface TemplateIn {
   countries: string[]
   tags: string[]
   note: string
+  /** 从 Excel 建的模板：改原表某一列填什么。键"sheet 名::表头"，值是字段 ID 或 period.start 这种（ADR 0039）。 */
+  column_refs?: Record<string, string>
 }
 
 /** 用样例建模板：选的一个字段。source 是样例里的键值对（kv.3）；自己加的为空。 */

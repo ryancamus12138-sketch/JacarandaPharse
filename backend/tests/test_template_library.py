@@ -260,7 +260,7 @@ def test_template_list_versions_and_archive(client, mine):
     assert all(t["kind"] == "mine" for t in listed)
     everything = client.get("/api/v1/templates?builtin=true").json()
     assert any(t["kind"] == "builtin" and t["name"] == "receipt" for t in everything)
-    assert len(client.get("/api/v1/templates/starters").json()) == 9
+    assert len(client.get("/api/v1/templates/starters").json()) == 10
 
     one = client.get(f"/api/v1/templates/{mine}").json()
     assert [v["version"] for v in one["versions"]] == [2, 1]

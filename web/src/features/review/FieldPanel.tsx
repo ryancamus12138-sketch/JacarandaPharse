@@ -237,6 +237,32 @@ const TINT: Record<Level, string> = {
 }
 
 function ShownValue({ value: v }: { value: FieldValue }) {
+  if (v.type === 'date_range' && v.current_value && v.range) {
+    // 日期范围（ADR 0039、0040）：上面开始 ~ 结束，下面天数和原文的写法
+    const r = v.range
+    const quote = (v.current_evidence ?? v.evidence)?.quote
+    const main = r.start && r.end ? `${r.start} ~ ${r.end}` : v.current_value
+    const extra = [r.days ? `${r.days} 天` : null, quote && quote !== main ? `原文：${quote}` : null]
+      .filter(Boolean)
+      .join(' · ')
+    return (
+      <Flex vertical style={{ flex: 1, minWidth: 0 }}>
+        <Typography.Text strong style={{ overflowWrap: 'anywhere' }}>
+          {main}
+        </Typography.Text>
+        {extra && (
+          <Typography.Text type="secondary" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>
+            {extra}
+          </Typography.Text>
+        )}
+        {r.problem && (
+          <Typography.Text type="warning" style={{ fontSize: 12 }}>
+            {r.problem}
+          </Typography.Text>
+        )}
+      </Flex>
+    )
+  }
   return (
     <Typography.Text strong style={{ flex: 1, overflowWrap: 'anywhere' }}>
       {v.current_value ?? (

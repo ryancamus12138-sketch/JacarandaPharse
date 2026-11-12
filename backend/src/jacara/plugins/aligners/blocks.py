@@ -15,6 +15,7 @@ import re
 from dataclasses import replace
 
 from jacara.plugins.aligners.base import AlignedField, Evidence
+from jacara.plugins.aligners.crosscheck import cross_check
 from jacara.plugins.aligners.text_match import (
     TextMatchAligner,
     _best_similarity,
@@ -48,26 +49,39 @@ class BlockAligner:
         """模型说的那几块对不上时，按文字在整页找。"""
 
     def align(
-        self, page: OcrPage, result: ExtractionResult, structure: PageStructure | None = None
+        self,
+        page: OcrPage,
+        result: ExtractionResult,
+        structure: PageStructure | None = None,
+        day_first: bool | None = None,
     ) -> tuple[AlignedField, ...]:
+        """day_first：数字日期是不是 日/月（按模板的国家），交叉检查日期时用。"""
         structure = structure or analyze_page(page)
         rows = group_rows(page)
         seen = result.vision is not None
-        return tuple(self._align_field(f, structure, rows, seen) for f in result.fields)
+        return tuple(self._align_field(f, structure, rows, seen, day_first) for f in result.fields)
 
     def _align_field(
-        self, field: ExtractedField, s: PageStructure, rows, seen: bool = False
+        self,
+        field: ExtractedField,
+        s: PageStructure,
+        rows,
+        seen: bool = False,
+        day_first: bool | None = None,
     ) -> AlignedField:
         if field.value is None:
             return AlignedField(field, "empty", None, False, "模型说原文里没有这个字段")
+
+        if field.text and field.type != "string":
+            # 模型抄了原文（ADR 0040）：先按原文的写法找，再看它理解的值对不对得上
+            quoted = self._quoted(field, s, rows, day_first)
+            if quoted is not None:
+                return quoted
 
         if field.blocks:
             evidence = self._in_blocks(field, s)
             if evidence is not None:
                 return self._checked(field, evidence)
-            near = self._near(field, s)
-            if near is not None:
-                return near
 
         # 模型说的那几块里没有（或者没说）：按文字在整页找
         found = self.text._align_field(field, rows)
@@ -93,44 +107,35 @@ class BlockAligner:
             f"模型给了「{_shown(field)}」，但{cited}原文里找不到，按规则没有填（核对原文后可以采用）",
         )
 
-    def _near(self, field: ExtractedField, s: PageStructure) -> AlignedField | None:
-        """模型说的那几块里没有这个数字：看看同一高度上（和它说的块上下重叠）的文字块，
-        和那几块本身"少认了小数点"的写法（1.00 被笔迹、污渍盖住了小数点，OCR 读成 100）。
-
-        找到了值留着、标黄让人看一眼：位置大致对，但不是模型说的那一块，或者原文少了小数点。
-        """
-        if field.type != "number" or not isinstance(field.value, float):
-            return None
-        cited = [ln for n in field.blocks if (ln := s.ocr_line(n)) is not None]
-        if not cited:
-            return None
-        top = min(ln.bbox[1] for ln in cited)
-        bottom = max(ln.bbox[3] for ln in cited)
-        exact = _exact_pattern(number_variants(field.value, loose=True))
-        dotless = _dotless(field.value)
-        for number in range(1, len(s.words) + 1):
-            line = s.ocr_line(number)
-            word = s.word(number)
-            if line is None or word is None:
-                continue
-            y0, y1 = line.bbox[1], line.bbox[3]
-            if min(y1, bottom) - max(y0, top) <= 0:
-                continue  # 不在同一高度
-            text = _tidy(line.text)
-            where = f"⟨{number}⟩「{line.text}」"
-            if number not in field.blocks and exact.search(text):
-                note = f"模型说值在 {_cited(field.blocks)}，旁边的 {where} 对得上"
-            elif dotless is not None and dotless.search(text):
-                note = (
-                    f"原文 {where} 没有小数点，多半是「{field.value:.2f}」的小数点没认出来"
-                    "（被笔迹、污渍盖住了），请核对原图"
-                )
-            else:
-                continue
-            row = int(word.attrs["row"])
-            evidence = Evidence(row, line.text, (line,), 0.9)
-            return AlignedField(field, "fuzzy", evidence, True, note)
-        return None
+    def _quoted(
+        self, field: ExtractedField, s: PageStructure, rows, day_first: bool | None
+    ) -> AlignedField | None:
+        """按模型抄的原文（text）找出处，再交叉检查 value（ADR 0040）。原文里找不到返回 None，
+        交给按值找的老办法（模型可能抄错了一两个字）。"""
+        text = field.text or ""
+        as_text = replace(field, value=text, type="string")
+        notes: list[str] = []
+        evidence = self._in_blocks(as_text, s) if field.blocks else None
+        if evidence is None:
+            found = self.text._align_field(replace(as_text, row=None, row_end=None), rows)
+            if found.evidence is None or found.status not in ("matched", "fuzzy"):
+                return None
+            evidence = found.evidence
+            if field.blocks:
+                notes.append(f"模型说值在 {_cited(field.blocks)}，那几块里没有；在别处找到了")
+        if evidence.similarity < 1.0:
+            notes.append(f"原文里只有相似的文字（相似度 {evidence.similarity:.2f}）")
+        if evidence.confidence < self.min_confidence:
+            notes.append(f"原文这里 OCR 置信度只有 {evidence.confidence:.2f}")
+        check = cross_check(field.type, field.value, text, day_first)
+        if check.verdict != "ok":
+            notes.append(check.note)
+        if field.type == "number" and isinstance(field.value, float):
+            sign = _sign_mismatch(field.value, evidence)
+            if sign:
+                notes.append(sign)
+        status = "matched" if not notes else "fuzzy"
+        return AlignedField(field, status, evidence, bool(notes), "；".join(notes))
 
     def _seen(self, field: ExtractedField, s: PageStructure) -> AlignedField:
         """看了原图（ADR 0038），文字里对不上的值：是模型在图上读的。值留着，要人核对。
@@ -168,9 +173,25 @@ class BlockAligner:
                 return None
             picked = [_clip_to(ln, clock.search(ln.text)) for ln in lines if clock.search(ln.text)]
             return Evidence(row, row_text, tuple(picked or lines), 1.0)
-        if field.type == "string":
+        if field.type in ("string", "date_range"):
             value = str(field.value)
             score = _best_similarity(_squash(value), _squash(text))
+            if score < self.min_similarity:
+                # 模型多写了块（印着名称的"Bill to Address:"、旁边一栏的"TOTAL AMOUNT DUE"）：
+                # 只留文字是这个值一部分的那几块再比
+                kept = [
+                    (w, ln)
+                    for w, ln in zip(words, lines, strict=True)
+                    if _squash(w.text) and _squash(w.text) in _squash(value)
+                ]
+                if not kept or len(kept) == len(words):
+                    return None
+                words = [w for w, _ in kept]
+                lines = [ln for _, ln in kept]
+                text = " ".join(w.text for w in words)
+                row = int(words[0].attrs["row"])
+                row_text = " / ".join(w.text for w in words)
+                score = _best_similarity(_squash(value), _squash(text))
             if score < self.min_similarity:
                 return None
             if len(lines) == 1:
@@ -201,17 +222,6 @@ class BlockAligner:
                 notes.append(sign)
         status = "matched" if evidence.similarity == 1.0 else "fuzzy"
         return AlignedField(field, status, evidence, bool(notes), "；".join(notes))
-
-
-def _dotless(value: float) -> re.Pattern[str] | None:
-    """两位小数的数字少了小数点的写法：1.00 → 100、12.50 → 1250。
-    写出来至少 3 位才查（"10" 太容易撞上别的数）。"""
-    if value < 0:
-        value = -value
-    digits = f"{value:.2f}".replace(".", "")
-    if len(digits) < 3:
-        return None
-    return re.compile(rf"(?<![\d.,]){re.escape(digits)}(?![\d]|[.,]\d)")
 
 
 def _shown(field: ExtractedField) -> str:

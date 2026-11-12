@@ -1,11 +1,19 @@
 /** 模板编辑器共用的小工具（字段 ID 规则、类型选项、新字段）。 */
 
-import type { FieldType, TemplateField } from '../../api/types'
+import type { FieldType, RangeExport, TemplateField } from '../../api/types'
 
 export const TYPE_OPTIONS: { value: FieldType; label: string }[] = [
   { value: 'string', label: '文字' },
   { value: 'number', label: '数字（金额）' },
   { value: 'date', label: '日期' },
+  { value: 'date_range', label: '日期范围' },
+]
+
+/** 日期范围导出成（ADR 0039）。 */
+export const RANGE_EXPORTS: { value: RangeExport; label: string }[] = [
+  { value: 'normalized', label: '统一格式' },
+  { value: 'original', label: '原文' },
+  { value: 'columns', label: '拆成两列' },
 ]
 
 /** 模板的类型（上传时按它分组）。可以自己写别的。 */

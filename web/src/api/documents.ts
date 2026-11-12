@@ -134,11 +134,17 @@ export function completeReview(id: string): Promise<DocumentSummary> {
  * 导出方式（选了多个文档时）：
  * - separate：每个文档一个 Excel，打包成 zip，解压后是一个文件夹；
  * - summary：所有文档汇总到一个 Excel，一行一张单据，方便对账。
+ * - csv：CSV（UTF-8），内容和汇总 Excel 一样；有明细表时每张表一个 .csv 打包成 zip。
  */
-export type ExportMode = 'separate' | 'summary'
+export type ExportMode = 'separate' | 'summary' | 'csv'
 
 /** 导出：一个文档就是一个 Excel；多个文档按 mode 打包成 zip 或汇总成一个 Excel。 */
 export function exportDocuments(ids: string[], mode: ExportMode): Promise<DownloadedFile> {
+  if (mode === 'csv') {
+    const query = new URLSearchParams()
+    for (const id of ids) query.append('ids', id)
+    return apiDownload(`/documents/export.csv?${query}`, 'export.csv')
+  }
   if (ids.length === 1) {
     return apiDownload(`/documents/${ids[0]}/export.xlsx`, 'export.xlsx')
   }

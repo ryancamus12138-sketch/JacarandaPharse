@@ -19,6 +19,17 @@ from jacara.plugins.validators.base import ValidationResult
 
 
 @dataclass(frozen=True)
+class RangeSetting:
+    """日期范围字段导出成什么样（ADR 0039）。"""
+
+    export: str = "normalized"
+    """normalized 统一格式、original 原文、columns 拆成开始和结束两列。"""
+    separator: str = " ~ "
+    day_first: bool | None = None
+    """数字日期是不是 日/月（按模板的国家）。"""
+
+
+@dataclass(frozen=True)
 class Review:
     """人工审核的结果（最新一次）。导出时显示这个值，而不是模型的原值。"""
 
@@ -92,6 +103,9 @@ class DocumentReport:
 
     hidden: frozenset[str] = frozenset()
     """模板里设成"不导出"的字段、表（items）和表的列（items.tax），导出时整列不写。"""
+
+    ranges: Mapping[str, RangeSetting] = field(default_factory=dict)
+    """日期范围字段（ADR 0039）：字段 ID（表格的列写成 items.period）→ 导出设置。"""
 
     template_version_id: uuid.UUID | None = None
     """自动判断选中的"我的模板"版本（ADR 0038）。上传时直接选了模板的是 None（用文档上的）。"""

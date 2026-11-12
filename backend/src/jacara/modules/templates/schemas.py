@@ -27,6 +27,9 @@ class TemplateFieldOut(BaseModel):
     """计算字段的公式（ADR 0035），空 = 不是计算字段。"""
     unique: bool = False
     """不能重复（ADR 0036）：别的文档里有一样的值就提醒可能重复报销。"""
+    range_export: str = "normalized"
+    """日期范围导出成：normalized 统一格式、original 原文、columns 拆成两列（ADR 0039）。"""
+    range_separator: str = " ~ "
 
 
 class TemplateRuleOut(BaseModel):
@@ -178,7 +181,7 @@ class TemplateFieldIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     """字段 ID：小写英文字母开头，只能有小写字母、数字、下划线。保存后不要改。"""
     label: str = Field(min_length=1, max_length=100)
-    type: Literal["string", "number", "date"] = "string"
+    type: Literal["string", "number", "date", "date_range"] = "string"
     required: bool = False
     description: str = Field(default="", max_length=2000)
     aliases: list[str] = Field(default=[], max_length=20)
@@ -193,6 +196,9 @@ class TemplateFieldIn(BaseModel):
     有公式就不交给模型，由别的字段算出来。"""
     unique: bool = False
     """不能重复（ADR 0036）：发票号码这类，别的文档里有一样的值就提醒。"""
+    range_export: Literal["normalized", "original", "columns"] = "normalized"
+    """日期范围（ADR 0039）导出成：统一格式、原文、拆成开始和结束两列。别的类型用不到。"""
+    range_separator: str = Field(default=" ~ ", min_length=1, max_length=10)
 
 
 class TemplateTableIn(BaseModel):
@@ -222,6 +228,10 @@ class TemplateIn(BaseModel):
     """自定义标签。"""
     note: str = Field(default="", max_length=500)
     """这一版改了什么。"""
+    column_refs: dict[str, str] = Field(default={}, max_length=500)
+    """从 Excel 建的模板：改原表某一列填什么（ADR 0039）。键是"sheet 名::表头"，值是字段 ID、
+    period.start / period.end / period.days（日期范围的开始、结束、天数），或者空（留空）。
+    不写的列不变。"""
 
 
 class LabelsIn(BaseModel):
@@ -353,7 +363,7 @@ class ExcelColumn(BaseModel):
     auto 系统自动 / lookup 从参照表对照 / none 不填。"""
     field: str = ""
     label: str = ""
-    type: Literal["string", "number", "date"] = "string"
+    type: Literal["string", "number", "date", "date_range"] = "string"
     required: bool = False
     sensitive: bool = False
     description: str = ""

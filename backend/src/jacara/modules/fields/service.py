@@ -405,9 +405,13 @@ def normalize(type_: str, raw: str | None) -> str | None:
         try:
             return date.fromisoformat(text).isoformat()
         except ValueError:
-            raise FieldError(
-                "invalid", f"{text!r} 不是日期，请写成 2018-12-25 这样的格式"
-            ) from None
+            # 照原文写的也行（August 3 , 2014、25/12/2018），读出来存成 YYYY-MM-DD
+            day = parse_date(text)
+            if day is None:
+                raise FieldError(
+                    "invalid", f"{text!r} 读不出日期，请写成 2018-12-25 这样的格式"
+                ) from None
+            return day.isoformat()
     return text
 
 
