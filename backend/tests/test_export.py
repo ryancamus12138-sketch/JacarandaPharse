@@ -51,7 +51,7 @@ def test_export_one_document(client, save):
     assert response.headers["content-disposition"].startswith("attachment")
     assert download_name(response) == "receipt.xlsx"
     [row] = summary(response)
-    assert row["total"] == 9.0
+    assert row["总额"] == 9.0  # 列名用模板里的中文名
     assert row["需要确认"] == 3
 
 

@@ -67,6 +67,8 @@ class ExtractedField:
     type: FieldType
     value: str | float | None
     row: int | None = None
+    label: str | None = None
+    """单据上的原名（键值对发现时才有，例如 kv.3 是"Check-in"）。"""
 
 
 @dataclass(frozen=True)
@@ -95,3 +97,16 @@ class Extractor(Protocol):
     ) -> ExtractionResult:
         """从一页 OCR 结果里抽出指定的字段和表格。表格的每一格单独作为一个字段返回。"""
         ...
+
+    def discover(self, page: OcrPage) -> ExtractionResult:
+        """不给字段清单，找出单据上所有的"名称：值"。字段名是 kv.1、kv.2……，label 是原名。"""
+        ...
+
+
+DISCOVER = "discover"
+"""键值对发现的"模板名"：存在 extractions.template 里，表示这一轮没有用模板。"""
+
+
+def kv_name(index: int) -> str:
+    """键值对发现的第 index 个（从 1 开始）的字段名。"""
+    return f"kv.{index}"

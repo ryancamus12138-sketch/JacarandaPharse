@@ -47,6 +47,8 @@ class ModelConfig:
     """是否让模型先"思考"再回答。抽字段不需要，关掉更快。"""
 
     extra: dict[str, object] = field(default_factory=dict)
+    api_key: str | None = None
+    """模型服务的密钥（jacara start 启动的 llama-server 要它）。请求时放在 Authorization 头里。"""
     """各后端特有的高级参数，原样放进请求里。"""
 
 

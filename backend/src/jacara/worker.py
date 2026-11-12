@@ -29,11 +29,13 @@ celery_app = get_celery()
 @lru_cache
 def get_pipeline() -> Pipeline:
     """组装流水线。加载 OCR 模型要几秒，所以只做一次。"""
+    from jacara.core.config import model_api_key
     from jacara.plugins.extractors import LlmExtractor
     from jacara.plugins.model_backends import ModelConfig, create_model_backend
     from jacara.plugins.ocr import create_ocr_engine
 
-    backend = create_model_backend(ModelConfig(base_url=get_settings().model_server))
+    config = ModelConfig(base_url=get_settings().model_server, api_key=model_api_key())
+    backend = create_model_backend(config)
     return Pipeline(ocr=create_ocr_engine(), extractor=LlmExtractor(backend))
 
 

@@ -6,9 +6,10 @@
 from __future__ import annotations
 
 import hashlib
+import uuid
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
@@ -51,11 +52,17 @@ def save_document(
 
 
 def add_extractions(
-    session: Session, document: Document, reports: Sequence[DocumentReport]
+    session: Session,
+    document: Document,
+    reports: Sequence[DocumentReport],
+    *,
+    run: int = 1,
+    template_version_id: uuid.UUID | None = None,
+    run_reason: str | None = None,
 ) -> None:
     """把每一页的抽取结果挂到一个已有的文档上。后台任务处理上传的文件时用这个。
 
-    抽取结果的归属和文档一样（同一个 user、同一个 team）。
+    抽取结果的归属和文档一样（同一个 user、同一个 team）。run 是第几轮处理（ADR 0030）。
     """
     who = {"user_id": document.user_id, "team_id": document.team_id}
     for report in reports:
@@ -70,16 +77,23 @@ def add_extractions(
             prompt_version=e.prompt_version,
             template=report.template,
             template_version=report.template_version,
+            template_version_id=template_version_id,
+            run=run,
+            run_reason=run_reason,
             duration_ms=e.duration_ms,
             raw_output=e.raw_output,
-            checks=_checks_json(report.checks),
+            checks=checks_json(report.checks),
             ocr=ocr_json(report.ocr_page),
             **who,
         )
         session.add(extraction)
         flagged = report.checks.fields_with_issues()
         for position, field in enumerate(report.aligned):
-            session.add(_value_row(field, position, extraction, field.field.name in flagged, who))
+            row = _value_row(field, position, extraction, field.field.name in flagged, who)
+            if field.field.name in report.manual:
+                row.origin = "manual"  # 人工填的：不是模型说"原文没有"，是等人填
+                row.needs_review = False
+            session.add(row)
 
     session.flush()  # 让数据库现在就分配好 ID、检查约束，有错马上报
 
@@ -97,6 +111,7 @@ def _value_row(
         position=position,
         sort_key=float(position),
         name=field.field.name,
+        label=field.field.label,
         type=field.field.type,
         value=None if value is None else str(value),
         row_no=field.field.row,
@@ -148,6 +163,31 @@ def ocr_json(page: OcrPage | None) -> dict[str, Any] | None:
     }
 
 
+def page_from_json(data: dict[str, Any], engine: str) -> OcrPage:
+    """ocr_json 的反方向：从数据库里存的 OCR 结果还原一页，不用重新识别（试跑用）。"""
+    from jacara.plugins.ocr.base import OcrLine, Point
+
+    lines = tuple(
+        OcrLine(
+            text=line["text"],
+            polygon=cast(
+                tuple[Point, Point, Point, Point], tuple(Point(x, y) for x, y in line["polygon"])
+            ),
+            confidence=line["confidence"],
+        )
+        for line in data.get("lines", [])
+        if len(line.get("polygon", [])) == 4
+    )
+    return OcrPage(
+        width=int(data.get("width") or 0),
+        height=int(data.get("height") or 0),
+        lines=lines,
+        engine=engine,
+        models={"engine": engine},
+        duration_ms=0,
+    )
+
+
 def evidence_from_ocr(lines: list[dict[str, Any]]) -> dict[str, Any]:
     """几个文字块（ocr_json 里的格式）→ 出处，格式和抽取时找到的出处一样。"""
     boxes = [line["box"] for line in lines]
@@ -167,7 +207,7 @@ def evidence_from_ocr(lines: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _checks_json(checks: ValidationResult) -> dict[str, Any]:
+def checks_json(checks: ValidationResult) -> dict[str, Any]:
     return {
         "passed": list(checks.passed),
         "skipped": list(checks.skipped),

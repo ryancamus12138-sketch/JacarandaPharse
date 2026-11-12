@@ -1,6 +1,8 @@
 import {
   ArrowLeftOutlined,
+  AppstoreAddOutlined,
   CheckOutlined,
+  HistoryOutlined,
   DownOutlined,
   LeftOutlined,
   RightOutlined,
@@ -27,16 +29,31 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { ApiError } from '../../api/client'
-import { completeReview, getDocument, getNeighbors, getPageOcr } from '../../api/documents'
+import {
+  adoptPrevious,
+  completeReview,
+  getDocument,
+  getNeighbors,
+  getPageOcr,
+} from '../../api/documents'
 import type { Box, FieldValue, RevisionIn } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
 import { ExportButton } from '../documents/ExportButton'
 import { StatusTag } from '../documents/StatusTag'
 import { FieldDetail, FieldPanel } from './FieldPanel'
-import { displayLabel, neighbor, orderFields, type SortMode, splitCell } from './fields'
+import {
+  displayLabel,
+  neighbor,
+  orderFields,
+  setTemplateLabels,
+  type SortMode,
+  splitCell,
+} from './fields'
 import { PageViewer } from './PageViewer'
 import { ReasonDialog, type ReasonRequest } from './ReasonDialog'
 import { RegionPanel } from './RegionPanel'
+import { ReprocessButton, RunSwitcher } from './RunControls'
+import { SaveAsTemplate } from './SaveAsTemplate'
 import { useConfirmMany } from './useConfirmMany'
 import { useRevise } from './useRevise'
 import { useRows } from './useRows'
@@ -107,8 +124,19 @@ function ReviewWorkspace({ id }: { id: string }) {
   const narrow = screens.lg === false
   const sideWidth = screens.xl === false ? 380 : 440
 
-  const document = useQuery({ queryKey: ['document', id], queryFn: () => getDocument(id) })
-  const ready = document.data?.status === 'done' || document.data?.status === 'reviewed'
+  // 看第几轮的结果；undefined = 现在用的这一轮
+  const [run, setRun] = useState<number | undefined>()
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const document = useQuery({
+    queryKey: ['document', id, run ?? 0],
+    queryFn: () => getDocument(id, run),
+    // 重新处理中：每 3 秒看一次，处理完自动换成新结果
+    refetchInterval: (q) =>
+      q.state.data?.status === 'uploaded' || q.state.data?.status === 'processing' ? 3000 : false,
+  })
+  const doneOrReviewed = document.data?.status === 'done' || document.data?.status === 'reviewed'
+  // 重新处理中也能看上一轮的结果（只读）
+  const ready = doneOrReviewed || (document.data?.extractions.length ?? 0) > 0
   const ocr = useQuery({
     queryKey: ['page-ocr', id, page],
     queryFn: () => getPageOcr(id, page),
@@ -147,8 +175,24 @@ function ReviewWorkspace({ id }: { id: string }) {
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
 
-  const canEdit = can('value:review')
+  const viewingOld =
+    document.data !== undefined &&
+    (document.data.viewing_run ?? 1) !== (document.data.current_run ?? 1)
+  // 旧的几轮、正在重新处理的：只能看
+  const canEdit = can('value:review') && !viewingOld && doneOrReviewed
   const currentExtraction = document.data?.extractions.find((e) => e.page === page)
+  // 字段的中文名用这份文档的模板里的（换了文档、换了轮次就换）
+  setTemplateLabels(currentExtraction?.labels)
+  const adopt = useMutation({
+    mutationFn: () => adoptPrevious(id),
+    onSuccess: ({ confirmed, edited }) => {
+      void message.success(`沿用了上一轮的审核：确认 ${confirmed} 个，改正 ${edited} 个`)
+      void queryClient.invalidateQueries({ queryKey: ['document', id] })
+      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
+  })
   // useMemo：数据没变就还是同一个数组，下面的键盘监听不用每次都重新绑
   const values = useMemo(
     () => orderFields(currentExtraction?.values ?? [], sortMode),
@@ -368,7 +412,7 @@ function ReviewWorkspace({ id }: { id: string }) {
   }
 
   const doc = document.data
-  if (doc.status !== 'done' && doc.status !== 'reviewed') {
+  if (!ready) {
     return (
       <Result
         status="info"
@@ -410,9 +454,36 @@ function ReviewWorkspace({ id }: { id: string }) {
       ? `还有 ${pendingTotal} 个字段等待确认`
       : null
 
+  const discover = doc.extractions.some((e) => e.template === 'discover')
   const toolbar = (
-    <Flex gap={8} wrap justify={narrow ? 'start' : 'end'}>
-      {doc.status === 'done' && (
+    <Flex gap={8} wrap justify="start">
+      <RunSwitcher
+        doc={doc}
+        onChange={(next) => {
+          setRun(next)
+          select(null)
+        }}
+      />
+      {canEdit && (doc.suggestions ?? 0) > 0 && (
+        <Popconfirm
+          title={`沿用上一轮的 ${doc.suggestions} 个审核？`}
+          description="上次人审核过、这次值和位置都对得上的字段：一样的直接确认，上次改过的改成上次的值。"
+          okText="沿用"
+          cancelText="取消"
+          onConfirm={() => adopt.mutate()}
+        >
+          <Button icon={<HistoryOutlined />} loading={adopt.isPending}>
+            采纳上次的确认（{doc.suggestions}）
+          </Button>
+        </Popconfirm>
+      )}
+      {discover && canEdit && can('template:manage') && (
+        <Button type="primary" ghost icon={<AppstoreAddOutlined />} onClick={() => setSavingTemplate(true)}>
+          存成模板
+        </Button>
+      )}
+      {!viewingOld && can('document:process') && <ReprocessButton doc={doc} />}
+      {doc.status === 'done' && !viewingOld && (
         <Tooltip title={finishBlocked}>
           <Button
             type="primary"
@@ -512,11 +583,45 @@ function ReviewWorkspace({ id }: { id: string }) {
           <StatusTag status={doc.status} />
         </Flex>
       }
-      // 窄屏：按钮放到标题下面一行，不和文件名挤在一起
-      extra={narrow ? undefined : toolbar}
+      // 按钮多：放到标题下面一行，不和文件名挤在一起
       styles={{ body: { paddingTop: 16 } }}
     >
-      {narrow && <div style={{ marginBottom: 12 }}>{toolbar}</div>}
+      <div style={{ marginBottom: 12 }}>{toolbar}</div>
+      {!doneOrReviewed && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          title={doc.status === 'failed' ? '重新处理失败了，下面是上一轮的结果' : '正在重新处理'}
+          description={
+            doc.status === 'failed'
+              ? doc.error
+              : `${doc.stage ?? '排队中'}${doc.progress !== null ? `（${doc.progress}%）` : ''}。下面是上一轮的结果，只能查看；处理完会自动换成新结果。`
+          }
+        />
+      )}
+      {viewingOld && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          title={`这是第 ${doc.viewing_run} 轮的旧结果，只能查看`}
+          action={
+            <Button size="small" onClick={() => setRun(undefined)}>
+              回到现在的结果
+            </Button>
+          }
+        />
+      )}
+      {discover && !viewingOld && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          title="这份没有用模板，抽出了单据上所有的键值对"
+          description='看一下哪些是要的、值对不对，然后点"存成模板"：选字段、起中文名，以后同类单据直接用这个模板。'
+        />
+      )}
       {doc.page_count > 1 && (
         <Segmented
           value={page}
@@ -532,7 +637,7 @@ function ReviewWorkspace({ id }: { id: string }) {
         gap={narrow ? 16 : 24}
         vertical={narrow}
         align="stretch"
-        style={narrow ? undefined : { height: 'calc(100vh - 230px)', minHeight: 480 }}
+        style={narrow ? undefined : { height: 'calc(100vh - 280px)', minHeight: 480 }}
       >
         <div
           style={narrow ? { height: '60vh', minHeight: 360 } : { flex: 1, minWidth: 0 }}
@@ -754,6 +859,9 @@ function ReviewWorkspace({ id }: { id: string }) {
         </Flex>
       </Flex>
       <ReasonDialog request={reasonRequest} onClose={() => setReasonRequest(null)} />
+      {savingTemplate && (
+        <SaveAsTemplate doc={doc} open={savingTemplate} onClose={() => setSavingTemplate(false)} />
+      )}
     </Card>
   )
 }

@@ -153,7 +153,7 @@ export function ItemsTable({
               <th style={{ border, padding: '4px 6px', width: 32, fontWeight: 500 }}>#</th>
               {columns.map((c) => (
                 <th key={c} style={{ border, padding: '4px 6px', fontWeight: 500 }}>
-                  {columnLabel(c)}
+                  {columnLabel(c, table)}
                 </th>
               ))}
               {canEdit && <th style={{ border, width: 28 }} />}

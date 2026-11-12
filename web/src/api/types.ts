@@ -52,6 +52,10 @@ export interface DocumentSummary {
   progress: number | null
   processed_at: string | null
   reviewed_at: string | null
+  /** 现在用的是第几轮处理的结果（重新处理一次加 1）。 */
+  current_run?: number
+  /** 不用模板、抽出所有键值对（"用样例建模板"的第一步）。 */
+  discover?: boolean
 }
 
 /** 文档列表的筛选条件。都不填 = 全部。 */
@@ -191,6 +195,17 @@ export interface FieldValue {
   check_state: CheckState | null
   /** 颜色：证据 × 校验 × 有没有人审核过。 */
   level: Level | null
+  /** 中文名：模板里的名字；抽取所有键值对时是单据上的原名。 */
+  label?: string | null
+  /** 重新处理之后：上一轮人审核过、可以直接沿用的结果。 */
+  suggestion?: Suggestion | null
+}
+
+/** 沿用上一轮的审核：confirm 确认这次的值；edit 改成上次人改的值。 */
+export interface Suggestion {
+  action: 'confirm' | 'edit'
+  value: string | null
+  run: number
 }
 
 export type EvidenceState = 'verified' | 'pending' | 'missing' | 'empty'
@@ -219,8 +234,15 @@ export interface Extraction {
   source: string
   model: string
   prompt_version: string
+  /** 内置模板的名字、我的模板的 id，或者 discover（没用模板，抽出所有键值对）。 */
   template: string
   template_version: number
+  /** 模板的中文名。 */
+  template_title?: string
+  run?: number
+  run_reason?: string | null
+  /** 字段 ID → 中文名。表格的列写成 items.amount，表名写成 items。 */
+  labels?: Record<string, string>
   /** 抽取时的规则结果，永远不变。 */
   checks: Checks
   /** 按审核之后的当前值重新检查的结果（删掉的行不算）。页面显示这个。 */
@@ -231,6 +253,205 @@ export interface Extraction {
 /** 文档详情：文档本身 + 每一页的抽取结果。 */
 export interface DocumentDetail extends DocumentSummary {
   extractions: Extraction[]
+  /** 处理过的每一轮（新的在前）。 */
+  runs?: RunInfo[]
+  /** extractions 是第几轮的。不是 current_run 时只能查看。 */
+  viewing_run?: number
+  /** 可以沿用上一轮审核的字段有几个。 */
+  suggestions?: number
+}
+
+/** 处理过的一轮。 */
+export interface RunInfo {
+  run: number
+  template: string
+  template_title: string
+  template_version: number
+  reason: string | null
+  created_at: string
+  current: boolean
+}
+
+/** 重新处理的原因。 */
+export type ReprocessReason =
+  | 'template_changed'
+  | 'wrong_template'
+  | 'bad_result'
+  | 'model_changed'
+  | 'other'
+
+export const REPROCESS_REASONS: Record<ReprocessReason, string> = {
+  template_changed: '模板改了',
+  wrong_template: '选错了模板',
+  bad_result: '结果不好，再跑一次',
+  model_changed: '换了模型或 OCR',
+  other: '其他',
+}
+
+export type FieldType = 'string' | 'number' | 'date'
+
+/** 模板里的一个字段（或表格的一列）。 */
+export interface TemplateField {
+  /** 字段 ID：小写英文字母开头，只有小写字母、数字、下划线。保存后不要改。 */
+  name: string
+  label: string
+  type: FieldType
+  required: boolean
+  description: string
+  /** 单据上的其他写法，一起告诉模型。 */
+  aliases: string[]
+  /** 导出 Excel 时要不要这一列。 */
+  export: boolean
+  /** 敏感信息（证件号码等），默认不导出。 */
+  sensitive: boolean
+  /** 可选值：抽到的值不在里面就提醒。空 = 不限。 */
+  options: string[]
+  /** false = 人工填：不交给模型，审核时填。 */
+  extract: boolean
+}
+
+export interface TemplateTable {
+  name: string
+  label: string
+  description: string
+  required: boolean
+  export: boolean
+  columns: TemplateField[]
+}
+
+export interface TemplateRule {
+  id: string
+  title: string
+  needs: string[]
+  severity: 'error' | 'warning'
+}
+
+/** 规则库里的一条规则（编辑器里选）。 */
+export interface RuleInfo extends TemplateRule {
+  per_row: string | null
+}
+
+/** mine：我的模板；starter：起步模板库；builtin：内置（评测、命令行用）。 */
+export type TemplateKind = 'mine' | 'starter' | 'builtin'
+
+export interface Template {
+  name: string
+  version: number
+  title: string
+  description: string
+  category: string
+  kind: TemplateKind
+  id: string | null
+  archived: boolean
+  source: string
+  updated_at: string | null
+  fields: TemplateField[]
+  tables: TemplateTable[]
+  rules: TemplateRule[]
+  versions: { version: number; note: string; created_at: string }[]
+  used: number
+  /** 对象：几份单据说的同一个人、同一家公司，导出时按编号合并成一行。 */
+  entities?: { name: string; label: string; key: string; fields: string[] }[]
+  /** 参照表：固定名单，用来对照、补编号。 */
+  references?: {
+    name: string
+    label: string
+    columns: string[]
+    row_count: number
+    match_field: string
+    match_column: string
+  }[]
+  /** 按原 Excel 导出的样式。 */
+  workbook?: {
+    filename: string
+    sheets: {
+      name: string
+      role: SheetRole
+      header_row: number
+      same_as: string
+      table: string
+      entity: string
+      reference: string
+      columns: { index: number; header: string; ref: string }[]
+    }[]
+  } | null
+}
+
+export type SheetRole = 'document' | 'items' | 'entity' | 'reference' | 'options' | 'ignore'
+export type ColumnSource = 'extract' | 'manual' | 'doc' | 'auto' | 'lookup' | 'none'
+
+/** Excel 的一列：表头、前几个值、猜的来源。预览里可以改。 */
+export interface ExcelColumn {
+  index: number
+  header: string
+  samples: string[]
+  source: ColumnSource
+  field: string
+  label: string
+  type: FieldType
+  required: boolean
+  sensitive: boolean
+  description: string
+  aliases: string[]
+  options: string[]
+  auto: string
+  /** 「参照表 sheet 名::列名」 */
+  lookup: string
+}
+
+export interface ExcelSheet {
+  name: string
+  role: SheetRole
+  header_row: number
+  rows: number
+  hidden: boolean
+  same_as: string
+  /** 对象表、参照表：编号列；明细表：连到单据的那一列。 */
+  key_header: string
+  /** 参照表：「sheet 名::表头」，拿那一列的值来对照。 */
+  match_field: string
+  reason: string
+  columns: ExcelColumn[]
+}
+
+/** 上传 Excel 的结果：标准模板 Excel（直接给出模板），或者业务报表（每张 sheet 的猜测）。 */
+export interface ExcelAnalysis {
+  kind: 'standard' | 'report'
+  filename: string
+  template: (TemplateIn & { version: number }) | null
+  upload_id: string | null
+  sheets: ExcelSheet[]
+  starter: string
+  starter_title: string
+  auto_columns: Record<string, string>
+}
+
+/** 保存模板（每次保存是一个新版本）。 */
+export interface TemplateIn {
+  title: string
+  category: string
+  description: string
+  fields: TemplateField[]
+  tables: TemplateTable[]
+  rules: string[]
+  note: string
+}
+
+/** 用样例建模板：选的一个字段。source 是样例里的键值对（kv.3）；自己加的为空。 */
+export interface SampleField extends TemplateField {
+  source: string | null
+}
+
+export interface TrialResult {
+  template: string
+  version: number
+  duration_ms: number
+  pages: {
+    page: number
+    fields: { name: string; label: string; value: string | null; status: AlignStatus; note: string }[]
+    issues: { rule: string; title: string; message: string; severity: 'error' | 'warning' }[]
+    passed: string[]
+  }[]
 }
 
 /** 一次审核（POST /values/{id}/revisions）。edit：改成 value；confirm：当前值是对的。 */

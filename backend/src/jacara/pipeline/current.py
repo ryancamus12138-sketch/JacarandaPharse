@@ -11,11 +11,67 @@ from contextlib import suppress
 from typing import Any, Literal, cast
 
 from jacara.core.textvalue import signed_number
-from jacara.models import ExtractedValue, Extraction
-from jacara.plugins.extractors.base import ExtractedField, FieldType, cell_name, split_cell_name
-from jacara.plugins.validators import RuleValidator
+from jacara.models import ExtractedValue, Extraction, TemplateVersion
+from jacara.plugins.extractors.base import (
+    DISCOVER,
+    ExtractedField,
+    FieldType,
+    cell_name,
+    split_cell_name,
+)
 from jacara.plugins.validators.base import Issue, ValidationResult
-from jacara.templates import TemplateError, load_template
+from jacara.templates import Template, TemplateError, from_definition, load_template
+
+
+def template_from_version(version: TemplateVersion) -> Template:
+    """我的模板的一个版本 → Template。名字用模板的 id（存进 extractions.template）。"""
+    record = version.template
+    return from_definition(
+        version.definition,
+        str(record.id),
+        version.version,
+        record.title,
+        record.category,
+        record.description,
+    )
+
+
+def template_of(extraction: Extraction) -> Template | None:
+    """这一页抽取时用的模板（ADR 0030）。
+
+    - 我的模板：按记下的版本号还原，模板以后再改也不影响这份文档；
+    - 内置模板：按名字读 templates/*.toml；
+    - 键值对发现，或者模板文件找不到了（改名、删了）：None。
+    """
+    if extraction.template_def is not None:
+        return template_from_version(extraction.template_def)
+    if extraction.template == DISCOVER:
+        return None
+    try:
+        return load_template(extraction.template)
+    except TemplateError:
+        return None
+
+
+def labels_of(extraction: Extraction) -> dict[str, str]:
+    """字段 ID → 中文名（审核页面、导出用）。表格的格子按"表名.列名"找。
+
+    键值对发现的字段用单据上的原名。模板里没有的字段（模板文件找不到了）不在里面。
+    """
+    template = template_of(extraction)
+    labels = template.labels() if template else {}
+    labels.update({v.name: v.label for v in extraction.values if v.label})
+    return labels
+
+
+def label_for(labels: dict[str, str], name: str) -> str | None:
+    """一个字段的中文名：items.2.amount 找"items.amount"，再加上第几行。"""
+    if name in labels:
+        return labels[name]
+    cell = split_cell_name(name)
+    if cell and f"{cell[0]}.{cell[2]}" in labels:
+        return labels[f"{cell[0]}.{cell[2]}"]
+    return None
 
 
 def current_values(extraction: Extraction) -> list[tuple[ExtractedValue, str]]:
@@ -51,11 +107,10 @@ def typed_value(type_: str, raw: str | None) -> str | float | None:
 def current_checks(extraction: Extraction) -> ValidationResult:
     """按当前值重新检查规则。字段名用显示名（第几行和页面上一致）。
 
-    模板文件找不到了（改名、删了），就用抽取时存下的结果。
+    键值对发现没有规则；模板文件找不到了（改名、删了），就用抽取时存下的结果。
     """
-    try:
-        rules = load_template(extraction.template).rules
-    except TemplateError:
+    template = template_of(extraction)
+    if template is None:
         from jacara.pipeline.load import stored_checks
 
         return stored_checks(extraction.checks)
@@ -63,7 +118,7 @@ def current_checks(extraction: Extraction) -> ValidationResult:
         ExtractedField(name, cast(FieldType, v.type), typed_value(v.type, v.current_value))
         for v, name in current_values(extraction)
     ]
-    return RuleValidator(rules).validate(fields)
+    return template.validator().validate(fields)
 
 
 def current_checks_json(extraction: Extraction) -> dict[str, object]:
@@ -183,3 +238,50 @@ def source_value(value: ExtractedValue, text: str | None) -> str | None:
             if signed is not None and signed != current:
                 candidate = str(signed)
     return candidate if candidate != value.current_value else None
+
+
+Suggestion = tuple[Literal["confirm", "edit"], str | None, int]
+"""（confirm 或 edit，建议的值，来自第几轮）。"""
+
+
+def previous_extraction(document: Any, extraction: Extraction) -> Extraction | None:
+    """同一页在上一轮（比现在这轮早、最近的一轮）的抽取结果。"""
+    earlier = [
+        e for e in document.all_extractions if e.page == extraction.page and e.run < extraction.run
+    ]
+    return max(earlier, key=lambda e: e.run, default=None)
+
+
+def suggestions(current: Extraction, previous: Extraction | None) -> dict[uuid.UUID, Suggestion]:
+    """重新处理之后，上一轮人审核过的字段能不能直接沿用（ADR 0030）。
+
+    同一个字段（字段 ID 一样）、出处在图上差不多同一个位置，而且：
+    - 这次抽出的值 = 上次审核后的值 → 建议"确认"；
+    - 这次抽出的值 = 上次模型抽错、被人改掉的那个值 → 建议"改成上次人改的值"。
+    其他情况（值不一样、位置不一样）不建议，要人重新看。
+    """
+    if previous is None:
+        return {}
+    before = {v.name: v for v in previous.values if v.reviewed and not v.deleted}
+    result: dict[uuid.UUID, Suggestion] = {}
+    for value in current.values:
+        old = before.get(value.name)
+        if old is None or value.reviewed or value.deleted or value.value is None:
+            continue
+        if not _near(value.evidence, old.current_evidence):
+            continue
+        if value.value == old.current_value:
+            result[value.id] = ("confirm", old.current_value, previous.run)
+        elif value.value == old.value and old.revisions[-1].action == "edit":
+            result[value.id] = ("edit", old.current_value, previous.run)
+    return result
+
+
+def _near(a: dict[str, Any] | None, b: dict[str, Any] | None) -> bool:
+    """两个出处框的中心离得够近（不超过框高的两倍再加 10 像素）。都没有出处也算。"""
+    if a is None or b is None:
+        return a is None and b is None
+    ax0, ay0, ax1, ay1 = a["bbox"]
+    bx0, by0, bx1, by1 = b["bbox"]
+    distance = ((ax0 + ax1 - bx0 - bx1) ** 2 + (ay0 + ay1 - by0 - by1) ** 2) ** 0.5 / 2
+    return distance <= 2 * max(ay1 - ay0, by1 - by0) + 10

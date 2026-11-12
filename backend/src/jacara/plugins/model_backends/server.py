@@ -46,6 +46,7 @@ def server_command(model: Path, *, port: int = 8080, context: int = DEFAULT_CONT
         "--host", "127.0.0.1",  # 只允许本机访问
         "--port", str(port),
         "-c", str(context),
+        "--no-webui",  # 不要 llama-server 自带的聊天网页：只当接口用
     ]  # fmt: skip
 
 

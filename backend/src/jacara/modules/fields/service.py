@@ -32,7 +32,6 @@ from jacara.modules.fields.schemas import (
 )
 from jacara.pipeline.store import evidence_from_ocr
 from jacara.plugins.extractors.base import cell_name, split_cell_name
-from jacara.templates import TemplateError, load_template
 
 REVIEWABLE = {"done", "reviewed"}
 """这些状态的文档才能审核：处理完了、有结果。"""
@@ -67,6 +66,7 @@ class FieldService:
         document = value.extraction.document
         if document.status not in REVIEWABLE:
             raise FieldError("not_ready", f"文档状态是 {document.status}，处理完成后才能审核")
+        _check_current(value.extraction)
         if value.deleted:
             raise FieldError("invalid", "这一行已经删除了，要改的话先恢复这一行")
 
@@ -139,6 +139,7 @@ class FieldService:
             if value.extraction.document.status not in REVIEWABLE:
                 status = value.extraction.document.status
                 raise FieldError("not_ready", f"文档状态是 {status}，处理完成后才能审核")
+            _check_current(value.extraction)
         reason = reason.strip() or "批量确认"
         done = [v for v in values if not v.deleted]
         for value in done:
@@ -283,6 +284,11 @@ class FieldService:
             # 两个人同时审核同一个字段：seq 一样，数据库只让一个写进去
             raise FieldError("conflict", "这个字段刚被别人审核过，请刷新后再试") from err
 
+    def apply(self, value: ExtractedValue, action: str, new_value: str | None, reason: str) -> None:
+        """沿用上一轮的审核时用：记一条审核记录（审计日志由调用方统一记一条）。"""
+        _check_current(value.extraction)
+        self._add(value, action, new_value, reason, None)
+
     def _touch(self, extraction: Extraction) -> None:
         document = extraction.document
         if document.status == "reviewed":
@@ -292,6 +298,7 @@ class FieldService:
         status = extraction.document.status
         if status not in REVIEWABLE:
             raise FieldError("not_ready", f"文档状态是 {status}，处理完成后才能审核")
+        _check_current(extraction)
 
     def _extraction(self, extraction_id: uuid.UUID) -> Extraction:
         extraction = self.repo.get_extraction(extraction_id, self.owner.team_id)
@@ -316,6 +323,15 @@ class FieldService:
         if value is None:
             raise FieldError("not_found", "找不到这个字段")
         return value
+
+
+def _check_current(extraction: Extraction) -> None:
+    """旧的几轮只能看，不能改（ADR 0030）：审核只对现在用的这一轮。"""
+    current = extraction.document.current_run
+    if extraction.run != current:
+        raise FieldError(
+            "invalid", f"这是第 {extraction.run} 轮的旧结果，只能查看；现在用的是第 {current} 轮"
+        )
 
 
 def normalize(type_: str, raw: str | None) -> str | None:
@@ -368,10 +384,9 @@ def _rows(extraction: Extraction, table: str) -> dict[int, list[ExtractedValue]]
 
 def _columns(extraction: Extraction, table: str) -> list[tuple[str, str]]:
     """新行有哪些列（列名、类型）：按模板；模板找不到就照表格里已有的行。"""
-    try:
-        template = load_template(extraction.template)
-    except TemplateError:
-        template = None
+    from jacara.pipeline.current import template_of
+
+    template = template_of(extraction)
     if template is not None:
         for t in template.tables:
             if t.name == table:

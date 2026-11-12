@@ -15,6 +15,7 @@ import uuid
 import zipfile
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path, PurePath
+from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
@@ -23,10 +24,11 @@ from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.queue import QueueError, TaskQueue
 from jacara.core.storage import ObjectStorage, StorageError
-from jacara.models import Document, Extraction
+from jacara.models import Document, Extraction, TemplateVersion
 from jacara.modules.audit.service import record
 from jacara.modules.documents.repository import DocumentFilter, DocumentRepository
 from jacara.modules.documents.schemas import (
+    REPROCESS_REASONS,
     Dashboard,
     DashboardCounts,
     DocumentDetail,
@@ -37,22 +39,40 @@ from jacara.modules.documents.schemas import (
     OcrLineOut,
     PageOcr,
     RegionOut,
+    ReprocessIn,
+    RunOut,
 )
 from jacara.modules.exports.service import save_export
+from jacara.modules.fields.schemas import AdoptOut, SuggestionOut
+from jacara.modules.fields.service import FieldService
+from jacara.modules.templates.service import TemplateFailure, TemplateService
 from jacara.pipeline.current import (
     current_checks_json,
     evidence_text,
     field_states,
+    label_for,
+    labels_of,
+    previous_extraction,
     source_value,
+    suggestions,
+    template_of,
     wants_source,
 )
+from jacara.pipeline.entities import entity_conflicts
 from jacara.pipeline.load import load_reports
 from jacara.pipeline.region import read_region
 from jacara.plugins.exporters import create_exporter
+from jacara.plugins.exporters.excel import cell_value
+from jacara.plugins.extractors.base import DISCOVER, split_cell_name
 from jacara.plugins.ocr.base import OcrEngine
 from jacara.plugins.ocr.loader import page_png
+from jacara.templates import Template
+from jacara.workbook.fill import DocRow, fill_workbook
 
 log = logging.getLogger(__name__)
+
+REPROCESSABLE = {"done", "reviewed", "failed"}
+"""这些状态的文档可以换模板重新处理（新的一轮）。"""
 
 RETRYABLE = {"uploaded", "failed"}
 """这些状态的文档可以（重新）放进队列。processing 正在处理，done 已经有结果。"""
@@ -112,8 +132,17 @@ class DocumentService:
         """只有"重新识别这块"用到。"""
         self.owner = owner
 
-    def upload(self, filename: str, content_type: str, data: bytes) -> DocumentOut:
+    def upload(
+        self, filename: str, content_type: str, data: bytes, template: str | None = None
+    ) -> DocumentOut:
+        """template：我的模板的 id，或者 discover（抽出所有键值对）。不写就用上一次用的。"""
         require(self.owner, "document:create")
+        try:
+            version_id, discover = TemplateService(self.owner, self.session).pick_for_upload(
+                template
+            )
+        except TemplateFailure as err:
+            raise DocumentError(err.code, err.message) from err
         if content_type not in ALLOWED_TYPES:
             # 有的客户端不告诉我们类型（application/octet-stream），按文件后缀猜一次
             content_type = mimetypes.guess_type(filename)[0] or content_type
@@ -143,12 +172,20 @@ class DocumentService:
                 page_count=_count_pages(content_type, data),
                 storage_key=key,
                 status="uploaded",
+                template_version_id=version_id,
+                discover=discover,
                 user_id=self.owner.user_id,
                 team_id=self.owner.team_id,
             )
         )
         record(
-            self.session, self.owner, "document:upload", "document", document.id, filename=safe_name
+            self.session,
+            self.owner,
+            "document:upload",
+            "document",
+            document.id,
+            filename=safe_name,
+            template="discover" if discover else str(version_id or "receipt"),
         )
         self._enqueue(document)
         return DocumentOut.model_validate(document)
@@ -167,6 +204,85 @@ class DocumentService:
         if not self._enqueue(document):
             raise DocumentError("queue", "任务队列暂时不可用，请稍后再试")
         return DocumentOut.model_validate(document)
+
+    def reprocess(self, document_id: uuid.UUID, data: ReprocessIn) -> DocumentOut:
+        """重新处理（ADR 0030）：用选的模板（或现在这个模板的最新版）跑新的一轮。
+
+        旧的几轮都留着，可以查看；新一轮处理完才换过去，失败了旧结果照常能用。
+        审核完的文档变回待审核，审计日志记下原因。
+        """
+        document = self._find(document_id)
+        require(self.owner, "document:process", document.team_id)
+        if document.storage_key is None:
+            raise DocumentError("no_file", "这个文档没有保存原始文件（命令行导入的），无法处理")
+        if document.status not in REPROCESSABLE:
+            raise DocumentError("conflict", f"文档状态是 {document.status}，现在不能重新处理")
+        note = data.note.strip()
+        if data.reason == "other" and not note:
+            raise DocumentError("invalid", '原因选了"其他"，请写一句说明')
+        templates = TemplateService(self.owner, self.session)
+        try:
+            if data.template is not None:
+                version_id, discover = templates.pick_for_upload(data.template)
+            elif document.template_version_id is not None:
+                # 同一个模板的最新版（"模板改了"最常见）
+                current = self.session.get_one(TemplateVersion, document.template_version_id)
+                version_id, discover = templates.latest_version_id(current.template_id), False
+            else:
+                version_id, discover = None, document.discover
+        except TemplateFailure as err:
+            raise DocumentError(err.code, err.message) from err
+
+        label = REPROCESS_REASONS[data.reason]
+        document.template_version_id = version_id
+        document.discover = discover
+        document.run_reason = f"{label}：{note}" if note else label
+        document.status = "uploaded"
+        document.error = None
+        document.reviewed_at = None
+        record(
+            self.session,
+            self.owner,
+            "document:reprocess",
+            "document",
+            document.id,
+            reason=data.reason,
+            note=note,
+            template="discover" if discover else str(version_id or "receipt"),
+        )
+        if not self._enqueue(document):
+            raise DocumentError("queue", "任务队列暂时不可用，请稍后再试")
+        return DocumentOut.model_validate(document)
+
+    def adopt_previous(self, document_id: uuid.UUID) -> AdoptOut:
+        """采纳上次的确认：重新处理之后，把能沿用的上一轮审核一次用上（见 suggestions）。"""
+        document = self._find(document_id)
+        require(self.owner, "value:review", document.team_id)
+        if document.status not in ("done", "reviewed"):
+            raise DocumentError("conflict", f"文档状态是 {document.status}，处理完成后才能审核")
+        fields = FieldService(self.session, self.owner)
+        confirmed = edited = 0
+        for extraction in document.extractions:
+            by_id = {v.id: v for v in extraction.values}
+            found = suggestions(extraction, previous_extraction(document, extraction))
+            for value_id, (action, value, run) in found.items():
+                reason = f"沿用第 {run} 轮的审核"
+                fields.apply(by_id[value_id], action, value, reason)
+                confirmed += action == "confirm"
+                edited += action == "edit"
+        if confirmed or edited:
+            if document.status == "reviewed":
+                document.status = "done"
+            record(
+                self.session,
+                self.owner,
+                "document:adopt_previous",
+                "document",
+                document.id,
+                confirmed=confirmed,
+                edited=edited,
+            )
+        return AdoptOut(confirmed=confirmed, edited=edited)
 
     def page(self, limit: int, offset: int, filters: DocumentFilter | None = None) -> DocumentPage:
         require(self.owner, "document:read")
@@ -218,16 +334,41 @@ class DocumentService:
             to_review=to_review,
         )
 
-    def get(self, document_id: uuid.UUID) -> DocumentDetail:
+    def get(self, document_id: uuid.UUID, run: int | None = None) -> DocumentDetail:
+        """文档详情。run：看第几轮的结果（旧的几轮只能看）；不写就是现在用的这一轮。"""
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
-        detail = DocumentDetail.model_validate(document)
-        reviews = sum(v.pending_review for e in detail.extractions for v in e.values)
+        viewing = run or document.current_run
+        if viewing == document.current_run:
+            chosen = list(document.extractions)
+        else:
+            chosen = [e for e in document.all_extractions if e.run == viewing]
+            if not chosen:
+                raise DocumentError("not_found", f"这个文档没有第 {viewing} 轮的结果")
+        detail = DocumentDetail.model_validate(document).model_copy(
+            update={"extractions": [ExtractionOut.model_validate(e) for e in chosen]}
+        )
+        reviews = sum(v.pending_review for e in document.extractions for v in e.values)
+        current = viewing == document.current_run
         extractions = [
-            _with_states(out, e)
-            for out, e in zip(detail.extractions, document.extractions, strict=True)
+            _with_states(
+                out,
+                e,
+                previous_extraction(document, e) if current else None,
+                self.session if current else None,
+            )
+            for out, e in zip(detail.extractions, chosen, strict=True)
         ]
-        return detail.model_copy(update={"review_count": reviews, "extractions": extractions})
+        hints = sum(v.suggestion is not None for e in extractions for v in e.values)
+        return detail.model_copy(
+            update={
+                "review_count": reviews,
+                "extractions": extractions,
+                "runs": _runs(document),
+                "viewing_run": viewing,
+                "suggestions": hints,
+            }
+        )
 
     def page_ocr(self, document_id: uuid.UUID, page: int) -> PageOcr:
         """第 page 页的 OCR 结果：每个文字块的文字和位置。审核页面"从原文选取"用。"""
@@ -264,9 +405,12 @@ class DocumentService:
         格子里是审核之后的值（current_value）；改过的标蓝，批注里写原值和原因。
         """
         documents = self._exportable(document_ids)
-        data = _workbook(documents)
+        data, layout = self._excel(documents)
         if len(documents) == 1:
             name = f"{PurePath(documents[0].filename).stem}.xlsx"
+        elif layout:
+            # 按原表导出：用原表的名字
+            name = f"{PurePath(layout).stem}-{date.today():%Y%m%d}-{len(documents)}份.xlsx"
         else:
             name = f"jacara-{date.today():%Y%m%d}-{len(documents)}份.xlsx"
         self._record_export(documents, "xlsx", name, data)
@@ -285,11 +429,28 @@ class DocumentService:
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
             for document in documents:
                 name = _unique(f"{PurePath(document.filename).stem}.xlsx", used)
-                archive.writestr(name, _workbook([document]))
+                archive.writestr(name, self._excel([document])[0])
         name = f"jacara-{date.today():%Y%m%d}-{len(documents)}份.zip"
         data = out.getvalue()
         self._record_export(documents, "zip", name, data)
         return name, data
+
+    def _excel(self, documents: list[Document]) -> tuple[bytes, str]:
+        """导出成 Excel：模板有原表样式（从 Excel 建的模板）就填回原表，否则用标准格式。
+
+        返回（文件内容，原表的文件名；标准格式时为空）。原表在对象存储里取不到时退回标准格式。
+        """
+        template = _layout_template(documents)
+        if template is not None and template.workbook is not None:
+            try:
+                original = self.storage.get(template.workbook.file)
+            except StorageError:
+                log.warning("取不到模板 %s 的原表，改用标准格式导出", template.name)
+            else:
+                rows = _doc_rows(documents, template)
+                title = f"{date.today():%Y-%m-%d} 导出"
+                return fill_workbook(template, original, rows, title), template.workbook.filename
+        return _workbook(documents), ""
 
     def _exportable(self, document_ids: list[uuid.UUID]) -> list[Document]:
         """导出前的检查（两种导出都一样）：有权限、数量对、都找得到、都处理完了。按用户选的顺序返回。"""
@@ -392,10 +553,49 @@ class DocumentService:
         return document
 
 
-def _with_states(out: ExtractionOut, extraction: Extraction) -> ExtractionOut:
-    """按当前值重新检查规则，再给每个字段标上校验状态和颜色（ADR 0028）。"""
+def _runs(document: Document) -> list[RunOut]:
+    """处理过的每一轮，新的在前。"""
+    firsts: dict[int, Extraction] = {}
+    for e in document.all_extractions:
+        firsts.setdefault(e.run, e)
+    return [
+        RunOut(
+            run=run,
+            template=e.template,
+            template_title=_template_title(e),
+            template_version=e.template_version,
+            reason=e.run_reason,
+            created_at=e.created_at,
+            current=run == document.current_run,
+        )
+        for run, e in sorted(firsts.items(), reverse=True)
+    ]
+
+
+def _template_title(extraction: Extraction) -> str:
+    if extraction.template == DISCOVER:
+        return "抽取所有键值对"
+    template = template_of(extraction)
+    return template.title if template else extraction.template
+
+
+def _with_states(
+    out: ExtractionOut,
+    extraction: Extraction,
+    previous: Extraction | None = None,
+    session: Session | None = None,
+) -> ExtractionOut:
+    """按当前值重新检查规则，再给每个字段标上校验状态和颜色（ADR 0028）、中文名，
+    以及能沿用的上一轮审核（previous 是同一页上一轮的结果）。
+    有 session 时再比一比对象（同一个病人、同一家公司）和别的单据对不对得上（ADR 0031）。"""
     checks = current_checks_json(extraction)
+    template = template_of(extraction) if session is not None else None
+    if session is not None and template is not None and template.entities:
+        issues = cast(list[dict[str, Any]], checks["issues"])
+        checks = {**checks, "issues": issues + entity_conflicts(session, extraction, template)}
     states = field_states(extraction, checks)
+    labels = labels_of(extraction)
+    hints = suggestions(extraction, previous)
     by_id = {v.id: v for v in extraction.values}
     # 更新前处理的文档，出处里没存文字，要用这一页的 OCR 结果找（只在需要时才读）
     needs_ocr = any(wants_source(v) and "text" not in (v.evidence or {}) for v in extraction.values)
@@ -406,11 +606,24 @@ def _with_states(out: ExtractionOut, extraction: Extraction) -> ExtractionOut:
                 "check_state": states[v.id][0],
                 "level": states[v.id][1],
                 "source_value": source_value(by_id[v.id], evidence_text(by_id[v.id], lines)),
+                "label": label_for(labels, v.name),
+                "suggestion": (
+                    SuggestionOut(action=hints[v.id][0], value=hints[v.id][1], run=hints[v.id][2])
+                    if v.id in hints
+                    else None
+                ),
             }
         )
         for v in out.values
     ]
-    return out.model_copy(update={"current_checks": checks, "values": values})
+    return out.model_copy(
+        update={
+            "current_checks": checks,
+            "values": values,
+            "labels": labels,
+            "template_title": _template_title(extraction),
+        }
+    )
 
 
 def _count_pages(content_type: str, data: bytes) -> int:
@@ -423,6 +636,47 @@ def _count_pages(content_type: str, data: bytes) -> int:
             return len(pdf.pages)
     except Exception as err:
         raise DocumentError("unreadable", "PDF 文件打不开，可能已损坏") from err
+
+
+def _layout_template(documents: list[Document]) -> Template | None:
+    """这几份文档都用同一个模板（同一版），而且它有原表样式：返回这个模板。"""
+    templates = {(e.template, e.template_version): e for d in documents for e in d.extractions[:1]}
+    if len(templates) != 1 or any(not d.extractions for d in documents):
+        return None
+    template = template_of(next(iter(templates.values())))
+    return template if template is not None and template.workbook else None
+
+
+def _doc_rows(documents: list[Document], template: Template) -> list[DocRow]:
+    """审核之后的值 → 填原表用的每一行。设成不导出的字段留空。"""
+    hidden = {f.name for f in template.fields if not f.export}
+    for t in template.tables:
+        hidden |= {f"{t.name}.{c.name}" for c in t.columns if not c.export or not t.export}
+    rows: list[DocRow] = []
+    for document in documents:
+        for report in load_reports(document):
+            row = DocRow(
+                filename=document.filename,
+                page=report.page,
+                uploaded_at=document.created_at,
+                processed_at=document.processed_at,
+                reviewed_at=document.reviewed_at,
+            )
+            for a in report.aligned:
+                value = cell_value(a, report.reviews.get(a.field.name))
+                cell = split_cell_name(a.field.name)
+                if cell is None:
+                    if a.field.name not in hidden:
+                        row.values[a.field.name] = value
+                    continue
+                table, index, column = cell
+                items = row.tables.setdefault(table, [])
+                while len(items) < index:
+                    items.append({})
+                if f"{table}.{column}" not in hidden:
+                    items[index - 1][column] = value
+            rows.append(row)
+    return rows
 
 
 def _workbook(documents: list[Document]) -> bytes:

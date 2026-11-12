@@ -1,0 +1,52 @@
+import { useQuery } from '@tanstack/react-query'
+import { Alert, Flex, Select, Typography } from 'antd'
+import { Link } from 'react-router'
+import { listTemplates } from '../../api/templates'
+import { DISCOVER, templateOptions } from './uploadChoice'
+
+/**
+ * 上传前选模板。第一次用（还没有自己的模板）时提示：先去模板库添加，或者选"抽取所有键值对"。
+ * value 为空：用上一次上传用的（后端决定）。
+ */
+export function TemplatePicker({
+  value,
+  onChange,
+}: {
+  value: string | undefined
+  onChange: (value: string) => void
+}) {
+  const templates = useQuery({ queryKey: ['templates'], queryFn: listTemplates })
+  const mine = (templates.data ?? []).filter((t) => t.kind === 'mine' && !t.archived)
+  // 记住的模板已经归档或删掉了：当成没选
+  const known = value === DISCOVER || mine.some((t) => t.id === value)
+  return (
+    <Flex vertical gap={8} style={{ marginBottom: 12 }}>
+      {templates.isSuccess && mine.length === 0 && (
+        <Alert
+          type="info"
+          showIcon
+          title="还没有自己的模板"
+          description={
+            <>
+              去 <Link to="/templates">模板</Link> 页，从起步模板库（数电发票、行程单、收据、酒店账单……）
+              添加一个；或者先选"抽取所有键值对"，处理完在审核页面把需要的字段存成模板。
+              不选的话，按老办法用内置的收据模板。
+            </>
+          }
+        />
+      )}
+      <Flex align="center" gap={8} wrap>
+        <Typography.Text>用哪个模板：</Typography.Text>
+        <Select
+          style={{ minWidth: 320 }}
+          placeholder="和上次一样"
+          loading={templates.isPending}
+          value={known ? value : undefined}
+          onChange={onChange}
+          options={templateOptions(templates.data ?? [])}
+          showSearch={{ optionFilterProp: 'label' }}
+        />
+      </Flex>
+    </Flex>
+  )
+}

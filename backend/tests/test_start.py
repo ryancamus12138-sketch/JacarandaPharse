@@ -95,6 +95,11 @@ def started(secrets, monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "_port_free", lambda port: True)
     monkeypatch.setattr(cli, "_wait_free", lambda port: True)
     monkeypatch.setattr(cli, "_infra_problems", lambda settings: [])
+    # 模型密钥写到临时文件夹；环境变量测完恢复原样
+    from jacara.core import config
+
+    monkeypatch.setattr(config, "MODEL_KEY_FILE", tmp_path / ".run" / "model-key")
+    monkeypatch.setenv("MODEL_API_KEY", "")
     return commands
 
 
@@ -123,6 +128,12 @@ def test_start_finds_the_model_by_itself(started, monkeypatch, tmp_path):
     monkeypatch.setattr(server, "server_env", lambda: {})
     assert cli.main(["start", "--no-browser"]) == 0
     assert started[0] == ["llama-server", str(model)]
+    # 每次启动生成密钥：只有自己能读的文件 + 传给 worker 的环境变量
+    from jacara.core import config
+
+    key = config.MODEL_KEY_FILE.read_text(encoding="utf-8")
+    assert len(key) > 20 and config.MODEL_KEY_FILE.stat().st_mode & 0o077 == 0
+    assert config.model_api_key() == key
 
 
 def test_start_reuses_a_model_that_is_already_running(started, monkeypatch, tmp_path, capsys):

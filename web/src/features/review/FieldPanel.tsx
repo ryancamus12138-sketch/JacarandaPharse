@@ -194,6 +194,19 @@ function StatusTags({ value: v, full = false }: { value: FieldValue; full?: bool
       {evidence}
       {check}
       {v.pending_review && <Tag color="gold">待确认</Tag>}
+      {v.suggestion && (
+        <Tooltip
+          title={
+            v.suggestion.action === 'confirm'
+              ? `第 ${v.suggestion.run} 轮人确认过同样的值`
+              : `第 ${v.suggestion.run} 轮模型抽出同样的值，被人改成了「${v.suggestion.value ?? '（空）'}」`
+          }
+        >
+          <Tag color="purple">
+            {v.suggestion.action === 'confirm' ? '上次确认过' : `上次改成 ${v.suggestion.value ?? '空'}`}
+          </Tag>
+        </Tooltip>
+      )}
       {v.reviewed && !edited && <Tag color="green">已确认</Tag>}
       {edited && <Tag color="blue">{picked ? '已从原文选取' : '已修改'}</Tag>}
     </>

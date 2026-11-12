@@ -129,6 +129,11 @@ def test_templates_api(client):
         "type": "string",
         "required": True,
         "description": load_template("receipt").fields[0].description,
+        "aliases": [],
+        "export": True,
+        "sensitive": False,
+        "options": [],
+        "extract": True,
     }
     change = next(r for r in receipt["rules"] if r["id"] == "change")
     assert change["title"] == "现金 − 总额 = 找零"

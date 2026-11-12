@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -52,6 +52,10 @@ class DocumentOut(BaseModel):
     """处理完（成功或失败）的时间。"""
     reviewed_at: datetime | None = None
     """完成审核的时间。"""
+    current_run: int = 1
+    """现在用的是第几轮处理的结果。"""
+    discover: bool = False
+    """下一次（或这一次）处理不用模板，抽出所有键值对。"""
 
 
 class ExtractionOut(BaseModel):
@@ -63,7 +67,14 @@ class ExtractionOut(BaseModel):
     model: str
     prompt_version: str
     template: str
+    """内置模板的名字、我的模板的 id，或者 discover（没用模板，抽出所有键值对）。"""
     template_version: int
+    template_title: str = ""
+    """模板的中文名。"""
+    run: int = 1
+    run_reason: str | None = None
+    labels: dict[str, str] = {}
+    """字段 ID → 中文名。表格的列写成 items.amount，表名写成 items。"""
     checks: dict[str, Any]
     """抽取时的规则结果，永远不变。"""
     current_checks: dict[str, Any] | None = None
@@ -71,10 +82,48 @@ class ExtractionOut(BaseModel):
     values: list[ValueOut]
 
 
+class RunOut(BaseModel):
+    """处理过的一轮。"""
+
+    run: int
+    template: str
+    template_title: str
+    template_version: int
+    reason: str | None
+    created_at: datetime
+    current: bool
+
+
 class DocumentDetail(DocumentOut):
     """一个文档的全部信息：文档本身 + 每一页的抽取结果。"""
 
     extractions: list[ExtractionOut]
+    runs: list[RunOut] = []
+    """处理过的每一轮（新的在前）。只有一轮时也有一项。"""
+    viewing_run: int = 1
+    """extractions 是第几轮的。不是 current_run 时只能查看，不能审核。"""
+    suggestions: int = 0
+    """可以沿用上一轮审核的字段有几个（"采纳上次的确认"）。"""
+
+
+REPROCESS_REASONS: dict[str, str] = {
+    "template_changed": "模板改了",
+    "wrong_template": "选错了模板",
+    "bad_result": "结果不好，再跑一次",
+    "model_changed": "换了模型或 OCR",
+    "other": "其他",
+}
+"""重新处理的原因（审计和历史里显示中文）。"""
+
+
+class ReprocessIn(BaseModel):
+    """重新处理：换模板（或用同一个模板的最新版）跑一轮新的。旧的结果留着可以查看。"""
+
+    template: str | None = None
+    """我的模板的 id，或者 discover。不写：用现在这个模板的最新版。"""
+    reason: Literal["template_changed", "wrong_template", "bad_result", "model_changed", "other"]
+    note: str = Field(default="", max_length=500)
+    """补充说明。原因选"其他"时必须写。"""
 
 
 class DocumentPage(BaseModel):

@@ -16,17 +16,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from sqlalchemy import func, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from jacara.core.db import session_scope
 from jacara.core.storage import ObjectStorage, StorageError
-from jacara.models import Document
-from jacara.pipeline.run import Pipeline
+from jacara.models import Document, Extraction, TemplateVersion
+from jacara.pipeline.current import template_from_version
+from jacara.pipeline.run import Pipeline, TemplateChoice
 from jacara.pipeline.store import add_extractions
 from jacara.plugins.extractors import ExtractionError
+from jacara.plugins.extractors.base import DISCOVER
 from jacara.plugins.model_backends import ModelBackendError
 from jacara.plugins.ocr.loader import UnsupportedFileError
+from jacara.templates import DEFAULT_TEMPLATE
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +57,9 @@ def process_document(
                 document.filename,
                 document.content_type,
             )
+            template, version_id = choose_template(session, document)
+            run = next_run(session, document)
+            reason = document.run_reason
         if key is None:
             raise StorageError("没有原始文件")
 
@@ -65,14 +71,24 @@ def process_document(
             reports = pipeline.run(
                 path,
                 name=filename,
+                template=template,
                 progress=lambda stage, percent: _report(document_id, stage, percent, factory),
             )
 
         _report(document_id, "保存结果", 98, factory)
         with session_scope(factory) as session:
             document = session.get_one(Document, document_id)
-            add_extractions(session, document, reports)
+            add_extractions(
+                session,
+                document,
+                reports,
+                run=run,
+                template_version_id=version_id,
+                run_reason=reason,
+            )
             document.page_count = len(reports)
+            document.current_run = run  # 新一轮成功了才换过去；失败时旧结果照常能看
+            document.run_reason = None
             document.status = "done"
             _finish(document)
         log.info("完成 %s：%d 页", document_id, len(reports))
@@ -86,6 +102,29 @@ def process_document(
             document.error = describe_error(err)
             _finish(document)
         return "failed"
+
+
+def choose_template(
+    session: Session, document: Document
+) -> tuple[TemplateChoice, uuid.UUID | None]:
+    """这次处理用什么模板（ADR 0030）：键值对发现、我的模板的某个版本，或者内置的收据模板。
+
+    返回（给流水线的模板，模板版本的 id）。版本 id 记到抽取结果上，以后模板再改也能还原。
+    """
+    if document.discover:
+        return DISCOVER, None
+    if document.template_version_id is not None:
+        version = session.get_one(TemplateVersion, document.template_version_id)
+        return template_from_version(version), version.id
+    return DEFAULT_TEMPLATE, None
+
+
+def next_run(session: Session, document: Document) -> int:
+    """新一轮的编号：已有的最大轮数 + 1。第一次处理是 1。"""
+    latest = session.scalar(
+        select(func.max(Extraction.run)).where(Extraction.document_id == document.id)
+    )
+    return (latest or 0) + 1
 
 
 def _report(

@@ -11,8 +11,10 @@ from jacara.plugins.extractors.base import (
     ExtractionError,
     ExtractionResult,
     FieldSpec,
+    FieldType,
     TableSpec,
     cell_name,
+    kv_name,
 )
 from jacara.plugins.model_backends import ChatMessage, ModelBackend
 from jacara.plugins.ocr.base import OcrPage
@@ -41,8 +43,45 @@ OCR 文字每行开头的 [数字] 是行号。
 
 _TYPE_NAMES = {"string": "文字", "number": "数字", "date": "日期"}
 
-
 _ROW: dict[str, object] = {"anyOf": [{"type": "integer"}, {"type": "null"}]}
+
+DISCOVER_PROMPT_VERSION = "discover-v1"
+"""键值对发现的提示词版本。"""
+
+DISCOVER_PROMPT = """你是文档信息抽取助手。用户会给你一张单据的 OCR 文字。
+OCR 文字每行开头的 [数字] 是行号。
+任务：找出单据上所有"名称：值"形式的信息（例如 发票号码、日期、合计、地址、电话），
+每一项给出 key（单据上印的名称，照抄原文）、value（值，照抄原文）、type、row。
+规则：
+1. 只根据给出的文字回答，不要猜，不要补充文字里没有的信息。
+2. key 用单据上的原话；单据上没有印名称、但意思明确的值（例如最上面的商家名），
+   key 用简短的中文说明，例如"商家名称"。
+3. type：金额、数量这类纯数字写 number，value 只填数字，不带货币符号和千分位逗号；
+   日期写 date，value 写成 YYYY-MM-DD；其他写 string，value 照抄原文。
+4. row 填值所在行的行号。
+5. 商品明细这种表格不要逐格列出，每一行商品也不要当成键值对；同一项不要重复写。"""
+
+DISCOVER_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "pairs": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string"},
+                    "value": {"anyOf": [{"type": "string"}, {"type": "number"}, {"type": "null"}]},
+                    "type": {"enum": ["string", "number", "date"]},
+                    "row": _ROW,
+                },
+                "required": ["key", "value", "type", "row"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["pairs"],
+    "additionalProperties": False,
+}
 
 
 def _plain_schema(f: FieldSpec) -> dict[str, object]:
@@ -174,6 +213,74 @@ class LlmExtractor:
             prompt_version=PROMPT_VERSION,
             duration_ms=result.duration_ms,
         )
+
+    def discover(self, page: OcrPage) -> ExtractionResult:
+        """键值对发现（"用样例建模板"的第一步）：找出单据上所有的"名称：值"。"""
+        return _discover(self, page)
+
+
+def _discover(self: LlmExtractor, page: OcrPage) -> ExtractionResult:
+    text = numbered_text(group_rows(page))
+    messages = [
+        ChatMessage("system", DISCOVER_PROMPT),
+        ChatMessage("user", f"OCR 文字：\n{text}"),
+    ]
+    result = self.backend.chat(messages, json_schema=DISCOVER_SCHEMA)
+    try:
+        data = json.loads(result.text)
+    except json.JSONDecodeError as err:
+        raise ExtractionError(f"模型的回答不是合格的 JSON：{result.text[:200]}") from err
+    pairs = data.get("pairs") if isinstance(data, dict) else None
+    if not isinstance(pairs, list):
+        raise ExtractionError(f"模型的回答里没有 pairs 列表：{result.text[:200]}")
+    fields: list[ExtractedField] = []
+    seen: set[tuple[str, str]] = set()
+    for item in cast(list[Any], pairs):
+        if not isinstance(item, dict):
+            continue
+        item = cast(dict[str, Any], item)
+        key = str(item.get("key") or "").strip()
+        value = item.get("value")
+        if not key or value is None or str(value).strip() == "":
+            continue
+        type_: FieldType = item["type"] if item.get("type") in _TYPE_NAMES else "string"
+        if type_ == "number":
+            value = _as_number(value)
+            if value is None:
+                type_, value = "string", str(item.get("value"))
+        else:
+            value = str(value).strip()
+        if (key, str(value)) in seen:
+            continue  # 同一项写了两遍
+        seen.add((key, str(value)))
+        row = item.get("row")
+        fields.append(
+            ExtractedField(
+                name=kv_name(len(fields) + 1),
+                type=type_,
+                value=value,
+                row=row if isinstance(row, int) and not isinstance(row, bool) else None,
+                label=key[:200],
+            )
+        )
+    return ExtractionResult(
+        fields=tuple(fields),
+        raw_output=result.text,
+        model=result.model,
+        backend=result.backend,
+        prompt_version=DISCOVER_PROMPT_VERSION,
+        duration_ms=result.duration_ms,
+    )
+
+
+def _as_number(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    from jacara.core.textvalue import parse_number
+
+    return parse_number(str(value))
 
 
 def _field(spec: FieldSpec, item: object, name: str, raw: str) -> ExtractedField:

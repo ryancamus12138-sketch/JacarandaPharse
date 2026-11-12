@@ -11,6 +11,7 @@ import type {
   DocumentSummary,
   PageOcr,
   RegionOut,
+  ReprocessReason,
 } from './types'
 
 export function listDocuments(
@@ -41,9 +42,10 @@ export function getDashboard(): Promise<Dashboard> {
 }
 
 /** 上传一个文件。文件用 FormData 发（和 /docs 里选文件上传一样），字段名必须叫 file。 */
-export function uploadDocument(file: File): Promise<DocumentSummary> {
+export function uploadDocument(file: File, template?: string): Promise<DocumentSummary> {
   const form = new FormData()
   form.append('file', file)
+  if (template) form.append('template', template) // 我的模板的 id，或者 discover
   return api<DocumentSummary>('/documents', { method: 'POST', body: form })
 }
 
@@ -53,8 +55,21 @@ export function processDocument(id: string): Promise<DocumentSummary> {
 }
 
 /** 文档详情：每一页的字段、出处和规则校验结果。 */
-export function getDocument(id: string): Promise<DocumentDetail> {
-  return api<DocumentDetail>(`/documents/${id}`)
+export function getDocument(id: string, run?: number): Promise<DocumentDetail> {
+  return api<DocumentDetail>(run ? `/documents/${id}?run=${run}` : `/documents/${id}`)
+}
+
+/** 换模板重新处理（新的一轮）。template 不写：用现在这个模板的最新版。 */
+export function reprocessDocument(
+  id: string,
+  body: { template?: string; reason: ReprocessReason; note: string },
+): Promise<DocumentSummary> {
+  return api<DocumentSummary>(`/documents/${id}/reprocess`, { method: 'POST', json: body })
+}
+
+/** 采纳上次的确认：重新处理之后，能沿用的上一轮审核一次用上。 */
+export function adoptPrevious(id: string): Promise<{ confirmed: number; edited: number }> {
+  return api(`/documents/${id}/adopt-previous`, { method: 'POST' })
 }
 
 /** 某一页的图片（PNG）。出处框的坐标就是这张图上的像素。 */

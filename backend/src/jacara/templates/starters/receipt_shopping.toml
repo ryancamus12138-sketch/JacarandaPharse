@@ -1,0 +1,150 @@
+# 起步模板：购物小票。
+# 字段来源：ATO Records you need to keep（收据五项）、Tax invoices（82.50 澳元以上抵 GST 要税务发票）
+# 规则和字段说明只写通用规定，不放任何真实单据的内容。
+
+name = "receipt_shopping"
+version = 1
+title = "购物小票"
+category = "收据"
+description = "超市、商店的小票：逐项商品、折扣、找整。字段按 ATO 对收据和税务发票的要求。"
+rules = ["total_positive", "date_exists", "date_not_future", "ato_evidence", "ato_gst_credit", "gst_eleventh", "receipt_balance", "merchant_abn", "items_sum", "item_line", "cash_covers_total", "change"]
+
+[[fields]]
+name = "merchant"
+label = "商家"
+type = "string"
+required = true
+description = "开收据的商家名称，一般在最上面"
+aliases = ["Store", "Shop"]
+
+[[fields]]
+name = "merchant_abn"
+label = "商家 ABN"
+type = "string"
+description = "商家的 ABN（澳洲商业号码，11 位数字）；其他国家的商家税号也填这里"
+aliases = ["ABN"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+type = "string"
+description = "收据上写的标题，如 Tax Invoice、Receipt，原样照抄"
+aliases = ["Tax Invoice", "Receipt"]
+
+[[fields]]
+name = "document_no"
+label = "单号"
+type = "string"
+description = "收据号、发票号或交易号"
+aliases = ["Receipt No", "Invoice No", "Trans #"]
+
+[[fields]]
+name = "date"
+label = "日期"
+type = "date"
+required = true
+description = "交易日期"
+aliases = ["Date"]
+
+[[fields]]
+name = "time"
+label = "时间"
+type = "string"
+description = "交易时间，如 14:05"
+
+[[fields]]
+name = "description"
+label = "购买内容"
+type = "string"
+description = "收据上没有逐项明细时，概括写的购买内容"
+
+[[fields]]
+name = "subtotal"
+label = "小计"
+type = "number"
+aliases = ["Subtotal", "Sub Total"]
+
+[[fields]]
+name = "discount"
+label = "折扣"
+type = "number"
+description = "整单折扣的金额，写正数"
+aliases = ["Discount", "Savings"]
+
+[[fields]]
+name = "surcharge"
+label = "附加费"
+type = "number"
+aliases = ["Surcharge", "Card surcharge"]
+
+[[fields]]
+name = "rounding"
+label = "找整调整"
+type = "number"
+description = "现金找整（四舍五入到 5 分）的调整金额，减少写负数"
+aliases = ["Rounding"]
+
+[[fields]]
+name = "cash"
+label = "现金"
+type = "number"
+aliases = ["Cash", "Tendered"]
+
+[[fields]]
+name = "change"
+label = "找零"
+type = "number"
+aliases = ["Change"]
+
+[[fields]]
+name = "gst"
+label = "GST / 税额"
+type = "number"
+description = "税额；只写了“含 GST”（Includes GST）时填那个金额"
+aliases = ["GST", "Includes GST", "Tax"]
+
+[[fields]]
+name = "total"
+label = "总额"
+type = "number"
+required = true
+description = "最终应付总额"
+aliases = ["Total", "Amount", "TOTAL AUD"]
+
+[[fields]]
+name = "payment_method"
+label = "付款方式"
+type = "string"
+description = "如 Cash、EFTPOS、Visa、Mastercard"
+aliases = ["EFTPOS", "Card", "Cash"]
+
+[[tables]]
+name = "items"
+label = "商品明细"
+description = "收据上的商品或服务，每样一行。小计、税、合计这些行不算明细"
+required = true
+
+[[tables.columns]]
+name = "description"
+label = "商品"
+type = "string"
+aliases = ["Item", "Description"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+type = "number"
+aliases = ["Qty"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+type = "number"
+aliases = ["Price", "Unit Price"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+type = "number"
+description = "这一行的金额；折扣行是负数"
+aliases = ["Amount"]
