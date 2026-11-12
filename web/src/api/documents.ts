@@ -81,7 +81,14 @@ export function getDocument(id: string, run?: number): Promise<DocumentDetail> {
 /** 换模板重新处理（新的一轮）。template 不写：用现在这个模板的最新版。 */
 export function reprocessDocument(
   id: string,
-  body: { template?: string; reason: ReprocessReason; note: string; split?: string },
+  body: {
+    template?: string
+    reason: ReprocessReason
+    note: string
+    split?: string
+    /** 看不看原图（ADR 0038）：always、off、default（按系统设置）。不写：和上次一样。 */
+    vision?: 'always' | 'off' | 'default'
+  },
 ): Promise<DocumentSummary> {
   return api<DocumentSummary>(`/documents/${id}/reprocess`, { method: 'POST', json: body })
 }

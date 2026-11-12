@@ -50,16 +50,28 @@ class TemplateRepository:
         return next(v for v in record.versions if v.version == record.latest_version)
 
     def usage_stats(self, team_id: uuid.UUID) -> dict[uuid.UUID, tuple[int, datetime | None]]:
-        """每个模板：有几份文档用它、最近一份是什么时候传的（模板页排序、显示用）。"""
-        rows = self.session.execute(
-            select(
-                TemplateVersion.template_id, func.count(Document.id), func.max(Document.created_at)
-            )
-            .join(Document, Document.template_version_id == TemplateVersion.id)
-            .where(Document.team_id == team_id)
-            .group_by(TemplateVersion.template_id)
-        ).all()
-        return {template_id: (int(count), last) for template_id, count, last in rows}
+        """每个模板：有几份文档用它、最近一份是什么时候传的（模板页排序、显示用）。
+
+        上传时选了这个模板的，加上自动判断选中它的（ADR 0038，记在每张单据上）。"""
+        chosen = select(TemplateVersion.template_id, Document.id, Document.created_at).join(
+            Document, Document.template_version_id == TemplateVersion.id
+        )
+        picked = (
+            select(TemplateVersion.template_id, Document.id, Document.created_at)
+            .join(Extraction, Extraction.template_version_id == TemplateVersion.id)
+            .join(Document, Document.id == Extraction.document_id)
+            .where(Document.auto.is_(True), Extraction.run == Document.current_run)
+        )
+        used: dict[uuid.UUID, dict[uuid.UUID, datetime]] = {}
+        for query in (chosen, picked):
+            for template_id, document_id, created in self.session.execute(
+                query.where(Document.team_id == team_id)
+            ):
+                used.setdefault(template_id, {})[document_id] = created
+        return {
+            template_id: (len(documents), max(documents.values(), default=None))
+            for template_id, documents in used.items()
+        }
 
     def usage(self, template_id: uuid.UUID) -> int:
         """有几份文档下次处理会用这个模板（任何版本）。"""

@@ -89,6 +89,8 @@ class ExtractionResult:
     backend: str
     prompt_version: str
     duration_ms: int
+    vision: str | None = None
+    """这次抽取给模型看了原图（ADR 0038），写着为什么看；没看图是 None。"""
 
 
 class Extractor(Protocol):
@@ -102,10 +104,12 @@ class Extractor(Protocol):
         fields: Sequence[FieldSpec],
         tables: Sequence[TableSpec] = (),
         structure: PageStructure | None = None,
+        images: Sequence[bytes] = (),
     ) -> ExtractionResult:
         """从一页 OCR 结果里抽出指定的字段和表格。表格的每一格单独作为一个字段返回。
 
-        structure 是这一页的结构（文字块编号、表格、标题 → 值）；不给就只按规则分析一次。"""
+        structure 是这一页的结构（文字块编号、表格、标题 → 值）；不给就只按规则分析一次。
+        images 是单据原图（PNG，每页一张，ADR 0038）：给了就让模型看着图抽。"""
         ...
 
     def discover(self, page: OcrPage, structure: PageStructure | None = None) -> ExtractionResult:
@@ -118,6 +122,9 @@ if TYPE_CHECKING:
 
 DISCOVER = "discover"
 """键值对发现的"模板名"：存在 extractions.template 里，表示这一轮没有用模板。"""
+
+AUTO = "auto"
+"""上传时选"自动判断"（ADR 0038）：每张单据从我的模板里挑最合适的一个。"""
 
 
 def kv_name(index: int) -> str:

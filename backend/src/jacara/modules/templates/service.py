@@ -14,7 +14,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqlalchemy.orm import Session
 
@@ -56,7 +56,7 @@ from jacara.modules.templates.schemas import (
     WorkbookOut,
     WorkbookSheetOut,
 )
-from jacara.plugins.extractors.base import DISCOVER
+from jacara.plugins.extractors.base import AUTO, DISCOVER
 from jacara.plugins.validators import ALL_RULES, REGIONS
 from jacara.templates import (
     STARTERS,
@@ -234,6 +234,24 @@ def definition_of(data: TemplateIn) -> dict[str, Any]:
         "rules": list(dict.fromkeys(data.rules)),
         "custom_rules": [c.model_dump() for c in data.custom_rules],
     }
+
+
+class Pick(NamedTuple):
+    """上传、重新处理时选的模板。"""
+
+    version_id: uuid.UUID | None
+    """我的模板的哪个版本；None：键值对发现、自动判断，或者内置的收据模板。"""
+    discover: bool = False
+    auto: bool = False
+
+    @property
+    def audit(self) -> str:
+        """审计日志里写的"用了什么模板"。"""
+        if self.auto:
+            return AUTO
+        if self.discover:
+            return DISCOVER
+        return str(self.version_id or "receipt")
 
 
 class TemplateService:
@@ -674,13 +692,16 @@ class TemplateService:
 
     # ---- 上传时选模板 ----
 
-    def pick_for_upload(self, choice: str | None) -> tuple[uuid.UUID | None, bool]:
-        """上传时选的模板 → （模板版本 id，是不是键值对发现）。
+    def pick_for_upload(self, choice: str | None) -> Pick:
+        """上传时选的模板 → （模板版本 id，是不是键值对发现，是不是自动判断）。
 
         没选：用这个人上一次上传用的；第一次上传就用内置的收据模板（老办法）。
+        auto：每张单据从我的模板里自动挑（ADR 0038）。
         """
         if choice == DISCOVER:
-            return None, True
+            return Pick(None, discover=True)
+        if choice == AUTO:
+            return Pick(None, auto=True)
         if choice in (None, ""):
             return self._last_choice()
         template_id = _uuid(choice)
@@ -689,7 +710,7 @@ class TemplateService:
         found = self._find(template_id)
         if found.archived:
             raise TemplateFailure("invalid", f"模板「{found.title}」已经归档了，不能再用来上传")
-        return self.repo.latest(found).id, False
+        return Pick(self.repo.latest(found).id)
 
     def latest_version_id(self, template_id: uuid.UUID) -> uuid.UUID:
         found = self.repo.get(template_id, self.owner.team_id)
@@ -697,7 +718,7 @@ class TemplateService:
             raise TemplateFailure("invalid", "这份文档用的模板已经删除了，请选一个模板再重新处理")
         return self.repo.latest(found).id
 
-    def _last_choice(self) -> tuple[uuid.UUID | None, bool]:
+    def _last_choice(self) -> Pick:
         from sqlalchemy import select
 
         last = self.session_or_fail().scalar(
@@ -707,16 +728,18 @@ class TemplateService:
             .limit(1)
         )
         if last is None:
-            return None, False
+            return Pick(None)
+        if last.auto:
+            return Pick(None, auto=True)
         if last.discover:
-            return None, True
+            return Pick(None, discover=True)
         if last.template_version_id is None:
-            return None, False
+            return Pick(None)
         version = self.session_or_fail().get_one(TemplateVersion, last.template_version_id)
         record_ = version.template
-        if record_.archived:
-            return None, False
-        return self.repo.latest(record_).id, False
+        if record_.archived or record_.deleted_at is not None:
+            return Pick(None)
+        return Pick(self.repo.latest(record_).id)
 
     # ---- 试跑 ----
 
@@ -882,6 +905,7 @@ class TemplateService:
         document.current_run = run
         document.template_version_id = version.id
         document.discover = False
+        document.auto = False
         document.reviewed_at = None
         if document.status == "reviewed":
             document.status = "done"

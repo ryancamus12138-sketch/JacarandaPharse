@@ -46,6 +46,7 @@ _STATUS_NAMES = {
     "empty": "原文没有",
     "rejected": "原文里对不上，没有填",
     "computed": "按公式算",
+    "seen": "看原图读的",
 }
 
 _ACTION_NAMES = {

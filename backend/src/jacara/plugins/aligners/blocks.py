@@ -51,9 +51,12 @@ class BlockAligner:
     ) -> tuple[AlignedField, ...]:
         structure = structure or analyze_page(page)
         rows = group_rows(page)
-        return tuple(self._align_field(f, structure, rows) for f in result.fields)
+        seen = result.vision is not None
+        return tuple(self._align_field(f, structure, rows, seen) for f in result.fields)
 
-    def _align_field(self, field: ExtractedField, s: PageStructure, rows) -> AlignedField:
+    def _align_field(
+        self, field: ExtractedField, s: PageStructure, rows, seen: bool = False
+    ) -> AlignedField:
         if field.value is None:
             return AlignedField(field, "empty", None, False, "模型说原文里没有这个字段")
 
@@ -75,6 +78,8 @@ class BlockAligner:
             note = "；".join(n for n in (where, found.note) if n)
             return replace(found, needs_review=True, note=note)
 
+        if seen:
+            return self._seen(field, s)
         cited = f"它说的文字块 {_cited(field.blocks)} 里没有、" if field.blocks else ""
         return AlignedField(
             field,
@@ -83,6 +88,26 @@ class BlockAligner:
             True,
             f"模型给了「{_shown(field)}」，但{cited}原文里找不到，按规则没有填（核对原文后可以采用）",
         )
+
+    def _seen(self, field: ExtractedField, s: PageStructure) -> AlignedField:
+        """看了原图（ADR 0038），文字里对不上的值：是模型在图上读的。值留着，要人核对。
+        模型说了 OCR 认错的是哪几块，就把那几块当出处框出来。"""
+        words = [w for n in field.blocks if (w := s.word(n)) is not None]
+        lines = [ln for n in field.blocks if (ln := s.ocr_line(n)) is not None]
+        if words and len(lines) == len(words):
+            ocr = " ".join(w.text for w in words)
+            evidence = Evidence(
+                int(words[0].attrs["row"]), " / ".join(w.text for w in words), tuple(lines), 0.0
+            )
+            note = (
+                f"看原图读的：OCR 认成「{ocr}」，模型在图上看到的是「{_shown(field)}」，请核对原图"
+            )
+            return AlignedField(field, "seen", evidence, True, note)
+        note = (
+            f"看原图读的：OCR 文字里没有「{_shown(field)}」"
+            "（可能是手写、印章或没认出来），请核对原图"
+        )
+        return AlignedField(field, "seen", None, True, note)
 
     def _in_blocks(self, field: ExtractedField, s: PageStructure) -> Evidence | None:
         """在模型说的那几块里核对值。对得上就返回出处，对不上返回 None。"""

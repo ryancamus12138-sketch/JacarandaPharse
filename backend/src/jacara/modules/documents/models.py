@@ -62,6 +62,10 @@ class Document(Base, OwnedMixin, TimestampMixin):
     """下一次处理用哪个模板版本。空：用内置的收据模板（v2 之前上传的文档）。"""
     discover: Mapped[bool] = mapped_column(default=False, server_default="false")
     """下一次处理不用模板，抽出单据上所有的键值对（"用样例建模板"的第一步）。"""
+    auto: Mapped[bool] = mapped_column(default=False, server_default="false")
+    """下一次处理自动判断用哪个模板（ADR 0038）：每张单据从我的模板里挑最合适的。"""
+    vision: Mapped[str | None] = mapped_column(String(8))
+    """下一次处理看不看原图（ADR 0038）：always 每张都看、off 不看；空的按 JACARA_VISION。"""
     folder: Mapped[str | None] = mapped_column(String(255), index=True)
     """批量导入时文件所在的文件夹（相对路径，如"2026-10 出差/酒店"）。
     列表按它分组、筛选（ADR 0036）。"""
@@ -119,6 +123,13 @@ class Extraction(Base, OwnedMixin, TimestampMixin):
         ForeignKey("template_versions.id")
     )
     """用的"我的模板"的哪个版本。内置模板和键值对发现时为空，按 template 名字找。"""
+    classified: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
+    )
+    """自动判断用哪个模板的经过（ADR 0038）：{"picked", "reason", "by", "candidates"}。
+    上传时直接选了模板的是空的。"""
+    vision: Mapped[str | None] = mapped_column(Text)
+    """这张单据给模型看了原图的原因（ADR 0038）；没看图是空的。"""
 
     raw_output: Mapped[str] = mapped_column(Text)
     """模型的原始回答，原样保存（项目规则 2）。"""

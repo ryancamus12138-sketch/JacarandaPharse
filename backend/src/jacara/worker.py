@@ -39,7 +39,10 @@ def get_pipeline() -> Pipeline:
     from jacara.structure.engines import default_engines
 
     return Pipeline(
-        ocr=create_ocr_engine(), extractor=LlmExtractor(backend), structure=default_engines()
+        ocr=create_ocr_engine(),
+        extractor=LlmExtractor(backend),
+        structure=default_engines(),
+        vision=get_settings().jacara_vision,
     )
 
 

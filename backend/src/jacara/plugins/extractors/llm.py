@@ -59,6 +59,32 @@ SYSTEM_PROMPT = """你是文档信息抽取助手。用户会给你一张单据�
 7. 表格按原文顺序，一行一个对象，每一格回答 value 和 blocks；没有表格就给空列表。
    不要把小计、税、总额、找零当成表格的行，同一行商品不要重复写。商品名折成两行仍是同一行商品。"""
 
+VISION_PROMPT_VERSION = PROMPT_VERSION + "+vision"
+"""给模型看了原图时记这个版本号（ADR 0038）：
+提示词多了下面的 VISION_NOTE，其余和 extract-v7 一样。"""
+
+VISION_NOTE = """另外附上了这张单据的原图（{n} 张，按页的顺序）。文字块是 OCR 从图上认出来的，
+可能认错或漏掉（手写、印章、模糊、反光、褶皱的地方）。
+- 原图和文字块一致：照常回答 value 和 blocks。
+- OCR 认错了：value 写你在原图上看到的，blocks 写认错的那几块。
+- OCR 漏掉了（文字块里没有）：value 写你在原图上看到的，blocks 写 []。
+- 原图上也看不清的，value 填 null，不要猜。"""
+
+CLASSIFY_PROMPT_VERSION = "classify-v1"
+"""自动判断用哪个模板的提示词版本（ADR 0038）。"""
+
+CLASSIFY_PROMPT = """你在给单据分类。用户给你一张单据开头的文字，和几个编了号的模板
+（每个模板有名字、说明、功能领域、国家和地区、要抽的字段）。
+选一个最适合这张单据的模板：单据的种类要对上（发票、小票、账单、行程单、报告……），
+国家和地区也要对上（写着"通用"的模板不分国家）。
+没有一个合适就选 0，不要勉强。reason 用一句中文说明为什么。只根据给出的文字判断。"""
+
+CLASSIFY_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {"choice": {"type": "integer"}, "reason": {"type": "string"}},
+    "required": ["choice", "reason"],
+}
+
 _TYPE_NAMES = {"string": "文字", "number": "数字", "date": "日期"}
 
 _BLOCKS: dict[str, object] = {"type": "array", "items": {"type": "integer"}}
@@ -175,15 +201,20 @@ def build_messages(
     fields: Sequence[FieldSpec],
     tables: Sequence[TableSpec] = (),
     structure: PageStructure | None = None,
+    images: Sequence[bytes] = (),
 ) -> list[ChatMessage]:
-    """拼出发给模型的消息：系统规则 + 字段和表格说明 + 单据（版面原样 + 结构）。"""
+    """拼出发给模型的消息：系统规则 + 字段和表格说明 + 单据（版面原样 + 结构）。
+
+    images 是单据原图（ADR 0038）：附在后面，并说明 OCR 可能认错的地方以图为准。"""
     structure = structure or analyze_page(page)
     field_lines = "\n".join(_field_line(f) for f in fields)
     for t in tables:
         columns = "\n".join(_field_line(c, "  ") for c in t.columns)
         field_lines += f"\n- {t.name}（表格，每行一个对象）：{t.description}\n{columns}"
     user = f"要抽取的字段：\n{field_lines}\n\n{page_prompt(structure)}"
-    return [ChatMessage("system", SYSTEM_PROMPT), ChatMessage("user", user)]
+    if images:
+        user += "\n\n" + VISION_NOTE.format(n=len(images))
+    return [ChatMessage("system", SYSTEM_PROMPT), ChatMessage("user", user, tuple(images))]
 
 
 SEGMENT_PROMPT_VERSION = "segment-v1"
@@ -229,17 +260,45 @@ class LlmExtractor:
         answer = data.get("continues") if isinstance(data, dict) else None
         return answer if isinstance(answer, bool) else None
 
+    def sees_images(self) -> bool:
+        """模型能不能看图（模型服务加载了视觉模型，ADR 0038）。"""
+        check = getattr(self.backend, "sees_images", None)
+        return bool(check()) if callable(check) else False
+
+    def choose(self, text: str, options: Sequence[str]) -> tuple[int, str] | None:
+        """自动判断用哪个模板（ADR 0038）：返回（第几个，从 1 开始，0 是都不合适；理由）。
+        模型的回答不合格返回 None。"""
+        listed = "\n".join(f"{n}. {o}" for n, o in enumerate(options, start=1))
+        messages = [
+            ChatMessage("system", CLASSIFY_PROMPT),
+            ChatMessage("user", f"模板：\n{listed}\n\n单据开头的文字：\n{text}"),
+        ]
+        result = self.backend.chat(messages, json_schema=CLASSIFY_SCHEMA)
+        try:
+            data = json.loads(result.text)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(data, dict):
+            return None
+        choice, reason = data.get("choice"), data.get("reason")
+        if not isinstance(choice, int) or isinstance(choice, bool):
+            return None
+        if not 0 <= choice <= len(options):
+            return None
+        return choice, reason if isinstance(reason, str) else ""
+
     def extract(
         self,
         page: OcrPage,
         fields: Sequence[FieldSpec],
         tables: Sequence[TableSpec] = (),
         structure: PageStructure | None = None,
+        images: Sequence[bytes] = (),
     ) -> ExtractionResult:
         structure = structure or analyze_page(page)
         schema = build_schema(fields, tables)
         result = self.backend.chat(
-            build_messages(page, fields, tables, structure), json_schema=schema
+            build_messages(page, fields, tables, structure, images), json_schema=schema
         )
         try:
             data = json.loads(result.text)
@@ -282,7 +341,7 @@ class LlmExtractor:
             raw_output=result.text,
             model=result.model,
             backend=result.backend,
-            prompt_version=PROMPT_VERSION,
+            prompt_version=VISION_PROMPT_VERSION if images else PROMPT_VERSION,
             duration_ms=result.duration_ms,
         )
 

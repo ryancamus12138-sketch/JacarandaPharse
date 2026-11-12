@@ -41,6 +41,13 @@ uv run jacara doctor         # 检查 .env、网页和各项服务
 没有这个文件时，表格的格子按文字位置划分。版面模型随 rapid-layout 一起安装，不用另外下载。
 系统信息页能看到两个模型有没有用上。
 
+视觉模型（可选，ADR 0038）：照片、扫描件上有手写、印章、模糊的地方，OCR 会认错或漏掉，
+有了视觉模型就能让大模型看着原图读。在浏览器里下载
+<https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/mmproj-F16.gguf>
+（约 918 MB，Apache-2.0，和 Qwen3.5-9B 配套），放进 `models/`，重新 `jacara start` 就会一起加载。
+默认只在 OCR 不可靠时看图（`.env` 的 `JACARA_VISION`），审核页"重新处理"里也可以选"每张都看"。
+系统信息页能看到模型能不能看图。
+
 批量导入（ADR 0036）：文档页可以一次拖进几百个文件，或者“选择整个文件夹”，列表按文件夹筛选。
 要自动导入一个文件夹，在 `.env` 里写 `JACARA_WATCH_DIR=文件夹路径`，`jacara start` 会一起启动；
 放进去的图片和 PDF 自动导入，不动、不删原文件，内容一样的只导入一次。
@@ -58,7 +65,7 @@ uv run jacara start
 
 `jacara start` 一起启动大模型、后台任务（worker）和 Web 服务，网页由 Web 服务直接提供。
 
-- 模型文件：`models/` 里只有一个 `.gguf` 时自动用它；有好几个时用 `--model` 或 `.env` 的 `JACARA_MODEL` 指定。
+- 模型文件：`models/` 里只有一个 `.gguf` 时自动用它（名字带 mmproj 的视觉模型不算）；有好几个时用 `--model` 或 `.env` 的 `JACARA_MODEL` 指定。
 - 已经在运行了再执行一次：不会报错，直接打开浏览器。要重启就先 `jacara stop`。
 - 8080 上已经有模型服务（例如另开的 `jacara serve`）：直接用它，不再启动一个。
 - 启动前会检查 `.env` 里的密钥不能还是 `change-me`。

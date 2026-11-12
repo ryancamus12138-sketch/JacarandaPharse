@@ -5,10 +5,13 @@
 
 ## [未发布]
 
-v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）、模板标签（ADR 0037）。
-升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at、domains、countries、tags），再 `cd web && npm run build`。表格结构模型可选，见 README。
+v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）、模板标签（ADR 0037）、v3 第 3 批（ADR 0038）。
+升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at、domains、countries、tags；documents 加 auto、vision，extractions 加 classified、vision），再 `cd web && npm run build`。表格结构模型可选，见 README。
 
 ### 新增
+
+- 自动判断用哪个模板（ADR 0038）：上传时选"自动判断"，每张单据先按字段名、模板名找出最像的几个"我的模板"，再让模型选一个；都不合适就抽出所有键值对。审核页顶上显示选了哪个、为什么、比较过哪些，选错了在"重新处理"里换。监视文件夹写 `JACARA_WATCH_TEMPLATE=auto` 也行
+- 让模型看原图（ADR 0038）：把视觉模型 `mmproj-F16.gguf` 放进 `models/`，`jacara start` 自动加载。照片、扫描件 OCR 不可靠时，模型看着原图读，OCR 认错、漏掉的值不再丢掉，标"看原图读的"让人核对；`.env` 的 `JACARA_VISION` 可以改成每张都看或不看，重新处理时也能单独选。系统信息页显示模型能不能看图
 
 - 一个文件里的几张单据（ADR 0036）：一张单据可以占好几页（两页的酒店账单合成一份，跨页的明细表接在一起），一个 PDF 里扫的几张发票分成几份结果、导出几行。上传时选"自动判断 / 整个文件是一张 / 每页一张"；自动判断先看"Page 2 of 3""第 2 页 共 3 页""续"，没有标记再让模型判断是不是续页。分错了在"重新处理"里改，也可以自己写页码（1-2, 3, 4-6）
 - 审核页：一个文件有几张单据时上面一排选单据，下面一排选这张单据的页；点出处在别的页的字段，原图自动翻过去

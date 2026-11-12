@@ -76,6 +76,11 @@ class SystemService:
             file=found.name if found else None,
             loaded=str(path).replace("\\", "/").rsplit("/", 1)[-1] if path else None,
             context=int(context) if context else None,
+            vision_file=mmproj.name if (mmproj := self.settings.find_mmproj()) else None,
+            sees_images=bool(
+                isinstance(modalities := props.get("modalities"), dict) and modalities.get("vision")
+            ),
+            vision_mode=self.settings.jacara_vision,
         )
 
     def _data(self, team: uuid.UUID) -> DataInfo:

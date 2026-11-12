@@ -5,11 +5,12 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from jacara.plugins.aligners.base import AlignedField
 from jacara.plugins.extractors.base import ExtractionResult
@@ -91,6 +92,11 @@ class DocumentReport:
 
     hidden: frozenset[str] = frozenset()
     """模板里设成"不导出"的字段、表（items）和表的列（items.tax），导出时整列不写。"""
+
+    template_version_id: uuid.UUID | None = None
+    """自动判断选中的"我的模板"版本（ADR 0038）。上传时直接选了模板的是 None（用文档上的）。"""
+    classified: Mapping[str, Any] | None = None
+    """自动判断的经过（ADR 0038）：选了哪个、为什么、候选有哪些。没有自动判断是 None。"""
 
     @property
     def pages_label(self) -> str:

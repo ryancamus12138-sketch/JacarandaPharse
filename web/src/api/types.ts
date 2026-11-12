@@ -94,6 +94,10 @@ export interface DocumentSummary {
   current_run?: number
   /** 不用模板、抽出所有键值对（"用样例建模板"的第一步）。 */
   discover?: boolean
+  /** 自动判断用哪个模板（ADR 0038）。 */
+  auto?: boolean
+  /** 看不看原图：always、off；null 按系统设置（ADR 0038）。 */
+  vision?: string | null
   /** 审核时点了"先跳过"的时间；没跳过是 null。 */
   skipped_at?: string | null
   skip_reason?: string | null
@@ -190,7 +194,18 @@ export interface ExportPage {
 export interface SystemInfo {
   version: string
   mode: 'personal' | 'team'
-  model: { server: string; file: string | null; loaded: string | null; context: number | null }
+  model: {
+    server: string
+    file: string | null
+    loaded: string | null
+    context: number | null
+    /** 视觉模型文件（mmproj，ADR 0038）。 */
+    vision_file?: string | null
+    /** 模型服务现在能不能看图。 */
+    sees_images?: boolean
+    /** 什么时候看原图：auto、always、off。 */
+    vision_mode?: string
+  }
   ocr: { engine: string; version: string | null }
   /** 页面结构分析用的模型（ADR 0034）。null：没开。 */
   structure?: { layout: string | null; table: string | null } | null
@@ -238,7 +253,15 @@ export interface Evidence {
  * matched 找到一样的；fuzzy 只找到相似的；not_found 原文里找不到；empty 模型说原文里没有；
  * rejected 模型给了值、原文里核对不上，按规则没有填（ADR 0034）。
  */
-export type AlignStatus = 'matched' | 'fuzzy' | 'not_found' | 'empty' | 'rejected' | 'computed'
+export type AlignStatus =
+  | 'matched'
+  | 'fuzzy'
+  | 'not_found'
+  | 'empty'
+  | 'rejected'
+  | 'computed'
+  /** 看原图读的（ADR 0038）：OCR 认错或漏了，要人对着原图核对。 */
+  | 'seen'
 
 /** 一个字段（后端的 ValueOut）。 */
 export interface FieldValue {
@@ -308,6 +331,15 @@ export interface Checks {
 }
 
 /** 一页的抽取结果。 */
+/** 自动判断用哪个模板的经过（ADR 0038）。 */
+export interface Classified {
+  picked: { template_id: string; version_id: string; title: string; version: number } | null
+  reason: string
+  /** model：模型选的；keywords：按关键字；none：没有可选的模板。 */
+  by: 'model' | 'keywords' | 'none'
+  candidates: { template_id: string; title: string; score: number }[]
+}
+
 export interface Extraction {
   id: string
   /** 这张单据从第几页开始。 */
@@ -324,6 +356,10 @@ export interface Extraction {
   template_version: number
   /** 模板的中文名。 */
   template_title?: string
+  /** 自动判断用哪个模板的经过（ADR 0038）；上传时直接选了模板的是 null。 */
+  classified?: Classified | null
+  /** 给模型看了原图的原因（ADR 0038）；没看是 null。 */
+  vision?: string | null
   run?: number
   run_reason?: string | null
   /** 字段 ID → 中文名。表格的列写成 items.amount，表名写成 items。 */

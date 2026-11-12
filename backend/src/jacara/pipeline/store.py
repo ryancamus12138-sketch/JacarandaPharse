@@ -84,7 +84,12 @@ def add_extractions(
             prompt_version=e.prompt_version,
             template=report.template,
             template_version=report.template_version,
-            template_version_id=template_version_id,
+            # 自动判断的（ADR 0038）每张单据各用各的模板；没有自动判断就用文档上选的
+            template_version_id=report.template_version_id
+            if report.classified is not None
+            else template_version_id,
+            classified=dict(report.classified) if report.classified is not None else None,
+            vision=e.vision,
             run=run,
             run_reason=run_reason,
             duration_ms=e.duration_ms,

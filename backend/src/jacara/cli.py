@@ -58,6 +58,11 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("--model", type=Path, required=True, help="模型文件（.gguf）")
     p_serve.add_argument("--port", type=int, default=8080, help="端口，默认 8080")
     p_serve.add_argument("--context", type=int, default=32768, help="上下文长度，默认 32768")
+    p_serve.add_argument(
+        "--mmproj",
+        type=Path,
+        help="视觉模型文件（mmproj-*.gguf），给了模型就能看原图。不写就用 models/ 里的",
+    )
 
     p_ext = sub.add_parser("extract", help="识别图片或 PDF 并抽取字段（要先运行 jacara serve）")
     p_ext.add_argument("image", type=Path, help="图片或 PDF 路径")
@@ -225,11 +230,18 @@ def _serve(args: argparse.Namespace) -> int:
         print(f"找不到模型文件：{model}")
         return 1
 
+    from jacara.core.config import get_settings
     from jacara.plugins.model_backends.server import run_server
 
+    mmproj: Path | None = args.mmproj or get_settings().find_mmproj()
+    if mmproj is not None and not mmproj.is_file():
+        print(f"找不到视觉模型文件：{mmproj}")
+        return 1
     print(f"启动模型服务：{model.name} → http://127.0.0.1:{args.port}（Ctrl + C 停止）")
+    if mmproj is not None:
+        print(f"视觉模型：{mmproj.name}（模型能看原图）")
     try:
-        return run_server(model, port=args.port, context=args.context)
+        return run_server(model, port=args.port, context=args.context, mmproj=mmproj)
     except FileNotFoundError as err:
         print(err)
         return 1
@@ -788,7 +800,8 @@ def _start(args: argparse.Namespace) -> int:
         from jacara.plugins.model_backends.server import server_command, server_env
 
         try:
-            command = server_command(model, port=MODEL_PORT)
+            mmproj = settings.find_mmproj()
+            command = server_command(model, port=MODEL_PORT, mmproj=mmproj)
         except FileNotFoundError as err:
             print(err)
             return 1
@@ -800,6 +813,8 @@ def _start(args: argparse.Namespace) -> int:
         # 直接启动 llama-server，不经过 jacara serve：停止时 terminate 发给它本人，不会漏掉。
         children.append(subprocess.Popen(command, env=env))  # noqa: S603
         print(f"启动模型服务：{model.name} → http://127.0.0.1:{MODEL_PORT}")
+        if mmproj is not None:
+            print(f"视觉模型：{mmproj.name}（照片、扫描件 OCR 不可靠时让模型看原图）")
     children.append(subprocess.Popen([sys.executable, "-m", "jacara.cli", "worker"]))
     if settings.jacara_watch_dir is not None:
         # 监视文件夹（ADR 0036）：.env 里写了 JACARA_WATCH_DIR 才启动

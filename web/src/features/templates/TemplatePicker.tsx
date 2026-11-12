@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Flex, Select, Typography } from 'antd'
 import { Link } from 'react-router'
 import { listTemplates } from '../../api/templates'
-import { DISCOVER, templateOptions } from './uploadChoice'
+import { AUTO, DISCOVER, templateOptions } from './uploadChoice'
 import { Tip } from '../../components/Tip'
 
 /**
@@ -19,7 +19,8 @@ export function TemplatePicker({
   const templates = useQuery({ queryKey: ['templates'], queryFn: listTemplates })
   const mine = (templates.data ?? []).filter((t) => t.kind === 'mine' && !t.archived)
   // 记住的模板已经归档或删掉了：当成没选
-  const known = value === DISCOVER || mine.some((t) => t.id === value)
+  const known =
+    value === DISCOVER || (value === AUTO && mine.length > 0) || mine.some((t) => t.id === value)
   return (
     <Flex vertical gap={8} style={{ marginBottom: 12 }}>
       {templates.isSuccess && mine.length === 0 && (
@@ -47,6 +48,12 @@ export function TemplatePicker({
           showSearch={{ optionFilterProp: 'search' }}
         />
       </Flex>
+      {value === AUTO && known && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          每张单据先按字段名、模板名找出最像的几个模板，再让模型选一个；都不合适就抽出所有键值对。
+          选得不对，在审核页"重新处理"里换模板。
+        </Typography.Text>
+      )}
     </Flex>
   )
 }

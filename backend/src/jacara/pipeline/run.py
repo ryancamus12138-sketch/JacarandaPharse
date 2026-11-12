@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -16,9 +16,11 @@ from typing import cast
 
 import numpy as np
 
+from jacara.pipeline.classify import AutoChoice, Chooser, classify, head_text
 from jacara.pipeline.compute import compute
 from jacara.pipeline.pages import stack_images, stack_pages, stacked_engines
 from jacara.pipeline.segment import Judge, segments
+from jacara.pipeline.vision import MAX_IMAGES, VisionMode, to_png, vision_reason
 from jacara.plugins.aligners import BlockAligner
 from jacara.plugins.aligners.base import AlignedField
 from jacara.plugins.exporters import DocumentReport
@@ -32,8 +34,9 @@ from jacara.structure.engines import NO_MODELS, StructureEngines
 from jacara.structure.graph import PageStructure
 from jacara.templates import DEFAULT_TEMPLATE, Template, load_template
 
-TemplateChoice = str | Template
-"""用哪个模板：内置模板的名字、一个 Template（我的模板的某个版本），或者 DISCOVER（不用模板）。"""
+TemplateChoice = str | Template | AutoChoice
+"""用哪个模板：内置模板的名字、一个 Template（我的模板的某个版本）、DISCOVER（不用模板），
+或者 AutoChoice（每张单据自动从我的模板里挑，ADR 0038）。"""
 
 Progress = Callable[[str, int], None]
 """报告进度：（现在在做什么，0～100）。后台任务用它把进度写进数据库，工作台显示。"""
@@ -49,14 +52,23 @@ class Pipeline:
     structure: StructureEngines = NO_MODELS
     """分析页面结构用的版面模型、表格模型。默认不用模型（只按规则）；
     后台和命令行传 default_engines()。"""
+    vision: VisionMode = "off"
+    """什么时候让模型看原图（ADR 0038，JACARA_VISION）。模型服务没加载视觉模型时不看。"""
 
     def read(self, path: Path) -> list[OcrPage]:
         """读文件：图片走 OCR，PDF 有文字层直接读。"""
         return load_pages(path, self.ocr)
 
-    def needs_images(self) -> bool:
-        """要不要把每页画成图：用版面模型或表格模型时才要。"""
-        return self.structure.layout is not None or self.structure.table is not None
+    def needs_images(self, vision: VisionMode = "off") -> bool:
+        """要不要把每页画成图：用版面模型、表格模型，或者可能让模型看原图时才要。"""
+        if self.structure.layout is not None or self.structure.table is not None:
+            return True
+        return vision != "off" and self.sees_images()
+
+    def sees_images(self) -> bool:
+        """模型能不能看图（ADR 0038）。"""
+        check = getattr(self.extractor, "sees_images", None)
+        return bool(check()) if callable(check) else False
 
     def extract_page(
         self,
@@ -66,11 +78,14 @@ class Pipeline:
         template: TemplateChoice = DEFAULT_TEMPLATE,
         image: np.ndarray | None = None,
         structure: PageStructure | None = None,
+        images: Sequence[bytes] = (),
+        vision: str | None = None,
     ) -> DocumentReport:
         """一页走完 分析结构 → 抽取 → 对齐 → 校验。
 
         image 是这一页的图（用版面、表格模型时要）；
-        structure 是已经分析好的结构（试跑时用存下来的）。
+        structure 是已经分析好的结构（试跑时用存下来的）；
+        images 是给模型看的原图（PNG），vision 是为什么看（ADR 0038）。
         """
         manual: frozenset[str] = frozenset()
         computed: frozenset[str] = frozenset()
@@ -83,8 +98,16 @@ class Pipeline:
             result = self.extractor.discover(page, structure)
             name, version = DISCOVER, 1
         else:
+            if isinstance(template, AutoChoice):
+                raise TypeError("自动判断要用 extract_pages")
             tpl = template if isinstance(template, Template) else load_template(template)
-            result = self.extractor.extract(page, tpl.specs, tpl.table_specs, structure)
+            if images:
+                result = self.extractor.extract(
+                    page, tpl.specs, tpl.table_specs, structure, images=images
+                )
+                result = replace(result, vision=vision or "看了原图")
+            else:
+                result = self.extractor.extract(page, tpl.specs, tpl.table_specs, structure)
             if tpl.manual_fields:
                 # 人工填的字段不交给模型，先放一个空值，审核时填（ADR 0031）
                 empty = tuple(ExtractedField(f.name, f.type, None) for f in tpl.manual_fields)
@@ -140,12 +163,15 @@ class Pipeline:
         first: int,
         template: TemplateChoice = DEFAULT_TEMPLATE,
         before_extract: Callable[[], None] | None = None,
+        vision: VisionMode | None = None,
     ) -> DocumentReport:
         """一张单据（可能有好几页）走完 分析结构 → 抽取 → 对齐 → 校验（ADR 0036）。
 
         好几页的拼成上下相连的一张长页一起处理：跨页的明细表接在一起，字段在哪一页都能找到。
         first 是这张单据在文件里从第几页开始；
-        before_extract 在分析完版面、开始抽取前调用（报进度）。
+        before_extract 在分析完版面、开始抽取前调用（报进度）；
+        vision 是这一次看不看原图（不写用 Pipeline.vision，ADR 0038）。
+        模板是 AutoChoice 时先给这张单据选模板（ADR 0038）。
         """
         stacked = stack_pages(pages)
         image = stack_images(images, stacked)
@@ -155,7 +181,34 @@ class Pipeline:
         )
         if before_extract is not None:
             before_extract()
-        report = self.extract_page(stacked.page, source, first, template, structure=structure)
+        classified = None
+        if isinstance(template, AutoChoice):
+            chooser = getattr(self.extractor, "choose", None)
+            classified = classify(
+                head_text(stacked.page),
+                template,
+                cast(Chooser, chooser) if callable(chooser) else None,
+            )
+            template = classified.picked.template if classified.picked else DISCOVER
+        reason = vision_reason(pages, vision or self.vision) if template != DISCOVER else None
+        shown = [img for img in images[:MAX_IMAGES] if img is not None]
+        looks = reason is not None and bool(shown) and self.sees_images()
+        report = self.extract_page(
+            stacked.page,
+            source,
+            first,
+            template,
+            structure=structure,
+            images=[to_png(img) for img in shown] if looks else (),
+            vision=reason if looks else None,
+        )
+        if classified is not None:
+            picked = classified.picked
+            report = replace(
+                report,
+                template_version_id=picked.version_id if picked else None,
+                classified=classified.to_json(),
+            )
         if len(pages) == 1:
             return report
         return replace(
@@ -172,6 +225,7 @@ class Pipeline:
         template: TemplateChoice = DEFAULT_TEMPLATE,
         progress: Progress | None = None,
         split: str = "auto",
+        vision: VisionMode | None = None,
     ) -> list[DocumentReport]:
         """整个文件：每张单据一份报告。name 是显示用的文件名（默认取 path 的文件名）。
 
@@ -183,7 +237,8 @@ class Pipeline:
         name = name or path.name
         report("识别文字", 5)
         pages = self.read(path)
-        images = page_images(path) if self.needs_images() else [None] * len(pages)
+        looks = vision or self.vision
+        images = page_images(path) if self.needs_images(looks) else [None] * len(pages)
         judge = getattr(self.extractor, "continues", None)
         parts = segments(
             pages,
@@ -206,8 +261,12 @@ class Pipeline:
                     a,
                     template,
                     before_extract=lambda which=which, n=n: report(
-                        f"抽取{which}", 20 + 75 * (n - 1) // len(parts)
+                        f"选模板、抽取{which}"
+                        if isinstance(template, AutoChoice)
+                        else f"抽取{which}",
+                        20 + 75 * (n - 1) // len(parts),
                     ),
+                    vision=looks,
                 )
             )
         return reports

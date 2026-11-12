@@ -34,8 +34,16 @@ DEFAULT_CONTEXT = 32768
 """
 
 
-def server_command(model: Path, *, port: int = 8080, context: int = DEFAULT_CONTEXT) -> list[str]:
-    """拼出启动命令。找不到 llama-server 时报错并说明怎么安装。"""
+def server_command(
+    model: Path,
+    *,
+    port: int = 8080,
+    context: int = DEFAULT_CONTEXT,
+    mmproj: Path | None = None,
+) -> list[str]:
+    """拼出启动命令。找不到 llama-server 时报错并说明怎么安装。
+
+    mmproj 是视觉模型文件（ADR 0038）：给了模型就能看图。"""
     exe = shutil.which("llama-server")
     if exe is None:
         raise FileNotFoundError("找不到 llama-server。Mac 上请先运行：brew install llama.cpp")
@@ -47,12 +55,19 @@ def server_command(model: Path, *, port: int = 8080, context: int = DEFAULT_CONT
         "--port", str(port),
         "-c", str(context),
         "--no-webui",  # 不要 llama-server 自带的聊天网页：只当接口用
+        *(["--mmproj", str(mmproj)] if mmproj is not None else []),
     ]  # fmt: skip
 
 
-def run_server(model: Path, *, port: int = 8080, context: int = DEFAULT_CONTEXT) -> int:
+def run_server(
+    model: Path,
+    *,
+    port: int = 8080,
+    context: int = DEFAULT_CONTEXT,
+    mmproj: Path | None = None,
+) -> int:
     """在前台运行 llama-server，按 Ctrl + C 停止。返回退出码。"""
-    command = server_command(model, port=port, context=context)
+    command = server_command(model, port=port, context=context, mmproj=mmproj)
     try:
         # 命令里只有本机找到的程序路径和我们自己拼的参数，没有外部输入。
         return subprocess.run(command, env=server_env(), check=False).returncode  # noqa: S603

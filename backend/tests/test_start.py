@@ -124,7 +124,9 @@ def test_start_finds_the_model_by_itself(started, monkeypatch, tmp_path):
     model = tmp_path / "only.gguf"
     model.write_bytes(b"")
     monkeypatch.setattr(Settings, "find_model", lambda self: model)
-    monkeypatch.setattr(server, "server_command", lambda m, port: ["llama-server", str(m)])
+    monkeypatch.setattr(
+        server, "server_command", lambda m, port, mmproj=None: ["llama-server", str(m)]
+    )
     monkeypatch.setattr(server, "server_env", lambda: {})
     assert cli.main(["start", "--no-browser"]) == 0
     assert started[0] == ["llama-server", str(model)]

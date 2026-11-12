@@ -55,7 +55,7 @@ from jacara.modules.documents.schemas import (
 from jacara.modules.exports.service import save_export
 from jacara.modules.fields.schemas import AdoptOut, SuggestionOut
 from jacara.modules.fields.service import FieldService
-from jacara.modules.templates.service import TemplateFailure, TemplateService
+from jacara.modules.templates.service import Pick, TemplateFailure, TemplateService
 from jacara.pipeline.current import (
     current_checks_json,
     evidence_text,
@@ -169,9 +169,7 @@ class DocumentService:
                 out = self._with_counts([earlier])[0]
                 return out.model_copy(update={"duplicate_skipped": True})
         try:
-            version_id, discover = TemplateService(self.owner, self.session).pick_for_upload(
-                template
-            )
+            pick = TemplateService(self.owner, self.session).pick_for_upload(template)
         except TemplateFailure as err:
             raise DocumentError(err.code, err.message) from err
         if content_type not in ALLOWED_TYPES:
@@ -205,8 +203,9 @@ class DocumentService:
                 page_count=_count_pages(content_type, data),
                 storage_key=key,
                 status="uploaded",
-                template_version_id=version_id,
-                discover=discover,
+                template_version_id=pick.version_id,
+                discover=pick.discover,
+                auto=pick.auto,
                 user_id=self.owner.user_id,
                 team_id=self.owner.team_id,
             )
@@ -218,7 +217,7 @@ class DocumentService:
             "document",
             document.id,
             filename=safe_name,
-            template="discover" if discover else str(version_id or "receipt"),
+            template=pick.audit,
             **({"folder": document.folder} if document.folder else {}),
         )
         self._enqueue(document)
@@ -257,21 +256,26 @@ class DocumentService:
         templates = TemplateService(self.owner, self.session)
         try:
             if data.template is not None:
-                version_id, discover = templates.pick_for_upload(data.template)
+                pick = templates.pick_for_upload(data.template)
+            elif document.auto:
+                pick = Pick(None, auto=True)  # 重新自动判断：模板改了、加了新模板都会用上
             elif document.template_version_id is not None:
                 # 同一个模板的最新版（"模板改了"最常见）
                 current = self.session.get_one(TemplateVersion, document.template_version_id)
-                version_id, discover = templates.latest_version_id(current.template_id), False
+                pick = Pick(templates.latest_version_id(current.template_id))
             else:
-                version_id, discover = None, document.discover
+                pick = Pick(None, discover=document.discover)
         except TemplateFailure as err:
             raise DocumentError(err.code, err.message) from err
 
         if data.split is not None:
             document.split = check_split(data.split)
         label = REPROCESS_REASONS[data.reason]
-        document.template_version_id = version_id
-        document.discover = discover
+        document.template_version_id = pick.version_id
+        document.discover = pick.discover
+        document.auto = pick.auto
+        if data.vision is not None:
+            document.vision = None if data.vision == "default" else data.vision
         document.run_reason = f"{label}：{note}" if note else label
         document.status = "uploaded"
         document.error = None
@@ -285,7 +289,8 @@ class DocumentService:
             document.id,
             reason=data.reason,
             note=note,
-            template="discover" if discover else str(version_id or "receipt"),
+            template=pick.audit,
+            **({"vision": data.vision} if data.vision is not None else {}),
         )
         if not self._enqueue(document):
             raise DocumentError("queue", "任务队列暂时不可用，请稍后再试")

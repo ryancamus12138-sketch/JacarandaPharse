@@ -101,7 +101,8 @@ class ExtractedValue(Base, OwnedMixin, TimestampMixin):
         """证据这一维（ADR 0028），说的是抽取时找到的出处，审核之后也不变：
 
         - verified：原文里找到了，和值完全一致，没有任何疑点
-        - pending：找到了，但要人看一眼（只是相似、行号不对、OCR 置信度低、正负号不对）
+        - pending：找到了，但要人看一眼（只是相似、行号不对、OCR 置信度低、正负号不对），
+          或者是看原图读的（ADR 0038）
         - missing：原文里找不到这个值，可能是模型编的或改写了（也包括按规则没有填的 rejected）
         - empty：模型说原文没有这个字段（人工新加的格子也是）
         """
@@ -109,6 +110,8 @@ class ExtractedValue(Base, OwnedMixin, TimestampMixin):
             return "missing"
         if self.status == "computed":
             return "verified"  # 按公式算的：对不对看参与计算的字段和规则
+        if self.status == "seen":
+            return "pending"  # 看原图读的（ADR 0038）：OCR 里对不上，要人对着原图看一眼
         if self.status == "empty" or self.evidence is None:
             return "empty"
         if self.status == "fuzzy" or self.note:

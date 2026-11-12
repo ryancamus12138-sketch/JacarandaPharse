@@ -6,6 +6,7 @@ llama-server 实现了 OpenAI 格式的 /v1/chat/completions 接口，所以这�
 
 from __future__ import annotations
 
+import base64
 import time
 
 import httpx
@@ -17,12 +18,48 @@ from jacara.plugins.model_backends.base import (
     ModelConfig,
 )
 
+VISION_CACHE_S = 60
+"""问过一次"能不能看图"之后，一分钟内不再问。"""
+
+
+def _message(m: ChatMessage) -> dict[str, object]:
+    """一条消息。带图的写成 OpenAI 的多段格式：先文字，再一张张图（base64 的 data URL）。"""
+    if not m.images:
+        return {"role": m.role, "content": m.content}
+    parts: list[dict[str, object]] = [{"type": "text", "text": m.content}]
+    for image in m.images:
+        url = "data:image/png;base64," + base64.b64encode(image).decode("ascii")
+        parts.append({"type": "image_url", "image_url": {"url": url}})
+    return {"role": m.role, "content": parts}
+
 
 class LlamaServerBackend:
     name = "llama-server"
 
     def __init__(self, config: ModelConfig | None = None) -> None:
         self.config = config or ModelConfig()
+        self._vision: tuple[float, bool] | None = None
+
+    def sees_images(self) -> bool:
+        """问模型服务（/props 的 modalities.vision）加载了视觉模型没有。结果记一分钟。"""
+        now = time.monotonic()
+        if self._vision is not None and now - self._vision[0] < VISION_CACHE_S:
+            return self._vision[1]
+        try:
+            response = httpx.get(
+                f"{self.config.base_url}/props", headers=self._headers(), timeout=2
+            )
+            data = response.json() if response.status_code == 200 else {}
+        except (httpx.HTTPError, ValueError):
+            data = {}
+        modalities = data.get("modalities") if isinstance(data, dict) else None
+        sees = bool(isinstance(modalities, dict) and modalities.get("vision"))
+        self._vision = (now, sees)
+        return sees
+
+    def _headers(self) -> dict[str, str]:
+        key = self.config.api_key
+        return {"Authorization": f"Bearer {key}"} if key else {}
 
     def _payload(
         self, messages: list[ChatMessage], json_schema: dict[str, object] | None
@@ -30,7 +67,7 @@ class LlamaServerBackend:
         """把通用的消息和配置翻译成 llama-server 要的请求内容。"""
         c = self.config
         payload: dict[str, object] = {
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "messages": [_message(m) for m in messages],
             "temperature": c.temperature,
             "chat_template_kwargs": {"enable_thinking": c.enable_thinking},
         }
@@ -48,9 +85,7 @@ class LlamaServerBackend:
         url = f"{self.config.base_url}/v1/chat/completions"
         start = time.perf_counter()
         try:
-            headers = (
-                {"Authorization": f"Bearer {self.config.api_key}"} if self.config.api_key else {}
-            )
+            headers = self._headers()
             response = httpx.post(
                 url,
                 json=self._payload(messages, json_schema),

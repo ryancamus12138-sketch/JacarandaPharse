@@ -14,17 +14,19 @@ import tempfile
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from jacara.core.db import session_scope
 from jacara.core.storage import ObjectStorage, StorageError
-from jacara.models import Document, Extraction, TemplateVersion
+from jacara.models import Document, Extraction, TemplateRecord, TemplateVersion
+from jacara.pipeline.classify import AutoChoice, Candidate
 from jacara.pipeline.current import template_from_version
 from jacara.pipeline.run import Pipeline, TemplateChoice
 from jacara.pipeline.store import add_extractions, page_count
+from jacara.pipeline.vision import VisionMode
 from jacara.plugins.extractors import ExtractionError
 from jacara.plugins.extractors.base import DISCOVER
 from jacara.plugins.model_backends import ModelBackendError
@@ -59,6 +61,7 @@ def process_document(
             )
             template, version_id = choose_template(session, document)
             split = document.split
+            vision = cast(VisionMode | None, document.vision)
             run = next_run(session, document)
             reason = document.run_reason
         if key is None:
@@ -75,6 +78,7 @@ def process_document(
                 template=template,
                 progress=lambda stage, percent: _report(document_id, stage, percent, factory),
                 split=split,
+                vision=vision,
             )
 
         _report(document_id, "保存结果", 98, factory)
@@ -112,13 +116,35 @@ def choose_template(
     """这次处理用什么模板（ADR 0030）：键值对发现、我的模板的某个版本，或者内置的收据模板。
 
     返回（给流水线的模板，模板版本的 id）。版本 id 记到抽取结果上，以后模板再改也能还原。
+    自动判断（ADR 0038）：交给流水线所有能用的我的模板，每张单据各选各的，版本 id 记在每张上。
     """
+    if document.auto:
+        return AutoChoice(candidates(session, document.team_id)), None
     if document.discover:
         return DISCOVER, None
     if document.template_version_id is not None:
         version = session.get_one(TemplateVersion, document.template_version_id)
         return template_from_version(version), version.id
     return DEFAULT_TEMPLATE, None
+
+
+def candidates(session: Session, team_id: uuid.UUID) -> tuple[Candidate, ...]:
+    """自动判断能选的模板：这个团队（个人模式就是自己）没归档、没删的我的模板，各取最新版。"""
+    records = session.scalars(
+        select(TemplateRecord)
+        .where(
+            TemplateRecord.team_id == team_id,
+            TemplateRecord.archived.is_(False),
+            TemplateRecord.deleted_at.is_(None),
+        )
+        .order_by(TemplateRecord.updated_at.desc())
+    ).all()
+    found: list[Candidate] = []
+    for record in records:
+        version = next((v for v in record.versions if v.version == record.latest_version), None)
+        if version is not None:
+            found.append(Candidate(template_from_version(version), record.id, version.id))
+    return tuple(found)
 
 
 def next_run(session: Session, document: Document) -> int:

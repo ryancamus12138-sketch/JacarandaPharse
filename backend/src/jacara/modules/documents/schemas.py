@@ -83,6 +83,10 @@ class DocumentOut(BaseModel):
     """现在用的是第几轮处理的结果。"""
     discover: bool = False
     """下一次（或这一次）处理不用模板，抽出所有键值对。"""
+    auto: bool = False
+    """下一次（或这一次）处理自动判断用哪个模板（ADR 0038）。"""
+    vision: str | None = None
+    """看不看原图：always、off；null 按系统设置（ADR 0038）。"""
     skipped_at: datetime | None = None
     """审核时点了"先跳过"的时间；没跳过是 null。"""
     skip_reason: str | None = None
@@ -117,6 +121,10 @@ class ExtractionOut(BaseModel):
     template_version: int
     template_title: str = ""
     """模板的中文名。"""
+    classified: dict[str, Any] | None = None
+    """自动判断用哪个模板的经过（ADR 0038）：picked、reason、by、candidates。"""
+    vision: str | None = None
+    """给模型看了原图的原因（ADR 0038）；没看是 null。"""
     run: int = 1
     run_reason: str | None = None
     labels: dict[str, str] = {}
@@ -166,12 +174,15 @@ class ReprocessIn(BaseModel):
     """重新处理：换模板（或用同一个模板的最新版）跑一轮新的。旧的结果留着可以查看。"""
 
     template: str | None = None
-    """我的模板的 id，或者 discover。不写：用现在这个模板的最新版。"""
+    """我的模板的 id、discover 或 auto（自动判断，ADR 0038）。不写：用现在这个模板的最新版
+    （自动判断的再自动判断一次）。"""
     reason: Literal["template_changed", "wrong_template", "bad_result", "model_changed", "other"]
     note: str = Field(default="", max_length=500)
     """补充说明。原因选"其他"时必须写。"""
     split: str | None = Field(default=None, max_length=200)
     """文件里有几张单据（ADR 0036）：auto、one、pages 或"1-2, 3, 4-6"。不写：和上次一样。"""
+    vision: Literal["always", "off", "default"] | None = None
+    """看不看原图（ADR 0038）：always 每张都看、off 不看、default 按系统设置。不写：和上次一样。"""
 
 
 class DocumentPage(BaseModel):

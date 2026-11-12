@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     jacara_model: Path | None = None
     """jacara start 要启动的模型文件（.gguf）。不写就用 models/ 文件夹里唯一的那个 .gguf。"""
 
+    jacara_mmproj: Path | None = None
+    """视觉模型文件（mmproj-*.gguf，ADR 0038）：有了它模型能看原图。
+    不写就用 models/ 里唯一的 mmproj*.gguf；没有就只看文字。"""
+    jacara_vision: Literal["auto", "always", "off"] = "auto"
+    """什么时候让模型看原图（ADR 0038）：auto 只在照片、扫描件 OCR 不可靠时看；
+    always 每张都看（慢）；off 不看。"""
     jacara_layout: bool = True
     """抽取前先用版面模型找出页面上的区域（标题、正文、表格、页眉页脚），ADR 0034。"""
     jacara_table_model: Path | None = None
@@ -91,7 +97,16 @@ class Settings(BaseSettings):
         if self.jacara_model is not None:
             path = self.jacara_model
             return path if path.is_absolute() else PROJECT_ROOT / path
-        found = sorted((PROJECT_ROOT / "models").glob("*.gguf"))
+        found = sorted(p for p in (PROJECT_ROOT / "models").glob("*.gguf") if not _is_mmproj(p))
+        return found[0] if len(found) == 1 else None
+
+    def find_mmproj(self) -> Path | None:
+        """视觉模型文件（ADR 0038）：先看 JACARA_MMPROJ，再看 models/ 里唯一的 mmproj*.gguf。"""
+        if self.jacara_mmproj is not None:
+            path = self.jacara_mmproj
+            path = path if path.is_absolute() else PROJECT_ROOT / path
+            return path if path.is_file() else None
+        found = sorted(p for p in (PROJECT_ROOT / "models").glob("*.gguf") if _is_mmproj(p))
         return found[0] if len(found) == 1 else None
 
     def table_model(self) -> Path | None:
@@ -117,6 +132,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 """项目根目录：这个文件在 backend/src/jacara/core/ 下面，往上四层。"""
 
 _PLACEHOLDERS = {"", "change-me"}
+
+
+def _is_mmproj(path: Path) -> bool:
+    """视觉模型文件（mmproj）：名字里有 mmproj。它不是对话模型，找模型时跳过。"""
+    return "mmproj" in path.name.lower()
 
 
 @lru_cache

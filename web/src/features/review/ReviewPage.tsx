@@ -64,6 +64,7 @@ import { useConfirmMany } from './useConfirmMany'
 import { useRevise } from './useRevise'
 import { useRows } from './useRows'
 import { Tip } from '../../components/Tip'
+import { ExtractionNotes } from './ExtractionNotes'
 
 /** 下一个还在等确认的字段（从 afterId 后面开始找，找到最后再从头找）。 */
 function nextPending(values: FieldValue[], afterId: string | null): string | null {
@@ -689,6 +690,7 @@ function ReviewWorkspace({ id }: { id: string }) {
       {currentExtraction?.source_notes?.map((note) => (
         <Alert key={note} type="warning" showIcon style={{ marginBottom: 12 }} title={note} />
       ))}
+      <ExtractionNotes extraction={currentExtraction} />
       <PageTabs doc={doc} page={page} onChange={changePage} />
       <Flex
         gap={narrow ? 16 : 24}

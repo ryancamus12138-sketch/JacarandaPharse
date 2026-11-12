@@ -201,6 +201,11 @@ function StatusTags({ value: v, full = false }: { value: FieldValue; full?: bool
           <Tag color="cyan">按公式算</Tag>
         </Tooltip>
       )}
+      {v.status === 'seen' && !v.reviewed && (
+        <Tooltip title="OCR 认错了或没认出来（手写、印章、模糊），这个值是模型看着原图读的，请对着原图核对">
+          <Tag color="orange">看原图读的</Tag>
+        </Tooltip>
+      )}
       {evidence}
       {check}
       {v.pending_review && <Tag color="gold">待确认</Tag>}

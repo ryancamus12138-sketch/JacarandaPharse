@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import suppress
+from dataclasses import replace
 from typing import Any, Literal, cast
 
 from jacara.core.textvalue import signed_number
@@ -26,13 +27,19 @@ from jacara.templates import Template, TemplateError, from_definition, load_temp
 def template_from_version(version: TemplateVersion) -> Template:
     """我的模板的一个版本 → Template。名字用模板的 id（存进 extractions.template）。"""
     record = version.template
-    return from_definition(
+    template = from_definition(
         version.definition,
         str(record.id),
         version.version,
         record.title,
         record.category,
         record.description,
+    )
+    # 标签记在模板上、不进版本（ADR 0037）；自动判断要用现在的领域和国家（ADR 0038）
+    return replace(
+        template,
+        domains=tuple(record.domains or template.domains),
+        countries=tuple(record.countries) if record.domains else template.countries,
     )
 
 
