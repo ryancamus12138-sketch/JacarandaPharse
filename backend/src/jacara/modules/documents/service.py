@@ -37,12 +37,14 @@ from jacara.modules.documents.schemas import (
     DocumentOut,
     DocumentPage,
     ExtractionOut,
+    FolderOut,
     OcrLineOut,
     PageOcr,
     PageStructureOut,
     RegionOut,
     ReprocessIn,
     RunOut,
+    SameFile,
     SkipIn,
     StructureCell,
     StructurePair,
@@ -67,7 +69,9 @@ from jacara.pipeline.current import (
 )
 from jacara.pipeline.entities import entity_conflicts
 from jacara.pipeline.load import load_reports
+from jacara.pipeline.pages import covering, ocr_page_json, page_slice, pages_json
 from jacara.pipeline.region import read_region
+from jacara.pipeline.segment import SplitError, normalize_split
 from jacara.plugins.exporters import create_exporter
 from jacara.plugins.exporters.excel import cell_value
 from jacara.plugins.extractors.base import DISCOVER, split_cell_name
@@ -140,10 +144,29 @@ class DocumentService:
         self.owner = owner
 
     def upload(
-        self, filename: str, content_type: str, data: bytes, template: str | None = None
+        self,
+        filename: str,
+        content_type: str,
+        data: bytes,
+        template: str | None = None,
+        *,
+        folder: str | None = None,
+        split: str = "auto",
+        skip_duplicate: bool = False,
     ) -> DocumentOut:
-        """template：我的模板的 id，或者 discover（抽出所有键值对）。不写就用上一次用的。"""
+        """template：我的模板的 id，或者 discover（抽出所有键值对）。不写就用上一次用的。
+
+        folder：批量导入时文件所在的文件夹；split：文件里有几张单据（ADR 0036）；
+        skip_duplicate：同一个文件之前传过就不再新建，返回之前那份。
+        """
         require(self.owner, "document:create")
+        split = check_split(split)
+        sha256 = hashlib.sha256(data).hexdigest()
+        if skip_duplicate:
+            earlier = self.repo.first_with_hash(self.owner.team_id, sha256)
+            if earlier is not None:
+                out = self._with_counts([earlier])[0]
+                return out.model_copy(update={"duplicate_skipped": True})
         try:
             version_id, discover = TemplateService(self.owner, self.session).pick_for_upload(
                 template
@@ -174,7 +197,9 @@ class DocumentService:
                 id=document_id,
                 filename=safe_name,
                 content_type=content_type,
-                sha256=hashlib.sha256(data).hexdigest(),
+                sha256=sha256,
+                folder=clean_folder(folder),
+                split=split,
                 size_bytes=len(data),
                 page_count=_count_pages(content_type, data),
                 storage_key=key,
@@ -193,9 +218,10 @@ class DocumentService:
             document.id,
             filename=safe_name,
             template="discover" if discover else str(version_id or "receipt"),
+            **({"folder": document.folder} if document.folder else {}),
         )
         self._enqueue(document)
-        return DocumentOut.model_validate(document)
+        return self._with_counts([document])[0]
 
     def process(self, document_id: uuid.UUID) -> DocumentOut:
         """重新放进队列：处理失败后重试，或者上传时队列没连上。"""
@@ -240,6 +266,8 @@ class DocumentService:
         except TemplateFailure as err:
             raise DocumentError(err.code, err.message) from err
 
+        if data.split is not None:
+            document.split = check_split(data.split)
         label = REPROCESS_REASONS[data.reason]
         document.template_version_id = version_id
         document.discover = discover
@@ -292,6 +320,10 @@ class DocumentService:
             )
         return AdoptOut(confirmed=confirmed, edited=edited)
 
+    def folders(self) -> list[FolderOut]:
+        require(self.owner, "document:read")
+        return [FolderOut(folder=f, count=c) for f, c in self.repo.folders(self.owner.team_id)]
+
     def page(self, limit: int, offset: int, filters: DocumentFilter | None = None) -> DocumentPage:
         require(self.owner, "document:read")
         documents, total = self.repo.page(self.owner.team_id, limit, offset, filters)
@@ -302,9 +334,17 @@ class DocumentService:
         ids = [d.id for d in documents]
         counts = self.repo.review_counts(ids)
         comments = CommentRepository(self.session).open_counts(ids)
+        same = self.repo.same_files(self.owner.team_id, documents)
         return [
             DocumentOut.model_validate(d).model_copy(
-                update={"review_count": counts.get(d.id, 0), "open_comments": comments.get(d.id, 0)}
+                update={
+                    "review_count": counts.get(d.id, 0),
+                    "open_comments": comments.get(d.id, 0),
+                    "same_file": [
+                        SameFile.model_validate(o, from_attributes=True)
+                        for o in same.get(d.id, [])[:3]
+                    ],
+                }
             )
             for d in documents
         ]
@@ -387,12 +427,13 @@ class DocumentService:
         """第 page 页的 OCR 结果：每个文字块的文字和位置。审核页面"从原文选取"用。"""
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
-        extraction = next((e for e in document.extractions if e.page == page), None)
+        extraction = covering(document.extractions, page)
         if extraction is None:
             raise DocumentError("not_found", f"第 {page} 页没有抽取结果")
-        lines = (extraction.ocr or {}).get("lines", [])
+        ocr = ocr_page_json(extraction.ocr, page, extraction.page)
+        lines = (ocr or {}).get("lines", [])
         return PageOcr(
-            available=extraction.ocr is not None,
+            available=ocr is not None,
             lines=[OcrLineOut(index=i, **line) for i, line in enumerate(lines)],
         )
 
@@ -403,12 +444,10 @@ class DocumentService:
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
         wanted = run or document.current_run
-        extraction = next(
-            (e for e in document.all_extractions if e.page == page and e.run == wanted), None
-        )
+        extraction = covering((e for e in document.all_extractions if e.run == wanted), page)
         if extraction is None:
             raise DocumentError("not_found", f"第 {page} 页没有抽取结果")
-        return structure_view(extraction.structure)
+        return structure_view(extraction.structure, page, extraction.page)
 
     def review(self, document_id: uuid.UUID) -> DocumentOut:
         """完成审核：所有需要确认的字段都处理过了，文档状态 done → reviewed。"""
@@ -609,10 +648,16 @@ class DocumentService:
         return document
 
 
-def structure_view(data: dict[str, Any] | None) -> PageStructureOut:
-    """存下来的结构 → 画在原图上用的样子：合并的格子画成一个，空格子不画。"""
+def structure_view(data: dict[str, Any] | None, page: int = 1, first: int = 1) -> PageStructureOut:
+    """存下来的结构 → 画在原图上用的样子：合并的格子画成一个，空格子不画。
+
+    几页拼成的单据（ADR 0036）：只取第 page 页上的部分，坐标换回这一页自己的。
+    """
     if not data:
         return PageStructureOut(available=False)
+    part = page_slice(data, page, first)
+    if part is not None:
+        data = _one_page(data, *part)
     blocks = {b["id"]: b for b in data.get("blocks", [])}
     regions = [
         StructureRegion(kind=blocks[a]["attrs"].get("kind", ""), box=blocks[a]["box"])
@@ -684,6 +729,55 @@ def structure_view(data: dict[str, Any] | None) -> PageStructureOut:
     )
 
 
+def _one_page(data: dict[str, Any], top: float, bottom: float) -> dict[str, Any]:
+    """几页拼成的结构里，中心落在 [top, bottom) 这一段的块，坐标往上挪 top。
+    跨页的表格：只留这一页上的格子，表格的框缩到这些格子。"""
+
+    def inside(box: list[float]) -> bool:
+        return top <= (box[1] + box[3]) / 2 < bottom
+
+    def moved(box: list[float]) -> list[float]:
+        return [box[0], box[1] - top, box[2], box[3] - top]
+
+    blocks: list[dict[str, Any]] = []
+    kept: set[str] = set()
+    for b in data.get("blocks", []):
+        if b["type"] == "TABLE":
+            continue
+        if inside(b["box"]):
+            blocks.append({**b, "box": moved(b["box"])})
+            kept.add(b["id"])
+    tables: list[str] = []
+    for b in data.get("blocks", []):
+        if b["type"] != "TABLE":
+            continue
+        children = [c for c in b["children"] if c in kept]
+        if not children:
+            continue
+        boxes = [next(x["box"] for x in blocks if x["id"] == c) for c in children]
+        box = [
+            min(x[0] for x in boxes),
+            min(x[1] for x in boxes),
+            max(x[2] for x in boxes),
+            max(x[3] for x in boxes),
+        ]
+        attrs = {**b["attrs"], "merged": [m for m in b["attrs"].get("merged", []) if m in kept]}
+        blocks.append({**b, "box": box, "children": children, "attrs": attrs})
+        tables.append(b["id"])
+    keys = [
+        k
+        for k in data.get("keys", [])
+        if k in kept and next(b for b in blocks if b["id"] == k)["attrs"].get("value") in kept
+    ]
+    return {
+        **data,
+        "blocks": blocks,
+        "layouts": [a for a in data.get("layouts", []) if a in kept],
+        "tables": tables,
+        "keys": keys,
+    }
+
+
 def _clear_skip(document: Document) -> None:
     document.skipped_at = None
     document.skip_reason = None
@@ -753,12 +847,18 @@ def _with_states(
         )
         for v in out.values
     ]
+    notes = [
+        f"第 {page} 页：{data['note']}"
+        for page, data in pages_json(extraction.ocr, extraction.page)
+        if data.get("note")
+    ]
     return out.model_copy(
         update={
             "current_checks": checks,
             "values": values,
             "labels": labels,
             "template_title": _template_title(extraction),
+            "source_notes": notes,
         }
     )
 
@@ -835,3 +935,20 @@ def _unique(name: str, used: set[str]) -> str:
         candidate = f"{stem} ({n}){suffix}"
     used.add(candidate)
     return candidate
+
+
+def clean_folder(folder: str | None) -> str | None:
+    """批量导入的文件夹：统一用 / 分隔，去掉开头结尾的 / 和 . 、..，最长 255 个字。空的是 None。"""
+    if not folder:
+        return None
+    parts = [p.strip() for p in folder.replace("\\", "/").split("/")]
+    parts = [p for p in parts if p and p not in (".", "..")]
+    return "/".join(parts)[:255] or None
+
+
+def check_split(split: str | None) -> str:
+    """检查"一个文件里有几张单据"的写法（ADR 0036），写错了说清楚。"""
+    try:
+        return normalize_split(split)
+    except SplitError as err:
+        raise DocumentError("invalid", str(err)) from err

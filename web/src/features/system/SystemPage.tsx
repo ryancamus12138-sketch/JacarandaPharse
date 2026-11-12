@@ -57,6 +57,13 @@ export function SystemPage() {
                     </Typography.Text>
                   )}
                 </Descriptions.Item>
+                <Descriptions.Item label="监视文件夹">
+                  {d.watch_dir ?? (
+                    <Typography.Text type="secondary">
+                      没有设。在 .env 里写 JACARA_WATCH_DIR=文件夹路径，重启后放进去的图片和 PDF 会自动导入（不动原文件，重复的跳过）
+                    </Typography.Text>
+                  )}
+                </Descriptions.Item>
                 <Descriptions.Item label="模板">
                   <Flex gap={4} wrap>
                     {d.templates.map((t) => (

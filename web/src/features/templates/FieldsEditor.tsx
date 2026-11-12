@@ -131,6 +131,23 @@ export function FieldsEditor({
       ),
     },
     {
+      title: (
+        <Tooltip title="发票号码、账单号这类：别的单据里有一样的值，就标黄提醒“可能重复报销”">
+          不能重复
+        </Tooltip>
+      ),
+      dataIndex: 'unique',
+      width: 80,
+      render: (_, f, i) => (
+        <Switch
+          size="small"
+          checked={f.unique ?? false}
+          disabled={readOnly || scope.row !== null}
+          onChange={(unique) => update(i, { unique })}
+        />
+      ),
+    },
+    {
       title: <Tooltip title="导出 Excel 时要不要这一列">导出</Tooltip>,
       dataIndex: 'export',
       width: 60,

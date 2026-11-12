@@ -10,8 +10,11 @@
 from __future__ import annotations
 
 import io
+import re
 import tempfile
 import time
+import unicodedata
+from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -33,6 +36,35 @@ PDF_SCALE = 3
 MIN_TEXT_CHARS = 10
 """一页 PDF 的文字层少于这么多字，就当作扫描件，改用 OCR。"""
 
+MAX_GARBLED = 0.15
+"""文字层里认不出来的字超过这个比例，就当作乱码，改用 OCR。
+
+有的 PDF 字体没有带"字形 → 文字"的对照表，读出来是 (cid:12)、方框、私用区字符；
+有的编码错了，读出来是 Ã©、â€ 这种。照着乱码抽字段，值和出处都是错的。"""
+
+_MOJIBAKE = re.compile("[ÃÂâ][\x80-\xbf€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]")
+"""UTF-8 被当成 Latin-1 读出来的样子：é → Ã©，" → â€œ。"""
+
+
+def garbled_ratio(text: str) -> float:
+    """文字里认不出来的字占多少（0～1）。
+
+    算作认不出来的：(cid:数字)、替换符 �、方框 □、私用区和未分配的字符、控制字符、
+    UTF-8 当 Latin-1 读出来的乱码（Ã©）。空格不算。
+    """
+    cids = re.findall(r"\(cid:\d+\)", text)
+    rest = re.sub(r"\(cid:\d+\)", "", text)
+    chars = [c for c in rest if not c.isspace()]
+    total = len(chars) + len(cids)
+    if total == 0:
+        return 0.0
+    bad = len(cids) + 2 * len(_MOJIBAKE.findall(rest))
+    for c in chars:
+        category = unicodedata.category(c)
+        if c in "\ufffd□" or category in ("Co", "Cn", "Cc", "Cs"):
+            bad += 1
+    return min(1.0, bad / total)
+
 
 class UnsupportedFileError(ValueError):
     """不支持的文件类型。"""
@@ -53,10 +85,17 @@ def _load_pdf(path: Path, ocr: OcrEngine) -> list[OcrPage]:
     with pdfplumber.open(path) as pdf:
         for number, page in enumerate(pdf.pages):
             text_page = _text_layer(page)
-            if text_page is not None:
-                pages.append(text_page)
-            else:
+            if text_page is None:
                 pages.append(_render_and_ocr(path, number, ocr))
+                continue
+            ratio = garbled_ratio(" ".join(line.text for line in text_page.lines))
+            if ratio > MAX_GARBLED:
+                # 文字层是乱码：照着它抽，值和出处都是错的，改看图识别
+                scanned = _render_and_ocr(path, number, ocr)
+                note = f"PDF 文字层是乱码（{ratio:.0%} 的字认不出来），这一页改用 OCR"
+                pages.append(replace(scanned, models={**scanned.models, "note": note}))
+            else:
+                pages.append(text_page)
     return pages
 
 

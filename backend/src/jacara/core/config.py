@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     没有这个文件时，
     表格的格子按文字位置用规则划分。"""
 
+    jacara_watch_dir: Path | None = None
+    """监视文件夹（ADR 0036）：放进去的图片和 PDF 自动导入。
+    jacara start 会一起启动；不写就不监视。"""
+    jacara_watch_template: str | None = None
+    """监视文件夹导入时用的模板（我的模板的 id）。不写就用上一次用的。"""
+    jacara_watch_user: str | None = None
+    """团队模式下，监视文件夹导入的文件算谁传的（用户名）。个人模式不用写。"""
+
     max_upload_mb: int = 50
     """上传文件的大小上限（MB）。"""
 

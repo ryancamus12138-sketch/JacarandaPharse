@@ -80,6 +80,8 @@ class TemplateField:
     """可选值（来自 Excel 的下拉选项等）：抽到的值不在里面就提醒。空 = 不限。"""
     extract: bool = True
     """要不要让模型从单据上抽。False = 人工填（报销人、部门……）：不交给模型，审核时填。"""
+    unique: bool = False
+    """不能重复（ADR 0036）：发票号码、账单号这类。别的文档里有一样的值，就提醒"可能重复报销"。"""
     compute: str = ""
     """计算字段的公式（ADR 0035），例如 check_out - check_in。
     有公式就不交给模型，由别的字段算出来。"""
@@ -359,6 +361,7 @@ def _field_dict(f: TemplateField) -> dict[str, Any]:
         "options": list(f.options),
         "extract": f.extract,
         "compute": f.compute,
+        "unique": f.unique,
     }
 
 
@@ -605,6 +608,7 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
                 options=tuple(dict.fromkeys(o.strip() for o in options if o.strip())),
                 extract=bool(item.get("extract", True)),
                 compute=compute.strip(),
+                unique=bool(item.get("unique", False)),
             )
         )
     return fields

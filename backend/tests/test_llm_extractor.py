@@ -57,7 +57,7 @@ def test_values_rows_and_provenance(receipt_page):
         "total": (9.0, 6),  # 整数 9 转成 9.0
     }
     assert result.model == "fake-model"
-    assert result.prompt_version == "extract-v6"
+    assert result.prompt_version == "extract-v7"
     assert result.raw_output == backend.answer  # 原始回答原样保留
 
 

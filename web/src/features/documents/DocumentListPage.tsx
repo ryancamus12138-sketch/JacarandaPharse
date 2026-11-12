@@ -1,5 +1,6 @@
 import {
   ClearOutlined,
+  FolderOutlined,
   MessageOutlined,
   ReloadOutlined,
   SearchOutlined,
@@ -25,7 +26,7 @@ import {
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { ApiError } from '../../api/client'
-import { listDocuments, processDocument } from '../../api/documents'
+import { listDocuments, listFolders, processDocument } from '../../api/documents'
 import { listTemplates } from '../../api/templates'
 import type { DocumentFilters, DocumentStatus, DocumentSummary } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
@@ -70,6 +71,7 @@ function filtersFrom(params: URLSearchParams): DocumentFilters {
     value_q: params.get('value_q') ?? undefined,
     field: params.get('field') ?? undefined,
     skipped: params.has('skipped') ? params.get('skipped') === 'true' : undefined,
+    folder: params.get('folder') ?? undefined,
   }
 }
 
@@ -84,6 +86,7 @@ function paramsFrom(f: DocumentFilters): URLSearchParams {
   if (f.value_q) params.set('value_q', f.value_q)
   if (f.field) params.set('field', f.field)
   if (f.skipped !== undefined) params.set('skipped', String(f.skipped))
+  if (f.folder) params.set('folder', f.folder)
   return params
 }
 
@@ -102,6 +105,7 @@ export function DocumentListPage() {
   const [search, setSearch] = useState(filters.q ?? '')
   const [valueSearch, setValueSearch] = useState(filters.value_q ?? '')
   const templates = useQuery({ queryKey: ['templates'], queryFn: listTemplates, staleTime: Infinity })
+  const folders = useQuery({ queryKey: ['folders'], queryFn: listFolders })
 
   // "在哪个字段里找"的选项：选了模板就是这个模板的字段，没选就是所有模板的字段（同一个 ID 只列一次）
   const fieldOptions = (() => {
@@ -152,6 +156,28 @@ export function DocumentListPage() {
             <Tooltip title={d.skip_reason ? `跳过原因：${d.skip_reason}` : '审核时先跳过了'}>
               <Tag color="orange" style={{ marginInlineEnd: 0 }}>
                 已跳过
+              </Tag>
+            </Tooltip>
+          )}
+          {(d.same_file ?? []).length > 0 && (
+            <Tooltip
+              title={`内容完全一样的文件以前传过：${(d.same_file ?? [])
+                .map((o) => `${o.filename}（${formatTime(o.created_at)}）`)
+                .join('、')}`}
+            >
+              <Tag color="red" style={{ marginInlineEnd: 0 }}>
+                重复的文件
+              </Tag>
+            </Tooltip>
+          )}
+          {d.folder && (
+            <Tooltip title="批量导入时所在的文件夹，点一下只看这个文件夹">
+              <Tag
+                icon={<FolderOutlined />}
+                style={{ marginInlineEnd: 0, cursor: 'pointer' }}
+                onClick={() => setFilters({ folder: d.folder ?? undefined })}
+              >
+                {d.folder}
               </Tag>
             </Tooltip>
           )}
@@ -308,6 +334,22 @@ export function DocumentListPage() {
             style={{ width: 240 }}
           />
         </Space.Compact>
+        {(folders.data ?? []).length > 0 && (
+          <Select<string>
+            allowClear
+            showSearch
+            placeholder="全部文件夹"
+            aria-label="文件夹"
+            value={filters.folder}
+            onChange={(folder) => setFilters({ folder })}
+            options={(folders.data ?? []).map((f) => ({
+              value: f.folder,
+              label: `${f.folder}（${f.count}）`,
+            }))}
+            style={{ minWidth: 180 }}
+            popupMatchSelectWidth={false}
+          />
+        )}
         <Select<string>
           aria-label="跳过的文档"
           value={filters.skipped === undefined ? 'all' : filters.skipped ? 'only' : 'hide'}

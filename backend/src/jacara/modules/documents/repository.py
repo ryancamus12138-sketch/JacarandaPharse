@@ -37,6 +37,8 @@ class DocumentFilter:
     """和 value_search 一起用：只在这个字段里找（字段 ID，例如 invoice_no）。"""
     skipped: bool | None = None
     """True：只看跳过的；False：不看跳过的；None：都看。"""
+    folder: str | None = None
+    """批量导入的文件夹：这个文件夹和它下面的子文件夹（ADR 0036）。"""
 
 
 def _like(text: str) -> str:
@@ -82,6 +84,42 @@ class DocumentRepository:
             )
         )
         return list(self.session.scalars(query))
+
+    def folders(self, team_id: uuid.UUID) -> list[tuple[str, int]]:
+        """批量导入的文件夹和各有几份文档，按名字排序。"""
+        rows = self.session.execute(
+            select(Document.folder, func.count())
+            .where(Document.team_id == team_id, Document.folder.is_not(None))
+            .group_by(Document.folder)
+            .order_by(Document.folder)
+        ).all()
+        return [(str(folder), int(count)) for folder, count in rows]
+
+    def first_with_hash(self, team_id: uuid.UUID, sha256: str) -> Document | None:
+        """同一个团队里最早传的、内容一样的文档。"""
+        return self.session.scalars(
+            select(Document)
+            .where(Document.team_id == team_id, Document.sha256 == sha256)
+            .order_by(Document.created_at)
+            .limit(1)
+        ).first()
+
+    def same_files(
+        self, team_id: uuid.UUID, documents: list[Document]
+    ) -> dict[uuid.UUID, list[Document]]:
+        """每份文档：同一个团队里内容一样（sha256 相同）的其他文档，先传的在前（ADR 0036）。"""
+        hashes = {d.sha256 for d in documents}
+        if not hashes:
+            return {}
+        found = self.session.scalars(
+            select(Document)
+            .where(Document.team_id == team_id, Document.sha256.in_(hashes))
+            .order_by(Document.created_at)
+        ).all()
+        by_hash: dict[str, list[Document]] = {}
+        for d in found:
+            by_hash.setdefault(d.sha256, []).append(d)
+        return {d.id: [o for o in by_hash.get(d.sha256, []) if o.id != d.id] for d in documents}
 
     def page(
         self, team_id: uuid.UUID, limit: int, offset: int, filters: DocumentFilter | None = None
@@ -131,6 +169,11 @@ class DocumentRepository:
             if f.field:
                 found.append(ExtractedValue.name == f.field)
             conditions.append(exists().where(*found))
+        if f.folder:
+            name = f.folder.strip("/")
+            conditions.append(
+                or_(Document.folder == name, Document.folder.like(f"{_like(name)}/%", escape="\\"))
+            )
         if f.skipped is True:
             conditions.append(Document.skipped_at.is_not(None))
         elif f.skipped is False:

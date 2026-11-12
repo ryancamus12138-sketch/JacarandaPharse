@@ -12,10 +12,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 
 from jacara.pipeline.compute import compute
+from jacara.pipeline.pages import stack_images, stack_pages, stacked_engines
+from jacara.pipeline.segment import Judge, segments
 from jacara.plugins.aligners import BlockAligner
 from jacara.plugins.aligners.base import AlignedField
 from jacara.plugins.exporters import DocumentReport
@@ -129,35 +132,89 @@ class Pipeline:
             structure=structure,
         )
 
+    def extract_pages(
+        self,
+        pages: list[OcrPage],
+        images: list[np.ndarray | None],
+        source: str,
+        first: int,
+        template: TemplateChoice = DEFAULT_TEMPLATE,
+        before_extract: Callable[[], None] | None = None,
+    ) -> DocumentReport:
+        """一张单据（可能有好几页）走完 分析结构 → 抽取 → 对齐 → 校验（ADR 0036）。
+
+        好几页的拼成上下相连的一张长页一起处理：跨页的明细表接在一起，字段在哪一页都能找到。
+        first 是这张单据在文件里从第几页开始；
+        before_extract 在分析完版面、开始抽取前调用（报进度）。
+        """
+        stacked = stack_pages(pages)
+        image = stack_images(images, stacked)
+        starts = stacked.starts if len(pages) > 1 else ()
+        structure = analyze_page(
+            stacked.page, image, stacked_engines(self.structure, stacked), page_starts=starts
+        )
+        if before_extract is not None:
+            before_extract()
+        report = self.extract_page(stacked.page, source, first, template, structure=structure)
+        if len(pages) == 1:
+            return report
+        return replace(
+            report,
+            last_page=first + len(pages) - 1,
+            pages=tuple(pages),
+            page_starts=stacked.starts,
+        )
+
     def run(
         self,
         path: Path,
         name: str | None = None,
         template: TemplateChoice = DEFAULT_TEMPLATE,
         progress: Progress | None = None,
+        split: str = "auto",
     ) -> list[DocumentReport]:
-        """整个文件：每一页一份报告。name 是显示用的文件名（默认取 path 的文件名）。
+        """整个文件：每张单据一份报告。name 是显示用的文件名（默认取 path 的文件名）。
 
-        progress 不为空时，每开始一步就报告一次：识别文字占前 20%，抽取按页数平分剩下的。
+        split：文件里有几张单据（ADR 0036）：auto 自动判断、one、pages 或页码范围。
+        progress 不为空时，每开始一步就报告一次：识别文字占前 10%，分单据到 15%，
+        抽取按单据平分剩下的。
         """
         report = progress or (lambda _stage, _percent: None)
         name = name or path.name
         report("识别文字", 5)
         pages = self.read(path)
         images = page_images(path) if self.needs_images() else [None] * len(pages)
+        judge = getattr(self.extractor, "continues", None)
+        parts = segments(
+            pages,
+            split,
+            cast(Judge, judge) if callable(judge) else None,
+            lambda k: report(
+                f"判断第 {k} / {len(pages)} 页是不是新的一张单据", 10 + 5 * k // len(pages)
+            ),
+        )
         reports: list[DocumentReport] = []
-        for n, (page, image) in enumerate(zip(pages, images, strict=False), start=1):
-            report(f"分析第 {n} / {len(pages)} 页的版面", 15 + 75 * (n - 1) // len(pages))
-            structure = analyze_page(page, image, self.structure)
-            report(f"抽取第 {n} / {len(pages)} 页", 20 + 75 * (n - 1) // len(pages))
+        for n, (a, b) in enumerate(parts, start=1):
+            where = f"第 {a} 页" if a == b else f"第 {a}–{b} 页"
+            which = f"第 {n} / {len(parts)} 张单据（{where}）" if len(parts) > 1 else where
+            report(f"分析{which}的版面", 15 + 80 * (n - 1) // len(parts))
             reports.append(
-                self.extract_page(
-                    page, page_label(name, n, len(pages)), n, template, structure=structure
+                self.extract_pages(
+                    pages[a - 1 : b],
+                    list(images[a - 1 : b]),
+                    page_label(name, a, b, len(pages)),
+                    a,
+                    template,
+                    before_extract=lambda which=which, n=n: report(
+                        f"抽取{which}", 20 + 75 * (n - 1) // len(parts)
+                    ),
                 )
             )
         return reports
 
 
-def page_label(name: str, number: int, total: int) -> str:
-    """多页文件显示成"发票.pdf 第 2 页"，单页就是文件名。"""
-    return f"{name} 第 {number} 页" if total > 1 else name
+def page_label(name: str, first: int, last: int, total: int) -> str:
+    """多页文件显示成"发票.pdf 第 2 页""发票.pdf 第 2–3 页"，单页就是文件名。"""
+    if total <= 1:
+        return name
+    return f"{name} 第 {first} 页" if first == last else f"{name} 第 {first}–{last} 页"

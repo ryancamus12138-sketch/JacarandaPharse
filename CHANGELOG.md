@@ -5,10 +5,19 @@
 
 ## [未发布]
 
-v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）。
-升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value），再 `cd web && npm run build`。表格结构模型可选，见 README。
+v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）。
+升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder），再 `cd web && npm run build`。表格结构模型可选，见 README。
 
 ### 新增
+
+- 一个文件里的几张单据（ADR 0036）：一张单据可以占好几页（两页的酒店账单合成一份，跨页的明细表接在一起），一个 PDF 里扫的几张发票分成几份结果、导出几行。上传时选"自动判断 / 整个文件是一张 / 每页一张"；自动判断先看"Page 2 of 3""第 2 页 共 3 页""续"，没有标记再让模型判断是不是续页。分错了在"重新处理"里改，也可以自己写页码（1-2, 3, 4-6）
+- 审核页：一个文件有几张单据时上面一排选单据，下面一排选这张单据的页；点出处在别的页的字段，原图自动翻过去
+- 重复的文件：内容一样的文件以前传过，列表上标"重复的文件"；上传时可以选"跳过以前传过的文件"
+- 可能重复报销：模板字段可以标"不能重复"（起步模板的发票号码、账单号已经标上），别的单据里有一样的值就标黄提醒
+- 批量导入：一次拖进几百个文件，或者选择整个文件夹（子文件夹一起），显示上传进度、跳过和失败的；按文件夹筛选文档
+- 监视文件夹：`.env` 里写 `JACARA_WATCH_DIR`，放进去的图片和 PDF 自动导入（不动原文件，重复的跳过）；也可以 `jacara watch 文件夹`
+- PDF 文字层是乱码时，这一页自动改用 OCR，审核页顶上说明原因
+- 处理进度更细：判断第几页是不是新单据、分析和抽取第几张单据
 
 - 个人资料页：点右上角的名字，或左边菜单顶上的头像和昵称进去；改昵称、换头像（自动裁成正方形，去掉照片里的拍摄信息）、改密码，看自己的用户名、团队、角色和能做的事。个人模式也能设昵称和头像
 - 按字段内容找文档：文档列表的"字段内容"搜索框，输入发票号码、商家名的一部分就能找到，可以只在某个字段里找；人改过的值也算（`?value_q=…&field=…`）

@@ -51,6 +51,9 @@ class SystemService:
                 else None,
                 table=table.name if (table := self.settings.table_model()) else None,
             ),
+            watch_dir=str(self.settings.jacara_watch_dir)
+            if self.settings.jacara_watch_dir
+            else None,
             templates=[
                 TemplateInfo(name=t.name, title=t.title, version=t.version)
                 for t in (load_template(n) for n in template_names())

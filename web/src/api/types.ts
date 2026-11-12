@@ -99,6 +99,20 @@ export interface DocumentSummary {
   skip_reason?: string | null
   /** 还没解决的备注几条。 */
   open_comments?: number
+  /** 批量导入时所在的文件夹（ADR 0036）。 */
+  folder?: string | null
+  /** 一个文件里有几张单据：auto 自动判断、one 整个文件一张、pages 每页一张，或页码范围 "1-2, 3"。 */
+  split?: string
+  /** 内容完全一样的文件之前也传过：那几份。 */
+  same_file?: { id: string; filename: string; created_at: string }[]
+  /** 批量导入选了"跳过重复的文件"：这次没有新建，返回的是之前那份。 */
+  duplicate_skipped?: boolean
+}
+
+/** 批量导入的一个文件夹和里面有几份文档。 */
+export interface FolderCount {
+  folder: string
+  count: number
 }
 
 /** 文档列表的筛选条件。都不填 = 全部。 */
@@ -118,6 +132,8 @@ export interface DocumentFilters {
   field?: string
   /** true 只看跳过的，false 不看跳过的 */
   skipped?: boolean
+  /** 批量导入的文件夹（含子文件夹） */
+  folder?: string
 }
 
 /** 审核页面的"上一份 / 下一份"（只算待审核的）。 */
@@ -178,6 +194,8 @@ export interface SystemInfo {
   ocr: { engine: string; version: string | null }
   /** 页面结构分析用的模型（ADR 0034）。null：没开。 */
   structure?: { layout: string | null; table: string | null } | null
+  /** 监视文件夹（放进去的文件自动导入）；没设是 null。 */
+  watch_dir?: string | null
   templates: { name: string; title: string; version: number }[]
   data: {
     documents: number
@@ -212,6 +230,8 @@ export interface Evidence {
   text?: string
   /** 模型说用了哪几个文字块（编号，ADR 0034）。v3 之前处理的没有。 */
   blocks?: number[]
+  /** 在文件的第几页（ADR 0036：一张单据可以占好几页）。更新前处理的没有，就是这张单据的第一页。 */
+  page?: number
 }
 
 /**
@@ -290,7 +310,12 @@ export interface Checks {
 /** 一页的抽取结果。 */
 export interface Extraction {
   id: string
+  /** 这张单据从第几页开始。 */
   page: number
+  /** 到第几页结束（ADR 0036）；只占一页是 null。 */
+  last_page?: number | null
+  /** 读文字时的特别情况，例如"第 2 页：PDF 文字层是乱码，这一页改用 OCR"。 */
+  source_notes?: string[]
   source: string
   model: string
   prompt_version: string
@@ -370,6 +395,8 @@ export interface TemplateField {
   extract: boolean
   /** 计算字段的公式（ADR 0035），例如 check_out - check_in。空 = 不是计算字段。 */
   compute?: string
+  /** 不能重复（ADR 0036）：发票号码这类，别的单据里有一样的值就提醒可能重复报销。 */
+  unique?: boolean
 }
 
 export interface TemplateTable {
@@ -548,6 +575,8 @@ export interface RevisionIn {
   source_lines?: number[]
   /** 框选：原图上框出的区域 [x0, y0, x1, y1]（重新识别之后确认的值放在 value）。出处就是这个框。 */
   source_box?: Box
+  /** 从原文选取、框选的是第几页（一张单据可以占好几页）。 */
+  page?: number
 }
 
 /** 页面上的一个框 [左, 上, 右, 下]，和页面图片一样的像素坐标。 */

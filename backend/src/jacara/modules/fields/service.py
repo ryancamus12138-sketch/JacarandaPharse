@@ -82,6 +82,7 @@ class FieldService:
                 raise FieldError("invalid", "框里没有要填的值，请框住要识别的文字")
             x0, y0, x1, y1 = change.source_box
             evidence = {
+                "page": self._page(value.extraction, change.page),
                 "row": None,
                 "row_text": new_value,
                 "text": new_value,
@@ -98,8 +99,9 @@ class FieldService:
             reason = change.reason.strip() or "框选重新识别"
         elif change.action == "edit" and change.source_lines is not None:
             # 从原文选取：值从选的文字读出来，出处换成选的这几块
-            lines = self._ocr_lines(value.extraction, change.source_lines)
-            evidence = evidence_from_ocr(lines)
+            page = self._page(value.extraction, change.page)
+            lines = self._ocr_lines(value.extraction, change.source_lines, page)
+            evidence = {"page": page, **evidence_from_ocr(lines)}
             if change.value is None:
                 new_value = value_from_text(value.type, " ".join(ln["text"] for ln in lines))
             else:
@@ -345,8 +347,21 @@ class FieldService:
             raise FieldError("not_found", "找不到这一页的抽取结果")
         return extraction
 
-    def _ocr_lines(self, extraction: Extraction, indexes: list[int]) -> list[dict[str, Any]]:
-        lines: list[dict[str, Any]] = (extraction.ocr or {}).get("lines", [])
+    def _page(self, extraction: Extraction, page: int | None) -> int:
+        """选的是第几页：要在这张单据的页里（ADR 0036）。"""
+        if page is None:
+            return extraction.page
+        if not extraction.page <= page <= (extraction.last_page or extraction.page):
+            raise FieldError("invalid", f"第 {page} 页不属于这张单据")
+        return page
+
+    def _ocr_lines(
+        self, extraction: Extraction, indexes: list[int], page: int | None = None
+    ) -> list[dict[str, Any]]:
+        from jacara.pipeline.pages import ocr_page_json
+
+        ocr = ocr_page_json(extraction.ocr, page or extraction.page, extraction.page)
+        lines: list[dict[str, Any]] = (ocr or {}).get("lines", [])
         if not lines:
             raise FieldError(
                 "invalid", "这一页没有保存 OCR 结果（新功能上线前处理的），不能从原文选取"

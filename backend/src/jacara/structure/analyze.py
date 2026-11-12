@@ -89,9 +89,15 @@ class _Builder:
 
 
 def analyze_page(
-    page: OcrPage, image: np.ndarray | None = None, engines: StructureEngines = NO_MODELS
+    page: OcrPage,
+    image: np.ndarray | None = None,
+    engines: StructureEngines = NO_MODELS,
+    page_starts: tuple[float, ...] = (),
 ) -> PageStructure:
-    """分析一页的结构。image 是这一页的图（坐标和 OCR 一样）；没有图就不用模型，只按规则。"""
+    """分析一页的结构。image 是这一页的图（坐标和 OCR 一样）；没有图就不用模型，只按规则。
+
+    page_starts：几页拼成的一张单据（ADR 0036），每一页从多高开始；记在结构里，给模型看时分页。
+    """
     rows = group_rows(page)
     b = _Builder(page, rows, {}, [], [], [], {})
     index_of = {id(ln): i for i, ln in enumerate(page.lines)}
@@ -183,6 +189,7 @@ def analyze_page(
         keys=tuple(keys),
         ocr_lines=tuple(b.ocr_lines),
         sources=sources,
+        page_starts=page_starts if len(page_starts) > 1 else (),
     )
 
 

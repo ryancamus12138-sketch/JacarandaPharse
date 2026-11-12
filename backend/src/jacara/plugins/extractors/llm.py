@@ -27,7 +27,7 @@ from jacara.structure.analyze import analyze_page
 from jacara.structure.graph import PageStructure
 from jacara.structure.serialize import spatial_text, structure_text
 
-PROMPT_VERSION = "extract-v6"
+PROMPT_VERSION = "extract-v7"
 """提示词的版本号。改了下面的提示词就要改这个号，结果里会记录它。
 
 v1：OCR 文字逐块拼接。v2：按视觉行合并、加行号，并要求模型给出值所在的行号。
@@ -37,6 +37,8 @@ v4：表格每行只给一个行号、格子直接写值（回答短一半多）
 v5：折行的值：值跨几行时连起来写，给 row 和 row_end（ADR 0033）。
 v6：按文字块（ADR 0034）：每块带编号、按版面原样排开，附上版面区域、标题 → 值、表格；
     每个值回答用了哪几块（blocks），不再给行号。
+v7：一张单据可以有好几页（ADR 0036）：几页接在一起给，页与页之间写"第 n 页"分隔，
+    并提醒跨页的表格接着写、每页重复的表头和页眉页脚不算。只有一页的单据，提示词和 v6 一样。
 """
 
 SYSTEM_PROMPT = """你是文档信息抽取助手。用户会给你一张单据的文字和要抽取的字段。
@@ -153,9 +155,17 @@ def _field_line(f: FieldSpec, indent: str = "") -> str:
     return f"{indent}- {f.name}（{_TYPE_NAMES[f.type]}）：{f.description}"
 
 
+MULTI_PAGE_NOTE = (
+    "这张单据有 {n} 页，下面按顺序接在一起，页与页之间有“第 n 页”分隔。"
+    "字段在哪一页都可以；表格跨页时接着写，每页重复的表头、页眉页脚、“承上页”“续下页”这类行不算表格的行。"
+)
+
+
 def page_prompt(structure: PageStructure) -> str:
-    """给模型看的单据：版面原样 + 结构。"""
+    """给模型看的单据：版面原样 + 结构。几页拼成的单据先说一句有几页（ADR 0036）。"""
     text = f"单据文字（按位置排开，⟨数字⟩ 是文字块编号）：\n{spatial_text(structure)}"
+    if len(structure.page_starts) > 1:
+        text = MULTI_PAGE_NOTE.format(n=len(structure.page_starts)) + "\n\n" + text
     extra = structure_text(structure)
     return f"{text}\n\n{extra}" if extra else text
 
@@ -176,11 +186,48 @@ def build_messages(
     return [ChatMessage("system", SYSTEM_PROMPT), ChatMessage("user", user)]
 
 
+SEGMENT_PROMPT_VERSION = "segment-v1"
+"""判断"这一页是不是上一页的续页"的提示词版本（ADR 0036）。"""
+
+SEGMENT_PROMPT = """你在整理扫描或导出的单据。一个文件里可能有好几张单据，一张单据也可能有好几页。
+用户给你上一页的最后几行和这一页的最前几行。判断这一页是上一页那张单据的续页（同一张单据的下一页），
+还是一张新的单据。
+- 续页：接着上一页的明细表往下写、没有新的单据抬头、写着“续”“承上页”、页码是第 2 页及以后。
+- 新单据：有自己的抬头（商家、发票号码、单据标题）、单号或日期和上一页不同、
+  上一页已经有合计或签名结尾。
+只根据给出的文字判断。"""
+
+SEGMENT_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {"continues": {"type": "boolean"}, "reason": {"type": "string"}},
+    "required": ["continues", "reason"],
+}
+
+SEGMENT_LINES = 25
+"""判断续页时给模型看上一页的最后几行、这一页的最前几行。"""
+
+
 class LlmExtractor:
     name = "llm"
 
     def __init__(self, backend: ModelBackend) -> None:
         self.backend = backend
+
+    def continues(self, previous: OcrPage, current: OcrPage) -> bool | None:
+        """这一页是不是上一页那张单据的续页（ADR 0036）。模型答不上来返回 None（当作新单据）。"""
+        before = "\n".join(r.text for r in group_rows(previous)[-SEGMENT_LINES:])
+        after = "\n".join(r.text for r in group_rows(current)[:SEGMENT_LINES])
+        messages = [
+            ChatMessage("system", SEGMENT_PROMPT),
+            ChatMessage("user", f"上一页的最后几行：\n{before}\n\n这一页的最前几行：\n{after}"),
+        ]
+        result = self.backend.chat(messages, json_schema=SEGMENT_SCHEMA)
+        try:
+            data = json.loads(result.text)
+        except json.JSONDecodeError:
+            return None
+        answer = data.get("continues") if isinstance(data, dict) else None
+        return answer if isinstance(answer, bool) else None
 
     def extract(
         self,

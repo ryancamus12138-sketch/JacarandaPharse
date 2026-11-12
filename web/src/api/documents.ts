@@ -4,12 +4,13 @@ import { api, apiBlob, apiDownload, type DownloadedFile } from './client'
 import type {
   Box,
   Dashboard,
+  DocComment,
   DocumentDetail,
   DocumentFilters,
   DocumentNeighbors,
   DocumentPage,
-  DocComment,
   DocumentSummary,
+  FolderCount,
   PageOcr,
   PageStructure,
   RegionOut,
@@ -33,6 +34,7 @@ export function listDocuments(
   if (filters.value_q?.trim()) query.set('value_q', filters.value_q.trim())
   if (filters.field) query.set('field', filters.field)
   if (filters.skipped !== undefined) query.set('skipped', String(filters.skipped))
+  if (filters.folder) query.set('folder', filters.folder)
   return api<DocumentPage>(`/documents?${query}`)
 }
 
@@ -47,11 +49,23 @@ export function getDashboard(): Promise<Dashboard> {
 }
 
 /** 上传一个文件。文件用 FormData 发（和 /docs 里选文件上传一样），字段名必须叫 file。 */
-export function uploadDocument(file: File, template?: string): Promise<DocumentSummary> {
+export function uploadDocument(
+  file: File,
+  template?: string,
+  options: { folder?: string; split?: string; skipDuplicate?: boolean } = {},
+): Promise<DocumentSummary> {
   const form = new FormData()
   form.append('file', file)
   if (template) form.append('template', template) // 我的模板的 id，或者 discover
+  if (options.folder) form.append('folder', options.folder)
+  if (options.split) form.append('split', options.split)
+  if (options.skipDuplicate) form.append('skip_duplicate', 'true')
   return api<DocumentSummary>('/documents', { method: 'POST', body: form })
+}
+
+/** 批量导入过的文件夹（ADR 0036）。 */
+export function listFolders(): Promise<FolderCount[]> {
+  return api<FolderCount[]>('/documents/folders')
 }
 
 /** 重新处理（失败后重试）。 */
@@ -67,7 +81,7 @@ export function getDocument(id: string, run?: number): Promise<DocumentDetail> {
 /** 换模板重新处理（新的一轮）。template 不写：用现在这个模板的最新版。 */
 export function reprocessDocument(
   id: string,
-  body: { template?: string; reason: ReprocessReason; note: string },
+  body: { template?: string; reason: ReprocessReason; note: string; split?: string },
 ): Promise<DocumentSummary> {
   return api<DocumentSummary>(`/documents/${id}/reprocess`, { method: 'POST', json: body })
 }

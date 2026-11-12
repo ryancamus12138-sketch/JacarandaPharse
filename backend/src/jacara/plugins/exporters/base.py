@@ -50,7 +50,17 @@ class DocumentReport:
     processed_at: datetime
 
     page: int = 1
-    """第几页，从 1 开始。"""
+    """这张单据从第几页开始，从 1 开始。"""
+
+    last_page: int | None = None
+    """这张单据到第几页结束（ADR 0036）。只占一页是 None。"""
+
+    pages: tuple[OcrPage, ...] = ()
+    """几页拼成的单据：每一页自己的 OCR 结果（存的时候一页一页存）。
+    只占一页时是空的，用 ocr_page。"""
+
+    page_starts: tuple[float, ...] = ()
+    """几页拼成的单据：每一页在拼成的长页上从多高开始，存出处时换回每一页自己的坐标。"""
 
     text_source: str = "ocr"
     """这一页的文字怎么来的：ocr（OCR 识别）或 pdf-text（PDF 文字层）。"""
@@ -81,6 +91,12 @@ class DocumentReport:
 
     hidden: frozenset[str] = frozenset()
     """模板里设成"不导出"的字段、表（items）和表的列（items.tax），导出时整列不写。"""
+
+    @property
+    def pages_label(self) -> str:
+        """ "第 3 页"或"第 3–4 页"。"""
+        last = self.last_page or self.page
+        return f"第 {self.page} 页" if last == self.page else f"第 {self.page}–{last} 页"
 
 
 class Exporter(Protocol):

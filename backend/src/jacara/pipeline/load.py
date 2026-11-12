@@ -20,16 +20,17 @@ from jacara.templates import Template
 
 
 def load_reports(document: Document) -> list[DocumentReport]:
-    """一个文档的每一页 → 一份 DocumentReport。要先把抽取、字段、审核记录都查出来。"""
-    pages = len(document.extractions)
+    """一个文档的每张单据 → 一份 DocumentReport。要先把抽取、字段、审核记录都查出来。"""
+    from jacara.pipeline.current import page_range
+
+    several = len(document.extractions) > 1
     return [
-        _report(extraction, _source(document.filename, extraction.page, pages))
+        _report(
+            extraction,
+            f"{document.filename} {page_range(extraction)}" if several else document.filename,
+        )
         for extraction in document.extractions
     ]
-
-
-def _source(filename: str, page: int, pages: int) -> str:
-    return f"{filename} 第 {page} 页" if pages > 1 else filename
 
 
 def _report(extraction: Extraction, source: str) -> DocumentReport:
@@ -75,6 +76,7 @@ def _report(extraction: Extraction, source: str) -> DocumentReport:
         ocr_engine=extraction.ocr_engine,
         processed_at=extraction.created_at,
         page=extraction.page,
+        last_page=extraction.last_page,
         text_source=extraction.source,
         template=extraction.template,
         template_version=extraction.template_version,

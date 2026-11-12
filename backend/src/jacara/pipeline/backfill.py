@@ -64,7 +64,7 @@ def backfill_document(
     with session_scope(factory) as session:
         document = session.get_one(Document, document_id)
         for extraction in document.extractions:
-            if extraction.ocr is not None:
+            if extraction.ocr is not None or extraction.last_page:
                 continue
             if not 1 <= extraction.page <= len(pages):
                 raise ValueError(f"{filename}：第 {extraction.page} 页在文件里找不到")

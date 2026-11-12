@@ -172,6 +172,7 @@ def _field(f: TemplateField) -> TemplateFieldOut:
         options=list(f.options),
         extract=f.extract,
         compute=f.compute,
+        unique=f.unique,
     )
 
 
@@ -662,6 +663,7 @@ class TemplateService:
             )
         if self.pipeline is None:
             raise TemplateFailure("unavailable", "模型服务没有准备好")
+        from jacara.pipeline.pages import pages_json, stack_pages
         from jacara.pipeline.store import page_from_json
         from jacara.structure.graph import structure_from_json
 
@@ -669,7 +671,14 @@ class TemplateService:
         started = time.monotonic()
         out: list[TrialPage] = []
         for extraction in pages:
-            page = page_from_json(extraction.ocr or {}, extraction.ocr_engine)
+            # 几页拼成的单据（ADR 0036）：每一页还原后按处理时一样拼起来
+            stacked = stack_pages(
+                [
+                    page_from_json(p, p.get("engine") or extraction.ocr_engine)
+                    for _, p in pages_json(extraction.ocr, extraction.page)
+                ]
+            )
+            page = stacked.page
             # 用处理时存下来的页面结构（版面区域、表格是模型认的）；没有就按规则重新分析
             structure = (
                 structure_from_json(extraction.structure, page) if extraction.structure else None
@@ -761,6 +770,7 @@ class TemplateService:
             new = Extraction(
                 document=document,
                 page=old.page,
+                last_page=old.last_page,
                 source=old.source,
                 ocr_engine=old.ocr_engine,
                 model=old.model,
@@ -775,6 +785,7 @@ class TemplateService:
                 raw_output=old.raw_output,
                 checks={},
                 ocr=old.ocr,
+                structure=old.structure,
                 user_id=document.user_id,
                 team_id=document.team_id,
             )

@@ -69,6 +69,12 @@ def main(argv: list[str] | None = None) -> int:
         help="用哪个模板：receipt 常用 5 个字段（默认），receipt_full 收据上全部 15 个字段",
     )
     p_ext.add_argument("--excel", type=Path, help="同时把结果导出成 Excel，例如 results/收据.xlsx")
+    p_ext.add_argument(
+        "--split",
+        default="auto",
+        help="文件里有几张单据：auto 自动判断（默认）、one 整个文件一张、pages 每页一张，"
+        "或 1-2,3,4-6",
+    )
     p_ext.add_argument("--save", action="store_true", help="同时把结果存进数据库")
 
     sub.add_parser("templates", help="列出所有模板（backend/src/jacara/templates/*.toml）")
@@ -80,6 +86,18 @@ def main(argv: list[str] | None = None) -> int:
     p_api.add_argument("--reload", action="store_true", help="改了代码自动重启（开发用）")
 
     sub.add_parser("worker", help="启动后台任务：处理通过 API 上传的文件（要先运行 jacara serve）")
+
+    p_watch = sub.add_parser(
+        "watch", help="监视一个文件夹，放进去的图片和 PDF 自动导入（Ctrl + C 停止）"
+    )
+    p_watch.add_argument(
+        "folder", type=Path, nargs="?", help="要监视的文件夹；不写就用 .env 里的 JACARA_WATCH_DIR"
+    )
+    p_watch.add_argument("--template", help="用哪个模板（我的模板的 id）；不写就用上一次用的")
+    p_watch.add_argument(
+        "--split", default="auto", help="文件里有几张单据：auto（默认）、one、pages 或 1-2,3"
+    )
+    p_watch.add_argument("--user", help="团队模式：导入的文件算谁传的（用户名）")
 
     p_start = sub.add_parser("start", help="一起启动模型、后台任务和 Web 服务（日常使用）")
     p_start.add_argument("--port", type=int, default=8000, help="Web 服务的端口，默认 8000")
@@ -135,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
         return _api(args)
     if args.command == "worker":
         return _worker()
+    if args.command == "watch":
+        return _watch(args)
     if args.command == "start":
         return _start(args)
     if args.command == "stop":
@@ -251,20 +271,47 @@ def _extract(args: argparse.Namespace) -> int:
         return 1
     images = page_images(path) if pipeline.needs_images() else [None] * len(pages)
 
+    from jacara.pipeline.pages import stack_images, stack_pages, stacked_engines
+    from jacara.pipeline.segment import SplitError, normalize_split, segments
+
+    try:
+        judge = getattr(pipeline.extractor, "continues", None)
+        parts = segments(pages, normalize_split(args.split), judge)
+    except SplitError as err:
+        print(err)
+        return 1
+    except (ModelBackendError, ExtractionError) as err:
+        print(err)
+        return 1
     reports = []
-    for number, page in enumerate(pages, start=1):
+    for n, (first, last) in enumerate(parts, start=1):
         if len(pages) > 1:
-            print(f"\n===== 第 {number} / {len(pages)} 页 =====")
-        how = page.models.get("source", "OCR 识别")
-        print(f"读取：{how} · {len(page.lines)} 块文字 · 用时 {page.duration_ms} 毫秒")
-        structure = analyze_page(page, images[number - 1], pipeline.structure)
+            where = f"第 {first} 页" if first == last else f"第 {first}–{last} 页"
+            print(f"\n===== 第 {n} / {len(parts)} 张单据（{where}）=====")
+        for page in pages[first - 1 : last]:
+            how = page.models.get("note") or page.models.get("source", "OCR 识别")
+            print(f"读取：{how} · {len(page.lines)} 块文字 · 用时 {page.duration_ms} 毫秒")
         if args.show_prompt:
-            for message in build_messages(page, template.specs, template.table_specs, structure):
+            stacked = stack_pages(pages[first - 1 : last])
+            structure = analyze_page(
+                stacked.page,
+                stack_images(images[first - 1 : last], stacked),
+                stacked_engines(pipeline.structure, stacked),
+                page_starts=stacked.starts if last > first else (),
+            )
+            messages = build_messages(stacked.page, template.specs, template.table_specs, structure)
+            for message in messages:
                 print(f"\n----- {message.role} -----\n{message.content}")
             print("-----\n")
-        source = page_label(path.name, number, len(pages))
+        source = page_label(path.name, first, last, len(pages))
         try:
-            report = pipeline.extract_page(page, source, number, template.name, structure=structure)
+            report = pipeline.extract_pages(
+                pages[first - 1 : last],
+                list(images[first - 1 : last]),
+                source,
+                first,
+                template.name,
+            )
         except (ModelBackendError, ExtractionError) as err:
             print(err)
             return 1
@@ -586,6 +633,63 @@ def _worker() -> int:
     return 0
 
 
+def _watch(args: argparse.Namespace) -> int:
+    """监视文件夹：放进去的图片和 PDF 自动导入（ADR 0036）。不动、不删原文件。"""
+    from sqlalchemy import select
+
+    from jacara.core.config import get_settings
+    from jacara.core.db import session_scope
+    from jacara.core.owner import PERSONAL_OWNER
+    from jacara.core.queue import CeleryQueue
+    from jacara.core.storage import get_storage
+    from jacara.models import User
+    from jacara.modules.auth.service import owner_of
+    from jacara.pipeline.segment import SplitError, normalize_split
+    from jacara.pipeline.watch import Watcher
+
+    settings = get_settings()
+    folder = args.folder or settings.jacara_watch_dir
+    if folder is None:
+        print("要监视哪个文件夹？写在命令后面，或者在 .env 里写 JACARA_WATCH_DIR=文件夹路径")
+        return 1
+    folder = folder.expanduser().resolve()
+    if not folder.is_dir():
+        print(f"找不到文件夹：{folder}")
+        return 1
+    try:
+        split = normalize_split(args.split)
+    except SplitError as err:
+        print(err)
+        return 1
+    owner = PERSONAL_OWNER
+    if settings.jacara_mode == "team":
+        username = args.user or settings.jacara_watch_user
+        if not username:
+            print("团队模式要写导入的文件算谁传的：--user 用户名，或 .env 里的 JACARA_WATCH_USER")
+            return 1
+        with session_scope() as session:
+            user = session.scalar(select(User).where(User.username == username.lower()))
+            if user is None or not user.is_active:
+                print(f"没有叫 {username} 的用户（或者已经停用）")
+                return 1
+            owner = owner_of(user)
+    watcher = Watcher(
+        folder,
+        None,
+        get_storage(),
+        CeleryQueue(),
+        owner,
+        template=args.template or settings.jacara_watch_template,
+        split=split,
+    )
+    print(f"监视文件夹：{folder}（放进去的图片和 PDF 会自动导入，不动原文件；Ctrl + C 停止）")
+    from contextlib import suppress
+
+    with suppress(KeyboardInterrupt):
+        watcher.run()
+    return 0
+
+
 def _api(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -697,6 +801,10 @@ def _start(args: argparse.Namespace) -> int:
         children.append(subprocess.Popen(command, env=env))  # noqa: S603
         print(f"启动模型服务：{model.name} → http://127.0.0.1:{MODEL_PORT}")
     children.append(subprocess.Popen([sys.executable, "-m", "jacara.cli", "worker"]))
+    if settings.jacara_watch_dir is not None:
+        # 监视文件夹（ADR 0036）：.env 里写了 JACARA_WATCH_DIR 才启动
+        children.append(subprocess.Popen([sys.executable, "-m", "jacara.cli", "watch"]))
+        print(f"监视文件夹：{settings.jacara_watch_dir}")
 
     # 记下自己和子进程的进程号：jacara stop 先请这里停，万一这里已经没了，也能把子进程收拾掉
     RUN_FILE.parent.mkdir(exist_ok=True)

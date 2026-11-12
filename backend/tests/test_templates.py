@@ -135,6 +135,7 @@ def test_templates_api(client):
         "options": [],
         "extract": True,
         "compute": "",
+        "unique": False,
     }
     change = next(r for r in receipt["rules"] if r["id"] == "change")
     assert change["title"] == "现金 − 总额 = 找零"

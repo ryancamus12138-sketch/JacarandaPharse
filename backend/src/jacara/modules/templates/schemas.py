@@ -25,6 +25,8 @@ class TemplateFieldOut(BaseModel):
     extract: bool = True
     compute: str = ""
     """计算字段的公式（ADR 0035），空 = 不是计算字段。"""
+    unique: bool = False
+    """不能重复（ADR 0036）：别的文档里有一样的值就提醒可能重复报销。"""
 
 
 class TemplateRuleOut(BaseModel):
@@ -183,6 +185,8 @@ class TemplateFieldIn(BaseModel):
     compute: str = Field(default="", max_length=500)
     """计算字段的公式（ADR 0035），例如 check_out - check_in。
     有公式就不交给模型，由别的字段算出来。"""
+    unique: bool = False
+    """不能重复（ADR 0036）：发票号码这类，别的文档里有一样的值就提醒。"""
 
 
 class TemplateTableIn(BaseModel):

@@ -83,6 +83,9 @@ class RevisionIn(BaseModel):
     source_box: list[float] | None = Field(default=None, min_length=4, max_length=4)
     """框选：人在原图上框出的区域 [x0, y0, x1, y1]（重新识别这块之后确认的值放在 value）。
     新出处就是这个框。"""
+    page: int | None = Field(default=None, ge=1)
+    """从原文选取、框选的是文件的第几页（ADR 0036：一张单据可以占好几页）。
+    不写就是这张单据的第一页。"""
 
 
 class ConfirmManyIn(BaseModel):

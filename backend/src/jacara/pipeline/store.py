@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from jacara.core.owner import PERSONAL_OWNER, Owner
 from jacara.models import Document, ExtractedValue, Extraction
+from jacara.pipeline.pages import local_box
 from jacara.plugins.aligners.base import AlignedField
 from jacara.plugins.exporters.base import DocumentReport
 from jacara.plugins.ocr.base import OcrPage
@@ -41,7 +42,7 @@ def save_document(
         filename=path.name,
         sha256=file_sha256(path),
         size_bytes=path.stat().st_size,
-        page_count=len(reports),
+        page_count=page_count(reports),
         status="done",
         user_id=owner.user_id,
         team_id=owner.team_id,
@@ -49,6 +50,11 @@ def save_document(
     session.add(document)
     add_extractions(session, document, reports)
     return document
+
+
+def page_count(reports: Sequence[DocumentReport]) -> int:
+    """文件有几页：最后一张单据的最后一页（一张单据可能占好几页，ADR 0036）。"""
+    return max((r.last_page or r.page for r in reports), default=0)
 
 
 def add_extractions(
@@ -70,6 +76,7 @@ def add_extractions(
         extraction = Extraction(
             document=document,
             page=report.page,
+            last_page=report.last_page,
             source=report.text_source,
             ocr_engine=report.ocr_engine,
             model=e.model,
@@ -83,7 +90,7 @@ def add_extractions(
             duration_ms=e.duration_ms,
             raw_output=e.raw_output,
             checks=checks_json(report.checks),
-            ocr=ocr_json(report.ocr_page),
+            ocr=report_ocr_json(report),
             structure=report.structure.to_json() if report.structure else None,
             **who,
         )
@@ -91,6 +98,7 @@ def add_extractions(
         flagged = report.checks.fields_with_issues()
         for position, field in enumerate(report.aligned):
             row = _value_row(field, position, extraction, field.field.name in flagged, who)
+            row.evidence = _evidence_json(field, report)
             if field.field.name in report.manual:
                 row.origin = "manual"  # 人工填的：不是模型说"原文没有"，是等人填
                 row.needs_review = False
@@ -124,23 +132,52 @@ def _value_row(
         status=field.status,
         needs_review=field.needs_review or rule_failed,
         note=field.note,
-        evidence=_evidence_json(field),
         **who,
     )
 
 
-def _evidence_json(field: AlignedField) -> dict[str, Any] | None:
+def _evidence_json(field: AlignedField, report: DocumentReport) -> dict[str, Any] | None:
+    """出处：哪一页（文件里的页码）、这一页上的框。几页拼成的单据（ADR 0036），
+    拼成的长页上的框换回那一页自己的坐标；框跨两页时只框上面那页的部分。"""
     ev = field.evidence
     if ev is None:
         return None
+    page, bbox = report.page, list(ev.bbox)
+    lines = ev.lines
+    if report.page_starts:
+        index, bbox = local_box(ev.bbox, report.page_starts)
+        page = report.page + index
+        same = [ln for ln in lines if local_box(ln.bbox, report.page_starts)[0] == index]
+        if same and len(same) < len(lines):
+            boxes = [local_box(ln.bbox, report.page_starts)[1] for ln in same]
+            bbox = [
+                min(b[0] for b in boxes),
+                min(b[1] for b in boxes),
+                max(b[2] for b in boxes),
+                max(b[3] for b in boxes),
+            ]
     return {
+        "page": page,
         "row": ev.row,
         "blocks": list(field.field.blocks),
         "row_text": ev.row_text,
-        "text": " ".join(line.text for line in ev.lines),
-        "bbox": [round(v, 1) for v in ev.bbox],
+        "text": " ".join(line.text for line in lines),
+        "bbox": [round(v, 1) for v in bbox],
         "confidence": round(ev.confidence, 4),
         "similarity": ev.similarity,
+    }
+
+
+def report_ocr_json(report: DocumentReport) -> dict[str, Any] | None:
+    """一张单据的 OCR 结果：只占一页的照旧存这一页；占好几页的，每一页存自己的
+    （{"pages": [{"page": 3, "width", "height", "lines"}, …]}，坐标是那一页自己的，ADR 0036）。"""
+    if not report.pages:
+        return ocr_json(report.ocr_page)
+    return {
+        "pages": [
+            {"page": report.page + k, "engine": p.engine, **(ocr_json(p) or {})}
+            for k, p in enumerate(report.pages)
+        ]
     }
 
 
@@ -157,6 +194,7 @@ def ocr_json(page: OcrPage | None) -> dict[str, Any] | None:
     return {
         "width": page.width,
         "height": page.height,
+        **({"note": page.models["note"]} if page.models.get("note") else {}),
         "lines": [
             {
                 "text": line.text,

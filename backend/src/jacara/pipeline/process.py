@@ -24,7 +24,7 @@ from jacara.core.storage import ObjectStorage, StorageError
 from jacara.models import Document, Extraction, TemplateVersion
 from jacara.pipeline.current import template_from_version
 from jacara.pipeline.run import Pipeline, TemplateChoice
-from jacara.pipeline.store import add_extractions
+from jacara.pipeline.store import add_extractions, page_count
 from jacara.plugins.extractors import ExtractionError
 from jacara.plugins.extractors.base import DISCOVER
 from jacara.plugins.model_backends import ModelBackendError
@@ -58,6 +58,7 @@ def process_document(
                 document.content_type,
             )
             template, version_id = choose_template(session, document)
+            split = document.split
             run = next_run(session, document)
             reason = document.run_reason
         if key is None:
@@ -73,6 +74,7 @@ def process_document(
                 name=filename,
                 template=template,
                 progress=lambda stage, percent: _report(document_id, stage, percent, factory),
+                split=split,
             )
 
         _report(document_id, "保存结果", 98, factory)
@@ -86,12 +88,12 @@ def process_document(
                 template_version_id=version_id,
                 run_reason=reason,
             )
-            document.page_count = len(reports)
+            document.page_count = page_count(reports)
             document.current_run = run  # 新一轮成功了才换过去；失败时旧结果照常能看
             document.run_reason = None
             document.status = "done"
             _finish(document)
-        log.info("完成 %s：%d 页", document_id, len(reports))
+        log.info("完成 %s：%d 张单据", document_id, len(reports))
         return "done"
 
     except Exception as err:

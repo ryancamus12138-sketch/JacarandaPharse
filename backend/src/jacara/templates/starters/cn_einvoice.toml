@@ -3,7 +3,7 @@
 # 规则和字段说明只写通用规定，不放任何真实单据的内容。
 
 name = "cn_einvoice"
-version = 1
+version = 2
 title = "中国数电发票"
 region = "cn"
 category = "发票"
@@ -19,6 +19,7 @@ description = "票面最上方的发票名称，例如“电子发票（增值�
 [[fields]]
 name = "invoice_no"
 label = "发票号码"
+unique = true
 type = "string"
 required = true
 description = "右上角的发票号码，数电发票是 20 位数字"

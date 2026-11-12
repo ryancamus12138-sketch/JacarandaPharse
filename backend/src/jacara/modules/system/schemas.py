@@ -65,6 +65,8 @@ class SystemInfo(BaseModel):
     model: ModelInfo
     ocr: OcrInfo
     structure: StructureInfo | None = None
+    watch_dir: str | None = None
+    """监视文件夹（ADR 0036）：放进去的文件自动导入；没设是 null。"""
     templates: list[TemplateInfo]
     data: DataInfo
     services: list[ServiceCheck]

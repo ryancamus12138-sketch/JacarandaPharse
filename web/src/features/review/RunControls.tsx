@@ -41,21 +41,44 @@ export function RunSwitcher({
 const SAME = '__same__'
 
 /** 重新处理：换模板（或同一个模板的最新版）跑新的一轮，要写原因。旧结果留着可以查看。 */
+interface Choice {
+  template: string
+  reason: ReprocessReason
+  note: string
+  split: string
+  ranges?: string
+}
+
+const SPLITS = [
+  { value: 'auto', label: '自动判断' },
+  { value: 'one', label: '整个文件是一张单据' },
+  { value: 'pages', label: '每页是一张单据' },
+  { value: 'ranges', label: '自己写页码' },
+]
+
+/** 现在的分法 → 表单里的选项。 */
+function splitChoice(split: string | undefined): { split: string; ranges?: string } {
+  if (!split || ['auto', 'one', 'pages'].includes(split)) return { split: split || 'auto' }
+  return { split: 'ranges', ranges: split }
+}
+
 export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
-  const [form] = Form.useForm<{ template: string; reason: ReprocessReason; note: string }>()
+  const [form] = Form.useForm<Choice>()
   const templates = useQuery({ queryKey: ['templates'], queryFn: listTemplates, enabled: open })
   const reason = Form.useWatch('reason', form)
+  const split = Form.useWatch('split', form)
   const busy = doc.status === 'uploaded' || doc.status === 'processing'
 
   const reprocess = useMutation({
-    mutationFn: (v: { template: string; reason: ReprocessReason; note: string }) =>
+    mutationFn: (v: Choice) =>
       reprocessDocument(doc.id, {
         template: v.template === SAME ? undefined : v.template,
         reason: v.reason,
         note: v.note ?? '',
+        split: v.split === 'ranges' ? (v.ranges ?? '') : v.split,
       }),
     onSuccess: () => {
       setOpen(false)
@@ -87,7 +110,7 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ template: SAME, reason: 'template_changed', note: '' }}
+          initialValues={{ template: SAME, reason: 'template_changed', note: '', ...splitChoice(doc.split) }}
           onFinish={(v) => reprocess.mutate(v)}
           preserve={false}
         >
@@ -104,6 +127,25 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
               ]}
             />
           </Form.Item>
+          {doc.page_count > 1 && (
+            <Form.Item
+              name="split"
+              label="这个文件里有几张单据"
+              extra="分错了（两张发票当成一张，或者一张两页的账单拆成两张）就在这里改。"
+            >
+              <Select options={SPLITS} />
+            </Form.Item>
+          )}
+          {doc.page_count > 1 && split === 'ranges' && (
+            <Form.Item
+              name="ranges"
+              label={`页码（共 ${doc.page_count} 页）`}
+              extra="每张单据占哪几页，用逗号分开，例如 1-2, 3, 4-6。没写到的页按自动判断接在后面。"
+              rules={[{ required: true, message: '写一下每张单据占哪几页' }]}
+            >
+              <Input placeholder="1-2, 3, 4-6" />
+            </Form.Item>
+          )}
           <Form.Item name="reason" label="为什么" rules={[{ required: true }]}>
             <Radio.Group
               options={Object.entries(REPROCESS_REASONS).map(([value, label]) => ({ value, label }))}

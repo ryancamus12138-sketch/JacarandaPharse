@@ -62,6 +62,12 @@ class Document(Base, OwnedMixin, TimestampMixin):
     """下一次处理用哪个模板版本。空：用内置的收据模板（v2 之前上传的文档）。"""
     discover: Mapped[bool] = mapped_column(default=False, server_default="false")
     """下一次处理不用模板，抽出单据上所有的键值对（"用样例建模板"的第一步）。"""
+    folder: Mapped[str | None] = mapped_column(String(255), index=True)
+    """批量导入时文件所在的文件夹（相对路径，如"2026-10 出差/酒店"）。
+    列表按它分组、筛选（ADR 0036）。"""
+    split: Mapped[str] = mapped_column(String(200), default="auto", server_default="auto")
+    """一个文件里有几张单据（ADR 0036）：auto 自动判断、one 整个文件是一张、pages 每页一张，
+    或者自己写的页码范围（"1-2, 3, 4-6"）。下一次处理按它分。"""
     current_run: Mapped[int] = mapped_column(default=1, server_default="1")
     """现在用的是第几轮处理的结果。"""
     run_reason: Mapped[str | None] = mapped_column(Text)
@@ -88,7 +94,10 @@ class Extraction(Base, OwnedMixin, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"), index=True)
     page: Mapped[int]
-    """第几页，从 1 开始。"""
+    """这张单据从第几页开始，从 1 开始。"""
+    last_page: Mapped[int | None]
+    """这张单据到第几页结束（ADR 0036）：一张单据占好几页时才有，只占一页是空的。
+    一个文件可以有好几张单据，每张一条 extractions。"""
 
     # 来源（项目规则 4）
     source: Mapped[str] = mapped_column(String(32))

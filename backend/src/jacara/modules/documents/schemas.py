@@ -26,6 +26,21 @@ __all__ = [
 """ValueOut 搬到了 fields 模块；这里继续导出，原来从这里 import 的代码不用改。"""
 
 
+class FolderOut(BaseModel):
+    """批量导入的一个文件夹。"""
+
+    folder: str
+    count: int
+
+
+class SameFile(BaseModel):
+    """内容一样的另一份文档。"""
+
+    id: uuid.UUID
+    filename: str
+    created_at: datetime
+
+
 class DocumentOut(BaseModel):
     """文档列表里的一项。"""
 
@@ -62,6 +77,14 @@ class DocumentOut(BaseModel):
     """跳过的原因（可以没有）。"""
     open_comments: int = 0
     """还没解决的备注有几条。"""
+    folder: str | None = None
+    """批量导入时所在的文件夹（ADR 0036）。"""
+    split: str = "auto"
+    """一个文件里有几张单据：auto、one、pages 或页码范围。"""
+    same_file: list[SameFile] = []
+    """同一个文件（内容完全一样）之前也传过：那几份文档（ADR 0036）。"""
+    duplicate_skipped: bool = False
+    """批量导入时选了"跳过重复的文件"，这次没有新建，返回的是之前那份。"""
 
 
 class ExtractionOut(BaseModel):
@@ -69,6 +92,11 @@ class ExtractionOut(BaseModel):
 
     id: uuid.UUID
     page: int
+    """这张单据从第几页开始。"""
+    last_page: int | None = None
+    """到第几页结束（ADR 0036）；只占一页是 null。"""
+    source_notes: list[str] = []
+    """读文字时的特别情况，例如"PDF 文字层是乱码，这一页改用 OCR"。"""
     source: str
     model: str
     prompt_version: str
@@ -130,6 +158,8 @@ class ReprocessIn(BaseModel):
     reason: Literal["template_changed", "wrong_template", "bad_result", "model_changed", "other"]
     note: str = Field(default="", max_length=500)
     """补充说明。原因选"其他"时必须写。"""
+    split: str | None = Field(default=None, max_length=200)
+    """文件里有几张单据（ADR 0036）：auto、one、pages 或"1-2, 3, 4-6"。不写：和上次一样。"""
 
 
 class DocumentPage(BaseModel):

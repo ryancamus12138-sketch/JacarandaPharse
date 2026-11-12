@@ -3,7 +3,7 @@
 # 规则和字段说明只写通用规定，不放任何真实单据的内容。
 
 name = "hotel_folio"
-version = 3
+version = 4
 title = "酒店账单"
 category = "住宿"
 description = "酒店退房账单（Folio）：入住离店、房号、逐日消费。字段参考 schema.org LodgingReservation。"
@@ -61,6 +61,7 @@ aliases = ["Room Type"]
 [[fields]]
 name = "folio_no"
 label = "账单号"
+unique = true
 type = "string"
 aliases = ["Folio No.", "Invoice No.", "Confirmation No.", "Booking ID", "Reservation No."]
 

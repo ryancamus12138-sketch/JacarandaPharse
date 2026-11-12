@@ -26,6 +26,7 @@ from jacara.modules.documents.schemas import (
     DocumentNeighbors,
     DocumentOut,
     DocumentPage,
+    FolderOut,
     PageOcr,
     PageStructureOut,
     RegionIn,
@@ -93,15 +94,30 @@ def upload_document(
     file: UploadFile,
     service: Service,
     template: Annotated[str | None, Form()] = None,
+    folder: Annotated[str | None, Form(max_length=1000)] = None,
+    split: Annotated[str, Form(max_length=200)] = "auto",
+    skip_duplicate: Annotated[bool, Form()] = False,
 ) -> DocumentOut:
     """上传一张图片或一个 PDF。文件存进对象存储，文档信息存进数据库，放进后台队列等待处理。
 
     template：我的模板的 id，或者 discover（不用模板，抽出所有键值对）。不写：用上一次用的。
     马上返回，状态为 uploaded。之后用"文档详情"查看状态，变成 done 就有抽取结果了。
+
+    批量导入（ADR 0036）：folder 是文件所在的文件夹（列表按它筛选）；split 是文件里有几张单据
+    （auto 自动判断、one 整个文件一张、pages 每页一张，或"1-2, 3, 4-6"）；
+    skip_duplicate=true 时，同一个文件之前传过就不新建，返回之前那份（duplicate_skipped=true）。
     """
     data = file.file.read()
     try:
-        return service.upload(file.filename or "", file.content_type or "", data, template)
+        return service.upload(
+            file.filename or "",
+            file.content_type or "",
+            data,
+            template,
+            folder=folder,
+            split=split,
+            skip_duplicate=skip_duplicate,
+        )
     except DocumentError as err:
         raise _http_error(err) from err
 
@@ -128,6 +144,9 @@ def list_documents(
     skipped: Annotated[
         bool | None, Query(description="true 只看跳过的，false 不看跳过的，不填都看")
     ] = None,
+    folder: Annotated[
+        str | None, Query(max_length=255, description="批量导入的文件夹（含下面的子文件夹）")
+    ] = None,
 ) -> DocumentPage:
     """按上传时间倒序。limit 是每页几条，offset 是跳过几条（翻页用）。
 
@@ -145,8 +164,15 @@ def list_documents(
         value_search=value_q,
         field=field or None,
         skipped=skipped,
+        folder=folder or None,
     )
     return service.page(limit, offset, filters)
+
+
+@router.get("/folders", summary="批量导入的文件夹")
+def list_folders(service: Service) -> list[FolderOut]:
+    """批量导入时的文件夹和每个文件夹里有几份文档（列表按文件夹筛选用）。"""
+    return service.folders()
 
 
 @dashboard_router.get("", summary="工作台")

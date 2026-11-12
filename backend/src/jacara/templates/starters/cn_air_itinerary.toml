@@ -5,7 +5,7 @@
 # 规则和字段说明只写通用规定，不放任何真实单据的内容。
 
 name = "cn_air_itinerary"
-version = 2
+version = 3
 title = "航空运输电子客票行程单"
 region = "cn"
 category = "交通"
@@ -15,6 +15,7 @@ rules = ["issue_date_exists", "issue_date_not_future", "cn_invoice_no", "air_tot
 [[fields]]
 name = "invoice_no"
 label = "发票号码"
+unique = true
 type = "string"
 required = true
 description = "“发票号码”后面的 20 位数字"
