@@ -109,6 +109,15 @@ export function getPageOcr(id: string, page: number): Promise<PageOcr> {
 }
 
 /** 重新识别页面上的一块区域：裁下来、放大，再 OCR 一次。只返回文字，不保存。 */
+/** 让模型看一块区域（ADR 0038）：读出文字和要填的字段的值。不保存。 */
+export function lookRegion(
+  id: string,
+  page: number,
+  body: { box: Box; label?: string; type?: string },
+): Promise<{ text: string; value: string | null; model: string }> {
+  return api(`/documents/${id}/pages/${page}/look-region`, { method: 'POST', json: body })
+}
+
 export function ocrRegion(id: string, page: number, box: Box): Promise<RegionOut> {
   return api<RegionOut>(`/documents/${id}/pages/${page}/ocr-region`, {
     method: 'POST',

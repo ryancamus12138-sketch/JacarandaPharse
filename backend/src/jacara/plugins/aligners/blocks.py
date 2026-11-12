@@ -25,6 +25,7 @@ from jacara.plugins.aligners.text_match import (
     _tidy,
     date_variants,
     number_variants,
+    time_pattern,
 )
 from jacara.plugins.extractors.base import ExtractedField, ExtractionResult
 from jacara.plugins.ocr.base import OcrPage
@@ -64,6 +65,9 @@ class BlockAligner:
             evidence = self._in_blocks(field, s)
             if evidence is not None:
                 return self._checked(field, evidence)
+            near = self._near(field, s)
+            if near is not None:
+                return near
 
         # 模型说的那几块里没有（或者没说）：按文字在整页找
         found = self.text._align_field(field, rows)
@@ -88,6 +92,45 @@ class BlockAligner:
             True,
             f"模型给了「{_shown(field)}」，但{cited}原文里找不到，按规则没有填（核对原文后可以采用）",
         )
+
+    def _near(self, field: ExtractedField, s: PageStructure) -> AlignedField | None:
+        """模型说的那几块里没有这个数字：看看同一高度上（和它说的块上下重叠）的文字块，
+        和那几块本身"少认了小数点"的写法（1.00 被笔迹、污渍盖住了小数点，OCR 读成 100）。
+
+        找到了值留着、标黄让人看一眼：位置大致对，但不是模型说的那一块，或者原文少了小数点。
+        """
+        if field.type != "number" or not isinstance(field.value, float):
+            return None
+        cited = [ln for n in field.blocks if (ln := s.ocr_line(n)) is not None]
+        if not cited:
+            return None
+        top = min(ln.bbox[1] for ln in cited)
+        bottom = max(ln.bbox[3] for ln in cited)
+        exact = _exact_pattern(number_variants(field.value, loose=True))
+        dotless = _dotless(field.value)
+        for number in range(1, len(s.words) + 1):
+            line = s.ocr_line(number)
+            word = s.word(number)
+            if line is None or word is None:
+                continue
+            y0, y1 = line.bbox[1], line.bbox[3]
+            if min(y1, bottom) - max(y0, top) <= 0:
+                continue  # 不在同一高度
+            text = _tidy(line.text)
+            where = f"⟨{number}⟩「{line.text}」"
+            if number not in field.blocks and exact.search(text):
+                note = f"模型说值在 {_cited(field.blocks)}，旁边的 {where} 对得上"
+            elif dotless is not None and dotless.search(text):
+                note = (
+                    f"原文 {where} 没有小数点，多半是「{field.value:.2f}」的小数点没认出来"
+                    "（被笔迹、污渍盖住了），请核对原图"
+                )
+            else:
+                continue
+            row = int(word.attrs["row"])
+            evidence = Evidence(row, line.text, (line,), 0.9)
+            return AlignedField(field, "fuzzy", evidence, True, note)
+        return None
 
     def _seen(self, field: ExtractedField, s: PageStructure) -> AlignedField:
         """看了原图（ADR 0038），文字里对不上的值：是模型在图上读的。值留着，要人核对。
@@ -118,6 +161,13 @@ class BlockAligner:
         text = " ".join(w.text for w in words)
         row = int(words[0].attrs["row"])
         row_text = " / ".join(w.text for w in words)
+        clock = time_pattern(str(field.value)) if field.type == "string" else None
+        if clock is not None:
+            # 时间：原文 8:13:39 PM、模型写成 24 小时制的 20:13:39，算对上
+            if not clock.search(text):
+                return None
+            picked = [_clip_to(ln, clock.search(ln.text)) for ln in lines if clock.search(ln.text)]
+            return Evidence(row, row_text, tuple(picked or lines), 1.0)
         if field.type == "string":
             value = str(field.value)
             score = _best_similarity(_squash(value), _squash(text))
@@ -151,6 +201,17 @@ class BlockAligner:
                 notes.append(sign)
         status = "matched" if evidence.similarity == 1.0 else "fuzzy"
         return AlignedField(field, status, evidence, bool(notes), "；".join(notes))
+
+
+def _dotless(value: float) -> re.Pattern[str] | None:
+    """两位小数的数字少了小数点的写法：1.00 → 100、12.50 → 1250。
+    写出来至少 3 位才查（"10" 太容易撞上别的数）。"""
+    if value < 0:
+        value = -value
+    digits = f"{value:.2f}".replace(".", "")
+    if len(digits) < 3:
+        return None
+    return re.compile(rf"(?<![\d.,]){re.escape(digits)}(?![\d]|[.,]\d)")
 
 
 def _shown(field: ExtractedField) -> str:

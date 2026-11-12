@@ -39,6 +39,8 @@ from jacara.modules.documents.schemas import (
     DocumentPage,
     ExtractionOut,
     FolderOut,
+    LookIn,
+    LookOut,
     OcrLineOut,
     PageOcr,
     PageStructureOut,
@@ -71,11 +73,14 @@ from jacara.pipeline.current import (
 from jacara.pipeline.entities import entity_conflicts
 from jacara.pipeline.load import load_reports
 from jacara.pipeline.pages import covering, ocr_page_json, page_slice, pages_json
-from jacara.pipeline.region import read_region
+from jacara.pipeline.region import read_region, region_png
 from jacara.pipeline.segment import SplitError, normalize_split
 from jacara.plugins.exporters import create_exporter
 from jacara.plugins.exporters.excel import cell_value
+from jacara.plugins.extractors import ExtractionError
 from jacara.plugins.extractors.base import DISCOVER, split_cell_name
+from jacara.plugins.extractors.llm import look_at
+from jacara.plugins.model_backends import ModelBackend, ModelBackendError
 from jacara.plugins.ocr.base import OcrEngine
 from jacara.plugins.ocr.loader import page_png
 from jacara.templates import Template
@@ -135,6 +140,7 @@ class DocumentService:
         queue: TaskQueue,
         owner: Owner,
         ocr: OcrEngine | None = None,
+        model: ModelBackend | None = None,
     ) -> None:
         self.session = session
         self.repo = DocumentRepository(session)
@@ -142,6 +148,8 @@ class DocumentService:
         self.queue = queue
         self.ocr = ocr
         """只有"重新识别这块"用到。"""
+        self.model = model
+        """只有"让模型看这块"用到（ADR 0038）。"""
         self.owner = owner
 
     def upload(
@@ -669,6 +677,28 @@ class DocumentService:
         except ValueError as err:
             raise DocumentError("invalid", str(err)) from err
         return RegionOut(text=text, confidence=confidence)
+
+    def look_region(self, document_id: uuid.UUID, page: int, data: LookIn) -> LookOut:
+        """让模型看页面上的一小块（ADR 0038）：手写、印章、被笔迹盖住的字，OCR 认不出时用。
+        只返回读出来的，不保存；人确认后再用"审核字段"保存。"""
+        document = self._find(document_id)
+        require(self.owner, "value:review", document.team_id)
+        check = getattr(self.model, "sees_images", None)
+        if self.model is None or not callable(check) or not check():
+            raise DocumentError(
+                "unavailable",
+                "模型现在不能看图：把视觉模型 mmproj-F16.gguf 放进 models/，重新 jacara start",
+            )
+        image = self.page_image(document_id, page)
+        try:
+            picture = region_png(image, data.box)
+        except ValueError as err:
+            raise DocumentError("invalid", str(err)) from err
+        try:
+            text, value, model = look_at(self.model, picture, data.label, data.type)
+        except (ModelBackendError, ExtractionError) as err:
+            raise DocumentError("unavailable", str(err)) from err
+        return LookOut(text=text, value=value, model=model)
 
     def _enqueue(self, document: Document) -> bool:
         """先提交，再放进队列。

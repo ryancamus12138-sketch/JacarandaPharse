@@ -238,6 +238,48 @@ SEGMENT_LINES = 25
 """判断续页时给模型看上一页的最后几行、这一页的最前几行。"""
 
 
+LOOK_PROMPT_VERSION = "look-v1"
+"""审核时"让模型看这块"的提示词版本（ADR 0038）。"""
+
+LOOK_PROMPT = """你在帮人核对单据。用户给你单据上框出来的一小块图，
+可能有手写、印章、模糊、被笔迹盖住的字。
+1. text：照原样写出图里的文字（多行用空格连起来），看不清的字不要猜，写 ?。
+2. value：如果用户说了要填哪个字段，写这个字段的值：数字只写数字（不带货币符号和千分位逗号），
+   日期写成 YYYY-MM-DD，文字照抄。图里没有这个字段的值就写 null。"""
+
+LOOK_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "text": {"type": "string"},
+        "value": {"anyOf": [{"type": "string"}, {"type": "number"}, {"type": "null"}]},
+    },
+    "required": ["text", "value"],
+}
+
+
+def look_at(
+    backend: ModelBackend, image: bytes, label: str | None = None, kind: str | None = None
+) -> tuple[str, str | None, str]:
+    """让模型看一小块图（ADR 0038）：返回（图里的文字，要填的字段的值，模型名）。"""
+    ask = "读出图里的文字。"
+    if label:
+        ask += f"要填的字段：{label}（{_TYPE_NAMES.get(kind or 'string', '文字')}）。"
+    messages = [ChatMessage("system", LOOK_PROMPT), ChatMessage("user", ask, (image,))]
+    result = backend.chat(messages, json_schema=LOOK_SCHEMA)
+    try:
+        data = json.loads(result.text)
+    except json.JSONDecodeError as err:
+        raise ExtractionError(f"模型的回答不是合格的 JSON：{result.text[:200]}") from err
+    if not isinstance(data, dict):
+        raise ExtractionError(f"模型的回答不是 JSON 对象：{result.text[:200]}")
+    text = " ".join(str(data.get("text") or "").split())
+    value = data.get("value")
+    if isinstance(value, float) and value == int(value) and kind != "number":
+        value = int(value)
+    shown = None if value is None or (isinstance(value, str) and not value.strip()) else str(value)
+    return text, shown, result.model
+
+
 class LlmExtractor:
     name = "llm"
 

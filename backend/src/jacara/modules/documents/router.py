@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Path, Query, Upload
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from jacara.core.deps import get_ocr, get_owner, get_queue, get_session, get_storage
+from jacara.core.deps import get_model, get_ocr, get_owner, get_queue, get_session, get_storage
 from jacara.core.owner import Owner
 from jacara.core.queue import TaskQueue
 from jacara.core.storage import ObjectStorage
@@ -29,6 +29,8 @@ from jacara.modules.documents.schemas import (
     DocumentOut,
     DocumentPage,
     FolderOut,
+    LookIn,
+    LookOut,
     PageOcr,
     PageStructureOut,
     RegionIn,
@@ -38,6 +40,7 @@ from jacara.modules.documents.schemas import (
 )
 from jacara.modules.documents.service import DocumentError, DocumentService, day_start
 from jacara.modules.fields.schemas import AdoptOut
+from jacara.plugins.model_backends import ModelBackend
 from jacara.plugins.ocr.base import OcrEngine
 
 router = APIRouter(prefix="/documents", tags=["文档"])
@@ -67,8 +70,9 @@ def get_service(
     queue: Annotated[TaskQueue, Depends(get_queue)],
     owner: Annotated[Owner, Depends(get_owner)],
     ocr: Annotated[OcrEngine, Depends(get_ocr)],
+    model: Annotated[ModelBackend, Depends(get_model)],
 ) -> DocumentService:
-    return DocumentService(session, storage, queue, owner, ocr)
+    return DocumentService(session, storage, queue, owner, ocr, model)
 
 
 Service = Annotated[DocumentService, Depends(get_service)]
@@ -329,6 +333,24 @@ def ocr_region(
     """
     try:
         return service.ocr_region(document_id, page, region.box)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/{document_id}/pages/{page}/look-region", summary="让模型看一块区域")
+def look_region(
+    document_id: uuid.UUID,
+    page: Annotated[int, Path(ge=1)],
+    data: LookIn,
+    service: Service,
+) -> LookOut:
+    """把这一页上的一块区域裁下来交给视觉模型（ADR 0038），读出文字和要填的字段的值。
+
+    手写、印章、被笔迹盖住的字 OCR 认不出时用。只返回结果，不保存；确认后用"审核字段"保存。
+    模型服务没加载视觉模型时返回 503。
+    """
+    try:
+        return service.look_region(document_id, page, data)
     except DocumentError as err:
         raise _http_error(err) from err
 

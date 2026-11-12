@@ -250,8 +250,8 @@ function ReviewWorkspace({ id }: { id: string }) {
   }
 
   /** 用框选、重新识别并确认过的文字填进选中的字段。 */
-  function applyBox(box: Box, text: string) {
-    applyChange({ action: 'edit', reason: '', value: text, source_box: box })
+  function applyBox(box: Box, text: string, reason = '') {
+    applyChange({ action: 'edit', reason, value: text, source_box: box })
   }
 
   function applyChange(change: RevisionIn) {
@@ -712,7 +712,10 @@ function ReviewWorkspace({ id }: { id: string }) {
               lines={ocr.data?.lines ?? []}
               busy={revise.isPending}
               onUseLines={(indexes) => applyPick(indexes)}
-              onUseText={(text) => applyBox(drawn, text)}
+              type={selected.type}
+              onUseText={(text, byModel) =>
+                applyBox(drawn, text, byModel ? '模型看原图读的，人核对过' : '')
+              }
               onCancel={() => {
                 setDraft(null)
                 setDrawn(null)

@@ -4,6 +4,7 @@ import { App, Button, Form, Input, Modal, Radio, Select, Tooltip } from 'antd'
 import { useState } from 'react'
 import { ApiError } from '../../api/client'
 import { reprocessDocument } from '../../api/documents'
+import { getVision } from '../../api/system'
 import { listTemplates } from '../../api/templates'
 import {
   type DocumentDetail,
@@ -43,7 +44,7 @@ const SAME = '__same__'
 /** 重新处理：换模板（或同一个模板的最新版）跑新的一轮，要写原因。旧结果留着可以查看。 */
 interface Choice {
   template: string
-  vision: 'same' | 'always' | 'off' | 'default'
+  vision: Vision
   reason: ReprocessReason
   note: string
   split: string
@@ -57,11 +58,12 @@ const SPLITS = [
   { value: 'ranges', label: '自己写页码' },
 ]
 
-const VISION_CHOICES = [
-  { value: 'same', label: '和上次一样' },
-  { value: 'default', label: '自动：OCR 不可靠时才看' },
-  { value: 'always', label: '每张都看' },
-  { value: 'off', label: '不看，只看文字' },
+type Vision = 'default' | 'always' | 'off'
+
+const VISION_CHOICES: { value: Vision; label: string }[] = [
+  { value: 'default', label: '系统决定（推荐）' },
+  { value: 'always', label: '每页都对照原图' },
+  { value: 'off', label: '只看文字（最快）' },
 ]
 
 /** 现在的分法 → 表单里的选项。 */
@@ -79,6 +81,9 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
   const reason = Form.useWatch('reason', form)
   const split = Form.useWatch('split', form)
   const busy = doc.status === 'uploaded' || doc.status === 'processing'
+  const vision = useQuery({ queryKey: ['vision'], queryFn: getVision, enabled: open, staleTime: 60_000 })
+  const sees = vision.data?.sees_images ?? false
+  const currentVision: Vision = doc.vision === 'always' || doc.vision === 'off' ? doc.vision : 'default'
 
   const reprocess = useMutation({
     mutationFn: (v: Choice) =>
@@ -87,7 +92,7 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
         reason: v.reason,
         note: v.note ?? '',
         split: v.split === 'ranges' ? (v.ranges ?? '') : v.split,
-        vision: v.vision === 'same' ? undefined : v.vision,
+        vision: v.vision === currentVision ? undefined : v.vision,
       }),
     onSuccess: () => {
       setOpen(false)
@@ -121,7 +126,7 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
           layout="vertical"
           initialValues={{
             template: SAME,
-            vision: 'same',
+            vision: currentVision,
             reason: 'template_changed',
             note: '',
             ...splitChoice(doc.split),
@@ -168,10 +173,20 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
           )}
           <Form.Item
             name="vision"
-            label="让模型看原图"
-            extra="照片、扫描件上有手写、印章、模糊的地方，OCR 会认错或漏掉；看原图更准，但慢一些。要先放好视觉模型（见系统信息）。"
+            label="对照原图读"
+            extra={
+              sees
+                ? '模型平时只看 OCR 认出的文字。对照原图（整页的照片）读，手写、印章、模糊、被笔迹盖住的字更准，但慢一些。“系统决定”：照片不清楚时才对照。'
+                : vision.isSuccess
+                  ? '还没有视觉模型，模型只能看文字。把 mmproj-F16.gguf 放进 models/，重新 jacara start 后可以选（见系统信息）。'
+                  : undefined
+            }
           >
-            <Select options={VISION_CHOICES} />
+            <Radio.Group
+              optionType="button"
+              disabled={!sees}
+              options={VISION_CHOICES}
+            />
           </Form.Item>
           <Form.Item name="reason" label="为什么" rules={[{ required: true }]}>
             <Radio.Group

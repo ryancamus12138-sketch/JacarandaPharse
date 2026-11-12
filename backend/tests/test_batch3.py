@@ -206,3 +206,107 @@ def test_mmproj_is_not_taken_for_the_model(tmp_path, monkeypatch):
     settings = config.Settings(jacara_model=None, jacara_mmproj=None)
     assert settings.find_model() == models / "Qwen3.5-9B-Q4_K_M.gguf"
     assert settings.find_mmproj() == models / "mmproj-F16.gguf"
+
+
+# ---------- 核对出处：24 小时制的时间、少认了小数点的数字 ----------
+
+from jacara.plugins.aligners import BlockAligner  # noqa: E402
+from jacara.plugins.aligners.text_match import time_pattern  # noqa: E402
+from jacara.plugins.extractors.base import ExtractedField, ExtractionResult  # noqa: E402
+from jacara.structure.analyze import analyze_page  # noqa: E402
+
+
+def test_time_in_12_hour_clock_matches_24_hour_value():
+    pattern = time_pattern("20:13:39")
+    assert pattern is not None
+    assert pattern.search("25/12/2018 8:13:39 PM")
+    assert pattern.search("20:13:39")
+    assert not pattern.search("8:13:39 AM") and not pattern.search("8:13:39")
+    short = time_pattern("14:05")
+    assert short is not None and short.search("2:05:33 pm") and short.search("14:05")
+    morning = time_pattern("08:13")
+    assert morning is not None and morning.search("8:13 AM") and not morning.search("8:13 PM")
+    assert time_pattern("Cashier") is None and time_pattern("25:00") is None
+
+
+def scanned_receipt():
+    """照着一张扫描的小票写的：找零 1.00 被手写的圈盖住了小数点，OCR 读成 100；
+    圈里手写的 9.00 和它在同一高度。"""
+    return make_page(
+        make_line("Date:", 10, 100, 80, 120),
+        make_line("25/12/2018 8:13:39 PM", 150, 100, 400, 120),
+        make_line("Cash", 100, 300, 160, 320),
+        make_line("10.00", 380, 300, 450, 320),
+        make_line("CHANGE", 100, 330, 190, 350),
+        make_line("100", 400, 330, 450, 352),
+        make_line("9.00", 300, 335, 390, 400, conf=0.9),
+    )
+
+
+def number_of(structure, text):
+    return next(n for n in range(1, len(structure.words) + 1) if structure.ocr_line(n).text == text)
+
+
+def test_time_and_dotless_change_are_found():
+    page = scanned_receipt()
+    structure = analyze_page(page)
+    fields = (
+        ExtractedField(
+            "time", "string", "20:13:39", blocks=(number_of(structure, "25/12/2018 8:13:39 PM"),)
+        ),
+        # 模型说找零在手写的 9.00 那块（说错了块），值是 1
+        ExtractedField("change", "number", 1.0, blocks=(number_of(structure, "9.00"),)),
+    )
+    result = ExtractionResult(fields, "{}", "m", "b", "v", 0)
+    time, change = BlockAligner().align(page, result, structure)
+    assert time.status == "matched" and time.evidence is not None
+    assert change.status == "fuzzy" and change.needs_review
+    assert change.evidence is not None and change.evidence.lines[0].text == "100"
+    assert "小数点" in change.note
+
+
+# ---------- 审核时"让模型看这块" ----------
+
+
+class LookingBackend:
+    name = "fake"
+
+    def __init__(self, sees: bool) -> None:
+        self.sees = sees
+        self.asked: list[ChatMessage] = []
+
+    def sees_images(self) -> bool:
+        return self.sees
+
+    def chat(self, messages, *, json_schema=None):
+        self.asked = messages
+        answer = {"text": "CHANGE 1.00", "value": 1}
+        return ChatResult(json.dumps(answer), "qwen-vl", self.name, 0, 0, 1)
+
+
+def test_look_at_a_region(client):
+    import io
+
+    from PIL import Image
+
+    from jacara.core.deps import get_model
+
+    picture = io.BytesIO()
+    Image.new("RGB", (400, 300), "white").save(picture, format="PNG")
+    response = client.post(
+        "/api/v1/documents", files={"file": ("r.png", picture.getvalue(), "image/png")}
+    )
+    document_id = response.json()["id"]
+    app = client.app
+    backend = LookingBackend(sees=False)
+    app.dependency_overrides[get_model] = lambda: backend
+    url = f"/api/v1/documents/{document_id}/pages/1/look-region"
+    body = {"box": [100, 100, 200, 140], "label": "找零", "type": "number"}
+    assert client.post(url, json=body).status_code == 503
+
+    backend.sees = True
+    out = client.post(url, json=body).json()
+    assert out == {"text": "CHANGE 1.00", "value": "1", "model": "qwen-vl"}
+    question = backend.asked[-1]
+    assert question.images and question.images[0].startswith(b"\x89PNG")
+    assert "找零（数字）" in question.content

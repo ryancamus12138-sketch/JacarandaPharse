@@ -25,6 +25,7 @@ from jacara.modules.system.schemas import (
     StructureInfo,
     SystemInfo,
     TemplateInfo,
+    VisionInfo,
 )
 from jacara.plugins.ocr.base import OcrConfig
 from jacara.templates import load_template, template_names
@@ -105,10 +106,26 @@ class SystemService:
         )
 
 
+def vision_info(settings: Settings) -> VisionInfo:
+    """模型能不能看图（ADR 0038）：审核页决定显不显示"让模型看这块"。只问一次模型服务，很快。"""
+    props = model_props(settings.model_server)
+    modalities = props.get("modalities")
+    mmproj = settings.find_mmproj()
+    return VisionInfo(
+        sees_images=bool(isinstance(modalities, dict) and modalities.get("vision")),
+        mode=settings.jacara_vision,
+        file=mmproj.name if mmproj else None,
+    )
+
+
 def model_props(server: str) -> dict[str, Any]:
     """问模型服务（llama-server 的 /props）现在加载的是哪个模型、上下文多长。连不上返回空。"""
+    from jacara.core.config import model_api_key
+
+    key = model_api_key()
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
     try:
-        response = httpx.get(f"{server}/props", timeout=PROPS_TIMEOUT_S)
+        response = httpx.get(f"{server}/props", headers=headers, timeout=PROPS_TIMEOUT_S)
         data = response.json() if response.status_code == 200 else {}
     except (httpx.HTTPError, ValueError):
         return {}

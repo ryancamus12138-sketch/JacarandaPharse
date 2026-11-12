@@ -23,6 +23,7 @@ from jacara.core.storage import get_storage as _get_storage
 from jacara.modules.auth.service import AuthService
 
 if TYPE_CHECKING:
+    from jacara.plugins.model_backends import ModelBackend
     from jacara.plugins.ocr.base import OcrEngine
 
 bearer = HTTPBearer(auto_error=False, description="登录接口返回的 token")
@@ -45,6 +46,15 @@ def get_ocr() -> OcrEngine:
     from jacara.plugins.ocr import create_ocr_engine
 
     return create_ocr_engine()
+
+
+def get_model() -> ModelBackend:
+    """API 里调用本地大模型（审核时"让模型看这块"用，ADR 0038）。"""
+    from jacara.core.config import model_api_key
+    from jacara.plugins.model_backends import ModelConfig, create_model_backend
+
+    config = ModelConfig(base_url=get_settings().model_server, api_key=model_api_key())
+    return create_model_backend(config)
 
 
 def get_queue() -> TaskQueue:

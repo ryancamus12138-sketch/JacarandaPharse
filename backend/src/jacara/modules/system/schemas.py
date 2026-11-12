@@ -31,6 +31,16 @@ class ModelInfo(BaseModel):
     """什么时候看原图：auto、always、off（JACARA_VISION）。"""
 
 
+class VisionInfo(BaseModel):
+    """模型能不能看图（ADR 0038）。"""
+
+    sees_images: bool
+    mode: str
+    """什么时候看原图：auto、always、off（JACARA_VISION）。"""
+    file: str | None
+    """视觉模型文件（mmproj）；没有是 null。"""
+
+
 class OcrInfo(BaseModel):
     engine: str
     version: str | None

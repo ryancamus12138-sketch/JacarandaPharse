@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 from jacara.core.config import get_settings
 from jacara.core.deps import get_owner, get_session
 from jacara.core.owner import Owner
-from jacara.modules.system.schemas import SystemInfo
-from jacara.modules.system.service import SystemService
+from jacara.modules.system.schemas import SystemInfo, VisionInfo
+from jacara.modules.system.service import SystemService, vision_info
 
 router = APIRouter(prefix="/system", tags=["系统信息"])
 
@@ -26,3 +26,11 @@ def system_info(
     要问几个服务，可能要等几秒（连不上的服务最多等 3 秒）。
     """
     return SystemService(session, owner, get_settings()).info()
+
+
+@router.get("/vision", summary="模型能不能看图")
+def vision(owner: Annotated[Owner, Depends(get_owner)]) -> VisionInfo:
+    """模型服务有没有加载视觉模型（ADR 0038）。
+
+    审核页、重新处理用它决定显示哪些选项。要登录（owner），只问模型服务，很快。"""
+    return vision_info(get_settings())

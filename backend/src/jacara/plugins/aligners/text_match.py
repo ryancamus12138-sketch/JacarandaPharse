@@ -66,6 +66,30 @@ def date_variants(value: str) -> list[str]:
     return list(dict.fromkeys(variants))
 
 
+_TIME = re.compile(r"^\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*$")
+_AMPM = r"\s*[ap]\.?\s*m\b\.?"
+
+
+def time_pattern(value: str) -> re.Pattern[str] | None:
+    """一个时间（14:05、20:13:39）在单据上可能的写法；不是时间返回 None。
+
+    模板常让模型写成 24 小时制，单据上却常写 8:13:39 PM：两种都算对上。
+    值没写秒时，原文带不带秒都行。24 小时制的写法后面不能跟 AM/PM（8:13 PM 不是 08:13）。
+    """
+    m = _TIME.match(value)
+    if m is None:
+        return None
+    hour, minute, second = int(m[1]), m[2], m[3]
+    if hour > 23 or int(minute) > 59:
+        return None
+    sec = f":{second}" if second else r"(?::\d{2})?"
+    h12 = hour % 12 or 12
+    half = "p" if hour >= 12 else "a"
+    clock24 = rf"(?<!\d)0?{hour}:{minute}{sec}(?![\d:])(?!{_AMPM})"
+    clock12 = rf"(?<!\d)0?{h12}:{minute}{sec}\s*{half}\.?\s*m\b\.?"
+    return re.compile(rf"{clock24}|{clock12}", re.IGNORECASE)
+
+
 def _exact_pattern(variants: list[str]) -> re.Pattern[str]:
     """数字和日期的查找规则：前后不能紧挨着别的数字，避免 9.00 匹配到 19.00 或 9.000。"""
     alternatives = "|".join(re.escape(v) for v in variants)
@@ -118,7 +142,11 @@ class TextMatchAligner:
             # 先找模型说的那一行附近：同一个价格（9.99）在收据上常出现好几次
             others.sort(key=lambda r: abs(r.index - (field.row or 0)))
 
-        if field.type == "string":
+        clock = time_pattern(str(field.value)) if field.type == "string" else None
+        if clock is not None:
+            # 时间：原文写 8:13:39 PM、模型写 20:13:39 也算一样
+            evidence = self._find_exact(clock, claimed + others)
+        elif field.type == "string":
             span = (last - field.row + 1) if field.row is not None and last is not None else 1
             evidence = self._find_text(str(field.value), claimed + others, span)
         elif field.type == "number" and isinstance(field.value, float):

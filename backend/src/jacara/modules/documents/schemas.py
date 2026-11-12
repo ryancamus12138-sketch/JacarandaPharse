@@ -211,6 +211,23 @@ class RegionIn(BaseModel):
     box: list[float] = Field(min_length=4, max_length=4)
 
 
+class LookIn(BaseModel):
+    """让模型看一块区域（ADR 0038）：框，和要填的字段（可以不写）。"""
+
+    box: list[float] = Field(min_length=4, max_length=4)
+    label: str | None = Field(default=None, max_length=100)
+    """要填的字段的中文名，例如"找零""第 2 行 金额"。"""
+    type: Literal["string", "number", "date"] | None = None
+
+
+class LookOut(BaseModel):
+    text: str
+    """模型在图上读出的文字。"""
+    value: str | None
+    """要填的字段的值（数字只有数字、日期 YYYY-MM-DD）；没说字段或者图里没有是 null。"""
+    model: str
+
+
 class RegionOut(BaseModel):
     """重新识别的结果。text 为空表示这块区域里没认出文字。"""
 
