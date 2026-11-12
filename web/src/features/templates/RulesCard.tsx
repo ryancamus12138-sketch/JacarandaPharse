@@ -1,7 +1,8 @@
 import { DeleteOutlined, FunctionOutlined, PlusOutlined } from '@ant-design/icons'
 import { Button, Card, Flex, Input, List, Select, Switch, Tag, Typography } from 'antd'
+import { useState } from 'react'
 import { FormulaInput } from './FormulaInput'
-import { REGION_TEXT } from './templateFields'
+import { countryName } from './labels'
 import type { CustomRule, RuleInfo, Template, TemplateIn } from '../../api/types'
 
 
@@ -50,11 +51,14 @@ export function RulesCard({
       on: draft.rules.includes(rule.id),
     }))
     .sort((a, b) => Number(b.saved) - Number(a.saved) || a.missing.length - b.missing.length)
-  // 通用模板只列通用规则；中国、澳洲的模板再加本地区的规则
-  const region = draft.region ?? ''
+  // 默认只列用得上的：要的字段都有，而且是通用规则或本模板所属国家的规则。
+  // 我的模板不限制（ADR 0037）：点"显示全部"可以选别的国家的规则、缺字段的规则
+  const [showAll, setShowAll] = useState(false)
+  const countries = draft.countries ?? []
   const usable = (g: (typeof groups)[number]) =>
-    g.missing.length === 0 && (!g.rule.region || g.rule.region === region)
-  const shown = groups.filter((g) => (readOnly ? g.on : g.on || g.saved || usable(g)))
+    g.missing.length === 0 && (!g.rule.country || countries.includes(g.rule.country))
+  const shown = groups.filter((g) => (readOnly ? g.on : showAll || g.on || g.saved || usable(g)))
+  const hidden = readOnly ? 0 : groups.length - groups.filter((g) => g.on || g.saved || usable(g)).length
   const custom = draft.custom_rules
   const setCustom = (i: number, patch: Partial<CustomRule>) =>
     set({ custom_rules: custom.map((c, j) => (j === i ? { ...c, ...patch } : c)) })
@@ -62,8 +66,9 @@ export function RulesCard({
   return (
     <Card title={`规则（选了 ${draft.rules.length + custom.length} 条）`} size="small">
       <Typography.Paragraph type="secondary">
-        规则用单据上的数字互相验证（例如 明细合计 = 总额）。这里只列这个模板用得上的通用规则；
-        别的检查在下面"自己写的规则"里写。必填字段没值也会标红。
+        规则用单据上的数字互相验证（例如 明细合计 = 总额）。默认只列这个模板用得上的：通用规则，
+        加上这个模板所属国家的规则；别的国家的规则、缺字段的规则点下面"显示全部"也能选。
+        别的检查在"自己写的规则"里写。必填字段没值也会标红。
       </Typography.Paragraph>
       <List
         size="small"
@@ -86,7 +91,7 @@ export function RulesCard({
               <Tag color={rule.severity === 'error' ? 'red' : 'gold'}>
                 {rule.severity === 'error' ? '错误' : '警告'}
               </Tag>
-              {rule.region && <Tag>{REGION_TEXT[rule.region] ?? rule.region}</Tag>}
+              {rule.country && <Tag color="geekblue">{countryName(rule.country)}</Tag>}
               {missing.length > 0 && (
                 <Typography.Text type={on ? 'warning' : 'secondary'} style={{ fontSize: 12 }}>
                   缺字段 {missing.join('、')}
@@ -97,6 +102,12 @@ export function RulesCard({
           </List.Item>
         )}
       />
+      {!readOnly && (hidden > 0 || showAll) && (
+        <Button type="link" size="small" onClick={() => setShowAll(!showAll)} style={{ paddingInline: 0 }}>
+          {showAll ? '只看用得上的' : `显示全部（还有 ${hidden} 条：别的国家的、缺字段的）`}
+        </Button>
+      )}
+
       <Typography.Title level={5} style={{ marginTop: 16 }}>
         自己写的规则
       </Typography.Title>

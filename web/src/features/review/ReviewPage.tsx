@@ -63,6 +63,7 @@ import { SaveAsTemplate } from './SaveAsTemplate'
 import { useConfirmMany } from './useConfirmMany'
 import { useRevise } from './useRevise'
 import { useRows } from './useRows'
+import { Tip } from '../../components/Tip'
 
 /** 下一个还在等确认的字段（从 afterId 后面开始找，找到最后再从头找）。 */
 function nextPending(values: FieldValue[], afterId: string | null): string | null {
@@ -678,9 +679,8 @@ function ReviewWorkspace({ id }: { id: string }) {
         />
       )}
       {discover && !viewingOld && (
-        <Alert
-          type="info"
-          showIcon
+        <Tip
+          id="review-discover"
           style={{ marginBottom: 12 }}
           title="这份没有用模板，抽出了单据上所有的键值对"
           description='看一下哪些是要的、值对不对，然后点"存成模板"：选字段、起中文名，以后同类单据直接用这个模板。'

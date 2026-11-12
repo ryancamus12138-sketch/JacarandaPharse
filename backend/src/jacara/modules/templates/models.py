@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from jacara.core.db import Base, OwnedMixin, TimestampMixin, new_id
+from jacara.core.db import Base, JsonColumn, OwnedMixin, TimestampMixin, new_id
 
 
 class TemplateRecord(Base, OwnedMixin, TimestampMixin):
@@ -25,6 +25,13 @@ class TemplateRecord(Base, OwnedMixin, TimestampMixin):
     category: Mapped[str] = mapped_column(String(32), default="", server_default="")
     """类型标签：发票、交通、收据、住宿、其他……"""
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    domains: Mapped[list[str]] = mapped_column(JsonColumn, default=list, server_default="[]")
+    """功能领域（ADR 0037）：发票、交通、收据、住宿……可以有几个。
+    category 是第一个（兼容旧代码）。"""
+    countries: Mapped[list[str]] = mapped_column(JsonColumn, default=list, server_default="[]")
+    """国家和地区代码（CN、AU……）；空 = 通用。"""
+    tags: Mapped[list[str]] = mapped_column(JsonColumn, default=list, server_default="[]")
+    """自定义标签（2026-10 出差、财务部……）。标签不是模板定义的一部分，改标签不出新版本。"""
     latest_version: Mapped[int] = mapped_column(default=1, server_default="1")
     archived: Mapped[bool] = mapped_column(default=False, server_default="false")
     """归档的模板不出现在上传的选择里，用过它的文档照常显示。"""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -47,6 +48,18 @@ class TemplateRepository:
 
     def latest(self, record: TemplateRecord) -> TemplateVersion:
         return next(v for v in record.versions if v.version == record.latest_version)
+
+    def usage_stats(self, team_id: uuid.UUID) -> dict[uuid.UUID, tuple[int, datetime | None]]:
+        """每个模板：有几份文档用它、最近一份是什么时候传的（模板页排序、显示用）。"""
+        rows = self.session.execute(
+            select(
+                TemplateVersion.template_id, func.count(Document.id), func.max(Document.created_at)
+            )
+            .join(Document, Document.template_version_id == TemplateVersion.id)
+            .where(Document.team_id == team_id)
+            .group_by(TemplateVersion.template_id)
+        ).all()
+        return {template_id: (int(count), last) for template_id, count, last in rows}
 
     def usage(self, template_id: uuid.UUID) -> int:
         """有几份文档下次处理会用这个模板（任何版本）。"""

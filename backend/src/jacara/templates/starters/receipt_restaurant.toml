@@ -6,7 +6,7 @@
 name = "receipt_restaurant"
 version = 2
 title = "餐厅小票"
-category = "收据"
+domains = ["收据", "餐饮"]
 description = "餐厅、咖啡馆的小票：附加费、小费、人数，不分国家和地区。"
 rules = ["total_positive", "date_exists", "date_not_future", "receipt_balance", "items_sum", "item_line"]
 

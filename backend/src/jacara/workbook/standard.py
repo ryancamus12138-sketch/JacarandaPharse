@@ -64,6 +64,9 @@ def to_excel(template: dict[str, Any]) -> bytes:
         ("格式版本", 1),
         ("模板名", template["title"]),
         ("类型", template.get("category", "")),
+        ("功能领域", "、".join(template.get("domains") or [])),
+        ("国家和地区", "、".join(template.get("countries") or []) or "通用"),
+        ("自定义标签", "、".join(template.get("tags") or [])),
         ("说明", template.get("description", "")),
         ("导出时的版本", template.get("version", 1)),
         (
@@ -259,10 +262,19 @@ def from_excel(data: bytes) -> dict[str, Any]:
                 ],
             }
         )
+    countries_text = _str(info.get("国家和地区"))
     return {
         "format": FORMAT,
         "title": title,
         "category": _str(info.get("类型")),
+        # 新导出的才有这三行；旧的 Excel 没有：领域用"类型"，国家按选的规则认
+        **({"domains": _list(info.get("功能领域"))} if "功能领域" in info else {}),
+        **(
+            {"countries": [] if countries_text in ("", "通用") else _list(countries_text)}
+            if "国家和地区" in info
+            else {}
+        ),
+        **({"tags": _list(info.get("自定义标签"))} if "自定义标签" in info else {}),
         "description": _str(info.get("说明")),
         "version": int(info.get("导出时的版本") or 1),
         "fields": fields,

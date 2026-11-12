@@ -6,7 +6,7 @@
 name = "receipt_shopping"
 version = 2
 title = "购物小票"
-category = "收据"
+domains = ["收据", "购物"]
 description = "超市、商店的小票：逐项商品、折扣、找整，不分国家和地区。"
 rules = ["total_positive", "date_exists", "date_not_future", "receipt_balance", "items_sum", "item_line", "cash_covers_total", "change"]
 

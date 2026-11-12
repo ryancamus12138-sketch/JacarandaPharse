@@ -49,8 +49,41 @@ from jacara.templates.extras import (
 _FIELD_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 """字段名：小写英文字母开头，只用小写字母、数字、下划线（存进数据库、导出、接口里都用它）。"""
 
-REGION_NAMES = {"": "通用", "cn": "中国", "au": "澳洲"}
-"""模板的地区：通用模板只用通用规则；中国、澳洲的模板可以再用本地区的规则（ADR 0035）。"""
+COUNTRY_CODE = re.compile(r"^[A-Z]{2}$")
+"""国家和地区代码：ISO 3166-1 的两个大写字母（CN、AU、US……）。"""
+
+_OLD_REGIONS = {"": (), "cn": ("CN",), "au": ("AU",)}
+"""ADR 0035 时的写法（region = "cn"），读旧数据用。"""
+
+
+def infer_countries(rule_ids: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    """没写国家的模板（加国家之前存的、从 Excel 或旧的模板文件导入的）：看它选的规则。
+    选了哪几个国家的规则，就是哪几个国家；一条都没选就是通用（空）。"""
+    return tuple(sorted({REGIONS[r] for r in rule_ids if r in REGIONS}))
+
+
+def clean_labels(values: object, where: str, what: str, limit: int = 20) -> tuple[str, ...]:
+    """一组标签：文字列表，去掉首尾空格、空的和重复的，每个最多 20 个字。"""
+    if values is None:
+        return ()
+    if not isinstance(values, (list, tuple)) or not all(isinstance(v, str) for v in values):
+        raise TemplateError(f"{where}：{what}应该是文字列表")
+    cleaned = tuple(dict.fromkeys(v.strip()[:20] for v in values if v.strip()))
+    if len(cleaned) > limit:
+        raise TemplateError(f"{where}：{what}最多 {limit} 个")
+    return cleaned
+
+
+def clean_countries(values: object, where: str) -> tuple[str, ...]:
+    """国家和地区代码：大写，检查格式。空 = 通用。"""
+    codes = tuple(c.upper() for c in clean_labels(values, where, "国家和地区", 300))
+    wrong = [c for c in codes if not COUNTRY_CODE.match(c)]
+    if wrong:
+        raise TemplateError(
+            f"{where}：国家和地区要写两个字母的代码（如 CN、AU），不认识：{'、'.join(wrong)}"
+        )
+    return codes
+
 
 DEFAULT_TEMPLATE = "receipt"
 """上传的文件默认用的模板。"""
@@ -176,18 +209,17 @@ class Template:
     """按原 Excel 导出的样式。没有就用标准的导出格式。"""
     custom_rules: tuple[CustomRule, ...] = ()
     """自己写的规则（ADR 0035），和选的内置规则一起检查。"""
-    region: str = ""
-    """地区：空 = 通用；cn 中国、au 澳洲。只能选通用规则和本地区的规则。"""
+    countries: tuple[str, ...] = ()
+    """国家和地区（ADR 0037）：空 = 通用。我的模板以数据库里 templates 表记的为准。"""
+    domains: tuple[str, ...] = ()
+    """功能领域（发票、交通、收据、住宿……），可以有几个。"""
 
-    def region_problem(self) -> str | None:
-        """选了别的地区的规则（例如通用收据选了澳洲 ATO 的规则）：说清楚是哪几条。"""
-        wrong = [r.title for r in self.rules if REGIONS.get(r.id, self.region) != self.region]
-        if not wrong:
-            return None
-        return (
-            f"这是{REGION_NAMES[self.region]}模板，不能用别的地区的规则："
-            f"{'、'.join(wrong)}。请关掉，需要的话自己写规则"
-        )
+    def foreign_rules(self) -> list[str]:
+        """选了不属于这个模板国家的规则（起步模板库要求：国家模板只用通用规则和本国规则，
+        通用模板只用通用规则）。我的模板不限制，这个只给起步模板检查用。"""
+        return [
+            r.title for r in self.rules if r.id in REGIONS and REGIONS[r.id] not in self.countries
+        ]
 
     def all_rules(self) -> tuple[Rule, ...]:
         """选的内置规则 + 自己写的规则（编号 custom_1、custom_2……）。"""
@@ -328,7 +360,6 @@ class Template:
             "references": [reference_dict(r) for r in self.references],
             "workbook": workbook_dict(self.workbook) if self.workbook else None,
             "custom_rules": [c.as_dict() for c in self.custom_rules],
-            "region": self.region,
         }
 
 
@@ -492,19 +523,29 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
     except ExtrasError as err:
         raise TemplateError(str(err)) from err
 
-    region = raw.get("region") or ""
-    if region not in REGION_NAMES:
-        raise TemplateError(f"{where}：region 只能是空的（通用）、cn 或 au")
+    if "countries" in raw:
+        countries = clean_countries(raw.get("countries"), where)
+    elif str(raw.get("region") or "") in _OLD_REGIONS:
+        countries = (
+            _OLD_REGIONS[str(raw.get("region") or "")]
+            if "region" in raw
+            else infer_countries([str(r) for r in raw.get("rules", [])])
+        )
+    else:
+        raise TemplateError(f"{where}：region 写得不对")
+    category = str(raw.get("category", ""))
+    domains = clean_labels(raw.get("domains", [category]), where, "功能领域", 10)
     template = Template(
         name=name,
         version=version,
-        region=region,
+        countries=countries,
+        domains=domains,
         title=str(raw.get("title") or name),
         description=str(raw.get("description", "")),
         fields=tuple(fields),
         rules=tuple(rules),
         tables=tuple(tables),
-        category=str(raw.get("category", "")),
+        category=domains[0] if domains else category,
         entities=entities,
         references=references,
         workbook=workbook,

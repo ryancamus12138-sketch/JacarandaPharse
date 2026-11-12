@@ -140,3 +140,11 @@ export function importTemplate(file: unknown): Promise<Template> {
 export function deleteTemplate(id: string): Promise<void> {
   return api<void>(`/templates/${id}`, { method: 'DELETE' })
 }
+
+/** 只改模板的标签（功能领域、国家和地区、自定义标签），不出新版本。 */
+export function setTemplateLabels(
+  id: string,
+  body: { domains?: string[]; countries?: string[]; tags?: string[] },
+): Promise<Template> {
+  return api<Template>(`/templates/${id}/labels`, { method: 'PATCH', json: body })
+}

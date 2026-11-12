@@ -5,8 +5,8 @@
 
 ## [未发布]
 
-v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）。
-升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at），再 `cd web && npm run build`。表格结构模型可选，见 README。
+v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）、模板标签（ADR 0037）。
+升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at、domains、countries、tags），再 `cd web && npm run build`。表格结构模型可选，见 README。
 
 ### 新增
 
@@ -33,8 +33,12 @@ v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页�
 - 列标题对齐的排版：上面一行是标题、下面按列写值时（酒店账单的 Check In / Check Out / Rooms），按位置对出"哪个值在哪个标题下面"，作为"版面提示"一起交给模型
 - 计算字段（ADR 0035）：模板字段可以写公式（编辑器"公式"一栏），例如晚数 = `check_out - check_in`、金额 = `quantity * unit_price`、总额 = `sum(items.amount)`；不让模型去单据上找，处理时按核对过的值算，审核页标"按公式算"。参与计算的值改了会跟着重算（修改历史里记一条），人直接改过的不再跟着变
 - 自己写的规则（ADR 0035）：模板编辑器"规则"里可以加、删自己的规则，条件写成 `sum(items.amount) == total`、`check_out > check_in`、`total <= 5000`，可以选整张单据或表格的每一行、错误或警告；不通过时写明两边各是多少
-- 模板编辑器的规则只列这个模板用得上的通用规则，不再列中国发票、澳洲税务这些地区规则和缺字段的规则；别的检查自己写（地区起步模板本来选了的照常显示，带"中国""澳洲"标签）
-- 模板分通用和地区（中国、澳洲），模板库和编辑器上有标签：通用模板只能用通用规则，地区模板只能再加本地区的规则，保存时检查
+- 模板标签（ADR 0037）：每个模板可以标功能领域（可以多选，以前的"类型"自动变成领域）、国家和地区（任何国家都能选，可以多选；不选就是"通用"，和国家互斥）、自定义标签（自己写，比如"2026-10 出差"）。在编辑器顶上或模板卡片"更多 → 改标签"里改
+- 模板管理页按标签筛选：一排领域、一排国家和地区、一排自定义标签，点哪个只看哪部分；还能按名字搜、按来源筛，按最近修改、最近用过、用得最多、名字排序；卡片上显示几份文档用过、最近一次
+- 起步模板库照旧严格：通用模板只用通用规则，某国模板只再加本国规则。复制、上传、导入到"我的模板"之后不限制，什么规则都能加；编辑器默认只列通用的和所选国家的规则，"显示全部"能看到别的
+- 导入老的模板文件，没写国家的按里面用的规则推断（不再报"通用模板不能用别的地区的规则"）
+- 只改模板名字或标签不生成新版本
+- 页面上的蓝色提示框可以点 × 关掉，关了不再出现
 - 起步模板"购物小票""餐厅小票"第 2 版：去掉澳洲 ATO 的规则和说法（商家 ABN → 商家税号，GST → 税额），改成不分地区的通用模板
 - 写公式和规则条件时，输入框右边的按钮列出这个模板有哪些字段、表格合计和函数，点一下插进去；边写边用中文显示意思，写错了马上提示
 - 从起步模板复制的模板，起步模板后来加了公式时，编辑器里提示并可以一键"套用"

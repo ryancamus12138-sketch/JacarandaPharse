@@ -6,7 +6,7 @@
 name = "receipt_general"
 version = 2
 title = "通用收据"
-category = "收据"
+domains = ["收据"]
 description = "任何国家、任何商家的收据：商家、日期、买了什么、金额、付款方式，以及 小计 − 折扣 + 附加费 + 小费 + 调整 = 总额 这类不分地区的金额关系。"
 rules = ["total_positive", "date_exists", "date_not_future", "receipt_balance", "items_sum", "item_line"]
 

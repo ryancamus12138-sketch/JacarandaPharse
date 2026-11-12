@@ -254,8 +254,8 @@ def test_custom_rules_round_trip_through_editor(client):
 
 
 def test_rules_say_their_region(client):
-    rules = {r["id"]: r["region"] for r in client.get("/api/v1/templates/rules").json()}
-    assert rules["ato_evidence"] == "au" and rules["cn_words"] == "cn"
+    rules = {r["id"]: r["country"] for r in client.get("/api/v1/templates/rules").json()}
+    assert rules["ato_evidence"] == "AU" and rules["cn_words"] == "CN"
     assert rules["stay_order"] == "" and rules["items_sum"] == ""
     hotel = load_starter("hotel_folio")
     assert all(rules[r.id] == "" for r in hotel.rules)
@@ -309,3 +309,20 @@ def test_formula_check_while_typing(client):
         },
     ).json()
     assert row["readable"] == "金额 > 0"
+
+
+def test_imported_regional_template_keeps_its_region(client):
+    """加地区之前导出的中国数电发票（模板文件里没写地区）：导入后按规则认成中国模板，不报错。"""
+    exported = client.get("/api/v1/templates/starters").json()
+    cn = next(t for t in exported if t["name"] == "cn_einvoice")
+    body = {
+        "title": cn["title"],
+        "category": cn["category"],
+        "fields": cn["fields"],
+        "tables": cn["tables"],
+        "rules": [r["id"] for r in cn["rules"]],
+    }
+    response = client.post("/api/v1/templates/import", json=body)
+    assert response.status_code == 201, response.text
+    assert response.json()["countries"] == ["CN"]
+    assert response.json()["domains"] == ["发票"]

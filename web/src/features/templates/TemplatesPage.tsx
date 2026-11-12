@@ -6,11 +6,11 @@ import {
   InboxOutlined,
   MoreOutlined,
   PlusOutlined,
+  TagsOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -18,6 +18,7 @@ import {
   Dropdown,
   Empty,
   Flex,
+  Modal,
   Row,
   Segmented,
   Spin,
@@ -38,23 +39,16 @@ import {
   importTemplate,
   listStarters,
   listTemplates,
+  setTemplateLabels,
 } from '../../api/templates'
 import type { Template } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
 import { saveFile } from '../../utils/download'
 import { formatTime } from '../../utils/format'
-import { REGION_TEXT } from './templateFields'
-
-const CATEGORY_COLORS: Record<string, string> = {
-  发票: 'purple',
-  交通: 'blue',
-  收据: 'green',
-  住宿: 'orange',
-}
-
-function CategoryTag({ category }: { category: string }) {
-  return <Tag color={CATEGORY_COLORS[category] ?? 'default'}>{category || '其他'}</Tag>
-}
+import { applyFilters, type Filters, NO_FILTERS, SOURCE_TEXT, sourceKind } from './filtering'
+import { LabelFields, LabelTags } from './LabelWidgets'
+import { TemplateFilters } from './TemplateFilters'
+import { Tip } from '../../components/Tip'
 
 /** 字段、表格、规则各有几个（卡片上的一行小字）。 */
 function counts(t: Template): string {
@@ -75,6 +69,9 @@ export function TemplatesPage() {
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') === 'starters' ? 'starters' : 'mine'
   const [showArchived, setShowArchived] = useState(false)
+  const [mineFilters, setMineFilters] = useState<Filters>(NO_FILTERS)
+  const [starterFilters, setStarterFilters] = useState<Filters>(NO_FILTERS)
+  const [labelling, setLabelling] = useState<Template | null>(null)
   const canManage = can('template:manage')
 
   const mine = useQuery({ queryKey: ['templates'], queryFn: listTemplates })
@@ -165,7 +162,7 @@ export function TemplatesPage() {
     modal.confirm({
       title: `删除「${t.title}」？`,
       content:
-        '删除后模板不再出现在列表和上传里，不能恢复。用过它的文档照常能看、能导出（它们记着用的是哪一版）。删除前可以先导出备份。',
+        '删除后，这个模板不再出现在模板列表和上传里，不能恢复。用过它的文档不受影响，照常能看、能导出。删除前可以先导出备份。',
       okText: '删除',
       okButtonProps: { danger: true },
       cancelText: '取消',
@@ -174,7 +171,9 @@ export function TemplatesPage() {
   }
 
   const own = (mine.data ?? []).filter((t) => t.kind === 'mine')
-  const shown = own.filter((t) => showArchived || !t.archived)
+  const visible = own.filter((t) => showArchived || !t.archived)
+  const shown = applyFilters(visible, mineFilters)
+  const startersShown = applyFilters(starters.data ?? [], starterFilters)
   const archivedCount = own.filter((t) => t.archived).length
   const added = new Set(own.map((t) => t.source))
 
@@ -215,14 +214,20 @@ export function TemplatesPage() {
           </Button>
         )}
       </Flex>
-      <Alert
-        type="info"
-        showIcon
+      {visible.length > 0 && (
+        <TemplateFilters templates={visible} value={mineFilters} onChange={setMineFilters} mine />
+      )}
+      <Tip
+        id="templates-from-sample"
         title="也可以用样例建模板"
         description='公司有固定要交的 Excel（报销表、登记表），点"从 Excel 建"选它，按它的样子建模板，导出时直接填回它。也可以上传时选"抽取所有键值对"，处理完在审核页面把需要的字段存成模板。'
       />
-      {shown.length === 0 ? (
+      {visible.length === 0 ? (
         <Empty description="还没有自己的模板。从起步模板库添加一个，或者新建空白模板" />
+      ) : shown.length === 0 ? (
+        <Empty description="没有符合筛选条件的模板">
+          <Button onClick={() => setMineFilters(NO_FILTERS)}>清空筛选</Button>
+        </Empty>
       ) : (
         <Row gutter={[16, 16]}>
           {shown.map((t) => (
@@ -231,8 +236,6 @@ export function TemplatesPage() {
                 size="small"
                 title={
                   <Flex gap={8} align="center">
-                    <CategoryTag category={t.category} />
-                    {t.region && <Tag color="geekblue">{REGION_TEXT[t.region]}</Tag>}
                     <Typography.Text strong ellipsis>
                       {t.title}
                     </Typography.Text>
@@ -263,6 +266,7 @@ export function TemplatesPage() {
                           key="more"
                           menu={{
                             items: [
+                              { key: 'labels', icon: <TagsOutlined />, label: '改标签' },
                               {
                                 key: 'archive',
                                 icon: <InboxOutlined />,
@@ -273,7 +277,9 @@ export function TemplatesPage() {
                             onClick: ({ key }) =>
                               key === 'delete'
                                 ? askDelete(t)
-                                : archive.mutate({ id: t.id ?? '', archived: !t.archived }),
+                                : key === 'labels'
+                                  ? setLabelling(t)
+                                  : archive.mutate({ id: t.id ?? '', archived: !t.archived }),
                           }}
                         >
                           <Button type="link" icon={<MoreOutlined />} aria-label="更多">
@@ -286,12 +292,21 @@ export function TemplatesPage() {
                       ]),
                 ]}
               >
+                <Flex wrap gap={4} style={{ marginBottom: 8 }}>
+                  <LabelTags template={t} />
+                </Flex>
                 <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ minHeight: 44 }}>
                   {t.description || '（没有说明）'}
                 </Typography.Paragraph>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {counts(t)}
                   {t.updated_at ? ` · 改于 ${formatTime(t.updated_at)}` : ''}
+                </Typography.Text>
+                <br />
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {SOURCE_TEXT[sourceKind(t.source)] ?? ''}
+                  {t.used ? ` · ${t.used} 份文档用过` : ' · 还没有文档用过'}
+                  {t.last_used_at ? `，最近 ${formatTime(t.last_used_at)}` : ''}
                 </Typography.Text>
               </Card>
             </Col>
@@ -307,15 +322,19 @@ export function TemplatesPage() {
         起步模板的字段按官方规定整理（国家税务总局公告、ATO、EN 16931 等，见每个模板的说明）。
         添加到我的模板之后可以随便改，不影响这里的原版。
       </Typography.Text>
+      <TemplateFilters
+        templates={starters.data ?? []}
+        value={starterFilters}
+        onChange={setStarterFilters}
+        mine={false}
+      />
       <Row gutter={[16, 16]}>
-        {(starters.data ?? []).map((t) => (
+        {startersShown.map((t) => (
           <Col key={t.name} xs={24} md={12} xl={8}>
             <Card
               size="small"
               title={
                 <Flex gap={8} align="center">
-                  <CategoryTag category={t.category} />
-                  <Tag color={t.region ? 'geekblue' : undefined}>{REGION_TEXT[t.region ?? '']}</Tag>
                   <Typography.Text strong ellipsis>
                     {t.title}
                   </Typography.Text>
@@ -337,6 +356,9 @@ export function TemplatesPage() {
                 <ExportMenu key="export" onExport={(format) => exportOne.mutate({ t, format })} />,
               ]}
             >
+              <Flex wrap gap={4} style={{ marginBottom: 8 }}>
+                <LabelTags template={t} custom={false} />
+              </Flex>
               <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ minHeight: 66 }}>
                 {t.description}
               </Typography.Paragraph>
@@ -376,7 +398,58 @@ export function TemplatesPage() {
       ) : (
         starterList
       )}
+      {labelling && (
+        <LabelsDialog
+          template={labelling}
+          onClose={() => setLabelling(null)}
+          onSaved={() => void queryClient.invalidateQueries({ queryKey: ['templates'] })}
+        />
+      )}
     </Card>
+  )
+}
+
+/** 只改标签（功能领域、国家和地区、自定义标签），不出新版本。 */
+function LabelsDialog({
+  template,
+  onClose,
+  onSaved,
+}: {
+  template: Template
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const { message } = App.useApp()
+  const [labels, setLabels] = useState({
+    domains: template.domains ?? (template.category ? [template.category] : []),
+    countries: template.countries ?? [],
+    tags: template.tags ?? [],
+  })
+  const save = useMutation({
+    mutationFn: () => setTemplateLabels(template.id ?? '', labels),
+    onSuccess: () => {
+      void message.success(`已改「${template.title}」的标签`)
+      onSaved()
+      onClose()
+    },
+    onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
+  })
+  return (
+    <Modal
+      open
+      title={`「${template.title}」的标签`}
+      okText="保存"
+      cancelText="取消"
+      confirmLoading={save.isPending}
+      onOk={() => save.mutate()}
+      onCancel={onClose}
+      width={640}
+    >
+      <Typography.Paragraph type="secondary">
+        标签只用来分类、筛选，改了不出新版本，也不影响用过它的文档。
+      </Typography.Paragraph>
+      <LabelFields {...labels} onChange={(patch) => setLabels((l) => ({ ...l, ...patch }))} />
+    </Modal>
   )
 }
 

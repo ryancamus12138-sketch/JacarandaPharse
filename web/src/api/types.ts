@@ -418,12 +418,9 @@ export interface TemplateRule {
 /** 规则库里的一条规则（编辑器里选）。 */
 export interface RuleInfo extends TemplateRule {
   per_row: string | null
-  /** 地区规则：cn 中国、au 澳洲；通用的是空的。编辑器默认只列通用规则。 */
-  region: string
+  /** 只适用于某个国家的规则：国家代码（CN、AU）；通用的是空的。 */
+  country: string
 }
-
-/** 模板的地区：空 = 通用；cn 中国、au 澳洲。 */
-export type TemplateRegion = '' | 'cn' | 'au'
 
 /** 自己写的规则（ADR 0035）：条件例如 sum(items.amount) == total。 */
 export interface CustomRule {
@@ -452,8 +449,14 @@ export interface Template {
   tables: TemplateTable[]
   rules: TemplateRule[]
   custom_rules?: CustomRule[]
-  /** 地区：空 = 通用；cn 中国、au 澳洲。通用模板只用通用规则。 */
-  region?: TemplateRegion
+  /** 功能领域（发票、交通……），可以有几个。 */
+  domains?: string[]
+  /** 国家和地区代码（CN、AU……）；空 = 通用。 */
+  countries?: string[]
+  /** 自定义标签。 */
+  tags?: string[]
+  /** 最近一次有文档用它的时间。 */
+  last_used_at?: string | null
   /** 从起步模板复制的：起步模板后来加的公式（字段 ID → 公式），这份还没有。 */
   starter_formulas?: Record<string, string>
   versions: { version: number; note: string; created_at: string }[]
@@ -543,7 +546,9 @@ export interface TemplateIn {
   tables: TemplateTable[]
   rules: string[]
   custom_rules: CustomRule[]
-  region?: TemplateRegion
+  domains: string[]
+  countries: string[]
+  tags: string[]
   note: string
 }
 

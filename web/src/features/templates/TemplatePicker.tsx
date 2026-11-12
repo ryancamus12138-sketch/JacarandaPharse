@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Flex, Select, Typography } from 'antd'
+import { Flex, Select, Typography } from 'antd'
 import { Link } from 'react-router'
 import { listTemplates } from '../../api/templates'
 import { DISCOVER, templateOptions } from './uploadChoice'
+import { Tip } from '../../components/Tip'
 
 /**
  * 上传前选模板。第一次用（还没有自己的模板）时提示：先去模板库添加，或者选"抽取所有键值对"。
@@ -22,9 +23,8 @@ export function TemplatePicker({
   return (
     <Flex vertical gap={8} style={{ marginBottom: 12 }}>
       {templates.isSuccess && mine.length === 0 && (
-        <Alert
-          type="info"
-          showIcon
+        <Tip
+          id="upload-no-template"
           title="还没有自己的模板"
           description={
             <>
@@ -44,7 +44,7 @@ export function TemplatePicker({
           value={known ? value : undefined}
           onChange={onChange}
           options={templateOptions(templates.data ?? [])}
-          showSearch={{ optionFilterProp: 'label' }}
+          showSearch={{ optionFilterProp: 'search' }}
         />
       </Flex>
     </Flex>

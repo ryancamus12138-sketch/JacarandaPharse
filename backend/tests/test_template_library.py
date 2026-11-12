@@ -511,33 +511,66 @@ def test_used_template_is_hidden_not_removed(client, factory, storage, receipt_p
 
 
 def test_generic_starters_have_no_regional_rules():
-    """通用模板只用通用规则；中国、澳洲的模板只用通用规则和本地区的规则（ADR 0035）。"""
+    """起步模板库：通用模板只用通用规则；国家模板只用通用规则和本国的规则（ADR 0037）。"""
     from jacara.plugins.validators import REGIONS
 
-    regions = {name: load_starter(name).region for name in STARTERS}
-    assert regions["receipt_shopping"] == regions["receipt_restaurant"] == ""
-    assert regions["receipt_general"] == regions["intl_invoice"] == regions["hotel_folio"] == ""
-    assert regions["au_tax_invoice"] == "au"
+    countries = {name: load_starter(name).countries for name in STARTERS}
+    assert countries["receipt_shopping"] == countries["receipt_restaurant"] == ()
     assert (
-        regions["cn_einvoice"] == regions["cn_rail_ticket"] == regions["cn_air_itinerary"] == "cn"
+        countries["receipt_general"] == countries["intl_invoice"] == countries["hotel_folio"] == ()
     )
+    assert countries["au_tax_invoice"] == ("AU",)
+    assert countries["cn_einvoice"] == countries["cn_rail_ticket"] == ("CN",)
+    assert countries["cn_air_itinerary"] == ("CN",)
+    assert load_starter("cn_air_itinerary").domains == ("交通", "发票")
     for name in STARTERS:
         template = load_starter(name)
-        assert template.region_problem() is None, name
+        assert template.foreign_rules() == [], name
         used = {REGIONS.get(r.id, "") for r in template.rules}
-        assert used <= {"", template.region}, name
-        if not template.region:
+        assert used <= {"", *template.countries}, name
+        if not template.countries:
             text = template.description + "".join(f.description for f in template.fields)
             assert "ATO" not in text and "澳元" not in text, name
     au = {r.id for r in load_starter("au_tax_invoice").rules}
     assert {"seller_abn", "au_buyer_1000", "au_tax_invoice_title"} <= au
 
 
-def test_generic_template_cannot_use_regional_rules(client, mine):
+def test_my_templates_can_use_any_rule_and_labels(client, mine):
+    """我的模板不限制规则；标签（领域、国家、自定义）可以随便改，只改标签不出新版本。"""
     body = client.get(f"/api/v1/templates/{mine}").json()
-    response = client.put(
+    assert body["domains"] == ["收据"] and body["countries"] == [] and body["tags"] == []
+    saved = client.put(
         f"/api/v1/templates/{mine}",
-        json={"title": "x", "fields": body["fields"], "rules": ["ato_evidence"]},
+        json={
+            "title": body["title"],
+            "fields": body["fields"],
+            "tables": body["tables"],
+            "rules": ["ato_evidence"],
+            "domains": ["收据", "餐饮"],
+            "countries": ["au", "NZ"],
+        },
     )
-    assert response.status_code == 422
-    assert "通用模板，不能用别的地区的规则" in response.json()["detail"]
+    assert saved.status_code == 200, saved.text
+    version = saved.json()["version"]
+    assert saved.json()["countries"] == ["AU", "NZ"] and saved.json()["category"] == "收据"
+
+    labelled = client.patch(
+        f"/api/v1/templates/{mine}/labels", json={"tags": ["2026-10 出差", "财务部"]}
+    ).json()
+    assert labelled["tags"] == ["2026-10 出差", "财务部"]
+    assert labelled["countries"] == ["AU", "NZ"] and labelled["version"] == version
+    bad = client.patch(f"/api/v1/templates/{mine}/labels", json={"countries": ["China"]})
+    assert bad.status_code == 422 and "两个字母" in bad.json()["detail"]
+
+    # 只改名字和标签：不出新版本
+    again = client.put(
+        f"/api/v1/templates/{mine}",
+        json={
+            **{k: saved.json()[k] for k in ("fields", "tables")},
+            "title": "新名字",
+            "rules": ["ato_evidence"],
+            "domains": ["收据"],
+            "countries": [],
+        },
+    ).json()
+    assert again["version"] == version and again["title"] == "新名字" and again["countries"] == []

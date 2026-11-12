@@ -617,7 +617,7 @@ REGIONS: dict[str, str] = {
             "air_total",
             "air_vat",
         ),
-        "cn",
+        "CN",
     ),
     **dict.fromkeys(
         (
@@ -631,11 +631,12 @@ REGIONS: dict[str, str] = {
             "ato_gst_credit",
             "gst_eleventh",
         ),
-        "au",
+        "AU",
     ),
 }
-"""只适用于某个地区的规则：cn 中国（发票、行程单）、au 澳洲（税务局 ATO、GST、ABN）。
-其他规则是通用的。模板编辑器默认只列通用规则，通用模板里不放地区规则。"""
+"""只适用于某个国家的规则 → 国家代码（ISO 3166-1，CN 中国、AU 澳大利亚）。
+其他规则是通用的。起步模板库里，国家模板只用通用规则和本国的规则，通用模板只用通用规则；
+"我的模板"不限制，编辑器默认先列通用的和本模板所属国家的（ADR 0037）。"""
 
 REQUIRED = "required"
 """必填检查的编号：模板里 required = true 的字段没抽到值。"""

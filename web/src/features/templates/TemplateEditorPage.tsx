@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Alert,
   App,
-  AutoComplete,
   Button,
   Card,
   Checkbox,
@@ -39,7 +38,9 @@ import { formatTime } from '../../utils/format'
 import { FieldsEditor } from './FieldsEditor'
 import { RulesCard } from './RulesCard'
 import { StructureCard } from './StructureCard'
-import { blankField, CATEGORIES, FIELD_ID, fieldsProblem, REGION_TEXT } from './templateFields'
+import { blankField, FIELD_ID, fieldsProblem } from './templateFields'
+import { LabelFields, LabelTags } from './LabelWidgets'
+import { Tip } from '../../components/Tip'
 
 
 const STATUS_TEXT: Record<string, [string, string]> = {
@@ -58,7 +59,9 @@ function draftOf(t: Template): TemplateIn {
     tables: t.tables,
     rules: t.rules.map((r) => r.id),
     custom_rules: t.custom_rules ?? [],
-    region: t.region ?? '',
+    domains: t.domains ?? (t.category ? [t.category] : []),
+    countries: t.countries ?? [],
+    tags: t.tags ?? [],
     note: '',
   }
 }
@@ -96,6 +99,9 @@ const BLANK: Template = {
   tables: [],
   rules: [],
   custom_rules: [],
+  domains: [],
+  countries: [],
+  tags: [],
   versions: [],
   used: 0,
 }
@@ -228,7 +234,9 @@ function Editor({ template }: { template: Template }) {
             <Typography.Text strong>{isNew ? '新建模板' : template.title}</Typography.Text>
             {isNew ? <Tag color="orange">还没保存</Tag> : <Tag>第 {template.version} 版</Tag>}
             {template.archived && <Tag>已归档</Tag>}
-            <Tag color={template.region ? 'geekblue' : undefined}>{REGION_TEXT[template.region ?? '']}</Tag>
+            <LabelTags
+              template={{ ...template, domains: draft.domains, countries: draft.countries, tags: draft.tags }}
+            />
             {template.kind !== 'mine' && <Tag color="blue">只读（{template.kind === 'starter' ? '起步模板' : '内置模板'}）</Tag>}
           </Flex>
         }
@@ -284,9 +292,8 @@ function Editor({ template }: { template: Template }) {
           />
         )}
         {template.used > 0 && !readOnly && (
-          <Alert
-            type="info"
-            showIcon
+          <Tip
+            id="editor-template-used"
             style={{ marginBottom: 12 }}
             title={`有 ${template.used} 份文档用这个模板`}
             description="保存新版本不会改它们已有的结果；想按新版本重新抽，在审核页面点“重新处理”。"
@@ -297,16 +304,7 @@ function Editor({ template }: { template: Template }) {
           <Descriptions.Item label="模板名">
             <Input value={draft.title} disabled={readOnly} onChange={(e) => set({ title: e.target.value })} />
           </Descriptions.Item>
-          <Descriptions.Item label="类型">
-            <AutoComplete
-              value={draft.category}
-              disabled={readOnly}
-              options={CATEGORIES.map((c) => ({ value: c }))}
-              onChange={(category: string) => set({ category })}
-              style={{ width: '100%' }}
-            />
-          </Descriptions.Item>
-          <Descriptions.Item label="说明">
+          <Descriptions.Item label="说明" span={2}>
             <Input
               value={draft.description}
               disabled={readOnly}
@@ -314,6 +312,17 @@ function Editor({ template }: { template: Template }) {
             />
           </Descriptions.Item>
         </Descriptions>
+        <div style={{ marginTop: 8, maxWidth: 900 }}>
+          <LabelFields
+            domains={draft.domains}
+            countries={draft.countries}
+            tags={draft.tags}
+            disabled={readOnly}
+            onChange={(patch) =>
+              set({ ...patch, ...(patch.domains ? { category: patch.domains[0] ?? '' } : {}) })
+            }
+          />
+        </div>
       </Card>
 
       <Card title={`字段（${draft.fields.length}）`} size="small">

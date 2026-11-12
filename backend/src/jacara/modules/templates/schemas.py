@@ -133,8 +133,12 @@ class TemplateOut(BaseModel):
     fields: list[TemplateFieldOut]
     rules: list[TemplateRuleOut]
     custom_rules: list[CustomRuleIO] = []
-    region: str = ""
-    """地区：空 = 通用；cn 中国、au 澳洲。"""
+    domains: list[str] = []
+    """功能领域（ADR 0037）：发票、交通、收据……可以有几个。"""
+    countries: list[str] = []
+    """国家和地区代码（CN、AU……）；空 = 通用。"""
+    tags: list[str] = []
+    """自定义标签。起步模板没有。"""
     tables: list[TemplateTableOut] = []
     """表格（例如商品明细）。每一格存成 items.2.amount 这样名字的字段。"""
     kind: TemplateKind = "builtin"
@@ -150,7 +154,9 @@ class TemplateOut(BaseModel):
     """从起步模板复制的：起步模板后来给哪些字段加了公式（字段 ID → 公式），我的这份还没有。
     编辑器里提示"套用"（ADR 0035）。表格的列写成 items.amount。"""
     used: int = 0
-    """有几份文档现在用的是这个模板（只在"一个模板"里有）。"""
+    """有几份文档用过这个模板（处理过或排队等着用）。我的模板才有。"""
+    last_used_at: datetime | None = None
+    """最近一次有文档用它是什么时候（模板页"最近用过"排序）。"""
     entities: list[EntityOut] = []
     references: list[ReferenceOut] = []
     workbook: WorkbookOut | None = None
@@ -164,8 +170,8 @@ class RuleInfo(BaseModel):
     needs: list[str]
     severity: str
     per_row: str | None = None
-    region: str = ""
-    """地区规则：cn 中国、au 澳洲；通用的是空的。编辑器默认只列通用规则。"""
+    country: str = ""
+    """只适用于某个国家的规则：国家代码（CN、AU）；通用的是空的。"""
 
 
 class TemplateFieldIn(BaseModel):
@@ -208,10 +214,22 @@ class TemplateIn(BaseModel):
     tables: list[TemplateTableIn] = Field(default=[], max_length=5)
     rules: list[str] = []
     custom_rules: list[CustomRuleIO] = Field(default=[], max_length=30)
-    region: Literal["", "cn", "au"] = ""
-    """地区：从起步模板带过来，编辑器里不改。"""
+    domains: list[str] = Field(default=[], max_length=10)
+    """功能领域，可以有几个。"""
+    countries: list[str] = Field(default=[], max_length=300)
+    """国家和地区代码；空 = 通用。"""
+    tags: list[str] = Field(default=[], max_length=20)
+    """自定义标签。"""
     note: str = Field(default="", max_length=500)
     """这一版改了什么。"""
+
+
+class LabelsIn(BaseModel):
+    """只改标签（不出新版本）。不写的那组不变。"""
+
+    domains: list[str] | None = Field(default=None, max_length=10)
+    countries: list[str] | None = Field(default=None, max_length=300)
+    tags: list[str] | None = Field(default=None, max_length=20)
 
 
 class TemplateCreate(BaseModel):
@@ -306,7 +324,10 @@ class TemplateFile(BaseModel):
     tables: list[TemplateTableIn] = Field(default=[], max_length=5)
     rules: list[str] = []
     custom_rules: list[CustomRuleIO] = []
-    region: Literal["", "cn", "au"] = ""
+    domains: list[str] = []
+    countries: list[str] | None = None
+    """没有（旧的模板文件、标准 Excel）：按选的规则推断。"""
+    tags: list[str] = []
     entities: list[dict[str, Any]] = []
     references: list[dict[str, Any]] = []
     """参照表的全部数据（columns、rows）。"""

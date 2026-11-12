@@ -19,6 +19,7 @@ from jacara.modules.templates.schemas import (
     ExcelBuildIn,
     FormulaCheckIn,
     FormulaCheckOut,
+    LabelsIn,
     RuleInfo,
     SampleIn,
     SampleOut,
@@ -202,6 +203,15 @@ def save_template(template_id: uuid.UUID, data: TemplateIn, service: Service) ->
 def archive_template(template_id: uuid.UUID, data: ArchiveIn, service: Service) -> TemplateOut:
     try:
         return service.archive(template_id, data.archived)
+    except TemplateFailure as err:
+        raise _error(err) from err
+
+
+@router.patch("/{template_id}/labels", summary="改标签")
+def set_labels(template_id: uuid.UUID, data: LabelsIn, service: Service) -> TemplateOut:
+    """只改功能领域、国家和地区、自定义标签，不出新版本（ADR 0037）。"""
+    try:
+        return service.labels(template_id, data)
     except TemplateFailure as err:
         raise _error(err) from err
 

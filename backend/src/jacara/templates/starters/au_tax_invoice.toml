@@ -7,8 +7,8 @@
 name = "au_tax_invoice"
 version = 2
 title = "澳洲税务发票"
-region = "au"
-category = "发票"
+domains = ["发票"]
+countries = ["AU"]
 description = "澳洲的 Tax invoice（抵扣 GST 用）。字段按 ATO 对税务发票的要求：1,000 澳元以下七项，1,000 澳元及以上加买方。"
 rules = ["issue_date_exists", "issue_date_not_future", "au_tax_invoice_title", "seller_abn", "buyer_abn", "au_buyer_1000", "au_gst_eleventh", "net_tax_gross", "item_line"]
 

@@ -5,7 +5,7 @@
 name = "hotel_folio"
 version = 4
 title = "酒店账单"
-category = "住宿"
+domains = ["住宿"]
 description = "酒店退房账单（Folio）：入住离店、房号、逐日消费。字段参考 schema.org LodgingReservation。"
 rules = ["total_positive", "stay_order", "stay_nights", "issue_date_exists", "items_sum"]
 
