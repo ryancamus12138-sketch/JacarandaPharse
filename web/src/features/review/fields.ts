@@ -1,4 +1,8 @@
-/** 字段的中文名和状态说明。后端只给英文字段名，显示给人看的名字放在这里。 */
+/**
+ * 字段的中文名和状态说明。
+ * 中文名优先用模板里的（后端随文档详情一起给，见 setTemplateLabels）；
+ * 老文档、内置模板没有的，用下面这张表。
+ */
 
 import type { CheckState, Evidence, EvidenceState, FieldValue, Level } from '../../api/types'
 
@@ -42,21 +46,32 @@ export function splitCell(name: string): CellName | null {
   return m ? { table: m[1], index: Number(m[2]), column: m[3] } : null
 }
 
-export function tableLabel(table: string): string {
-  return TABLE_LABELS[table] ?? table
+/** 现在打开的文档用的模板里的中文名：字段 ID → 名字；表格的列写成 items.amount。 */
+let templateLabels: Record<string, string> = {}
+
+/**
+ * 换成这份文档的模板里的中文名。审核页面每次渲染时调用（同一份就是同一个对象，不重复处理）。
+ * 一个页面同时只看一份文档，所以放在模块里，各个组件直接用 fieldLabel 就行。
+ */
+export function setTemplateLabels(labels: Record<string, string> | undefined): void {
+  templateLabels = labels ?? {}
 }
 
-export function columnLabel(column: string): string {
-  return COLUMN_LABELS[column] ?? column
+export function tableLabel(table: string): string {
+  return templateLabels[table] ?? TABLE_LABELS[table] ?? table
+}
+
+export function columnLabel(column: string, table = 'items'): string {
+  return templateLabels[`${table}.${column}`] ?? COLUMN_LABELS[column] ?? column
 }
 
 /** 字段的中文名；没登记的就显示英文原名。表格的格子显示成"第 2 行 金额"。 */
 export function fieldLabel(name: string): string {
   const cell = splitCell(name)
   if (cell) {
-    return `第 ${cell.index} 行 ${columnLabel(cell.column)}`
+    return `第 ${cell.index} 行 ${columnLabel(cell.column, cell.table)}`
   }
-  return LABELS[name] ?? name
+  return templateLabels[name] ?? LABELS[name] ?? name
 }
 
 /** 四种颜色：红 = 先看，黄 = 要看一眼，灰 = 原文没有，绿 = 没问题（ADR 0028）。 */
@@ -179,9 +194,9 @@ export function tableLayouts(values: FieldValue[]): TableLayout[] {
 }
 
 /** 一格的名字，按页面上的行号："第 2 行 金额"。删掉的行写"已删除的行"。 */
-export function cellLabel(row: TableRow, column: string): string {
+export function cellLabel(row: TableRow, column: string, table = 'items'): string {
   const where = row.display === null ? '已删除的行' : `第 ${row.display} 行`
-  return `${where} ${columnLabel(column)}`
+  return `${where} ${columnLabel(column, table)}`
 }
 
 /** 字段现在的出处：从原文选取过就是选的那几块。 */
@@ -197,7 +212,7 @@ export function displayLabel(values: FieldValue[], v: FieldValue): string {
   }
   const layout = tableLayouts(values).find((t) => t.table === cell.table)
   const row = layout?.rows.find((r) => r.index === cell.index)
-  return row ? cellLabel(row, cell.column) : fieldLabel(v.name)
+  return row ? cellLabel(row, cell.column, cell.table) : fieldLabel(v.name)
 }
 
 /**

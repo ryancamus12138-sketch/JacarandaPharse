@@ -1,0 +1,118 @@
+# 起步模板：澳洲税务发票（Tax invoice）。
+# 字段来源：ATO "Tax invoices"：1,000 澳元以下要有七项（写明是税务发票、卖方名称、卖方 ABN、开票日期、
+# 卖了什么（含数量和价格）、GST 金额（或写明总额含 GST）、每项是否含 GST）；
+# 1,000 澳元及以上还要写买方名称或 ABN。
+# 规则和字段说明只写通用规定，不放任何真实单据的内容。
+
+name = "au_tax_invoice"
+version = 1
+title = "澳洲税务发票"
+category = "发票"
+description = "澳洲的 Tax invoice（抵扣 GST 用）。字段按 ATO 对税务发票的要求：1,000 澳元以下七项，1,000 澳元及以上加买方。"
+rules = ["issue_date_exists", "issue_date_not_future", "au_tax_invoice_title", "seller_abn", "buyer_abn", "au_buyer_1000", "au_gst_eleventh", "net_tax_gross", "item_line"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+type = "string"
+required = true
+description = "单据上写的标题，税务发票要写明 Tax invoice，原样照抄"
+aliases = ["Tax Invoice", "Tax invoice"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票号"
+type = "string"
+aliases = ["Invoice No.", "Invoice #", "Invoice Number"]
+
+[[fields]]
+name = "issue_date"
+label = "开票日期"
+type = "date"
+required = true
+aliases = ["Invoice Date", "Date", "Date of issue"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+type = "string"
+required = true
+description = "开发票的公司名称（或注册的商号）"
+aliases = ["From", "Supplier", "Seller"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "卖方 ABN"
+type = "string"
+required = true
+description = "卖方的 ABN，11 位数字，常写成 12 345 678 901，原样照抄"
+aliases = ["ABN"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+type = "string"
+description = "买方的名称；1,000 澳元及以上的税务发票必须有买方名称或 ABN"
+aliases = ["Bill To", "Customer", "Invoice To"]
+
+[[fields]]
+name = "buyer_tax_id"
+label = "买方 ABN"
+type = "string"
+aliases = ["Customer ABN", "Buyer ABN"]
+
+[[fields]]
+name = "net_total"
+label = "不含 GST 合计"
+type = "number"
+aliases = ["Subtotal", "Total excl. GST"]
+
+[[fields]]
+name = "tax_total"
+label = "GST"
+type = "number"
+description = "GST 金额。只写了“总额含 GST”（Total includes GST）时填那个 GST 金额"
+aliases = ["GST", "Total GST", "Includes GST"]
+
+[[fields]]
+name = "gross_total"
+label = "含 GST 总额"
+type = "number"
+required = true
+aliases = ["Total", "Total incl. GST", "Total (incl. GST)", "Amount Due"]
+
+[[tables]]
+name = "items"
+label = "明细"
+description = "卖了什么，每样一行（要有数量和价格）。小计、GST、总额这些行不算明细"
+required = true
+
+[[tables.columns]]
+name = "description"
+label = "内容"
+type = "string"
+aliases = ["Description", "Item"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+type = "number"
+aliases = ["Qty", "Quantity"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+type = "number"
+aliases = ["Unit Price", "Rate"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+type = "number"
+aliases = ["Amount", "Line Total"]
+
+[[tables.columns]]
+name = "gst_flag"
+label = "是否含 GST"
+type = "string"
+description = "这一行是否含 GST 的标记（如 *、GST、GST free），原样照抄；没有就留空"

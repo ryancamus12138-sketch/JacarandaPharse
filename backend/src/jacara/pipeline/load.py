@@ -16,6 +16,7 @@ from jacara.plugins.exporters.base import DocumentReport, Review
 from jacara.plugins.extractors.base import ExtractedField, ExtractionResult, FieldType
 from jacara.plugins.ocr.base import OcrLine, Point
 from jacara.plugins.validators.base import Issue, ValidationResult
+from jacara.templates import Template
 
 
 def load_reports(document: Document) -> list[DocumentReport]:
@@ -33,7 +34,7 @@ def _source(filename: str, page: int, pages: int) -> str:
 
 def _report(extraction: Extraction, source: str) -> DocumentReport:
     """当前的结果：删掉的行不导出，表格按显示顺序编号，规则按审核之后的值重新检查。"""
-    from jacara.pipeline.current import current_checks, current_values
+    from jacara.pipeline.current import current_checks, current_values, labels_of, template_of
 
     current = current_values(extraction)
     fields = tuple(_field(v, name) for v, name in current)
@@ -78,7 +79,21 @@ def _report(extraction: Extraction, source: str) -> DocumentReport:
         template=extraction.template,
         template_version=extraction.template_version,
         reviews=reviews,
+        labels=labels_of(extraction),
+        hidden=_hidden(template_of(extraction)),
     )
+
+
+def _hidden(template: Template | None) -> frozenset[str]:
+    """模板里设成不导出的字段、表、表的列。"""
+    if template is None:
+        return frozenset()
+    names = {f.name for f in template.fields if not f.export}
+    for t in template.tables:
+        if not t.export:
+            names.add(t.name)
+        names |= {f"{t.name}.{c.name}" for c in t.columns if not c.export}
+    return frozenset(names)
 
 
 def _field(value: ExtractedValue, name: str) -> ExtractedField:
@@ -90,7 +105,7 @@ def _field(value: ExtractedValue, name: str) -> ExtractedField:
     if value.type == "number" and raw is not None:
         with suppress(ValueError):  # 转不成数字就保持原样（规则校验会标出来）
             raw = float(raw)
-    return ExtractedField(name, cast(FieldType, value.type), raw, value.row_no)
+    return ExtractedField(name, cast(FieldType, value.type), raw, value.row_no, value.label)
 
 
 def _evidence(data: dict[str, Any] | None) -> Evidence | None:

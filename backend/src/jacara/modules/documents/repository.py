@@ -88,7 +88,9 @@ class DocumentRepository:
         if f.template:
             conditions.append(
                 exists().where(
-                    Extraction.document_id == Document.id, Extraction.template == f.template
+                    Extraction.document_id == Document.id,
+                    Extraction.run == Document.current_run,
+                    Extraction.template == f.template,
                 )
             )
         if f.since is not None:
@@ -109,6 +111,7 @@ class DocumentRepository:
         reviewed = exists().where(ValueRevision.value_id == ExtractedValue.id)
         return [
             Extraction.document_id == Document.id,
+            Extraction.run == Document.current_run,
             ExtractedValue.extraction_id == Extraction.id,
             ExtractedValue.needs_review.is_(True),
             ~reviewed,
@@ -196,6 +199,7 @@ class DocumentRepository:
             .where(
                 Document.team_id == team_id,
                 Document.status == "done",
+                Extraction.run == Document.current_run,
                 ExtractedValue.needs_review,
                 ~reviewed,
             )
@@ -215,6 +219,7 @@ class DocumentRepository:
             .where(
                 Document.team_id == team_id,
                 Document.status == "done",
+                Extraction.run == Document.current_run,
                 ExtractedValue.needs_review,
                 ~reviewed,
             )
@@ -237,8 +242,10 @@ class DocumentRepository:
         query = (
             select(Extraction.document_id, func.count(ExtractedValue.id))
             .join(ExtractedValue, ExtractedValue.extraction_id == Extraction.id)
+            .join(Document, Extraction.document_id == Document.id)
             .where(
                 Extraction.document_id.in_(document_ids),
+                Extraction.run == Document.current_run,
                 ExtractedValue.needs_review,
                 ~reviewed,
             )

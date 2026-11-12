@@ -5,7 +5,10 @@
   鼠标移上去能看到原因、出处，以及"原值 → 人工改为"。
 - 明细：一个字段一行，列出当前值、原值、状态、出处、OCR 置信度、原因和人工审核，方便筛选和审计。
 - 商品明细：一行商品一行，前面是文件名和第几行，格子的颜色和批注同"汇总"。没有表格就不建这张表。
+- 键值对：没用模板（"用样例建模板"第一步）的单据，一个键值对一行。没有这种单据就不建。
 - 来源：每张单据用的 OCR 引擎、模型、提示词版本、处理时间（项目规则：每次抽取都记录来源）。
+
+列名用模板里的中文名（report.labels），顺序按模板；模板里设成"不导出"的字段不写（ADR 0030）。
 
 有人工审核结果时（report.reviews），格子里写审核之后的值；原值在批注和"明细"里都能看到。
 """
@@ -146,13 +149,56 @@ def _pending(report: DocumentReport) -> int:
     )
 
 
+DISCOVER = "discover"
+
+
+def _visible(report: DocumentReport, name: str) -> bool:
+    """这个字段要不要导出：模板里设成不导出的字段、表、表的列都不写。"""
+    if name in report.hidden:
+        return False
+    cell = split_cell_name(name)
+    return cell is None or (
+        cell[0] not in report.hidden and f"{cell[0]}.{cell[2]}" not in report.hidden
+    )
+
+
+def _fields(report: DocumentReport) -> list[AlignedField]:
+    return [a for a in report.aligned if _visible(report, a.field.name)]
+
+
+def _label(reports: Sequence[DocumentReport], key: str, default: str | None = None) -> str:
+    """列名：第一份有中文名的单据里的名字；都没有就用字段 ID。"""
+    return next((r.labels[key] for r in reports if key in r.labels), default or key)
+
+
+def _field_label(report: DocumentReport, name: str) -> str:
+    """明细表里的"字段"：中文名，表格的格子写成"商品明细 第 2 行 金额"。"""
+    cell = split_cell_name(name)
+    if cell is None:
+        return report.labels.get(name, name)
+    table = report.labels.get(cell[0], cell[0])
+    column = report.labels.get(f"{cell[0]}.{cell[2]}", cell[2])
+    return f"{table} 第 {cell[1]} 行 {column}" if cell[0] in report.labels else name
+
+
+def _sheet_title(title: str, used: set[str]) -> str:
+    """工作表名最多 31 个字，不能重名，不能有方括号、冒号、星号、问号、斜杠这些字符。"""
+    title = "".join(c for c in title if c not in "[]:*?/\\")[:28] or "表格"
+    candidate, n = title, 1
+    while candidate in used:
+        n += 1
+        candidate = f"{title} {n}"
+    used.add(candidate)
+    return candidate
+
+
 Rows = dict[int, dict[str, AlignedField]]
 """表格的行号 → 列名 → 格子。"""
 
 
 def _table_rows(report: DocumentReport, table: str) -> Rows:
     rows: Rows = {}
-    for a in report.aligned:
+    for a in _fields(report):
         cell = split_cell_name(a.field.name)
         if cell and cell[0] == table:
             rows.setdefault(cell[1], {})[cell[2]] = a
@@ -166,16 +212,22 @@ class ExcelExporter:
     def export(self, reports: Sequence[DocumentReport], path: Path) -> None:
         book = Workbook()
         book.remove(book.worksheets[0])  # 去掉新建时自带的空白表
-        self._summary(book.create_sheet("汇总"), reports)
+        templated = [r for r in reports if r.template != DISCOVER]
+        discovered = [r for r in reports if r.template == DISCOVER]
+        self._summary(book.create_sheet("汇总"), templated)
         self._details(book.create_sheet("明细"), reports)
         tables = list(
             dict.fromkeys(
-                c[0] for r in reports for a in r.aligned if (c := split_cell_name(a.field.name))
+                c[0] for r in templated for a in _fields(r) if (c := split_cell_name(a.field.name))
             )
         )
+        used = {"汇总", "明细", "键值对", "来源"}
         for table in tables:
-            title = "商品明细" if table == "items" else f"表格 {table}"
-            self._table(book.create_sheet(title), reports, table)
+            default = "商品明细" if table == "items" else f"表格 {table}"
+            title = next((r.labels[table] for r in templated if table in r.labels), default)
+            self._table(book.create_sheet(_sheet_title(title, used)), templated, table)
+        if discovered:
+            self._pairs(book.create_sheet("键值对"), discovered)
         self._sources(book.create_sheet("来源"), reports)
         path.parent.mkdir(parents=True, exist_ok=True)
         book.save(path)
@@ -185,11 +237,12 @@ class ExcelExporter:
             dict.fromkeys(
                 a.field.name
                 for r in reports
-                for a in r.aligned
+                for a in _fields(r)
                 if split_cell_name(a.field.name) is None  # 表格的格子放在单独的表里
             )
         )
-        _setup(sheet, ["文件", *names, "需要确认"], [18] + [16] * len(names) + [10])
+        headers = [_label(reports, n) for n in names]
+        _setup(sheet, ["文件", *headers, "需要确认"], [18] + [16] * len(names) + [10])
 
         for report in reports:
             by_name = {a.field.name: a for a in report.aligned}
@@ -212,7 +265,8 @@ class ExcelExporter:
         columns = list(
             dict.fromkeys(c for _, rows in per_report for cells in rows.values() for c in cells)
         )
-        _setup(sheet, ["文件", "第几行", *columns], [18, 8] + [16] * len(columns))
+        headers = [_label(reports, f"{table}.{c}", c) for c in columns]
+        _setup(sheet, ["文件", "第几行", *headers], [18, 8] + [16] * len(columns))
         sheet.column_dimensions["C"].width = 36  # 第一列一般是商品名，长一些
         for report, rows in per_report:
             for index in sorted(rows):
@@ -253,7 +307,7 @@ class ExcelExporter:
         ]
         _setup(sheet, headers, [18, 16, 40, 40, 12, 26, 11, 9, 60, 10, 40])
         for report in reports:
-            for field in report.aligned:
+            for field in _fields(report):
                 review = report.reviews.get(field.field.name)
                 reasons = _reasons(field, report)
                 pending = bool(reasons) and review is None
@@ -261,7 +315,7 @@ class ExcelExporter:
                 sheet.append(
                     [
                         report.source,
-                        field.field.name,
+                        _field_label(report, field.field.name),
                         cell_value(field, review),
                         cell_value(field),
                         _STATUS_NAMES[field.status],
@@ -285,6 +339,22 @@ class ExcelExporter:
                     continue
                 for column in range(1, len(headers) + 1):
                     sheet.cell(row=sheet.max_row, column=column).fill = fill
+        sheet.auto_filter.ref = sheet.dimensions
+
+    def _pairs(self, sheet: Worksheet, reports: Sequence[DocumentReport]) -> None:
+        """没用模板的单据：一个键值对一行（文件、单据上的名称、值）。"""
+        _setup(sheet, ["文件", "名称", "值"], [18, 28, 40])
+        for report in reports:
+            for field in _fields(report):
+                review = report.reviews.get(field.field.name)
+                sheet.append(
+                    [
+                        report.source,
+                        report.labels.get(field.field.name, field.field.name),
+                        cell_value(field, review),
+                    ]
+                )
+                _mark(sheet.cell(row=sheet.max_row, column=3), field, report)
         sheet.auto_filter.ref = sheet.dimensions
 
     def _sources(self, sheet: Worksheet, reports: Sequence[DocumentReport]) -> None:

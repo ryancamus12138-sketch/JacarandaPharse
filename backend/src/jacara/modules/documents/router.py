@@ -11,7 +11,7 @@ from pathlib import PurePath
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Path, Query, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -29,8 +29,10 @@ from jacara.modules.documents.schemas import (
     PageOcr,
     RegionIn,
     RegionOut,
+    ReprocessIn,
 )
 from jacara.modules.documents.service import DocumentError, DocumentService, day_start
+from jacara.modules.fields.schemas import AdoptOut
 from jacara.plugins.ocr.base import OcrEngine
 
 router = APIRouter(prefix="/documents", tags=["文档"])
@@ -85,14 +87,19 @@ def attachment(filename: str, data: bytes, media_type: str) -> Response:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="上传文件")
-def upload_document(file: UploadFile, service: Service) -> DocumentOut:
+def upload_document(
+    file: UploadFile,
+    service: Service,
+    template: Annotated[str | None, Form()] = None,
+) -> DocumentOut:
     """上传一张图片或一个 PDF。文件存进对象存储，文档信息存进数据库，放进后台队列等待处理。
 
+    template：我的模板的 id，或者 discover（不用模板，抽出所有键值对）。不写：用上一次用的。
     马上返回，状态为 uploaded。之后用"文档详情"查看状态，变成 done 就有抽取结果了。
     """
     data = file.file.read()
     try:
-        return service.upload(file.filename or "", file.content_type or "", data)
+        return service.upload(file.filename or "", file.content_type or "", data, template)
     except DocumentError as err:
         raise _http_error(err) from err
 
@@ -166,10 +173,17 @@ def export_documents_zip(
 
 
 @router.get("/{document_id}", summary="文档详情")
-def get_document(document_id: uuid.UUID, service: Service) -> DocumentDetail:
-    """文档信息，加上每一页抽出的字段、出处和规则校验结果。"""
+def get_document(
+    document_id: uuid.UUID,
+    service: Service,
+    run: Annotated[int | None, Query(ge=1)] = None,
+) -> DocumentDetail:
+    """文档信息，加上每一页抽出的字段、出处和规则校验结果。
+
+    run：看第几轮处理的结果（旧的几轮只能看）。不写就是现在用的这一轮。
+    """
     try:
-        return service.get(document_id)
+        return service.get(document_id, run)
     except DocumentError as err:
         raise _http_error(err) from err
 
@@ -271,5 +285,25 @@ def process_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
     """
     try:
         return service.process(document_id)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post(
+    "/{document_id}/reprocess", status_code=status.HTTP_202_ACCEPTED, summary="换模板重新处理"
+)
+def reprocess_document(document_id: uuid.UUID, data: ReprocessIn, service: Service) -> DocumentOut:
+    """用选的模板（不选就是现在这个模板的最新版）跑新的一轮。旧结果留着，可以查看。"""
+    try:
+        return service.reprocess(document_id, data)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/{document_id}/adopt-previous", summary="采纳上次的确认")
+def adopt_previous(document_id: uuid.UUID, service: Service) -> AdoptOut:
+    """重新处理之后：上一轮人审核过、这次值和位置都对得上的字段，一次沿用。"""
+    try:
+        return service.adopt_previous(document_id)
     except DocumentError as err:
         raise _http_error(err) from err

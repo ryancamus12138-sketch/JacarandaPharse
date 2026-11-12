@@ -44,7 +44,8 @@ backend/src/jacara/
     web.py          提供打包好的网页（web/dist），SPA 回退
   plugins/      流水线插件，一个扩展点一个子包，各有 base.py（接口）和注册表
                 ocr model_backends extractors aligners validators exporters tables
-  templates/    模板：一种单据抽哪些字段、查哪些规则，一个 .toml 一个模板（receipt、receipt_full）
+  templates/    模板：一种单据抽哪些字段、查哪些规则。*.toml 是内置模板（receipt、receipt_full，评测和命令行用），
+                starters/*.toml 是九个起步模板（ADR 0030）
   pipeline/     流水线
     run.py          组装插件，一个文件 → 每页的 DocumentReport（命令行和 worker 共用）
     process.py      后台处理一个上传的文档，负责状态变化 uploaded → processing → done / failed
@@ -55,7 +56,8 @@ backend/src/jacara/
     fields/         字段值与人工审核：修改、确认、修改历史（/api/v1/values）
     auth/           团队、用户、登录会话、重设码（/api/v1/auth、/api/v1/users）
     audit/          审计日志：只追加（/api/v1/audit-logs）
-    templates/      模板（只读）：/api/v1/templates；模板是文件、不存数据库，所以只有 schemas、service、router
+    templates/      模板：/api/v1/templates。我的模板和版本存数据库（templates、template_versions），
+                    起步、内置模板是文件；用样例建模板、试跑也在这里
   models.py     汇总所有数据库表（给 Alembic 用）
   app.py        FastAPI 应用：create_app()，挂载 /api/v1，最后挂网页
   worker.py     后台 worker：Celery 任务定义，jacara worker 启动
@@ -156,6 +158,18 @@ API 在所有接口之后用 `core/web.py` 挂一条兜底路由提供 `web/dist
 **改了模板里的字段、说明或规则，就把 version 加 1，并跑一次评测。** 字段名只用小写英文、数字、下划线。
 给模型的说明里举例子时，**不要用评测集里的真实数据**（店名、注册号等），否则评测分数虚高。
 收据的商家（merchant）是开票的公司名，店名另有 store_name（ADR 0025）。
+
+**模板库（ADR 0030）：** 网页上用的是"我的模板"（数据库里，每次保存一个新版本，只新增不修改），
+从 `templates/starters/*.toml` 的起步模板复制而来。抽取结果记 `template_version_id`，显示、规则、导出都按那个版本还原
+（`pipeline/current.py` 的 `template_of`）。规则按字段 ID 找值：起步模板里同一个意思的字段用同一个 ID（total、issue_date……）。
+重新处理是新的一"轮"（`extractions.run`、`documents.current_run`），`Document.extractions` 只有当前这一轮，
+查数据库时 join `Extraction` 的地方都要加 `Extraction.run == Document.current_run`。旧的几轮只能看。
+起步模板的字段说明只写官方规定，不放真实单据的内容；不在系统里加评测功能、不给模板标"未评测"。
+
+**Excel 工作簿（ADR 0031）：** `backend/src/jacara/workbook/`：analyze 猜每张 sheet 的角色（单据表、明细表、对象表、
+参照表、选项 / 不用）和每一列的来源，build 按预览确认的结果建模板，fill 按原工作簿导出，standard 是标准模板 Excel。
+模板定义里多了 entities、references、workbook，字段多了 options、extract（false = 人工填，不交给模型）。
+编辑器保存新版本时这三样从上一版带过来（`carry_over`），删掉的字段的引用自动去掉。
 
 **表格字段（ADR 0026）：** 模板里的 `[[tables]]`（如商品明细 items）每一格存成一个普通字段，
 名字是 `表名.第几行.列名`（`items.2.amount`，行号从 1 开始），用 `cell_name()` / `split_cell_name()` 拼和拆，

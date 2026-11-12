@@ -8,9 +8,11 @@ from jacara.plugins.model_backends.base import ModelConfig
 from jacara.plugins.model_backends.llama_server import LlamaServerBackend
 
 
-def fake_post(finish_reason: str, sent: list[dict]):
-    def post(url, json, timeout):
+def fake_post(finish_reason: str, sent: list[dict], headers_seen: list[dict] | None = None):
+    def post(url, json, headers, timeout):
         sent.append(json)
+        if headers_seen is not None:
+            headers_seen.append(headers)
         body = {
             "model": "fake-model",
             "choices": [{"message": {"content": '{"total"'}, "finish_reason": finish_reason}],
@@ -43,6 +45,28 @@ def test_length_limit_can_still_be_set(monkeypatch):
     with pytest.raises(ModelBackendError, match="200 个 token"):
         LlamaServerBackend(ModelConfig(max_tokens=200)).chat([ChatMessage("user", "hi")])
     assert sent[0]["max_tokens"] == 200
+
+
+def test_api_key_is_sent_as_bearer(monkeypatch):
+    """jacara start 启动的模型服务有密钥：请求带上 Authorization。"""
+    headers: list[dict] = []
+    monkeypatch.setattr(httpx, "post", fake_post("stop", [], headers))
+    LlamaServerBackend(ModelConfig(api_key="k123")).chat([ChatMessage("user", "hi")])
+    LlamaServerBackend().chat([ChatMessage("user", "hi")])
+    assert headers == [{"Authorization": "Bearer k123"}, {}]
+
+
+def test_wrong_key_says_so(monkeypatch):
+    monkeypatch.setattr(httpx, "post", lambda url, json, headers, timeout: httpx.Response(401))
+    with pytest.raises(ModelBackendError, match="密钥"):
+        LlamaServerBackend(ModelConfig(api_key="old")).chat([ChatMessage("user", "hi")])
+
+
+def test_server_has_no_web_ui(monkeypatch):
+    from jacara.plugins.model_backends import server
+
+    monkeypatch.setattr(server.shutil, "which", lambda name: "/usr/bin/llama-server")
+    assert "--no-webui" in server.server_command(server.Path("m.gguf"))
 
 
 def test_server_has_room_for_long_tables():

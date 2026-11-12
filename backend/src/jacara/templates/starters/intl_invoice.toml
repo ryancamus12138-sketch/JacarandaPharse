@@ -1,0 +1,148 @@
+# 起步模板：通用发票。
+# 字段来源：EN 16931（欧洲电子发票标准，Peppol BIS Billing 3.0 也用它）里不分国家都有的项目和金额关系。
+# 不带任何国家或地区的税务规定；澳洲税务发票见 au_tax_invoice.toml。
+# 规则和字段说明只写通用规定，不放任何真实单据的内容。
+
+name = "intl_invoice"
+version = 2
+title = "通用发票"
+category = "发票"
+description = "任何国家的商业发票（Invoice）：卖方、买方、明细、不含税合计 + 税额 = 含税合计。字段和金额关系参考 EN 16931，不带地区规定。"
+rules = ["issue_date_exists", "issue_date_not_future", "lines_net", "net_tax_gross", "due_not_above_gross", "item_line"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+type = "string"
+description = "单据上写的标题，如 Invoice、Tax Invoice，原样照抄"
+aliases = ["Invoice", "Tax Invoice", "发票"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票号"
+type = "string"
+required = true
+aliases = ["Invoice No.", "Invoice #", "Invoice Number"]
+
+[[fields]]
+name = "issue_date"
+label = "开票日期"
+type = "date"
+required = true
+aliases = ["Invoice Date", "Date", "Date of issue"]
+
+[[fields]]
+name = "due_date"
+label = "付款截止日"
+type = "date"
+aliases = ["Due Date", "Payment Due"]
+
+[[fields]]
+name = "currency"
+label = "币种"
+type = "string"
+description = "三个字母的币种代码，如 AUD、USD、EUR；单据上只有符号时按符号和国家判断"
+aliases = ["Currency"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+type = "string"
+required = true
+description = "开发票的公司名称"
+aliases = ["From", "Supplier", "Seller"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "卖方税号"
+type = "string"
+description = "卖方的税号，如 ABN、VAT No.、GST No."
+aliases = ["ABN", "VAT No.", "GST No.", "Tax ID"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+type = "string"
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+type = "string"
+aliases = ["Bill To", "Customer", "Buyer", "Invoice To"]
+
+[[fields]]
+name = "buyer_tax_id"
+label = "买方税号"
+type = "string"
+aliases = ["Customer Tax ID", "Buyer VAT No."]
+
+[[fields]]
+name = "net_total"
+label = "不含税合计"
+type = "number"
+description = "不含税的合计金额"
+aliases = ["Subtotal", "Total excl. tax", "Net amount"]
+
+[[fields]]
+name = "tax_total"
+label = "税额"
+type = "number"
+description = "税额合计"
+aliases = ["Tax", "VAT", "GST", "Sales tax", "Total tax"]
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+type = "number"
+required = true
+description = "含税的合计金额"
+aliases = ["Total", "Total incl. tax", "Grand total"]
+
+[[fields]]
+name = "amount_due"
+label = "应付金额"
+type = "number"
+description = "扣掉已付款后还要付的金额"
+aliases = ["Amount Due", "Balance Due"]
+
+[[fields]]
+name = "payment_terms"
+label = "付款条件"
+type = "string"
+aliases = ["Terms", "Payment Terms"]
+
+[[tables]]
+name = "items"
+label = "明细"
+description = "发票的明细行，每个商品或服务一行"
+
+[[tables.columns]]
+name = "description"
+label = "内容"
+type = "string"
+aliases = ["Description", "Item"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+type = "number"
+aliases = ["Qty", "Quantity"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+type = "number"
+aliases = ["Unit Price", "Rate"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+type = "number"
+description = "这一行不含税的金额"
+aliases = ["Amount", "Line Total"]
+
+[[tables.columns]]
+name = "tax_rate"
+label = "税率"
+type = "string"
+aliases = ["Tax %", "VAT %", "GST %"]

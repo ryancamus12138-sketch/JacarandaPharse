@@ -1,4 +1,5 @@
 import {
+  AppstoreOutlined,
   AuditOutlined,
   DashboardOutlined,
   ExportOutlined,
@@ -30,6 +31,7 @@ export function AppLayout() {
   const items: MenuProps['items'] = [
     { key: '/dashboard', icon: <DashboardOutlined />, label: '工作台' },
     { key: '/documents', icon: <FileTextOutlined />, label: '文档' },
+    { key: '/templates', icon: <AppstoreOutlined />, label: '模板' },
     { key: '/exports', icon: <ExportOutlined />, label: '导出记录' },
     { key: '/system', icon: <InfoCircleOutlined />, label: '系统信息' },
     ...(can('user:manage')

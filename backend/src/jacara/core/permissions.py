@@ -22,6 +22,7 @@ Action = Literal[
     "document:export",
     "value:read",
     "value:review",
+    "template:manage",
     "user:manage",
     "audit:read",
 ]
@@ -34,6 +35,7 @@ GRANTABLE: dict[Action, str] = {
     "document:process": "重新处理",
     "value:review": "修改和确认字段",
     "document:review": "完成审核",
+    "template:manage": "管理模板",
 }
 """管理员可以给使用者单独开通的权限（权限名 → 界面上显示的名字）。"""
 

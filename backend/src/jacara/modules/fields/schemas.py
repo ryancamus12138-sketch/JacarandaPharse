@@ -9,6 +9,15 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class SuggestionOut(BaseModel):
+    """沿用上一轮的审核：confirm 确认这次的值；edit 改成上次人改的值。"""
+
+    action: Literal["confirm", "edit"]
+    value: str | None
+    run: int
+    """来自第几轮。"""
+
+
 class ValueOut(BaseModel):
     """一个字段。value 是模型的原值，current_value 是审核之后的当前值。"""
 
@@ -45,6 +54,15 @@ class ValueOut(BaseModel):
     """校验：ok 没问题、warn 违反警告级规则、fail 违反错误级规则。按当前值算，只有文档详情里有。"""
     level: str | None = None
     """颜色：red、yellow、grey、green（证据 × 校验 × 有没有人审核过）。只有文档详情里有。"""
+    label: str | None = None
+    """中文名：模板里的 label；键值对发现时是单据上的原名。只有文档详情里有。"""
+    suggestion: SuggestionOut | None = None
+    """重新处理之后：上一轮人审核过、可以直接沿用的结果。只有文档详情里有。"""
+
+
+class AdoptOut(BaseModel):
+    confirmed: int
+    edited: int
 
 
 class RevisionIn(BaseModel):

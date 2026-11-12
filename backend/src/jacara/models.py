@@ -11,6 +11,7 @@ from jacara.modules.auth.models import AuthSession, PasswordResetCode, Team, Use
 from jacara.modules.documents.models import Document, Extraction
 from jacara.modules.exports.models import Export
 from jacara.modules.fields.models import ExtractedValue, ValueRevision
+from jacara.modules.templates.models import TemplateRecord, TemplateVersion
 
 __all__ = [
     "AuditLog",
@@ -22,6 +23,8 @@ __all__ = [
     "Extraction",
     "PasswordResetCode",
     "Team",
+    "TemplateRecord",
+    "TemplateVersion",
     "User",
     "ValueRevision",
 ]

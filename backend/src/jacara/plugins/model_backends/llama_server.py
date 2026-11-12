@@ -48,8 +48,14 @@ class LlamaServerBackend:
         url = f"{self.config.base_url}/v1/chat/completions"
         start = time.perf_counter()
         try:
+            headers = (
+                {"Authorization": f"Bearer {self.config.api_key}"} if self.config.api_key else {}
+            )
             response = httpx.post(
-                url, json=self._payload(messages, json_schema), timeout=self.config.timeout_s
+                url,
+                json=self._payload(messages, json_schema),
+                headers=headers,
+                timeout=self.config.timeout_s,
             )
         except httpx.ConnectError as err:
             raise ModelBackendError(
@@ -60,6 +66,10 @@ class LlamaServerBackend:
                 f"模型超过 {self.config.timeout_s:.0f} 秒没有回答，可以调大 timeout_s。"
             ) from err
 
+        if response.status_code == 401:
+            raise ModelBackendError(
+                "模型服务要密钥，但密钥不对。模型是 jacara start 启动的话，请重新运行 jacara start"
+            )
         if response.status_code != 200:
             detail = response.text[:300]
             raise ModelBackendError(f"模型服务报错（{response.status_code}）：{detail}")

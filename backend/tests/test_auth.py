@@ -198,6 +198,16 @@ def test_admin_creates_user(client, as_user):
     assert again.status_code == 409  # 用户名重复
 
 
+def test_every_grantable_permission_can_be_granted():
+    """接口能收的权限和管理员页面上列出的（GRANTABLE）一样：新加权限时两边都要改。"""
+    from typing import get_args
+
+    from jacara.core.permissions import GRANTABLE
+    from jacara.modules.auth.schemas import Permission
+
+    assert set(get_args(Permission)) == set(GRANTABLE)
+
+
 def test_unknown_permission_is_rejected(client, as_user):
     headers = as_user("boss", role="admin")
     body = {"username": "bob", "password": "bob-password", "permissions": ["user:manage"]}
@@ -208,7 +218,8 @@ def test_list_grantable_permissions(client, as_user):
     headers = as_user("boss", role="admin")
     permissions = client.get("/api/v1/users/permissions", headers=headers).json()
     assert {"name": "document:create", "label": "上传文件"} in permissions
-    assert len(permissions) == 4
+    assert {"name": "template:manage", "label": "管理模板"} in permissions
+    assert len(permissions) == 5
 
 
 def test_password_too_short(client, as_user):
@@ -349,7 +360,7 @@ def test_audit_log_records_who_did_what(client, factory, as_user):
         log = session.scalars(select(AuditLog).where(AuditLog.action == "document:upload")).one()
         rita = session.scalars(select(User).where(User.username == "rita")).one()
         assert log.user_id == rita.id
-        assert log.detail == {"filename": "a.jpg"}
+        assert log.detail == {"filename": "a.jpg", "template": "receipt"}
 
 
 def test_only_admin_reads_audit_log(client, as_user):

@@ -1,0 +1,137 @@
+# 起步模板：通用收据。
+# 不带任何国家或地区的规定：只有所有收据都有的项目（谁开的、什么时候、买了什么、多少钱、怎么付的），
+# 和不分地区都成立的金额关系。要按某个地方的税务规定检查，复制一份再加规则。
+# 规则和字段说明只写通用规定，不放任何真实单据的内容。
+
+name = "receipt_general"
+version = 2
+title = "通用收据"
+category = "收据"
+description = "任何国家、任何商家的收据：商家、日期、买了什么、金额、付款方式，以及 小计 − 折扣 + 附加费 + 小费 + 调整 = 总额 这类不分地区的金额关系。"
+rules = ["total_positive", "date_exists", "date_not_future", "receipt_balance", "items_sum", "item_line"]
+
+[[fields]]
+name = "merchant"
+label = "商家"
+type = "string"
+required = true
+description = "开收据的商家或公司名称，一般在最上面"
+aliases = ["Store", "Shop", "商户名称"]
+
+[[fields]]
+name = "merchant_tax_id"
+label = "商家税号"
+type = "string"
+description = "商家的税务登记号或公司注册号，叫法各地不同（税号、统一社会信用代码、ABN、VAT No.、GST No. 等），原样照抄；没有就留空"
+aliases = ["税号", "Tax ID", "VAT No.", "GST No.", "ABN"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+type = "string"
+description = "收据上写的标题，如 收据、Receipt、Invoice，原样照抄"
+
+[[fields]]
+name = "document_no"
+label = "单号"
+type = "string"
+description = "收据号、小票号、发票号或交易号"
+aliases = ["Receipt No", "Invoice No", "单号", "流水号"]
+
+[[fields]]
+name = "date"
+label = "日期"
+type = "date"
+required = true
+description = "交易日期"
+aliases = ["Date", "日期"]
+
+[[fields]]
+name = "time"
+label = "时间"
+type = "string"
+description = "交易时间，如 14:05"
+
+[[fields]]
+name = "description"
+label = "购买内容"
+type = "string"
+description = "收据上没有逐项明细时，概括写的购买内容"
+
+[[fields]]
+name = "subtotal"
+label = "小计"
+type = "number"
+aliases = ["Subtotal", "小计"]
+
+[[fields]]
+name = "discount"
+label = "折扣"
+type = "number"
+description = "整单折扣的金额，写正数"
+aliases = ["Discount", "优惠"]
+
+[[fields]]
+name = "surcharge"
+label = "附加费"
+type = "number"
+description = "服务费、刷卡手续费等附加费"
+aliases = ["Surcharge", "Service charge", "服务费"]
+
+[[fields]]
+name = "tax"
+label = "税额"
+type = "number"
+description = "收据上单独写出的税额（叫法各地不同：税额、Tax、VAT、GST、Sales tax）；没写就留空"
+aliases = ["Tax", "VAT", "GST", "税额"]
+
+[[fields]]
+name = "total"
+label = "总额"
+type = "number"
+required = true
+description = "最终应付的总额"
+aliases = ["Total", "Amount", "合计", "实收"]
+
+[[fields]]
+name = "currency"
+label = "币种"
+type = "string"
+description = "三个字母的币种代码，如 CNY、USD、AUD；收据上只有符号时可以留空"
+
+[[fields]]
+name = "payment_method"
+label = "付款方式"
+type = "string"
+description = "如 现金、银行卡、微信、支付宝、Visa"
+aliases = ["Payment", "Paid by", "付款方式"]
+
+[[tables]]
+name = "items"
+label = "商品明细"
+description = "收据上的商品或服务，每样一行。小计、税、合计这些行不算明细"
+
+[[tables.columns]]
+name = "description"
+label = "商品"
+type = "string"
+aliases = ["Item", "Description", "品名"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+type = "number"
+aliases = ["Qty", "数量"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+type = "number"
+aliases = ["Price", "Unit Price", "单价"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+type = "number"
+description = "这一行的金额；折扣行是负数"
+aliases = ["Amount", "金额"]

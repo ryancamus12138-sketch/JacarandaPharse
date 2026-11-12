@@ -38,6 +38,8 @@ class ExtractedValue(Base, OwnedMixin, TimestampMixin):
     """model：模型抽的；manual：审核时人工增加的（表格新增的行）。"""
 
     name: Mapped[str] = mapped_column(String(64))
+    label: Mapped[str | None] = mapped_column(String(200))
+    """单据上的原名（键值对发现时，kv.3 对应的"Check-in"）。按模板抽的字段为空，名字看模板。"""
     type: Mapped[str] = mapped_column(String(16))
     value: Mapped[str | None] = mapped_column(Text)
     """模型抽出的原值。值统一存成文字（数字也存成 "9.0"），按 type 还原；None 表示原文没有。"""

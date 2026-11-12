@@ -208,7 +208,10 @@ export function DocumentListPage() {
           placeholder="全部模板"
           value={filters.template}
           onChange={(template) => setFilters({ template })}
-          options={templates.data?.map((t) => ({ value: t.name, label: t.title }))}
+          options={templates.data?.map((t) => ({
+            value: t.name,
+            label: t.kind === 'builtin' ? `${t.title}（内置）` : t.title,
+          }))}
           style={{ minWidth: 160 }}
           popupMatchSelectWidth={false}
         />

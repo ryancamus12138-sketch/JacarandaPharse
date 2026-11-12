@@ -2,6 +2,9 @@
 
 documents     一个上传的文件（图片或 PDF）
 extractions   对文档某一页的一次抽取：用的模型、提示词、规则校验结果、模型原始回答
+
+重新处理（ADR 0030）：每处理一次是一"轮"（run），旧的几轮都留着可以查看，
+documents.current_run 指向现在用的那一轮；Document.extractions 只有当前这一轮。
 """
 
 from __future__ import annotations
@@ -10,14 +13,15 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, and_
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 
 from jacara.core.db import Base, OwnedMixin, TimestampMixin, new_id
 
 if TYPE_CHECKING:
     from jacara.modules.fields.models import ExtractedValue
+    from jacara.modules.templates.models import TemplateVersion
 
 
 class Document(Base, OwnedMixin, TimestampMixin):
@@ -46,9 +50,30 @@ class Document(Base, OwnedMixin, TimestampMixin):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     """点"完成审核"的时间。"""
 
-    extractions: Mapped[list[Extraction]] = relationship(
-        back_populates="document", order_by="Extraction.page"
+    template_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("template_versions.id")
     )
+    """下一次处理用哪个模板版本。空：用内置的收据模板（v2 之前上传的文档）。"""
+    discover: Mapped[bool] = mapped_column(default=False, server_default="false")
+    """下一次处理不用模板，抽出单据上所有的键值对（"用样例建模板"的第一步）。"""
+    current_run: Mapped[int] = mapped_column(default=1, server_default="1")
+    """现在用的是第几轮处理的结果。"""
+    run_reason: Mapped[str | None] = mapped_column(Text)
+    """下一轮处理的原因（重新处理时填的），处理完记到这一轮的 extractions 上。"""
+
+    extractions: Mapped[list[Extraction]] = relationship(
+        primaryjoin=lambda: and_(
+            Document.id == foreign(Extraction.document_id),
+            Extraction.run == Document.current_run,
+        ),
+        order_by="Extraction.page",
+        viewonly=True,
+    )
+    """当前这一轮的抽取结果，每页一条。"""
+    all_extractions: Mapped[list[Extraction]] = relationship(
+        back_populates="document", order_by="[Extraction.run, Extraction.page]"
+    )
+    """所有轮的抽取结果（看历史用）。"""
 
 
 class Extraction(Base, OwnedMixin, TimestampMixin):
@@ -71,6 +96,14 @@ class Extraction(Base, OwnedMixin, TimestampMixin):
     template_version: Mapped[int] = mapped_column(default=1, server_default="1")
     """模板的版本号。v2 之前处理的文档都按 1 记。"""
     duration_ms: Mapped[int]
+    run: Mapped[int] = mapped_column(default=1, server_default="1")
+    """第几轮处理。"""
+    run_reason: Mapped[str | None] = mapped_column(Text)
+    """为什么重新处理（第一轮为空）。"""
+    template_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("template_versions.id")
+    )
+    """用的"我的模板"的哪个版本。内置模板和键值对发现时为空，按 template 名字找。"""
 
     raw_output: Mapped[str] = mapped_column(Text)
     """模型的原始回答，原样保存（项目规则 2）。"""
@@ -85,7 +118,9 @@ class Extraction(Base, OwnedMixin, TimestampMixin):
     """这一页的 OCR 结果：{"lines": [{"text", "box": [x0, y0, x1, y1], "polygon", "confidence"}]}。
     审核时"点原文填值"用。只在要用时才从数据库读（deferred）。2026-11 之前处理的文档没有。"""
 
-    document: Mapped[Document] = relationship(back_populates="extractions")
+    document: Mapped[Document] = relationship(back_populates="all_extractions")
+    template_def: Mapped[TemplateVersion | None] = relationship(lazy="selectin")
+    """用的模板版本（template_version_id 指向的那条）。"""
     values: Mapped[list[ExtractedValue]] = relationship(
         back_populates="extraction",
         order_by="[ExtractedValue.sort_key, ExtractedValue.position]",

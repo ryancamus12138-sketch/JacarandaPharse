@@ -103,3 +103,24 @@ _PLACEHOLDERS = {"", "change-me"}
 def get_settings() -> Settings:
     """读一次配置，之后一直用同一份。测试里改了环境变量，要先调用 get_settings.cache_clear()。"""
     return Settings()
+
+
+MODEL_KEY_FILE = PROJECT_ROOT / ".run" / "model-key"
+"""jacara start 每次生成的模型服务密钥（只有自己能读）。worker、命令行从这里读。"""
+
+
+def model_api_key() -> str | None:
+    """调用本机模型服务用的密钥：环境变量 MODEL_API_KEY，或者 jacara start 写的文件。
+
+    jacara start 启动 llama-server 时会设密钥，本机别的程序（浏览器里的网页、别的软件）
+    不知道密钥就用不了模型。自己单独 jacara serve 启动的模型没有密钥，这里返回 None 也能用。
+    """
+    import os
+
+    key = os.environ.get("MODEL_API_KEY")
+    if key:
+        return key
+    try:
+        return MODEL_KEY_FILE.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None

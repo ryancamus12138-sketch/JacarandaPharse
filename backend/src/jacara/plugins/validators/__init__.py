@@ -8,9 +8,10 @@ from jacara.plugins.validators.base import (
     Validator,
     Values,
 )
-from jacara.plugins.validators.rules import RECEIPT_RULES, RULES, RuleValidator
+from jacara.plugins.validators.rules import ALL_RULES, RECEIPT_RULES, RULES, RuleValidator
 
 __all__ = [
+    "ALL_RULES",
     "RECEIPT_RULES",
     "RULES",
     "Issue",

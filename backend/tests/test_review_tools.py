@@ -289,7 +289,7 @@ def test_export_uses_the_picked_box(client, document_id):
     pick(client, date, DATE_LINE)
     response = client.get(f"/api/v1/documents/{document_id}/export.xlsx")
     details = load_workbook(io.BytesIO(response.content))["明细"]
-    row = next(r for r in details.iter_rows(values_only=True) if r[1] == "date")
+    row = next(r for r in details.iter_rows(values_only=True) if r[1] == "日期")  # 中文名
     assert row[5] == "第 4 行 (163,369)-(345,390)"
 
 

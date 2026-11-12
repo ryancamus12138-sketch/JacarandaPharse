@@ -8,17 +8,21 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
 from jacara.plugins.aligners import TextMatchAligner
 from jacara.plugins.exporters import DocumentReport
 from jacara.plugins.extractors import Extractor
+from jacara.plugins.extractors.base import DISCOVER, ExtractedField
 from jacara.plugins.ocr import OcrEngine, OcrPage
 from jacara.plugins.ocr.loader import load_pages
-from jacara.plugins.validators import RuleValidator
-from jacara.templates import DEFAULT_TEMPLATE, load_template
+from jacara.plugins.validators.base import ValidationResult
+from jacara.templates import DEFAULT_TEMPLATE, Template, load_template
+
+TemplateChoice = str | Template
+"""用哪个模板：内置模板的名字、一个 Template（我的模板的某个版本），或者 DISCOVER（不用模板）。"""
 
 Progress = Callable[[str, int], None]
 """报告进度：（现在在做什么，0～100）。后台任务用它把进度写进数据库，工作台显示。"""
@@ -37,30 +41,44 @@ class Pipeline:
         return load_pages(path, self.ocr)
 
     def extract_page(
-        self, page: OcrPage, source: str, number: int, template: str = DEFAULT_TEMPLATE
+        self, page: OcrPage, source: str, number: int, template: TemplateChoice = DEFAULT_TEMPLATE
     ) -> DocumentReport:
         """一页走完 抽取 → 对齐 → 校验。"""
-        tpl = load_template(template)
-        result = self.extractor.extract(page, tpl.specs, tpl.table_specs)
+        manual: frozenset[str] = frozenset()
+        if template == DISCOVER:
+            result = self.extractor.discover(page)
+            name, version = DISCOVER, 1
+            checks = ValidationResult((), (), ())  # 没有模板，就没有规则
+        else:
+            tpl = template if isinstance(template, Template) else load_template(template)
+            result = self.extractor.extract(page, tpl.specs, tpl.table_specs)
+            if tpl.manual_fields:
+                # 人工填的字段不交给模型，先放一个空值，审核时填（ADR 0031）
+                empty = tuple(ExtractedField(f.name, f.type, None) for f in tpl.manual_fields)
+                result = replace(result, fields=result.fields + empty)
+                manual = frozenset(f.name for f in tpl.manual_fields)
+            name, version = tpl.name, tpl.version
+            checks = tpl.validator().validate(result.fields)
         return DocumentReport(
             source=source,
             extraction=result,
             aligned=self.aligner.align(page, result),
-            checks=RuleValidator(tpl.rules).validate(result.fields),
+            checks=checks,
             ocr_engine=page.models.get("engine", page.engine),
             processed_at=datetime.now(),
             page=number,
             text_source=page.engine if page.engine == "pdf-text" else "ocr",
-            template=tpl.name,
-            template_version=tpl.version,
+            template=name,
+            template_version=version,
             ocr_page=page,
+            manual=manual,
         )
 
     def run(
         self,
         path: Path,
         name: str | None = None,
-        template: str = DEFAULT_TEMPLATE,
+        template: TemplateChoice = DEFAULT_TEMPLATE,
         progress: Progress | None = None,
     ) -> list[DocumentReport]:
         """整个文件：每一页一份报告。name 是显示用的文件名（默认取 path 的文件名）。

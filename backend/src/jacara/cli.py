@@ -37,6 +37,8 @@ if TYPE_CHECKING:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from jacara.core.permissions import GRANTABLE
+
     parser = argparse.ArgumentParser(prog="jacara", description="JacarandaParse 命令行工具")
     parser.add_argument("--version", action="version", version=f"jacara {__version__}")
     sub = parser.add_subparsers(dest="command")
@@ -117,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         "--allow",
         action="append",
         default=[],
-        choices=["document:create", "document:process", "value:review", "document:review"],
+        choices=sorted(GRANTABLE),
         help="给使用者开通的权限，可以写多次",
     )
     p_add.add_argument("--name", default="", help="显示名，例如 张三")
@@ -233,7 +235,9 @@ def _extract(args: argparse.Namespace) -> int:
         print(err)
         return 1
 
-    backend = create_model_backend(ModelConfig(base_url=args.server))
+    from jacara.core.config import model_api_key
+
+    backend = create_model_backend(ModelConfig(base_url=args.server, api_key=model_api_key()))
     pipeline = Pipeline(ocr=create_ocr_engine(), extractor=LlmExtractor(backend))
     try:
         pages = pipeline.read(path)
@@ -466,13 +470,14 @@ def _eval(args: argparse.Namespace) -> int:
         print(err)
         return 1
 
+    from jacara.core.config import model_api_key
     from jacara.eval.run import run_eval, write_result
     from jacara.pipeline.run import Pipeline
     from jacara.plugins.extractors import LlmExtractor
     from jacara.plugins.model_backends import ModelConfig, create_model_backend
     from jacara.plugins.ocr import create_ocr_engine
 
-    backend = create_model_backend(ModelConfig(base_url=args.server))
+    backend = create_model_backend(ModelConfig(base_url=args.server, api_key=model_api_key()))
     pipeline = Pipeline(ocr=create_ocr_engine(), extractor=LlmExtractor(backend))
 
     def progress(done: int, total: int, sample_id: str) -> None:
@@ -671,8 +676,13 @@ def _start(args: argparse.Namespace) -> int:
         except FileNotFoundError as err:
             print(err)
             return 1
+        # 每次启动生成一个新密钥：本机别的程序（包括浏览器里打开的网页）不知道密钥就用不了模型。
+        # 密钥放在环境变量里传给 llama-server 和 worker，不写在命令行上（ps 能看到命令行）
+        key = _new_model_key()
+        env = {**server_env(), "LLAMA_API_KEY": key}
+        os.environ["MODEL_API_KEY"] = key  # worker 是这里启动的，会继承
         # 直接启动 llama-server，不经过 jacara serve：停止时 terminate 发给它本人，不会漏掉。
-        children.append(subprocess.Popen(command, env=server_env()))  # noqa: S603
+        children.append(subprocess.Popen(command, env=env))  # noqa: S603
         print(f"启动模型服务：{model.name} → http://127.0.0.1:{MODEL_PORT}")
     children.append(subprocess.Popen([sys.executable, "-m", "jacara.cli", "worker"]))
 
@@ -696,6 +706,20 @@ def _start(args: argparse.Namespace) -> int:
         RUN_FILE.unlink(missing_ok=True)
         signal.signal(signal.SIGTERM, previous)
     return 0
+
+
+def _new_model_key() -> str:
+    """生成模型服务的密钥，写进 .run/model-key（只有自己能读），命令行抽取也从这里读。"""
+    import secrets
+
+    from jacara.core.config import MODEL_KEY_FILE
+
+    key = secrets.token_urlsafe(32)
+    MODEL_KEY_FILE.parent.mkdir(exist_ok=True)
+    MODEL_KEY_FILE.touch(mode=0o600, exist_ok=True)
+    MODEL_KEY_FILE.chmod(0o600)
+    MODEL_KEY_FILE.write_text(key, encoding="utf-8")
+    return key
 
 
 def _interrupt(signum: int, frame: object) -> None:
