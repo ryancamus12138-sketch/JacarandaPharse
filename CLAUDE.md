@@ -166,6 +166,14 @@ API 在所有接口之后用 `core/web.py` 挂一条兜底路由提供 `web/dist
 增行 = `origin="manual"` 的新字段，顺序看 `sort_key`，原有字段不改。审核之后的"当前结果"（跳过删掉的行、
 按显示顺序编号、规则重算）统一用 `pipeline/current.py`，审核页面（`current_checks`）和导出（`load.py`）都走它。
 
+**字段状态（ADR 0028）：** 证据 `evidence_state`（抽取时的出处，审核后不变）× 校验 `check_state`（按当前值重算）
+→ 颜色 `level`（`pipeline/current.py` 的 `level_of`，红黄灰绿）。"待确认" `pending_review` 的意思不变。
+原文值 `source_value` 只给相似匹配的文字和正负号不对的数字，不给日期；老文档的出处文字读的时候从 OCR 结果算，不改库。
+
+**工作台、导出记录、系统信息（ADR 0029）：** 处理进度写在 `documents.stage / progress`（worker 用 `Pipeline.run`
+的 `progress` 回调）。每次导出都经过 `modules/exports/service.save_export` 存文件和记录，不要绕开它直接返回文件。
+系统信息（`modules/system`）只读，复用 `core/health.run_checks`，不能显示任何密码。
+
 **做的顺序：** 从里往外。先 plugins（流水线），再 core、pipeline、modules（后端），再 web（前端），最后 deploy。
 
 ## 技术栈

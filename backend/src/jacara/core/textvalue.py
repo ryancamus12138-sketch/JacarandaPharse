@@ -29,6 +29,20 @@ def parse_number(text: str) -> float | None:
     return -number if negative else number
 
 
+def signed_number(text: str, magnitude: float) -> float | None:
+    """文字里和 magnitude 一样大的那个数字，带上原文的正负号。
+
+    "SUMMERINA 6.00-" 里找 6.0 → -6.0。用来发现"原文是折扣、值却是正的"。
+    找不到一样大的数字返回 None（不会拿同一行别的数字顶替）。
+    """
+    for m in _NUMBER.finditer(text):
+        number = float(m[3].replace(",", ""))
+        if abs(number - abs(magnitude)) < 0.005:
+            negative = m[2] == "-" or m[5] == "-" or (m[1] == "(" and m[4] == ")")
+            return -number if negative else number
+    return None
+
+
 def parse_date(text: str) -> date | None:
     """日期的写法很多：25/12/2018、15-01-19、02 MAR 2018、OCT 3, 2016、20180304、2018-12-25。
 

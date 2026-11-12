@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,9 @@ from jacara.plugins.ocr import OcrEngine, OcrPage
 from jacara.plugins.ocr.loader import load_pages
 from jacara.plugins.validators import RuleValidator
 from jacara.templates import DEFAULT_TEMPLATE, load_template
+
+Progress = Callable[[str, int], None]
+"""报告进度：（现在在做什么，0～100）。后台任务用它把进度写进数据库，工作台显示。"""
 
 
 @dataclass
@@ -53,15 +57,25 @@ class Pipeline:
         )
 
     def run(
-        self, path: Path, name: str | None = None, template: str = DEFAULT_TEMPLATE
+        self,
+        path: Path,
+        name: str | None = None,
+        template: str = DEFAULT_TEMPLATE,
+        progress: Progress | None = None,
     ) -> list[DocumentReport]:
-        """整个文件：每一页一份报告。name 是显示用的文件名（默认取 path 的文件名）。"""
+        """整个文件：每一页一份报告。name 是显示用的文件名（默认取 path 的文件名）。
+
+        progress 不为空时，每开始一步就报告一次：识别文字占前 20%，抽取按页数平分剩下的。
+        """
+        report = progress or (lambda _stage, _percent: None)
         name = name or path.name
+        report("识别文字", 5)
         pages = self.read(path)
-        return [
-            self.extract_page(page, page_label(name, n, len(pages)), n, template)
-            for n, page in enumerate(pages, start=1)
-        ]
+        reports: list[DocumentReport] = []
+        for n, page in enumerate(pages, start=1):
+            report(f"抽取第 {n} / {len(pages)} 页", 20 + 75 * (n - 1) // len(pages))
+            reports.append(self.extract_page(page, page_label(name, n, len(pages)), n, template))
+        return reports
 
 
 def page_label(name: str, number: int, total: int) -> str:

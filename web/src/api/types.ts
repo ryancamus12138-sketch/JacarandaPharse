@@ -46,6 +46,92 @@ export interface DocumentSummary {
   created_at: string
   /** 还在等人确认的字段数。 */
   review_count: number
+  /** 处理到哪一步，比如"抽取第 2 / 3 页"。只有处理中才有。 */
+  stage: string | null
+  /** 处理进度 0–100。只有处理中才有。 */
+  progress: number | null
+  processed_at: string | null
+  reviewed_at: string | null
+}
+
+/** 文档列表的筛选条件。都不填 = 全部。 */
+export interface DocumentFilters {
+  status?: DocumentStatus[]
+  template?: string
+  /** YYYY-MM-DD，含这一天 */
+  date_from?: string
+  date_to?: string
+  /** 文件名里包含 */
+  q?: string
+  /** 只看还有字段等人确认的 */
+  pending?: boolean
+}
+
+/** 审核页面的"上一份 / 下一份"（只算待审核的）。 */
+export interface DocumentNeighbors {
+  previous: string | null
+  next: string | null
+  /** 除了这一份，还有几份待审核。 */
+  remaining: number
+}
+
+/** 工作台（GET /dashboard）。 */
+export interface Dashboard {
+  counts: {
+    queued: number
+    processing: number
+    to_review: number
+    failed: number
+    reviewed: number
+    total: number
+    pending_fields: number
+    processed_today: number
+    reviewed_today: number
+    average_page_seconds: number | null
+  }
+  /** 排队中和处理中的（带进度）。 */
+  queue: DocumentSummary[]
+  failed: DocumentSummary[]
+  /** 待审核里等人确认的字段最多的几份。 */
+  to_review: DocumentSummary[]
+}
+
+/** 一次导出（GET /exports）。 */
+export interface ExportRecord {
+  id: string
+  filename: string
+  format: 'xlsx' | 'zip'
+  size_bytes: number
+  document_count: number
+  documents: { id: string; filename: string }[]
+  created_at: string
+  user_name: string
+  /** 文件还在，可以重新下载。 */
+  available: boolean
+}
+
+export interface ExportPage {
+  items: ExportRecord[]
+  total: number
+}
+
+/** 系统信息（GET /system）。 */
+export interface SystemInfo {
+  version: string
+  mode: 'personal' | 'team'
+  model: { server: string; file: string | null; loaded: string | null; context: number | null }
+  ocr: { engine: string; version: string | null }
+  templates: { name: string; title: string; version: number }[]
+  data: {
+    documents: number
+    pages: number
+    fields: number
+    revisions: number
+    document_bytes: number
+    exports: number
+    export_bytes: number
+  }
+  services: { name: string; ok: boolean; detail: string; hint: string }[]
 }
 
 /** 分页的列表（后端的 DocumentPage）。 */
@@ -65,6 +151,8 @@ export interface Evidence {
   confidence: number
   /** 值和原文有多像（0–1），1 是完全一样。 */
   similarity: number
+  /** 出处那几块的原文文字。更新前处理的文档没有。 */
+  text?: string
 }
 
 /** matched 找到一样的；fuzzy 只找到相似的；not_found 原文里找不到；empty 模型说原文里没有。 */
@@ -95,7 +183,19 @@ export interface FieldValue {
   origin: 'model' | 'manual'
   /** 这一格所在的行被删除了（表格才有）。 */
   deleted: boolean
+  /** 证据（抽取时的出处）：原文一致、有疑点、原文里找不到、原文没有（ADR 0028）。 */
+  evidence_state: EvidenceState
+  /** 原文值：按出处文字得到的值，和当前值不一样时才有。"采用原文值"用。 */
+  source_value: string | null
+  /** 校验（按当前值）：没问题、违反警告级规则、违反错误级规则。 */
+  check_state: CheckState | null
+  /** 颜色：证据 × 校验 × 有没有人审核过。 */
+  level: Level | null
 }
+
+export type EvidenceState = 'verified' | 'pending' | 'missing' | 'empty'
+export type CheckState = 'ok' | 'warn' | 'fail'
+export type Level = 'red' | 'yellow' | 'grey' | 'green'
 
 /** 一条没通过的规则，比如"现金 − 总额 = 找零"。 */
 export interface CheckIssue {

@@ -94,6 +94,7 @@ def started(secrets, monkeypatch, tmp_path):
     monkeypatch.setattr("webbrowser.open", lambda url: None)
     monkeypatch.setattr(cli, "_port_free", lambda port: True)
     monkeypatch.setattr(cli, "_wait_free", lambda port: True)
+    monkeypatch.setattr(cli, "_infra_problems", lambda settings: [])
     return commands
 
 
@@ -233,3 +234,51 @@ def test_port_recently_closed_counts_as_free():
     client.close()
     server.close()
     assert cli._port_free(port) is True
+
+
+def test_old_web_build_is_noticed(tmp_path):
+    """改了网页代码却没重新打包：jacara start 提醒，不然浏览器里还是旧页面。"""
+    import os
+
+    from jacara.cli import _web_outdated
+
+    dist, src = tmp_path / "dist", tmp_path / "src"
+    dist.mkdir()
+    (src / "features").mkdir(parents=True)
+    page = src / "features" / "Page.tsx"
+    page.write_text("x")
+    index = dist / "index.html"
+    index.write_text("x")
+    os.utime(page, (1000, 1000))
+    os.utime(index, (2000, 2000))
+    assert not _web_outdated(dist)  # 打包在改代码之后
+    os.utime(page, (3000, 3000))
+    assert _web_outdated(dist)  # 代码比打包的新
+    assert not _web_outdated(tmp_path / "nowhere")  # 没打包过：另有提醒
+
+
+def test_start_refuses_when_docker_is_not_running(secrets, monkeypatch, capsys):
+    """数据库、队列在 Docker 里：没开就直接说清楚怎么办，不要打开网页后才报错。"""
+    from jacara.core.health import Check
+
+    monkeypatch.setattr(cli, "_port_free", lambda port: True)
+    monkeypatch.setattr(
+        "jacara.core.health.check_postgres",
+        lambda s: Check("PostgreSQL", False, "Connection refused"),
+    )
+    monkeypatch.setattr("jacara.core.health.check_valkey", lambda s: Check("Valkey", True, "ok"))
+    assert cli.main(["start", "--no-model", "--no-browser"]) == 1
+    output = capsys.readouterr().out
+    assert "PostgreSQL 连不上" in output and "docker compose up -d" in output
+
+
+def test_start_asks_for_migration(secrets, monkeypatch, capsys):
+    from jacara.core.health import Check
+
+    ok = Check("x", True, "ok")
+    monkeypatch.setattr(cli, "_port_free", lambda port: True)
+    monkeypatch.setattr("jacara.core.health.check_postgres", lambda s: ok)
+    monkeypatch.setattr("jacara.core.health.check_valkey", lambda s: ok)
+    monkeypatch.setattr(cli, "_migration_behind", lambda: True)
+    assert cli.main(["start", "--no-model", "--no-browser"]) == 1
+    assert "alembic upgrade head" in capsys.readouterr().out

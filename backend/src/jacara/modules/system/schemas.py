@@ -1,0 +1,60 @@
+"""系统信息的对外格式。"""
+
+from __future__ import annotations
+
+from pydantic import BaseModel
+
+
+class ServiceCheck(BaseModel):
+    """一个服务连不连得上（和 jacara doctor 一样的检查）。"""
+
+    name: str
+    ok: bool
+    detail: str
+    hint: str = ""
+
+
+class ModelInfo(BaseModel):
+    server: str
+    """模型服务地址。"""
+    file: str | None
+    """jacara start 会用的模型文件名（models/ 里的或 JACARA_MODEL）。"""
+    loaded: str | None
+    """模型服务现在加载的模型（问模型服务得到的；连不上就是空）。"""
+    context: int | None
+    """上下文长度（token）。"""
+
+
+class OcrInfo(BaseModel):
+    engine: str
+    version: str | None
+
+
+class TemplateInfo(BaseModel):
+    name: str
+    title: str
+    version: int
+
+
+class DataInfo(BaseModel):
+    documents: int
+    pages: int
+    fields: int
+    revisions: int
+    """人工审核记录的条数（修改、确认、增删行）。"""
+    document_bytes: int
+    """上传的原始文件一共多大。"""
+    exports: int
+    export_bytes: int
+    """存下来的导出文件一共多大。"""
+
+
+class SystemInfo(BaseModel):
+    version: str
+    mode: str
+    """personal（个人模式）或 team（团队模式）。"""
+    model: ModelInfo
+    ocr: OcrInfo
+    templates: list[TemplateInfo]
+    data: DataInfo
+    services: list[ServiceCheck]

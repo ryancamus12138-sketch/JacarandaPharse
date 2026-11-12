@@ -37,6 +37,14 @@ class ValueOut(BaseModel):
     """model：模型抽的；manual：审核时人工增加的行。"""
     deleted: bool = False
     """这一格所在的行被删除了（表格才有）。"""
+    evidence_state: str = "empty"
+    """证据（ADR 0028）：verified 原文一致、pending 有疑点、missing 找不到、empty 原文没有。"""
+    source_value: str | None = None
+    """原文值：按出处文字得到的值，和当前值不一样时才有（"采用原文值"）。只有文档详情里有。"""
+    check_state: str | None = None
+    """校验：ok 没问题、warn 违反警告级规则、fail 违反错误级规则。按当前值算，只有文档详情里有。"""
+    level: str | None = None
+    """颜色：red、yellow、grey、green（证据 × 校验 × 有没有人审核过）。只有文档详情里有。"""
 
 
 class RevisionIn(BaseModel):

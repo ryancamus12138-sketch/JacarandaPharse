@@ -82,6 +82,7 @@ class FieldService:
             evidence = {
                 "row": None,
                 "row_text": new_value,
+                "text": new_value,
                 "bbox": [
                     round(min(x0, x1), 1),
                     round(min(y0, y1), 1),

@@ -28,6 +28,7 @@ export function useRevise(documentId: string) {
       )
       void queryClient.invalidateQueries({ queryKey: ['document', documentId] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       void queryClient.invalidateQueries({ queryKey: ['value-history', valueId] })
     },
     onError: (err) => {

@@ -98,7 +98,7 @@ export function PageViewer({
   const latest = useRef<Box | null>(null)
 
   /** 鼠标在屏幕上的位置 → 图片上的像素坐标（图片放大缩小了也对）。 */
-  function toImage(e: ReactPointerEvent): { x: number; y: number } {
+  function toImage(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const el = svg.current
     const matrix = el?.getScreenCTM()
     if (!el || !matrix) {
@@ -170,6 +170,20 @@ export function PageViewer({
   const drawn = withBox
     .filter((v) => splitCell(v.name) === null || v.id === selectedId || v.id === hoveredId)
     .sort((a, b) => area(b) - area(a))
+  /**
+   * 原图上这一点是哪个字段的出处（包括商品明细里没画框的格子）：框住这一点的里面挑最小的。
+   * 点原图 = 选中右边对应的字段（"点框反选"）。
+   */
+  function fieldAt(e: { clientX: number; clientY: number }): string | null {
+    const { x, y } = toImage(e)
+    const hits = withBox.filter((v) => {
+      const [x0, y0, x1, y1] = evidenceOf(v)!.bbox
+      return x >= x0 - PAD && x <= x1 + PAD && y >= y0 - PAD && y <= y1 + PAD
+    })
+    hits.sort((a, b) => area(a) - area(b))
+    return hits[0]?.id ?? null
+  }
+
   // 放大、缩小：跳到下一档。"整页"算出来的比例不在档位里，所以按大小找，不按位置找
   const zoomIn = () => setZoom(ZOOMS.find((z) => z > zoom + 0.001) ?? ZOOMS[ZOOMS.length - 1])
   const zoomOut = () => setZoom([...ZOOMS].reverse().find((z) => z < zoom - 0.001) ?? ZOOMS[0])
@@ -318,6 +332,24 @@ export function PageViewer({
                     height={natural.height}
                     fill="transparent"
                     onPointerDown={(e) => beginDrag(e, 'new', null)}
+                  />
+                )}
+                {!drawOn && !showOcr && (
+                  // 平时：鼠标移到原文上，对应的字段（包括商品明细的格子）亮出框；点一下就选中它
+                  <rect
+                    width={natural.width}
+                    height={natural.height}
+                    fill="transparent"
+                    onPointerMove={(e) => {
+                      const id = fieldAt(e)
+                      if (id !== hoveredId) onHover(id)
+                    }}
+                    onPointerLeave={() => onHover(null)}
+                    onClick={(e) => {
+                      const id = fieldAt(e)
+                      if (id) onSelect(id)
+                    }}
+                    style={{ cursor: hoveredId ? 'pointer' : 'default' }}
                   />
                 )}
                 {drawn.map((v) => {

@@ -1,8 +1,18 @@
 import { CloseOutlined, DeleteOutlined, ScanOutlined } from '@ant-design/icons'
-import { Alert, Button, Flex, Tag, Tooltip, Typography } from 'antd'
+import { Alert, Button, Flex, Segmented, Tag, Tooltip, Typography } from 'antd'
 import { useEffect, useRef } from 'react'
-import type { Extraction, FieldValue } from '../../api/types'
-import { boxColor, fieldLabel, splitCell, type TableRow, tableLayouts } from './fields'
+import type { Extraction, FieldValue, Level } from '../../api/types'
+import {
+  boxColor,
+  CHECK_TEXT,
+  EVIDENCE_TEXT,
+  fieldLabel,
+  levelOf,
+  type SortMode,
+  splitCell,
+  type TableRow,
+  tableLayouts,
+} from './fields'
 import { ItemsTable } from './ItemsTable'
 import { ReviewForm } from './ReviewForm'
 import { RevisionHistory } from './RevisionHistory'
@@ -22,7 +32,17 @@ interface Props {
   onDeleteRow: (table: string, row: TableRow) => void
   onRestoreRow: (table: string, row: TableRow) => void
   onConfirmMany: (ids: string[]) => void
+  /** 字段按单据顺序还是按状态排（extraction.values 已经按这个排好了）。 */
+  sortMode: SortMode
+  onSortMode: (mode: SortMode) => void
 }
+
+const LEVEL_SUMMARY: [Level, string, string][] = [
+  ['red', 'red', '先看'],
+  ['yellow', 'gold', '看一眼'],
+  ['green', 'green', '没问题'],
+  ['grey', 'default', '原文没有'],
+]
 
 /**
  * 右边下半部分：规则校验结果、字段列表、商品明细表。点一个 = 选中它（详情显示在右边最上面）。
@@ -40,12 +60,17 @@ export function FieldPanel({
   onDeleteRow,
   onRestoreRow,
   onConfirmMany,
+  sortMode,
+  onSortMode,
 }: Props) {
   const { values } = extraction
   // 规则按审核之后的值重新检查过（删掉的行不算）；老接口没有时用抽取时的结果
   const checks = extraction.current_checks ?? extraction.checks
   const plain = values.filter((v) => splitCell(v.name) === null)
   const plainPending = plain.filter((v) => v.pending_review).length
+  // 颜色统计（字段 + 表格的格子，删掉的行不算）
+  // 人工新加、还没填的格子不算（它们是"待填写"，不是"原文没有"）
+  const live = values.filter((v) => !v.deleted && !(v.origin === 'manual' && v.current_value === null))
   const layouts = tableLayouts(values)
   const box = useRef<HTMLDivElement>(null)
 
@@ -69,10 +94,33 @@ export function FieldPanel({
           description={issue.message}
         />
       ))}
-      <Typography.Text type="secondary">
-        {plain.length} 个字段
-        {plainPending > 0 ? `，${plainPending} 个等你确认（标黄）` : '，都不用确认'}
-      </Typography.Text>
+      <Flex justify="space-between" align="center" gap={8} wrap>
+        <Typography.Text type="secondary">
+          {plain.length} 个字段
+          {plainPending > 0 ? `，${plainPending} 个等你确认` : '，都不用确认'}
+        </Typography.Text>
+        {/* 换排序不用收起详情：点这里不算"点了空白处" */}
+        <Segmented<SortMode>
+          data-keep-selection
+          size="small"
+          value={sortMode}
+          onChange={onSortMode}
+          options={[
+            { label: '按状态', value: 'status' },
+            { label: '按单据顺序', value: 'document' },
+          ]}
+        />
+      </Flex>
+      <Flex gap={4} wrap>
+        {LEVEL_SUMMARY.map(([level, color, text]) => {
+          const n = live.filter((v) => levelOf(v) === level).length
+          return n > 0 ? (
+            <Tag key={level} color={color} bordered={false}>
+              {text} {n}
+            </Tag>
+          ) : null
+        })}
+      </Flex>
       <Flex vertical gap={4}>
         {plain.map((v) => (
           <FieldRow
@@ -111,22 +159,53 @@ export function FieldPanel({
   )
 }
 
-/** 一个字段的状态标签：待确认、已确认、已修改、已从原文选取、已删除…… */
-function StatusTags({ value: v }: { value: FieldValue }) {
+/**
+ * 一个字段的状态标签。两个维度（ADR 0028）：证据（原文里找到没有）、校验（规则过没过）；
+ * 再加审核的结果：已确认、已修改、已从原文选取、已删除。
+ */
+function StatusTags({ value: v, full = false }: { value: FieldValue; full?: boolean }) {
   const edited = v.reviewed && v.current_value !== v.value && !v.deleted
   // 出处变了 = 从原文选取或框选过（只改值的话出处不变）
   const picked = v.reviewed && JSON.stringify(v.current_evidence) !== JSON.stringify(v.evidence)
+  if (v.deleted) {
+    return <Tag>已删除</Tag>
+  }
+  // 证据说的是模型原值；人审核过之后就不再显示，免得误会（详情里还看得到）
+  const evidence =
+    full || !v.reviewed ? (
+      v.evidence_state === 'missing' ? (
+        <Tag color="red">{EVIDENCE_TEXT.missing}</Tag>
+      ) : v.evidence_state === 'pending' ? (
+        <Tag color="gold">{EVIDENCE_TEXT.pending}</Tag>
+      ) : full && v.evidence_state === 'verified' ? (
+        <Tag color="green">{EVIDENCE_TEXT.verified}</Tag>
+      ) : null
+    ) : null
+  const check =
+    v.check_state === 'fail' ? (
+      <Tag color="red">{CHECK_TEXT.fail}</Tag>
+    ) : v.check_state === 'warn' ? (
+      <Tag color="gold">{CHECK_TEXT.warn}</Tag>
+    ) : full && v.check_state === 'ok' ? (
+      <Tag color="green">{CHECK_TEXT.ok}</Tag>
+    ) : null
   return (
     <>
+      {evidence}
+      {check}
       {v.pending_review && <Tag color="gold">待确认</Tag>}
-      {v.reviewed && !edited && !v.deleted && <Tag color="green">已确认</Tag>}
+      {v.reviewed && !edited && <Tag color="green">已确认</Tag>}
       {edited && <Tag color="blue">{picked ? '已从原文选取' : '已修改'}</Tag>}
-      {v.deleted && <Tag>已删除</Tag>}
-      {/* 下面两个说的是模型原值；人审核过之后就不再显示，免得误会 */}
-      {!v.reviewed && v.status === 'not_found' && <Tag color="red">原文里找不到</Tag>}
-      {!v.reviewed && v.status === 'fuzzy' && <Tag>相似匹配</Tag>}
     </>
   )
+}
+
+/** 列表里一行的底色：红的、黄的淡淡地标出来，其他白色。 */
+const TINT: Record<Level, string> = {
+  red: '#fff1f0',
+  yellow: '#fffbe6',
+  grey: '#fff',
+  green: '#fff',
 }
 
 function ShownValue({ value: v }: { value: FieldValue }) {
@@ -193,9 +272,7 @@ function FieldRow({
           ? '#f3effb'
           : hovered
             ? '#faf9fc'
-            : v.pending_review
-              ? '#fffbe6'
-              : '#fff',
+            : TINT[levelOf(v)],
         outline: selected ? '1px solid #d3c6f0' : 'none',
       }}
     >
@@ -263,13 +340,16 @@ export function FieldDetail({
           {label}
         </Typography.Text>
         <ShownValue value={v} />
-        <Flex gap={4} wrap justify="end">
-          <StatusTags value={v} />
+        <Flex gap={4} justify="end" style={{ flexShrink: 0 }}>
           {canEdit && !v.deleted && v.current_value !== null && <ClearButton onClear={onClear} />}
           <Tooltip title="收起（Esc，或在空白处点一下）">
             <Button size="small" type="text" icon={<CloseOutlined />} onClick={onClose} />
           </Tooltip>
         </Flex>
+      </Flex>
+      {/* 两个维度单独一行：证据（原文里找到没有）× 校验（规则过没过），再加审核结果 */}
+      <Flex gap={4} wrap style={{ marginTop: 6 }}>
+        <StatusTags value={v} full />
       </Flex>
       {v.note && (
         <Typography.Paragraph type="secondary" style={indent}>

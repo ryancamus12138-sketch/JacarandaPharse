@@ -13,6 +13,7 @@ export function useConfirmMany(documentId: string) {
       void message.success(`已确认 ${result.confirmed} 个`)
       void queryClient.invalidateQueries({ queryKey: ['document', documentId] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })

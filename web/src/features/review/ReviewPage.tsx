@@ -2,6 +2,8 @@ import {
   ArrowLeftOutlined,
   CheckOutlined,
   DownOutlined,
+  LeftOutlined,
+  RightOutlined,
   SafetyCertificateOutlined,
   UpOutlined,
 } from '@ant-design/icons'
@@ -13,23 +15,25 @@ import {
   Card,
   Empty,
   Flex,
+  Grid,
   Popconfirm,
   Result,
   Segmented,
+  Space,
   Spin,
   Tooltip,
   Typography,
 } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { ApiError } from '../../api/client'
-import { completeReview, getDocument, getPageOcr } from '../../api/documents'
+import { completeReview, getDocument, getNeighbors, getPageOcr } from '../../api/documents'
 import type { Box, FieldValue, RevisionIn } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
 import { ExportButton } from '../documents/ExportButton'
 import { StatusTag } from '../documents/StatusTag'
 import { FieldDetail, FieldPanel } from './FieldPanel'
-import { displayLabel, neighbor, splitCell } from './fields'
+import { displayLabel, neighbor, orderFields, type SortMode, splitCell } from './fields'
 import { PageViewer } from './PageViewer'
 import { ReasonDialog, type ReasonRequest } from './ReasonDialog'
 import { RegionPanel } from './RegionPanel'
@@ -44,6 +48,24 @@ function nextPending(values: FieldValue[], afterId: string | null): string | nul
   return ordered.find((v) => v.pending_review && v.id !== afterId)?.id ?? null
 }
 
+const SORT_KEY = 'jacara.review.sort'
+
+function loadSortMode(): SortMode {
+  try {
+    return localStorage.getItem(SORT_KEY) === 'document' ? 'document' : 'status'
+  } catch {
+    return 'status' // 浏览器不让用本地存储（隐私模式等）：用默认的
+  }
+}
+
+function saveSortMode(mode: SortMode) {
+  try {
+    localStorage.setItem(SORT_KEY, mode)
+  } catch {
+    // 存不了就算了，只是下次打开要重新选
+  }
+}
+
 /** 在输入框里打字、或者焦点在按钮上（按 Enter 会点按钮）时，不当作快捷键。 */
 function isTyping(target: EventTarget | null): boolean {
   return (
@@ -52,9 +74,17 @@ function isTyping(target: EventTarget | null): boolean {
   )
 }
 
-/** 审核工作台：左边原图和出处框，右边字段。选中字段可以修改或确认，全部处理完再"完成审核"。 */
+/**
+ * 审核工作台：左边原图和出处框，右边字段。选中字段可以修改或确认，全部处理完再"完成审核"，
+ * 然后自动打开下一份待审核的。
+ */
 export function ReviewPage() {
   const { id = '' } = useParams()
+  // key：换到另一份文档（上一份 / 下一份）时，页码、选中的字段等全部重新开始
+  return <ReviewWorkspace key={id} id={id} />
+}
+
+function ReviewWorkspace({ id }: { id: string }) {
   const { can } = useAuth()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
@@ -70,6 +100,12 @@ export function ReviewPage() {
   const [drawOn, setDrawOn] = useState(false)
   const [draft, setDraft] = useState<Box | null>(null)
   const [drawn, setDrawn] = useState<Box | null>(null)
+  // 字段按单据顺序还是按状态（先红后绿）排；记在这个浏览器里，下次打开还是这样
+  const [sortMode, setSortMode] = useState<SortMode>(loadSortMode)
+  // 窄屏（小于 992 像素）：原图在上、字段在下，上下排；中等宽度时右边窄一点
+  const screens = Grid.useBreakpoint()
+  const narrow = screens.lg === false
+  const sideWidth = screens.xl === false ? 380 : 440
 
   const document = useQuery({ queryKey: ['document', id], queryFn: () => getDocument(id) })
   const ready = document.data?.status === 'done' || document.data?.status === 'reviewed'
@@ -82,12 +118,31 @@ export function ReviewPage() {
   const revise = useRevise(id)
   const rows = useRows(id)
   const confirmMany = useConfirmMany(id)
+  // 上一份、下一份（只算待审核的，按列表顺序）
+  const neighbors = useQuery({
+    queryKey: ['neighbors', id],
+    queryFn: () => getNeighbors(id),
+    enabled: ready,
+  })
+  const navigate = useNavigate()
+  const goTo = (target: string | null | undefined) => {
+    if (target) void navigate(`/documents/${target}`)
+  }
   const finish = useMutation({
     mutationFn: () => completeReview(id),
     onSuccess: () => {
-      void message.success('已完成审核')
       void queryClient.invalidateQueries({ queryKey: ['document', id] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: ['neighbors'] })
+      // 审完一份，直接打开下一份；没有了就留在这里
+      const next = neighbors.data?.next ?? neighbors.data?.previous
+      if (next) {
+        void message.success(`已完成审核，打开下一份（还有 ${neighbors.data?.remaining ?? 0} 份）`)
+        goTo(next)
+      } else {
+        void message.success('已完成审核。待审核的都审完了')
+      }
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
@@ -95,7 +150,10 @@ export function ReviewPage() {
   const canEdit = can('value:review')
   const currentExtraction = document.data?.extractions.find((e) => e.page === page)
   // useMemo：数据没变就还是同一个数组，下面的键盘监听不用每次都重新绑
-  const values = useMemo(() => currentExtraction?.values ?? [], [currentExtraction])
+  const values = useMemo(
+    () => orderFields(currentExtraction?.values ?? [], sortMode),
+    [currentExtraction, sortMode],
+  )
   const showOcr = (ocrOn || altHeld) && canEdit && ocr.data?.available === true
   const selected = values.find((v) => v.id === selectedId) ?? null
 
@@ -333,6 +391,17 @@ export function ReviewPage() {
   }
 
   const pagePending = values.filter((v) => v.pending_review).map((v) => v.id)
+  // 原文一致、规则通过、还没人确认的（"批量确认已验证 + 通过"）
+  const pageVerified = values
+    .filter(
+      (v) =>
+        !v.reviewed &&
+        !v.deleted &&
+        v.current_value !== null &&
+        v.evidence_state === 'verified' &&
+        v.check_state === 'ok',
+    )
+    .map((v) => v.id)
 
   // "完成审核"按钮：为什么现在不能点
   const finishBlocked = !can('document:review')
@@ -341,60 +410,113 @@ export function ReviewPage() {
       ? `还有 ${pendingTotal} 个字段等待确认`
       : null
 
+  const toolbar = (
+    <Flex gap={8} wrap justify={narrow ? 'start' : 'end'}>
+      {doc.status === 'done' && (
+        <Tooltip title={finishBlocked}>
+          <Button
+            type="primary"
+            icon={<SafetyCertificateOutlined />}
+            disabled={finishBlocked !== null}
+            loading={finish.isPending}
+            onClick={() => finish.mutate()}
+          >
+            完成审核
+          </Button>
+        </Tooltip>
+      )}
+      {/* 一直显示；没有标黄的（等你确认的）就是灰的，鼠标停上去说明为什么 */}
+      {canEdit && (
+        <Popconfirm
+          title={`这一页 ${pagePending.length} 个标黄的都是对的？`}
+          description="不用一个一个点。每个都会记一条确认记录，可以在修改历史里看到。"
+          okText="全部确认"
+          cancelText="取消"
+          disabled={pagePending.length === 0}
+          onConfirm={() => confirmMany.mutate(pagePending)}
+        >
+          <Tooltip
+            title={pagePending.length === 0 ? '这一页没有标黄（等你确认）的了' : undefined}
+          >
+            <Button
+              icon={<CheckOutlined />}
+              loading={confirmMany.isPending}
+              disabled={pagePending.length === 0}
+            >
+              全部确认（{pagePending.length}）
+            </Button>
+          </Tooltip>
+        </Popconfirm>
+      )}
+      {/* 原文一致、规则也通过的（绿的）还没人点过确认：一次确认掉，审核记录里留下"人看过" */}
+      {canEdit && (
+        <Popconfirm
+          title={`确认这一页 ${pageVerified.length} 个原文一致、规则通过的字段？`}
+          description="它们和原文完全一致、规则也没问题，确认后审核记录里会留下“人看过”。"
+          okText="确认"
+          cancelText="取消"
+          disabled={pageVerified.length === 0}
+          onConfirm={() => confirmMany.mutate(pageVerified)}
+        >
+          <Tooltip
+            title={
+              pageVerified.length === 0 ? '这一页原文一致、规则通过的都确认过了' : undefined
+            }
+          >
+            <Button
+              icon={<SafetyCertificateOutlined />}
+              loading={confirmMany.isPending}
+              disabled={pageVerified.length === 0}
+            >
+              确认没问题的（{pageVerified.length}）
+            </Button>
+          </Tooltip>
+        </Popconfirm>
+      )}
+      <ExportButton ids={[doc.id]} />
+      {back}
+    </Flex>
+  )
+
   return (
     <Card
       title={
-        <Flex align="center" gap={12}>
-          <Typography.Text strong ellipsis style={{ maxWidth: 360 }}>
+        <Flex align="center" gap={12} wrap>
+          <Space.Compact>
+            <Tooltip title="上一份待审核的">
+              <Button
+                icon={<LeftOutlined />}
+                aria-label="上一份"
+                disabled={!neighbors.data?.previous}
+                onClick={() => goTo(neighbors.data?.previous)}
+              />
+            </Tooltip>
+            <Tooltip
+              title={
+                neighbors.data
+                  ? `下一份待审核的（除了这份还有 ${neighbors.data.remaining} 份）`
+                  : '下一份待审核的'
+              }
+            >
+              <Button
+                icon={<RightOutlined />}
+                aria-label="下一份"
+                disabled={!neighbors.data?.next}
+                onClick={() => goTo(neighbors.data?.next)}
+              />
+            </Tooltip>
+          </Space.Compact>
+          <Typography.Text strong ellipsis style={{ maxWidth: narrow ? 200 : 360 }}>
             {doc.filename}
           </Typography.Text>
           <StatusTag status={doc.status} />
         </Flex>
       }
-      extra={
-        <Flex gap={8}>
-          {doc.status === 'done' && (
-            <Tooltip title={finishBlocked}>
-              <Button
-                type="primary"
-                icon={<SafetyCertificateOutlined />}
-                disabled={finishBlocked !== null}
-                loading={finish.isPending}
-                onClick={() => finish.mutate()}
-              >
-                完成审核
-              </Button>
-            </Tooltip>
-          )}
-          {/* 一直显示；没有标黄的（等你确认的）就是灰的，鼠标停上去说明为什么 */}
-          {canEdit && (
-            <Popconfirm
-              title={`这一页 ${pagePending.length} 个标黄的都是对的？`}
-              description="不用一个一个点。每个都会记一条确认记录，可以在修改历史里看到。"
-              okText="全部确认"
-              cancelText="取消"
-              disabled={pagePending.length === 0}
-              onConfirm={() => confirmMany.mutate(pagePending)}
-            >
-              <Tooltip
-                title={pagePending.length === 0 ? '这一页没有标黄（等你确认）的了' : undefined}
-              >
-                <Button
-                  icon={<CheckOutlined />}
-                  loading={confirmMany.isPending}
-                  disabled={pagePending.length === 0}
-                >
-                  全部确认（{pagePending.length}）
-                </Button>
-              </Tooltip>
-            </Popconfirm>
-          )}
-          <ExportButton ids={[doc.id]} />
-          {back}
-        </Flex>
-      }
+      // 窄屏：按钮放到标题下面一行，不和文件名挤在一起
+      extra={narrow ? undefined : toolbar}
       styles={{ body: { paddingTop: 16 } }}
     >
+      {narrow && <div style={{ marginBottom: 12 }}>{toolbar}</div>}
       {doc.page_count > 1 && (
         <Segmented
           value={page}
@@ -406,8 +528,16 @@ export function ReviewPage() {
           style={{ marginBottom: 16 }}
         />
       )}
-      <Flex gap={24} align="stretch" style={{ height: 'calc(100vh - 230px)', minHeight: 480 }}>
-        <div style={{ flex: 1, minWidth: 0 }} data-keep-selection>
+      <Flex
+        gap={narrow ? 16 : 24}
+        vertical={narrow}
+        align="stretch"
+        style={narrow ? undefined : { height: 'calc(100vh - 230px)', minHeight: 480 }}
+      >
+        <div
+          style={narrow ? { height: '60vh', minHeight: 360 } : { flex: 1, minWidth: 0 }}
+          data-keep-selection
+        >
           {drawn && selected && (
             <RegionPanel
               key={drawn.join(',')} // 换了框，重新识别的结果清空
@@ -530,7 +660,11 @@ export function ReviewPage() {
           />
         </div>
         {/* 右边分上下两块：上面是选中字段的详情（固定，不用往下翻），下面是字段和商品明细（自己滚动） */}
-        <Flex vertical gap={8} style={{ width: 440, flexShrink: 0, minHeight: 0 }}>
+        <Flex
+          vertical
+          gap={8}
+          style={narrow ? undefined : { width: sideWidth, flexShrink: 0, minHeight: 0 }}
+        >
           {selected && (
             <div
               data-keep-selection
@@ -561,7 +695,12 @@ export function ReviewPage() {
           <div style={{ flex: 1, minHeight: 0, overflow: 'auto', paddingRight: 4 }}>
           {extraction ? (
             <FieldPanel
-              extraction={extraction}
+              extraction={{ ...extraction, values }}
+              sortMode={sortMode}
+              onSortMode={(mode) => {
+                setSortMode(mode)
+                saveSortMode(mode)
+              }}
               selectedId={selectedId}
               hoveredId={hoveredId}
               onSelect={select}

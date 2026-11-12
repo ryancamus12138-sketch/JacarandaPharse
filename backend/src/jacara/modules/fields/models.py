@@ -90,6 +90,23 @@ class ExtractedValue(Base, OwnedMixin, TimestampMixin):
         """还在等人确认：抽取时标了需要确认，而且还没人处理。"""
         return self.needs_review and not self.reviewed
 
+    @property
+    def evidence_state(self) -> str:
+        """证据这一维（ADR 0028），说的是抽取时找到的出处，审核之后也不变：
+
+        - verified：原文里找到了，和值完全一致，没有任何疑点
+        - pending：找到了，但要人看一眼（只是相似、行号不对、OCR 置信度低、正负号不对）
+        - missing：原文里找不到这个值，可能是模型编的或改写了
+        - empty：模型说原文没有这个字段（人工新加的格子也是）
+        """
+        if self.status == "not_found":
+            return "missing"
+        if self.status == "empty" or self.evidence is None:
+            return "empty"
+        if self.status == "fuzzy" or self.note:
+            return "pending"
+        return "verified"
+
 
 class ValueRevision(Base, OwnedMixin, TimestampMixin):
     """一次人工审核：修改（edit）或确认无误（confirm）。只新增，不修改也不删除。

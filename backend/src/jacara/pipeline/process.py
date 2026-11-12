@@ -12,10 +12,11 @@ import logging
 import mimetypes
 import tempfile
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from sqlalchemy import update
+from sqlalchemy import func, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from jacara.core.db import session_scope
@@ -61,13 +62,19 @@ def process_document(
             # 流水线按后缀判断文件类型，所以临时文件的后缀按 content_type 取
             path = Path(tmp) / f"original{suffix_for(filename, content_type)}"
             path.write_bytes(data)
-            reports = pipeline.run(path, name=filename)
+            reports = pipeline.run(
+                path,
+                name=filename,
+                progress=lambda stage, percent: _report(document_id, stage, percent, factory),
+            )
 
+        _report(document_id, "保存结果", 98, factory)
         with session_scope(factory) as session:
             document = session.get_one(Document, document_id)
             add_extractions(session, document, reports)
             document.page_count = len(reports)
             document.status = "done"
+            _finish(document)
         log.info("完成 %s：%d 页", document_id, len(reports))
         return "done"
 
@@ -77,7 +84,27 @@ def process_document(
             document = session.get_one(Document, document_id)
             document.status = "failed"
             document.error = describe_error(err)
+            _finish(document)
         return "failed"
+
+
+def _report(
+    document_id: uuid.UUID, stage: str, percent: int, factory: sessionmaker[Session] | None
+) -> None:
+    """把进度写进数据库（单独一个短事务，马上提交，工作台和列表才查得到）。"""
+    with session_scope(factory) as session:
+        session.execute(
+            update(Document)
+            .where(Document.id == document_id)
+            .values(stage=stage, progress=max(0, min(100, percent)))
+        )
+
+
+def _finish(document: Document) -> None:
+    """处理完了（成功或失败）：清掉进度，记下时间。"""
+    document.stage = None
+    document.progress = None
+    document.processed_at = datetime.now(UTC)
 
 
 def _claim(document_id: uuid.UUID, factory: sessionmaker[Session] | None) -> bool:
@@ -89,7 +116,7 @@ def _claim(document_id: uuid.UUID, factory: sessionmaker[Session] | None) -> boo
         claimed = session.scalar(
             update(Document)
             .where(Document.id == document_id, Document.status == "uploaded")
-            .values(status="processing", error=None)
+            .values(status="processing", error=None, stage="准备处理", progress=0)
             .returning(Document.id)
         )
     return claimed is not None
@@ -104,7 +131,13 @@ def reset_interrupted(factory: sessionmaker[Session] | None = None) -> int:
         ids = session.scalars(
             update(Document)
             .where(Document.status == "processing")
-            .values(status="failed", error="处理到一半时 worker 被关闭了，请重新处理")
+            .values(
+                status="failed",
+                error="处理到一半时 worker 被关闭了，请重新处理",
+                stage=None,
+                progress=None,
+                processed_at=func.now(),
+            )
             .returning(Document.id)
         ).all()
     return len(ids)
