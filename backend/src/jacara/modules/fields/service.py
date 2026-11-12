@@ -3,6 +3,8 @@
 原值永远不改（项目规则 2）：每次审核都新增一条 value_revisions，当前值取最新一条。
 删除一行也是新增记录（action="delete"），不真的删；
 增加一行是新增 origin="manual" 的字段（ADR 0027）。
+计算字段（ADR 0035）：参与计算的值改了、增删了行，按公式重算，记一条 action="compute" 的记录；
+人直接改过的计算字段不再跟着变。
 """
 
 from __future__ import annotations
@@ -167,6 +169,7 @@ class FieldService:
         require(self.owner, "value:review", extraction.team_id)
         self._check_reviewable(extraction)
         columns = _columns(extraction, table)
+        computed = _computed_columns(extraction, table)
         rows = _rows(extraction, table)
         if row.after not in (None, 0) and row.after not in rows:
             raise FieldError("not_found", f"表格 {table} 里没有第 {row.after} 行")
@@ -180,14 +183,14 @@ class FieldService:
                 extraction=extraction,
                 position=position + k,
                 sort_key=start + (end - start) * (k + 1) / (len(columns) + 1),
-                origin="manual",
+                origin="computed" if column in computed else "manual",
                 name=cell_name(table, index, column),
                 type=type_,
                 value=None,
                 row_no=None,
                 status="empty",
                 needs_review=False,
-                note="审核时人工增加的行",
+                note="审核时人工增加的行" if column not in computed else "按公式算",
                 evidence=None,
                 user_id=self.owner.user_id,
                 team_id=extraction.team_id,
@@ -290,9 +293,45 @@ class FieldService:
         self._add(value, action, new_value, reason, None)
 
     def _touch(self, extraction: Extraction) -> None:
+        self._recompute(extraction)
         document = extraction.document
         if document.status == "reviewed":
             document.status = "done"  # 审核完的文档又改了，要重新点"完成审核"
+
+    def _recompute(self, extraction: Extraction) -> None:
+        """按当前值重算计算字段（ADR 0035），值变了就记一条 compute 记录。
+
+        人直接改过的计算字段（最后一条是 edit）不再跟着变：人改的值说了算。
+        """
+        from jacara.pipeline.compute import compute
+        from jacara.pipeline.current import template_of, typed_value
+
+        template = template_of(extraction)
+        if template is None or not template.formulas():
+            return
+        alive = [v for v in extraction.values if not v.deleted]
+        now = {v.name: typed_value(v.type, v.current_value) for v in alive}
+        by_name = {v.name: v for v in alive}
+        changed: list[str] = []
+        for result in compute(template, now):
+            value = by_name.get(result.name)
+            new_value = None if result.value is None else str(result.value)
+            if value is None or new_value == value.current_value:
+                continue
+            if value.revisions and value.revisions[-1].action == "edit":
+                continue
+            self._add(value, "compute", new_value, result.note, None)
+            changed.append(value.name)
+        if changed:
+            record(
+                self.session,
+                self.owner,
+                "value:compute",
+                "extraction",
+                extraction.id,
+                document_id=str(extraction.document_id),
+                fields=changed,
+            )
 
     def _check_reviewable(self, extraction: Extraction) -> None:
         status = extraction.document.status
@@ -380,6 +419,14 @@ def _rows(extraction: Extraction, table: str) -> dict[int, list[ExtractedValue]]
         if cell and cell[0] == table:
             rows.setdefault(cell[1], []).append(value)
     return rows
+
+
+def _computed_columns(extraction: Extraction, table: str) -> set[str]:
+    """这张表里按公式算的列。"""
+    from jacara.pipeline.current import template_of
+
+    template = template_of(extraction)
+    return set(template.formulas().columns.get(table, {})) if template else set()
 
 
 def _columns(extraction: Extraction, table: str) -> list[tuple[str, str]]:

@@ -24,6 +24,8 @@ dependencies = [
     "pydantic-settings>=2.16.2",
     "pypdfium2>=5.14.0",
     "python-multipart>=0.0.33",
+    "rapid-layout>=1.2.1",
+    "rapid-table>=3.0.2",
     "rapidocr>=3.10.0",
     "redis>=8.1.0",
     "sqlalchemy>=2.1.8",
@@ -40,6 +42,11 @@ dev = [
     "pre-commit>=4.3",
     "pytest>=9.2.0",
 ]
+
+[tool.uv]
+# rapid-layout、rapid-table 声明依赖 opencv-python（带图形界面的版本），rapidocr 用的是
+# opencv-python-headless。两个装在一起会互相覆盖 cv2；这里把 opencv-python 去掉，统一用 headless。
+override-dependencies = ["opencv-python ; sys_platform == 'never'"]
 
 [build-system]
 requires = ["hatchling"]

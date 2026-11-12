@@ -1,13 +1,14 @@
 # 起步模板：餐厅小票。
-# 字段来源：ATO Records you need to keep（收据五项）、Tax invoices（82.50 澳元以上抵 GST 要税务发票）
+# 通用模板：不带任何国家或地区的规定（v2 起去掉了澳洲 ATO 的规则和说法）。
+# 要按某个地方的税务规定检查，复制一份再自己写规则。
 # 规则和字段说明只写通用规定，不放任何真实单据的内容。
 
 name = "receipt_restaurant"
-version = 1
+version = 2
 title = "餐厅小票"
 category = "收据"
-description = "餐厅、咖啡馆的小票：附加费、小费、人数。字段按 ATO 对收据和税务发票的要求。"
-rules = ["total_positive", "date_exists", "date_not_future", "ato_evidence", "ato_gst_credit", "gst_eleventh", "receipt_balance", "merchant_abn", "items_sum", "item_line"]
+description = "餐厅、咖啡馆的小票：附加费、小费、人数，不分国家和地区。"
+rules = ["total_positive", "date_exists", "date_not_future", "receipt_balance", "items_sum", "item_line"]
 
 [[fields]]
 name = "merchant"
@@ -18,18 +19,16 @@ description = "开收据的商家名称，一般在最上面"
 aliases = ["Store", "Shop"]
 
 [[fields]]
-name = "merchant_abn"
-label = "商家 ABN"
+name = "merchant_tax_id"
+label = "商家税号"
 type = "string"
-description = "商家的 ABN（澳洲商业号码，11 位数字）；其他国家的商家税号也填这里"
-aliases = ["ABN"]
+description = "商家的税务登记号或公司注册号，叫法各地不同（税号、统一社会信用代码、ABN、VAT No.、GST No. 等），原样照抄；没有就留空"
 
 [[fields]]
 name = "document_title"
 label = "单据标题"
 type = "string"
-description = "收据上写的标题，如 Tax Invoice、Receipt，原样照抄"
-aliases = ["Tax Invoice", "Receipt"]
+description = "收据上写的标题，如 收据、Receipt、Tax Invoice，原样照抄"
 
 [[fields]]
 name = "document_no"
@@ -96,11 +95,10 @@ type = "string"
 aliases = ["Table"]
 
 [[fields]]
-name = "gst"
-label = "GST / 税额"
+name = "tax"
+label = "税额"
 type = "number"
-description = "税额；只写了“含 GST”（Includes GST）时填那个金额"
-aliases = ["GST", "Includes GST", "Tax"]
+description = "收据上单独写出的税额（叫法各地不同：税额、Tax、VAT、GST、Sales tax）；只写了“含税”多少时填那个金额；没写就留空"
 
 [[fields]]
 name = "total"
@@ -108,14 +106,14 @@ label = "总额"
 type = "number"
 required = true
 description = "最终应付总额"
-aliases = ["Total", "Amount", "TOTAL AUD"]
+aliases = ["Total", "Amount"]
 
 [[fields]]
 name = "payment_method"
 label = "付款方式"
 type = "string"
-description = "如 Cash、EFTPOS、Visa、Mastercard"
-aliases = ["EFTPOS", "Card", "Cash"]
+description = "如 现金、银行卡、微信、支付宝、Visa"
+aliases = ["Card", "Cash"]
 
 [[tables]]
 name = "items"

@@ -5,6 +5,7 @@
 name = "cn_einvoice"
 version = 1
 title = "中国数电发票"
+region = "cn"
 category = "发票"
 description = "全面数字化的电子发票（增值税专用发票、普通发票）。票面要素按国家税务总局公告 2024 年第 11 号。"
 rules = ["issue_date_exists", "issue_date_not_future", "cn_invoice_no", "cn_tax_balance", "cn_items_amount", "cn_items_tax", "cn_words", "item_line"]

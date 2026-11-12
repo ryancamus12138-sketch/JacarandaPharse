@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import uuid
+from dataclasses import replace
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -14,6 +15,8 @@ from jacara.pipeline.run import Pipeline
 from jacara.plugins.extractors import LlmExtractor
 from jacara.plugins.model_backends import ChatResult
 from jacara.workbook.analyze import analyze, find_header_row
+
+from .conftest import make_line
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -170,6 +173,21 @@ def build(client, analysis, title="报销模板", edit=None):
     return response.json()
 
 
+def with_answers(page, backend):
+    """假模型回答的文字（"购物"、"张三"……）不在收据上：在页面底下补上这些字。
+
+    原文里找不到的值会按规则丢掉（ADR 0034）；这里测的是模板的规则、对象、参照表，值要真的在原文里。
+    """
+    texts = [v for v, _ in backend.values.values() if isinstance(v, str)]
+    for rows in backend.tables.values():
+        texts += [v for row in rows for v in row.values() if isinstance(v, str)]
+    lines = list(page.lines)
+    for i, text in enumerate(dict.fromkeys(texts)):
+        y = page.height + 40 * i
+        lines.append(make_line(text, 20, y, 20 + 14 * len(text), y + 24))
+    return replace(page, lines=tuple(lines), height=page.height + 40 * (len(texts) + 1))
+
+
 def process(client, factory, storage, page, template_id, backend):
     response = client.post(
         "/api/v1/documents",
@@ -177,7 +195,7 @@ def process(client, factory, storage, page, template_id, backend):
         data={"template": template_id},
     )
     document_id = uuid.UUID(response.json()["id"])
-    pipeline = Pipeline(ocr=FakeOcr(page), extractor=LlmExtractor(backend))
+    pipeline = Pipeline(ocr=FakeOcr(with_answers(page, backend)), extractor=LlmExtractor(backend))
     assert (
         process_document(document_id, storage=storage, pipeline=pipeline, factory=factory) == "done"
     )

@@ -35,6 +35,7 @@ import {
   getDocument,
   getNeighbors,
   getPageOcr,
+  getPageStructure,
 } from '../../api/documents'
 import type { Box, FieldValue, RevisionIn } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
@@ -144,6 +145,14 @@ function ReviewWorkspace({ id }: { id: string }) {
     queryFn: () => getPageOcr(id, page),
     enabled: ready,
     staleTime: Infinity, // OCR 结果处理完就不会变
+  })
+  // 版面结构（区域、表格、标题 → 值）：打开"版面结构"时才取
+  const [structureOn, setStructureOn] = useState(false)
+  const structure = useQuery({
+    queryKey: ['page-structure', id, page, run ?? 0],
+    queryFn: () => getPageStructure(id, page, run),
+    enabled: ready,
+    staleTime: Infinity, // 处理完就不会变
   })
   const revise = useRevise(id)
   const comments = useComments(id)
@@ -710,6 +719,9 @@ function ReviewWorkspace({ id }: { id: string }) {
             onSelect={select}
             onHover={setHoveredId}
             ocr={ocr.data}
+            structure={structure.data}
+            showStructure={structureOn}
+            onToggleStructure={() => setStructureOn((on) => !on)}
             showOcr={showOcr}
             onToggleOcr={() => setOcrOn((on) => !on)}
             picked={picked}

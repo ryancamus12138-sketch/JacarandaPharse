@@ -7,6 +7,7 @@
 name = "cn_air_itinerary"
 version = 2
 title = "航空运输电子客票行程单"
+region = "cn"
 category = "交通"
 description = "电子发票（航空运输电子客票行程单）。票面要素按国家税务总局 中国民用航空局公告 2024 年第 9 号。"
 rules = ["issue_date_exists", "issue_date_not_future", "cn_invoice_no", "air_total", "air_vat"]

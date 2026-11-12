@@ -236,14 +236,20 @@ def _extract(args: argparse.Namespace) -> int:
         return 1
 
     from jacara.core.config import model_api_key
+    from jacara.plugins.ocr.loader import page_images
+    from jacara.structure.analyze import analyze_page
+    from jacara.structure.engines import default_engines
 
     backend = create_model_backend(ModelConfig(base_url=args.server, api_key=model_api_key()))
-    pipeline = Pipeline(ocr=create_ocr_engine(), extractor=LlmExtractor(backend))
+    pipeline = Pipeline(
+        ocr=create_ocr_engine(), extractor=LlmExtractor(backend), structure=default_engines()
+    )
     try:
         pages = pipeline.read(path)
     except UnsupportedFileError as err:
         print(err)
         return 1
+    images = page_images(path) if pipeline.needs_images() else [None] * len(pages)
 
     reports = []
     for number, page in enumerate(pages, start=1):
@@ -251,13 +257,14 @@ def _extract(args: argparse.Namespace) -> int:
             print(f"\n===== 第 {number} / {len(pages)} 页 =====")
         how = page.models.get("source", "OCR 识别")
         print(f"读取：{how} · {len(page.lines)} 块文字 · 用时 {page.duration_ms} 毫秒")
+        structure = analyze_page(page, images[number - 1], pipeline.structure)
         if args.show_prompt:
-            for message in build_messages(page, template.specs):
+            for message in build_messages(page, template.specs, template.table_specs, structure):
                 print(f"\n----- {message.role} -----\n{message.content}")
             print("-----\n")
         source = page_label(path.name, number, len(pages))
         try:
-            report = pipeline.extract_page(page, source, number, template.name)
+            report = pipeline.extract_page(page, source, number, template.name, structure=structure)
         except (ModelBackendError, ExtractionError) as err:
             print(err)
             return 1
@@ -307,12 +314,14 @@ def _print_report(report: DocumentReport) -> None:
     for a in aligned:
         name = a.field.name
         value = "（找不到）" if a.field.value is None else " ".join(str(a.field.value).split())
-        if a.status == "not_found":
+        if a.status in ("not_found", "rejected"):
             mark, color = "✗", _RED
         elif a.needs_review or name in flagged:
             mark, color = "!", _YELLOW
         elif a.status == "empty":
             mark, color = "－", ""
+        elif a.status == "computed":
+            mark, color = "=", _GREEN
         else:
             mark, color = "✓", _GREEN
         print(_paint(f"{mark} {name:<{width}}  {value}", color))
@@ -476,9 +485,12 @@ def _eval(args: argparse.Namespace) -> int:
     from jacara.plugins.extractors import LlmExtractor
     from jacara.plugins.model_backends import ModelConfig, create_model_backend
     from jacara.plugins.ocr import create_ocr_engine
+    from jacara.structure.engines import default_engines
 
     backend = create_model_backend(ModelConfig(base_url=args.server, api_key=model_api_key()))
-    pipeline = Pipeline(ocr=create_ocr_engine(), extractor=LlmExtractor(backend))
+    pipeline = Pipeline(
+        ocr=create_ocr_engine(), extractor=LlmExtractor(backend), structure=default_engines()
+    )
 
     def progress(done: int, total: int, sample_id: str) -> None:
         print(f"\r{done}/{total}  {sample_id}", end="", flush=True)

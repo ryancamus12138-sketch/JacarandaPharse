@@ -47,6 +47,16 @@ export function SystemPage() {
                   {d.ocr.engine}
                   {d.ocr.version ? ` ${d.ocr.version}` : ''}（PP-OCR 模型）
                 </Descriptions.Item>
+                <Descriptions.Item label="版面分析">
+                  {d.structure?.layout ?? <Typography.Text type="secondary">关闭</Typography.Text>}
+                </Descriptions.Item>
+                <Descriptions.Item label="表格结构">
+                  {d.structure?.table ?? (
+                    <Typography.Text type="secondary">
+                      没有放模型（models/table/slanet-plus.onnx），表格的格子按文字位置划分
+                    </Typography.Text>
+                  )}
+                </Descriptions.Item>
                 <Descriptions.Item label="模板">
                   <Flex gap={4} wrap>
                     {d.templates.map((t) => (

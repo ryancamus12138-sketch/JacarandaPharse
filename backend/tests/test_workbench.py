@@ -146,7 +146,7 @@ def test_pipeline_reports_each_page(receipt_page, tmp_path):
     path = tmp_path / "r.jpg"
     path.write_bytes(b"x")
     pipeline.run(path, progress=lambda stage, percent: steps.append((stage, percent)))
-    assert steps == [("识别文字", 5), ("抽取第 1 / 1 页", 20)]
+    assert steps == [("识别文字", 5), ("分析第 1 / 1 页的版面", 15), ("抽取第 1 / 1 页", 20)]
 
 
 # ---- 导出记录 ----

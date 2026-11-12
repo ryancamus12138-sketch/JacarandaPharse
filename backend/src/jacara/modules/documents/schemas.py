@@ -218,3 +218,47 @@ class SkipIn(BaseModel):
 
     reason: str = Field(default="", max_length=500)
     """为什么跳过，可以不填。"""
+
+
+class StructureRegion(BaseModel):
+    kind: str
+    """标题、正文、表格、页眉、页脚……"""
+    box: list[float]
+
+
+class StructureCell(BaseModel):
+    row: int
+    col: int
+    row_span: int = 1
+    col_span: int = 1
+    box: list[float]
+    text: str
+
+
+class StructureTable(BaseModel):
+    box: list[float]
+    rows: int
+    cols: int
+    by: str
+    """model：表格结构模型认的；rule：按文字位置划分的。"""
+    cells: list[StructureCell]
+
+
+class StructurePair(BaseModel):
+    key: str
+    key_box: list[float]
+    value: str
+    value_box: list[float]
+    rule: str
+    """哪条规则找出来的：inline、colon、colon_below、header_above、two_column_table、label_left。"""
+
+
+class PageStructureOut(BaseModel):
+    """某一页的结构（ADR 0034）：审核页"版面结构"在原图上画出来，看系统认出了什么。"""
+
+    available: bool
+    """2026-11-14 之前处理的没有结构。"""
+    sources: dict[str, str] = {}
+    regions: list[StructureRegion] = []
+    tables: list[StructureTable] = []
+    pairs: list[StructurePair] = []

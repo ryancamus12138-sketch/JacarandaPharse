@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     jacara_model: Path | None = None
     """jacara start 要启动的模型文件（.gguf）。不写就用 models/ 文件夹里唯一的那个 .gguf。"""
 
+    jacara_layout: bool = True
+    """抽取前先用版面模型找出页面上的区域（标题、正文、表格、页眉页脚），ADR 0034。"""
+    jacara_table_model: Path | None = None
+    """表格结构模型（SLANet-plus 的 .onnx）。不写就用 models/table/slanet-plus.onnx；
+    没有这个文件时，
+    表格的格子按文字位置用规则划分。"""
+
     max_upload_mb: int = 50
     """上传文件的大小上限（MB）。"""
 
@@ -78,6 +85,11 @@ class Settings(BaseSettings):
             return path if path.is_absolute() else PROJECT_ROOT / path
         found = sorted((PROJECT_ROOT / "models").glob("*.gguf"))
         return found[0] if len(found) == 1 else None
+
+    def table_model(self) -> Path | None:
+        """表格结构模型文件；没有就是 None。"""
+        path = self.jacara_table_model or PROJECT_ROOT / "models" / "table" / "slanet-plus.onnx"
+        return path if path.is_file() else None
 
     def weak_secrets(self) -> list[str]:
         """还是空的、或者还是示例值 change-me 的密钥，返回它们在 .env 里的名字。"""

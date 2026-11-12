@@ -22,6 +22,7 @@ from jacara.modules.system.schemas import (
     ModelInfo,
     OcrInfo,
     ServiceCheck,
+    StructureInfo,
     SystemInfo,
     TemplateInfo,
 )
@@ -44,6 +45,12 @@ class SystemService:
             mode=self.settings.jacara_mode,
             model=self._model(),
             ocr=_ocr(),
+            structure=StructureInfo(
+                layout="pp_layout_cdla（rapid-layout 自带）"
+                if self.settings.jacara_layout
+                else None,
+                table=table.name if (table := self.settings.table_model()) else None,
+            ),
             templates=[
                 TemplateInfo(name=t.name, title=t.title, version=t.version)
                 for t in (load_template(n) for n in template_names())

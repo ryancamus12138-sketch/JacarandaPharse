@@ -20,9 +20,19 @@ from functools import cache
 from importlib.resources import files
 from typing import Any, get_args
 
+from jacara.formulas import (
+    Formula,
+    FormulaError,
+    Inputs,
+    Scope,
+    check_condition,
+    order,
+    parse_condition,
+    parse_formula,
+)
 from jacara.plugins.extractors.base import FieldSpec, FieldType, TableSpec
-from jacara.plugins.validators.base import Rule
-from jacara.plugins.validators.rules import RULES, RuleValidator
+from jacara.plugins.validators.base import Rule, Severity
+from jacara.plugins.validators.rules import REGIONS, RULES, RuleValidator
 from jacara.templates.extras import (
     ExtrasError,
     TemplateEntity,
@@ -38,6 +48,9 @@ from jacara.templates.extras import (
 
 _FIELD_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 """字段名：小写英文字母开头，只用小写字母、数字、下划线（存进数据库、导出、接口里都用它）。"""
+
+REGION_NAMES = {"": "通用", "cn": "中国", "au": "澳洲"}
+"""模板的地区：通用模板只用通用规则；中国、澳洲的模板可以再用本地区的规则（ADR 0035）。"""
 
 DEFAULT_TEMPLATE = "receipt"
 """上传的文件默认用的模板。"""
@@ -67,6 +80,14 @@ class TemplateField:
     """可选值（来自 Excel 的下拉选项等）：抽到的值不在里面就提醒。空 = 不限。"""
     extract: bool = True
     """要不要让模型从单据上抽。False = 人工填（报销人、部门……）：不交给模型，审核时填。"""
+    compute: str = ""
+    """计算字段的公式（ADR 0035），例如 check_out - check_in。
+    有公式就不交给模型，由别的字段算出来。"""
+
+    @property
+    def asks_model(self) -> bool:
+        """交给模型从单据上抽：不是人工填的，也不是算出来的。"""
+        return self.extract and not self.compute
 
     @property
     def spec(self) -> FieldSpec:
@@ -93,8 +114,42 @@ class TemplateTable:
 
     @property
     def spec(self) -> TableSpec:
-        columns = tuple(c.spec for c in self.columns if c.extract)
+        columns = tuple(c.spec for c in self.columns if c.asks_model)
         return TableSpec(self.name, self.description, columns)
+
+
+@dataclass(frozen=True)
+class CustomRule:
+    """自己写的规则（ADR 0035）：一个条件，例如 sum(items.amount) == total。
+
+    per_row 写表名时，每一行单独检查，条件里写这张表的列名（quantity * unit_price == amount）。
+    """
+
+    title: str
+    check: str
+    severity: Severity = "error"
+    per_row: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "check": self.check,
+            "severity": self.severity,
+            "per_row": self.per_row,
+        }
+
+
+@dataclass(frozen=True)
+class Formulas:
+    """一个模板的计算字段，已经按依赖排好顺序（先算别人要用的）。"""
+
+    fields: dict[str, Formula]
+    """普通字段的公式。"""
+    columns: dict[str, dict[str, Formula]]
+    """表名 → {列名 → 每一行的公式}。"""
+
+    def __bool__(self) -> bool:
+        return bool(self.fields or self.columns)
 
 
 @dataclass(frozen=True)
@@ -117,20 +172,112 @@ class Template:
     """参照表：固定名单，用来对照、补编号。"""
     workbook: Workbook | None = None
     """按原 Excel 导出的样式。没有就用标准的导出格式。"""
+    custom_rules: tuple[CustomRule, ...] = ()
+    """自己写的规则（ADR 0035），和选的内置规则一起检查。"""
+    region: str = ""
+    """地区：空 = 通用；cn 中国、au 澳洲。只能选通用规则和本地区的规则。"""
+
+    def region_problem(self) -> str | None:
+        """选了别的地区的规则（例如通用收据选了澳洲 ATO 的规则）：说清楚是哪几条。"""
+        wrong = [r.title for r in self.rules if REGIONS.get(r.id, self.region) != self.region]
+        if not wrong:
+            return None
+        return (
+            f"这是{REGION_NAMES[self.region]}模板，不能用别的地区的规则："
+            f"{'、'.join(wrong)}。请关掉，需要的话自己写规则"
+        )
+
+    def all_rules(self) -> tuple[Rule, ...]:
+        """选的内置规则 + 自己写的规则（编号 custom_1、custom_2……）。"""
+        return self.rules + tuple(
+            self._custom(i, c) for i, c in enumerate(self.custom_rules, start=1)
+        )
+
+    def _scope(self, per_row: str | None) -> Scope:
+        fields = {f.name: f.type for f in self.fields}
+        tables = {t.name: {c.name: c.type for c in t.columns} for t in self.tables}
+        if per_row is None:
+            return Scope(fields, tables)
+        return Scope({}, tables, tables[per_row])
+
+    def _custom(self, number: int, custom: CustomRule) -> Rule:
+        condition = parse_condition(custom.check, self._scope(custom.per_row))
+        labels = self.labels()
+        if custom.per_row:
+            labels = {
+                **labels,
+                **{
+                    c.name: c.label
+                    for t in self.tables
+                    if t.name == custom.per_row
+                    for c in t.columns
+                },
+            }
+            needs = tuple(sorted(condition.columns))
+        else:
+            needs = tuple(sorted(condition.fields)) + tuple(
+                f"{t}.*.*" for t in sorted(condition.tables)
+            )
+        readable = condition.readable(labels)
+        left_text = condition.left.readable(labels)
+        right_text = condition.right.readable(labels)
+        per_row = custom.per_row
+
+        def check(values: dict[str, Any]) -> str | None:
+            inputs = Inputs({}, {}, values) if per_row else Inputs(values, _tables_of(values))
+            verdict = check_condition(condition, inputs)
+            if verdict.passed is not False:
+                return None
+            return (
+                f"{left_text} 是 {_show(verdict.left)}，{right_text} 是 {_show(verdict.right)}，"
+                f"不满足 {readable}"
+            )
+
+        return Rule(
+            f"custom_{number}",
+            custom.title or readable,
+            needs,
+            check,
+            custom.severity,
+            per_row=per_row,
+        )
 
     @property
     def specs(self) -> tuple[FieldSpec, ...]:
         """交给模型抽的字段（人工填的不交）。"""
-        return tuple(f.spec for f in self.fields if f.extract)
+        return tuple(f.spec for f in self.fields if f.asks_model)
 
     @property
     def table_specs(self) -> tuple[TableSpec, ...]:
-        return tuple(t.spec for t in self.tables if any(c.extract for c in t.columns))
+        return tuple(t.spec for t in self.tables if any(c.asks_model for c in t.columns))
 
     @property
     def manual_fields(self) -> tuple[TemplateField, ...]:
         """人工填的普通字段：处理时先放一个空值，审核时填。"""
-        return tuple(f for f in self.fields if not f.extract)
+        return tuple(f for f in self.fields if not f.extract and not f.compute)
+
+    def formulas(self) -> Formulas:
+        """检查过的公式（ADR 0035）。模板读进来时已经检查过，这里不会出错。"""
+        fields = {f.name: f.type for f in self.fields}
+        tables = {t.name: {c.name: c.type for c in t.columns} for t in self.tables}
+        top = {
+            f.name: parse_formula(f.compute, Scope(fields, tables))
+            for f in self.fields
+            if f.compute
+        }
+        rows = {
+            t.name: {
+                c.name: parse_formula(c.compute, Scope(fields, tables, tables[t.name]))
+                for c in t.columns
+                if c.compute
+            }
+            for t in self.tables
+            if any(c.compute for c in t.columns)
+        }
+        return Formulas(
+            fields={name: top[name] for name in order(top)},
+            columns={t: {c: f[c] for c in order(f)} for t, f in rows.items()},
+        )
 
     def validator(self) -> RuleValidator:
         """这个模板的校验器：模板选的规则 + 必填 + 可选值 + 参照表对照。"""
@@ -146,10 +293,10 @@ class Template:
             if r.match_field
         ]
         if not self.enforce_required:
-            return RuleValidator(self.rules, options=options, lookups=lookups)
+            return RuleValidator(self.all_rules(), options=options, lookups=lookups)
         required = [(f.name, f.label) for f in self.fields if f.required]
         required += [(t.name, t.label) for t in self.tables if t.required]
-        return RuleValidator(self.rules, required=required, options=options, lookups=lookups)
+        return RuleValidator(self.all_rules(), required=required, options=options, lookups=lookups)
 
     def labels(self) -> dict[str, str]:
         """字段 ID → 中文名。表格写成 items（表名）和 items.amount（列）。"""
@@ -178,7 +325,25 @@ class Template:
             "entities": [entity_dict(e) for e in self.entities],
             "references": [reference_dict(r) for r in self.references],
             "workbook": workbook_dict(self.workbook) if self.workbook else None,
+            "custom_rules": [c.as_dict() for c in self.custom_rules],
+            "region": self.region,
         }
+
+
+def _tables_of(values: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """items.2.amount 这样的格子 → 表名 → 每一行 {列名 → 值}。"""
+    from jacara.plugins.extractors.base import split_cell_name
+
+    rows: dict[str, dict[int, dict[str, Any]]] = {}
+    for name, value in values.items():
+        cell = split_cell_name(name)
+        if cell:
+            rows.setdefault(cell[0], {}).setdefault(cell[1], {})[cell[2]] = value
+    return {t: [r[i] for i in sorted(r)] for t, r in rows.items()}
+
+
+def _show(value: Any) -> str:
+    return f"{value:g}" if isinstance(value, float) else str(value)
 
 
 def _field_dict(f: TemplateField) -> dict[str, Any]:
@@ -193,6 +358,7 @@ def _field_dict(f: TemplateField) -> dict[str, Any]:
         "sensitive": f.sensitive,
         "options": list(f.options),
         "extract": f.extract,
+        "compute": f.compute,
     }
 
 
@@ -323,9 +489,13 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
     except ExtrasError as err:
         raise TemplateError(str(err)) from err
 
-    return Template(
+    region = raw.get("region") or ""
+    if region not in REGION_NAMES:
+        raise TemplateError(f"{where}：region 只能是空的（通用）、cn 或 au")
+    template = Template(
         name=name,
         version=version,
+        region=region,
         title=str(raw.get("title") or name),
         description=str(raw.get("description", "")),
         fields=tuple(fields),
@@ -335,7 +505,67 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
         entities=entities,
         references=references,
         workbook=workbook,
+        custom_rules=_custom_rules(raw.get("custom_rules"), tables, where),
     )
+    _check_formulas(template, where)
+    for i, custom in enumerate(template.custom_rules, start=1):
+        try:
+            parse_condition(custom.check, template._scope(custom.per_row))
+        except FormulaError as err:
+            name = custom.title or f"第 {i} 条"
+            raise TemplateError(f"{where}：自定义规则「{name}」：{err}") from err
+    return template
+
+
+def _custom_rules(items: Any, tables: list[TemplateTable], where: str) -> tuple[CustomRule, ...]:
+    if items is None:
+        return ()
+    if not isinstance(items, list):
+        raise TemplateError(f"{where}：custom_rules 应该是一个列表")
+    rules: list[CustomRule] = []
+    for i, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            raise TemplateError(f"{where}：第 {i} 条自定义规则写得不对")
+        check = item.get("check")
+        if not isinstance(check, str) or not check.strip():
+            raise TemplateError(f"{where}：第 {i} 条自定义规则没写条件")
+        severity = item.get("severity", "error")
+        if severity not in ("error", "warning"):
+            raise TemplateError(f"{where}：第 {i} 条自定义规则的 severity 只能是 error 或 warning")
+        per_row = item.get("per_row") or None
+        if per_row is not None and per_row not in {t.name for t in tables}:
+            raise TemplateError(f"{where}：第 {i} 条自定义规则的 per_row 不是这个模板里的表")
+        rules.append(
+            CustomRule(str(item.get("title") or "").strip(), check.strip(), severity, per_row)
+        )
+    return tuple(rules)
+
+
+def _check_formulas(template: Template, where: str) -> None:
+    """逐条检查公式，写错了说清楚是哪个字段。"""
+    fields = {f.name: f.type for f in template.fields}
+    tables = {t.name: {c.name: c.type for c in t.columns} for t in template.tables}
+    places = [(f, Scope(fields, tables), f.label) for f in template.fields]
+    places += [
+        (c, Scope(fields, tables, tables[t.name]), f"{t.label}的{c.label}")
+        for t in template.tables
+        for c in t.columns
+    ]
+    for field, scope, label in places:
+        if not field.compute:
+            continue
+        try:
+            formula = parse_formula(field.compute, scope)
+        except FormulaError as err:
+            raise TemplateError(f"{where}：「{label}」的公式：{err}") from err
+        if scope.row is not None and formula.fields & {
+            f.name for f in template.fields if f.compute
+        }:
+            raise TemplateError(f"{where}：「{label}」的公式不能用别的计算字段（只能用单据上抽的）")
+    try:
+        template.formulas()
+    except FormulaError as err:
+        raise TemplateError(f"{where}：{err}") from err
 
 
 def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
@@ -356,6 +586,11 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
         options = item.get("options", [])
         if not isinstance(options, list) or not all(isinstance(o, str) for o in options):
             raise TemplateError(f"{where}：字段 {field_name} 的 options 应该是文字列表")
+        compute = item.get("compute", "")
+        if not isinstance(compute, str):
+            raise TemplateError(f"{where}：字段 {field_name} 的 compute 应该是一条公式")
+        if compute.strip() and item["type"] != "number":
+            raise TemplateError(f"{where}：字段 {field_name} 有公式，type 要是 number")
         fields.append(
             TemplateField(
                 name=field_name,
@@ -369,6 +604,7 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
                 sensitive=sensitive,
                 options=tuple(dict.fromkeys(o.strip() for o in options if o.strip())),
                 extract=bool(item.get("extract", True)),
+                compute=compute.strip(),
             )
         )
     return fields

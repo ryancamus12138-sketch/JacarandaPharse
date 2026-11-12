@@ -36,7 +36,11 @@ def get_pipeline() -> Pipeline:
 
     config = ModelConfig(base_url=get_settings().model_server, api_key=model_api_key())
     backend = create_model_backend(config)
-    return Pipeline(ocr=create_ocr_engine(), extractor=LlmExtractor(backend))
+    from jacara.structure.engines import default_engines
+
+    return Pipeline(
+        ocr=create_ocr_engine(), extractor=LlmExtractor(backend), structure=default_engines()
+    )
 
 
 @celery_app.task(name=PROCESS_DOCUMENT)

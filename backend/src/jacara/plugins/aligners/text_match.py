@@ -13,7 +13,7 @@ from difflib import SequenceMatcher
 
 from jacara.plugins.aligners.base import AlignedField, Evidence
 from jacara.plugins.extractors.base import ExtractedField, ExtractionResult, split_cell_name
-from jacara.plugins.ocr.base import OcrLine, OcrPage
+from jacara.plugins.ocr.base import OcrLine, OcrPage, Point
 from jacara.plugins.ocr.layout import OcrRow, group_rows
 
 
@@ -109,14 +109,18 @@ class TextMatchAligner:
         if field.value is None:
             return AlignedField(field, "empty", None, False, "模型说原文里没有这个字段")
 
-        claimed = [r for r in rows if r.index == field.row]
-        others = [r for r in rows if r.index != field.row]
+        # 模型说的那几行：值折行时是第一行到最后一行（row 到 row_end）
+        last = field.row_end or field.row
+        claimed = [r for r in rows if field.row is not None and field.row <= r.index <= (last or 0)]
+        taken = {r.index for r in claimed}
+        others = [r for r in rows if r.index not in taken]
         if field.row is not None:
             # 先找模型说的那一行附近：同一个价格（9.99）在收据上常出现好几次
             others.sort(key=lambda r: abs(r.index - (field.row or 0)))
 
         if field.type == "string":
-            evidence = self._find_text(str(field.value), claimed + others)
+            span = (last - field.row + 1) if field.row is not None and last is not None else 1
+            evidence = self._find_text(str(field.value), claimed + others, span)
         elif field.type == "number" and isinstance(field.value, float):
             loose = _exact_pattern(number_variants(field.value, loose=True))
             strict = _exact_pattern(number_variants(field.value, loose=False))
@@ -133,8 +137,12 @@ class TextMatchAligner:
         notes: list[str] = []
         if evidence.similarity < 1.0:
             notes.append(f"原文里只有相似的文字（相似度 {evidence.similarity:.2f}）")
-        if field.row is not None and abs(evidence.row - field.row) > _row_slack(field):
-            notes.append(f"模型说在第 {field.row} 行，实际在第 {evidence.row} 行")
+        slack = _row_slack(field)
+        if field.row is not None and not (
+            field.row - slack <= evidence.row <= (last or field.row) + slack
+        ):
+            where = f"第 {field.row}～{last} 行" if last != field.row else f"第 {field.row} 行"
+            notes.append(f"模型说在{where}，实际在第 {evidence.row} 行")
         if evidence.confidence < self.min_confidence:
             notes.append(f"原文这里 OCR 置信度只有 {evidence.confidence:.2f}")
         if field.type == "number" and isinstance(field.value, float):
@@ -148,11 +156,18 @@ class TextMatchAligner:
     def _find_exact(self, pattern: re.Pattern[str], rows: list[OcrRow]) -> Evidence | None:
         for row in rows:
             if pattern.search(_tidy(row.text)):
-                lines = tuple(ln for ln in row.lines if pattern.search(_tidy(ln.text))) or row.lines
+                lines = (
+                    tuple(
+                        _clip_to(ln, pattern.search(ln.text))
+                        for ln in row.lines
+                        if pattern.search(_tidy(ln.text))
+                    )
+                    or row.lines
+                )
                 return Evidence(row.index, row.text, lines, similarity=1.0)
         return None
 
-    def _find_text(self, value: str, rows: list[OcrRow]) -> Evidence | None:
+    def _find_text(self, value: str, rows: list[OcrRow], claimed_span: int = 1) -> Evidence | None:
         """文字字段：逐行找；地址这种长文字可能跨几行，所以也试连续 2～4 行拼起来。
 
         rows 的顺序就是优先顺序（模型说的那一行在最前，然后由近到远）。相似度一样时，
@@ -162,14 +177,16 @@ class TextMatchAligner:
         by_index = {r.index: r for r in rows}
         best: tuple[float, int, int, list[OcrRow]] | None = None
         """(相似度, -行数, -优先顺序, 这几行)：越大越好。"""
+        # 模型说值跨了几行，就至少试到这么多行（最多 _MAX_CLAIMED_SPAN 行）
+        max_span = max(_MAX_SPAN, min(claimed_span, _MAX_CLAIMED_SPAN))
         for order, start in enumerate(rows):
-            for size in range(1, _MAX_SPAN + 1):
+            for size in range(1, max_span + 1):
                 span = [
                     by_index[i] for i in range(start.index, start.index + size) if i in by_index
                 ]
                 if len(span) < size:
                     break
-                score = _best_similarity(needle, _squash("".join(r.text for r in span)))
+                score = _best_similarity(needle, _span_text(needle, span))
                 key = (score, -size, -order)
                 if score >= self.min_similarity and (best is None or key > best[:3]):
                     best = (*key, span)
@@ -180,9 +197,25 @@ class TextMatchAligner:
         if best is None:
             return None
         score, _, _, span = best
-        lines = tuple(ln for r in span for ln in r.lines)
+        lines = _lines_for(needle, tuple(ln for r in span for ln in r.lines))
+        if len(lines) == 1:
+            # 一块文字里只有一部分是这个值（"Guest Name: Sanjay" 里的 Sanjay）：框只框住值
+            found = re.search(re.escape(value.strip()), lines[0].text, re.IGNORECASE)
+            lines = (_clip_to(lines[0], found),)
         row_text = " / ".join(r.text for r in span)
-        return Evidence(span[0].index, row_text, _lines_for(needle, lines), round(score, 3))
+        return Evidence(span[0].index, row_text, lines, round(score, 3))
+
+
+def _span_text(needle: str, span: list[OcrRow]) -> str:
+    """几行拼起来比较用的文字。
+
+    一行：整行原样（和以前一样）。跨几行（折行的商品名、地址）：每行只留和这个值有关的文字块，
+    否则商品名第一行后面的数量、金额（"Room Charges Deluxe  1  1939.00"）会夹在两段名字中间，
+    拼出来就对不上了。
+    """
+    if len(span) == 1:
+        return _squash(span[0].text)
+    return _squash("".join(ln.text for r in span for ln in _lines_for(needle, r.lines)))
 
 
 def _sign_mismatch(value: float, evidence: Evidence) -> str | None:
@@ -211,12 +244,45 @@ def _row_slack(field: ExtractedField) -> int:
 _MAX_SPAN = 4
 """文字字段最多跨几行去找。"""
 
+_MAX_CLAIMED_SPAN = 8
+"""模型说值跨了好几行（长地址、长商品名）时，最多试到几行。"""
+
+
+MIN_PIECE = 3
+"""一个文字块"是这个值的一部分"至少要有几个字：不然 "1"（房间数）也算 "OYO 4189 Resort" 的一部分，
+出处框就从店名一直拉到这一行最右边的房间数。和值完全一样的短块（例如值就是 "1"）不受限制。"""
+
 
 def _lines_for(needle: str, lines: tuple[OcrLine, ...]) -> tuple[OcrLine, ...]:
     """一行里只挑和这个值有关的文字块，高亮框才准。挑不出来就用整行。"""
     picked: list[OcrLine] = []
     for line in lines:
         text = _squash(line.text)
-        if text and (text in needle or needle in text or _best_similarity(text, needle) >= 0.8):
+        if not text:
+            continue
+        long_enough = len(text) >= MIN_PIECE
+        part = long_enough and (text in needle or _best_similarity(text, needle) >= 0.8)
+        if text == needle or part or needle in text:
             picked.append(line)
     return tuple(picked) or lines
+
+
+def _clip_to(line: OcrLine, found: re.Match[str] | None) -> OcrLine:
+    """值只是这个文字块的一部分时，按字在块里的位置估出值那一段的框（沿着块的上下边按比例截）。
+
+    "Date: 31/12/2017" 是一块，值 31/12/2017 在后面 10 个字：框只画后面那段。
+    按字数比例估，等宽字体最准；比例字体会差一点，但比框住整块（连标签一起）准得多。
+    只改框，文字还是整块的原文（"6.00-" 的负号、"原文值"都要看整块）。
+    找不到、或者就是整块的，原样返回。
+    """
+    text = line.text
+    if found is None or not text or (found.start() == 0 and found.end() >= len(text)):
+        return line
+    f0, f1 = found.start() / len(text), found.end() / len(text)
+    tl, tr, br, bl = line.polygon
+
+    def at(a: Point, b: Point, f: float) -> Point:
+        return Point(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f)
+
+    polygon = (at(tl, tr, f0), at(tl, tr, f1), at(bl, br, f1), at(bl, br, f0))
+    return OcrLine(text=text, polygon=polygon, confidence=line.confidence)

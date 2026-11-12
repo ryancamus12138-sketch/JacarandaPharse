@@ -6,6 +6,7 @@
 name = "cn_rail_ticket"
 version = 2
 title = "铁路电子客票"
+region = "cn"
 category = "交通"
 description = "电子发票（铁路电子客票）。票面要素按国家税务总局 财政部 中国国家铁路集团公告 2024 年第 8 号。"
 rules = ["issue_date_exists", "issue_date_not_future", "travel_date_exists", "total_positive", "cn_invoice_no", "fare_tax_balance"]

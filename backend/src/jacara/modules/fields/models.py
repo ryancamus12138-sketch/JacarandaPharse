@@ -35,7 +35,8 @@ class ExtractedValue(Base, OwnedMixin, TimestampMixin):
     sort_key: Mapped[float] = mapped_column(Float, server_default="0")
     """显示顺序，按这个排。抽取时等于 position；人工插入的行取前后两行的中间数。"""
     origin: Mapped[str] = mapped_column(String(16), default="model", server_default="model")
-    """model：模型抽的；manual：审核时人工增加的（表格新增的行）。"""
+    """model：模型抽的；manual：人工填的（表格新增的行、模板里设成人工填的字段）；
+    computed：按模板的公式算出来的（ADR 0035），参与计算的值改了会跟着重算。"""
 
     name: Mapped[str] = mapped_column(String(64))
     label: Mapped[str | None] = mapped_column(String(200))
@@ -43,6 +44,9 @@ class ExtractedValue(Base, OwnedMixin, TimestampMixin):
     type: Mapped[str] = mapped_column(String(16))
     value: Mapped[str | None] = mapped_column(Text)
     """模型抽出的原值。值统一存成文字（数字也存成 "9.0"），按 type 还原；None 表示原文没有。"""
+    rejected_value: Mapped[str | None] = mapped_column(Text)
+    """模型给了值，但它说的文字块里没有、原文别处也找不到，按规则没有填（ADR 0034）：
+    模型给的值记在这里，value 是空的。人核对原文后可以一键采用。"""
     row_no: Mapped[int | None]
     """模型说的行号（不叫 row：row 在 SQL 里是关键字）。"""
 
@@ -84,8 +88,8 @@ class ExtractedValue(Base, OwnedMixin, TimestampMixin):
 
     @property
     def reviewed(self) -> bool:
-        """有人修改或确认过。"""
-        return bool(self.revisions)
+        """有人修改或确认过。按公式自动重算（action="compute"）不算人审核过。"""
+        return any(r.action != "compute" for r in self.revisions)
 
     @property
     def pending_review(self) -> bool:
@@ -98,11 +102,13 @@ class ExtractedValue(Base, OwnedMixin, TimestampMixin):
 
         - verified：原文里找到了，和值完全一致，没有任何疑点
         - pending：找到了，但要人看一眼（只是相似、行号不对、OCR 置信度低、正负号不对）
-        - missing：原文里找不到这个值，可能是模型编的或改写了
+        - missing：原文里找不到这个值，可能是模型编的或改写了（也包括按规则没有填的 rejected）
         - empty：模型说原文没有这个字段（人工新加的格子也是）
         """
-        if self.status == "not_found":
+        if self.status in ("not_found", "rejected"):
             return "missing"
+        if self.status == "computed":
+            return "verified"  # 按公式算的：对不对看参与计算的字段和规则
         if self.status == "empty" or self.evidence is None:
             return "empty"
         if self.status == "fuzzy" or self.note:
@@ -124,7 +130,8 @@ class ValueRevision(Base, OwnedMixin, TimestampMixin):
     seq: Mapped[int] = mapped_column(server_default="1")
     """同一个字段的第几次审核：1、2、3……两个人同时改同一个字段，只有一个能成功。"""
     action: Mapped[str] = mapped_column(String(16), server_default="edit")
-    """edit（修改）、confirm（确认原来的值是对的）、delete（删除这一行）、restore（恢复这一行）。"""
+    """edit（修改）、confirm（确认原来的值是对的）、delete（删除这一行）、restore（恢复这一行）、
+    compute（参与计算的值改了，按公式自动重算，ADR 0035；user_id 是改了那个值的人）。"""
     new_value: Mapped[str | None] = mapped_column(Text)
     """这次审核之后的值。确认时就是确认的那个值，这样每条记录单独看也完整。"""
     reason: Mapped[str] = mapped_column(Text, default="")

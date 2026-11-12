@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from jacara.plugins.aligners.base import AlignedField
 from jacara.plugins.extractors.base import ExtractionResult
@@ -27,6 +27,10 @@ class Review:
     """审核之后的值（文字形式，和数据库里一样）。"""
     reason: str
     reviewed_at: datetime
+
+
+if TYPE_CHECKING:
+    from jacara.structure.graph import PageStructure
 
 
 @dataclass(frozen=True)
@@ -63,12 +67,17 @@ class DocumentReport:
     ocr_page: OcrPage | None = None
     """这一页的 OCR 结果。流水线刚跑完时有，存进数据库给审核页面"点原文填值"用；导出器不用。"""
 
+    structure: PageStructure | None = None
+    """这一页的结构（文字块编号、版面区域、表格、标题 → 值，ADR 0034）。存进数据库；导出器不用。"""
+
     labels: Mapping[str, str] = field(default_factory=dict)
     """字段 ID → 中文名（模板里的 label），导出的列名用它。表格的列写成 items.amount。
     没有的（命令行、老数据）就用字段 ID。"""
 
     manual: frozenset[str] = frozenset()
     """人工填的字段（模板里设成不让模型抽的），存的时候记成 origin = manual。"""
+    computed: frozenset[str] = frozenset()
+    """按公式算出来的字段（ADR 0035），存的时候记成 origin = computed。"""
 
     hidden: frozenset[str] = frozenset()
     """模板里设成"不导出"的字段、表（items）和表的列（items.tax），导出时整列不写。"""

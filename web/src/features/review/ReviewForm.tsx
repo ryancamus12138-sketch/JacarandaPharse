@@ -75,6 +75,27 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
         onFinish={save}
         requiredMark={false}
       >
+        {v.rejected_value && v.current_value === null ? (
+          // 模型给了值，但原文里核对不上，按规则没有填（ADR 0034）：核对原图后可以采用
+          <Flex align="center" gap={6} wrap style={{ marginBottom: 8 }}>
+            <Button
+              size="small"
+              icon={<FileTextOutlined />}
+              onClick={() =>
+                form.setFieldsValue({
+                  value: v.rejected_value ?? '',
+                  missing: false,
+                  reason: '核对原图后采用模型给的值',
+                })
+              }
+            >
+              采用模型给的值
+            </Button>
+            <span style={{ fontSize: 12, color: '#666', overflowWrap: 'anywhere' }}>
+              模型给的：{v.rejected_value}
+            </span>
+          </Flex>
+        ) : null}
         {v.source_value ? (
           <Flex align="center" gap={6} wrap style={{ marginBottom: 8 }}>
             <Button

@@ -11,6 +11,7 @@ import type {
   DocComment,
   DocumentSummary,
   PageOcr,
+  PageStructure,
   RegionOut,
   ReprocessReason,
 } from './types'
@@ -155,4 +156,10 @@ export function resolveComment(commentId: string, resolved: boolean): Promise<Do
 
 export function deleteComment(commentId: string): Promise<void> {
   return api<void>(`/comments/${commentId}`, { method: 'DELETE' })
+}
+
+/** 某一页的结构：版面区域、表格的格子、标题 → 值（ADR 0034）。 */
+export function getPageStructure(id: string, page: number, run?: number): Promise<PageStructure> {
+  const query = run ? `?run=${run}` : ''
+  return api<PageStructure>(`/documents/${id}/pages/${page}/structure${query}`)
 }

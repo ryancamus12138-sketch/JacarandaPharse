@@ -57,7 +57,7 @@ def test_values_rows_and_provenance(receipt_page):
         "total": (9.0, 6),  # 整数 9 转成 9.0
     }
     assert result.model == "fake-model"
-    assert result.prompt_version == "extract-v4"
+    assert result.prompt_version == "extract-v6"
     assert result.raw_output == backend.answer  # 原始回答原样保留
 
 
@@ -65,7 +65,9 @@ def test_prompt_contains_numbered_rows(receipt_page):
     backend = FakeBackend(answer(total=(9.0, 6)))
     LlmExtractor(backend).extract(receipt_page, [FieldSpec("total", "number", "总额")])
     user_message = backend.received[-1].content
-    assert "[4] Date:  25/12/2018 8:13:39 PM" in user_message
+    # 每块带编号、按位置排开（ADR 0034）；"Date:" 和日期是一对"标题 → 值"
+    assert "⟨4⟩Date:" in user_message and "⟨5⟩25/12/2018 8:13:39 PM" in user_message
+    assert "⟨4⟩Date → ⟨5⟩25/12/2018 8:13:39 PM" in user_message
     assert backend.schema == build_schema([FieldSpec("total", "number", "总额")])
 
 

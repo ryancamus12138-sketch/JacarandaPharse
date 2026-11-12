@@ -17,6 +17,8 @@ from jacara.modules.templates.schemas import (
     ArchiveIn,
     ExcelAnalysisOut,
     ExcelBuildIn,
+    FormulaCheckIn,
+    FormulaCheckOut,
     RuleInfo,
     SampleIn,
     SampleOut,
@@ -77,6 +79,12 @@ def list_starters(service: Service) -> list[TemplateOut]:
 @router.get("/rules", summary="可以选的规则")
 def list_rules(service: Service) -> list[RuleInfo]:
     return service.rules()
+
+
+@router.post("/formula-check", summary="检查公式或规则条件")
+def formula_check(data: FormulaCheckIn, service: Service) -> FormulaCheckOut:
+    """编辑器边写边检查：对不对、换成中文名是什么样子。不保存任何东西。"""
+    return service.formula_check(data)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="新建模板")

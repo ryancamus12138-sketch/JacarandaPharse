@@ -39,10 +39,15 @@ from jacara.modules.documents.schemas import (
     ExtractionOut,
     OcrLineOut,
     PageOcr,
+    PageStructureOut,
     RegionOut,
     ReprocessIn,
     RunOut,
     SkipIn,
+    StructureCell,
+    StructurePair,
+    StructureRegion,
+    StructureTable,
 )
 from jacara.modules.exports.service import save_export
 from jacara.modules.fields.schemas import AdoptOut, SuggestionOut
@@ -391,6 +396,20 @@ class DocumentService:
             lines=[OcrLineOut(index=i, **line) for i, line in enumerate(lines)],
         )
 
+    def page_structure(
+        self, document_id: uuid.UUID, page: int, run: int | None = None
+    ) -> PageStructureOut:
+        """第 page 页的结构：版面区域、表格的格子、标题 → 值。审核页"版面结构"用。"""
+        document = self._find(document_id)
+        require(self.owner, "document:read", document.team_id)
+        wanted = run or document.current_run
+        extraction = next(
+            (e for e in document.all_extractions if e.page == page and e.run == wanted), None
+        )
+        if extraction is None:
+            raise DocumentError("not_found", f"第 {page} 页没有抽取结果")
+        return structure_view(extraction.structure)
+
     def review(self, document_id: uuid.UUID) -> DocumentOut:
         """完成审核：所有需要确认的字段都处理过了，文档状态 done → reviewed。"""
         document = self._find(document_id)
@@ -588,6 +607,81 @@ class DocumentService:
         if document is None:
             raise DocumentError("not_found", "找不到这个文档")
         return document
+
+
+def structure_view(data: dict[str, Any] | None) -> PageStructureOut:
+    """存下来的结构 → 画在原图上用的样子：合并的格子画成一个，空格子不画。"""
+    if not data:
+        return PageStructureOut(available=False)
+    blocks = {b["id"]: b for b in data.get("blocks", [])}
+    regions = [
+        StructureRegion(kind=blocks[a]["attrs"].get("kind", ""), box=blocks[a]["box"])
+        for a in data.get("layouts", [])
+        if a in blocks
+    ]
+    tables: list[StructureTable] = []
+    for t in data.get("tables", []):
+        table = blocks.get(t)
+        if table is None:
+            continue
+        attrs = table["attrs"]
+        covered: set[str] = set()
+        cells: list[StructureCell] = []
+        for m in attrs.get("merged", []):
+            merged = blocks[m]
+            covered.update(merged["children"])
+            a = merged["attrs"]
+            cells.append(
+                StructureCell(
+                    row=a["row"],
+                    col=a["col"],
+                    row_span=a["row_span"],
+                    col_span=a["col_span"],
+                    box=merged["box"],
+                    text=merged["text"],
+                )
+            )
+        for c in table["children"]:
+            cell = blocks[c]
+            if c in covered or cell["attrs"].get("empty"):
+                continue
+            cells.append(
+                StructureCell(
+                    row=cell["attrs"]["row"],
+                    col=cell["attrs"]["col"],
+                    box=cell["box"],
+                    text=cell["text"],
+                )
+            )
+        tables.append(
+            StructureTable(
+                box=table["box"],
+                rows=attrs["rows"],
+                cols=attrs["cols"],
+                by=attrs["by"],
+                cells=cells,
+            )
+        )
+    pairs = []
+    for k in data.get("keys", []):
+        key = blocks[k]
+        value = blocks[key["attrs"]["value"]]
+        pairs.append(
+            StructurePair(
+                key=key["text"],
+                key_box=key["box"],
+                value=value["text"],
+                value_box=value["box"],
+                rule=key["attrs"].get("rule", ""),
+            )
+        )
+    return PageStructureOut(
+        available=True,
+        sources=data.get("sources") or {},
+        regions=regions,
+        tables=tables,
+        pairs=pairs,
+    )
 
 
 def _clear_skip(document: Document) -> None:

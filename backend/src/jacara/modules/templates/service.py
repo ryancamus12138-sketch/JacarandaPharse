@@ -12,6 +12,7 @@ import base64
 import time
 import uuid
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -19,14 +20,18 @@ from sqlalchemy.orm import Session
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.storage import ObjectStorage, StorageError
+from jacara.formulas import FormulaError, Scope, parse_condition, parse_formula
 from jacara.models import Document, ExtractedValue, Extraction, TemplateRecord, TemplateVersion
 from jacara.modules.audit.service import record
 from jacara.modules.templates.repository import TemplateRepository
 from jacara.modules.templates.schemas import (
+    CustomRuleIO,
     EntityOut,
     ExcelAnalysisOut,
     ExcelBuildIn,
     ExcelSheet,
+    FormulaCheckIn,
+    FormulaCheckOut,
     ReferenceOut,
     RuleInfo,
     SampleIn,
@@ -50,7 +55,7 @@ from jacara.modules.templates.schemas import (
     WorkbookSheetOut,
 )
 from jacara.plugins.extractors.base import DISCOVER
-from jacara.plugins.validators import ALL_RULES
+from jacara.plugins.validators import ALL_RULES, REGIONS
 from jacara.templates import (
     STARTERS,
     Template,
@@ -102,6 +107,8 @@ def to_out(t: Template, kind: TemplateKind = "builtin") -> TemplateOut:
             TemplateRuleOut(id=r.id, title=r.title, needs=list(r.needs), severity=r.severity)
             for r in t.rules
         ],
+        custom_rules=[CustomRuleIO(**c.as_dict()) for c in t.custom_rules],
+        region=t.region,
         tables=[
             TemplateTableOut(
                 name=tb.name,
@@ -164,6 +171,7 @@ def _field(f: TemplateField) -> TemplateFieldOut:
         sensitive=f.sensitive,
         options=list(f.options),
         extract=f.extract,
+        compute=f.compute,
     )
 
 
@@ -217,6 +225,8 @@ def definition_of(data: TemplateIn) -> dict[str, Any]:
         "fields": [f.model_dump() for f in data.fields],
         "tables": [t.model_dump() for t in data.tables],
         "rules": list(dict.fromkeys(data.rules)),
+        "custom_rules": [c.model_dump() for c in data.custom_rules],
+        "region": data.region,
     }
 
 
@@ -253,12 +263,44 @@ class TemplateService:
         require(self.owner, "document:read")
         return [to_out(load_starter(name), "starter") for name in STARTERS]
 
+    def formula_check(self, data: FormulaCheckIn) -> FormulaCheckOut:
+        """检查编辑区里的一条公式或规则条件（ADR 0035）。"""
+        require(self.owner, "document:read")
+        fields = {f.name: f.type for f in data.fields}
+        tables = {t.name: {c.name: c.type for c in t.columns} for t in data.tables}
+        labels = {f.name: f.label for f in data.fields}
+        for t in data.tables:
+            labels[t.name] = t.label
+            labels |= {f"{t.name}.{c.name}": c.label for c in t.columns}
+        if data.row is not None and data.row not in tables:
+            return FormulaCheckOut(ok=False, message=f"没有叫 {data.row} 的表")
+        if data.row is not None:
+            columns = next(t.columns for t in data.tables if t.name == data.row)
+            labels |= {c.name: c.label for c in columns}
+            # 表格的列的公式可以用同一行的列和普通字段；"每一行"的规则只用列
+            scope = Scope(fields if data.kind == "formula" else {}, tables, tables[data.row])
+        else:
+            scope = Scope(fields, tables)
+        try:
+            if data.kind == "formula":
+                readable = parse_formula(data.text, scope).readable(labels)
+            else:
+                readable = parse_condition(data.text, scope).readable(labels)
+        except FormulaError as err:
+            return FormulaCheckOut(ok=False, message=str(err))
+        return FormulaCheckOut(ok=True, readable=readable)
+
     def rules(self) -> list[RuleInfo]:
         """编辑器里能选的所有规则。"""
         require(self.owner, "document:read")
         return [
             RuleInfo(
-                id=r.id, title=r.title, needs=list(r.needs), severity=r.severity, per_row=r.per_row
+                id=r.id,
+                title=r.title,
+                needs=list(r.needs),
+                severity=r.severity,
+                per_row=r.per_row,
+                region=REGIONS.get(r.id, ""),
             )
             for r in ALL_RULES
         ]
@@ -393,6 +435,8 @@ class TemplateService:
             fields=[TemplateFieldIn(**f) for f in definition["fields"]],
             tables=[TemplateTableIn(**t) for t in definition["tables"]],
             rules=definition["rules"],
+            custom_rules=[CustomRuleIO(**c) for c in definition.get("custom_rules", [])],
+            region=definition.get("region", ""),
             entities=definition["entities"],
             references=definition["references"],
             workbook=definition["workbook"] if workbook_file else None,
@@ -419,6 +463,8 @@ class TemplateService:
             "fields": [f.model_dump() for f in data.fields],
             "tables": [t.model_dump() for t in data.tables],
             "rules": list(dict.fromkeys(data.rules)),
+            "custom_rules": [c.model_dump() for c in data.custom_rules],
+            "region": data.region,
             "entities": data.entities,
             "references": data.references,
             "workbook": workbook,
@@ -617,13 +663,20 @@ class TemplateService:
         if self.pipeline is None:
             raise TemplateFailure("unavailable", "模型服务没有准备好")
         from jacara.pipeline.store import page_from_json
+        from jacara.structure.graph import structure_from_json
 
         pipeline = self.pipeline()
         started = time.monotonic()
         out: list[TrialPage] = []
         for extraction in pages:
             page = page_from_json(extraction.ocr or {}, extraction.ocr_engine)
-            report = pipeline.extract_page(page, document.filename, extraction.page, template)
+            # 用处理时存下来的页面结构（版面区域、表格是模型认的）；没有就按规则重新分析
+            structure = (
+                structure_from_json(extraction.structure, page) if extraction.structure else None
+            )
+            report = pipeline.extract_page(
+                page, document.filename, extraction.page, template, structure=structure
+            )
             labels = template.labels()
             from jacara.pipeline.current import label_for
 
@@ -864,9 +917,12 @@ class TemplateService:
 
     def _check(self, definition: dict[str, Any], title: str, version: int) -> None:
         try:
-            from_definition(definition, "check", version, title)
+            template = from_definition(definition, "check", version, title)
         except TemplateError as err:
             raise TemplateFailure("invalid", str(err)) from err
+        problem = template.region_problem()
+        if problem:
+            raise TemplateFailure("invalid", problem)
 
     def _find(self, template_id: uuid.UUID) -> TemplateRecord:
         found = self.repo.get(template_id, self.owner.team_id)
@@ -885,7 +941,7 @@ class TemplateService:
         return document
 
     def _template(self, found: TemplateRecord, version: TemplateVersion) -> Template:
-        return from_definition(
+        template = from_definition(
             version.definition,
             str(found.id),
             version.version,
@@ -893,14 +949,21 @@ class TemplateService:
             found.category,
             found.description,
         )
+        starter = found.source.removeprefix("starter:")
+        if "region" not in version.definition and starter in STARTERS:
+            # 加"地区"之前从起步模板复制的：地区跟起步模板一样
+            template = replace(template, region=load_starter(starter).region)
+        return template
 
     def _out(self, found: TemplateRecord, version: TemplateVersion) -> TemplateOut:
-        return to_out(self._template(found, version), "mine").model_copy(
+        template = self._template(found, version)
+        return to_out(template, "mine").model_copy(
             update={
                 "id": found.id,
                 "archived": found.archived,
                 "source": found.source,
                 "updated_at": found.updated_at,
+                "starter_formulas": _starter_formulas(template, found.source),
             }
         )
 
@@ -917,6 +980,23 @@ class TemplateService:
             title=found.title,
             **details,
         )
+
+
+def _starter_formulas(template: Template, source: str) -> dict[str, str]:
+    """起步模板后来加的公式（ADR 0035）：同一个字段 ID、类型一样，我的这份没有公式。"""
+    name = source.removeprefix("starter:")
+    if not source.startswith("starter:") or name not in STARTERS:
+        return {}
+    starter = load_starter(name)
+    mine = {f.name: f for f in template.fields}
+    mine |= {f"{t.name}.{c.name}": c for t in template.tables for c in t.columns}
+    theirs = {f.name: f for f in starter.fields}
+    theirs |= {f"{t.name}.{c.name}": c for t in starter.tables for c in t.columns}
+    return {
+        key: f.compute
+        for key, f in theirs.items()
+        if f.compute and key in mine and not mine[key].compute and mine[key].type == f.type
+    }
 
 
 def _uuid(text: str) -> uuid.UUID | None:

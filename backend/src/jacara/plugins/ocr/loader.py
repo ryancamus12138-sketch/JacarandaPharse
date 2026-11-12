@@ -14,7 +14,9 @@ import tempfile
 import time
 from importlib.metadata import version
 from pathlib import Path
+from typing import Any
 
+import numpy as np
 import pdfplumber
 import pypdfium2 as pdfium
 from pdfplumber.page import Page
@@ -61,19 +63,18 @@ def _load_pdf(path: Path, ocr: OcrEngine) -> list[OcrPage]:
 def _text_layer(page: Page) -> OcrPage | None:
     """读 PDF 自带的文字和坐标。文字太少（多半是扫描件）返回 None。"""
     start = time.perf_counter()
-    # keep_blank_chars：同一行里挨得近的词合成一段（"Invoice Number:"），离得远的分开。
-    words = page.extract_words(keep_blank_chars=True, x_tolerance=3)
+    words = page.extract_words(keep_blank_chars=False, x_tolerance=3)
     if sum(len(w["text"].strip()) for w in words) < MIN_TEXT_CHARS:
         return None
 
     lines: list[OcrLine] = []
-    for w in words:
-        text = w["text"].strip()
-        if not text:
-            continue
-        x0, x1 = w["x0"] * PDF_SCALE, w["x1"] * PDF_SCALE
-        y0, y1 = w["top"] * PDF_SCALE, w["bottom"] * PDF_SCALE
-        polygon = (Point(x0, y0), Point(x1, y0), Point(x1, y1), Point(x0, y1))
+    for text, x0, top, x1, bottom in _phrases(words):
+        polygon = (
+            Point(x0 * PDF_SCALE, top * PDF_SCALE),
+            Point(x1 * PDF_SCALE, top * PDF_SCALE),
+            Point(x1 * PDF_SCALE, bottom * PDF_SCALE),
+            Point(x0 * PDF_SCALE, bottom * PDF_SCALE),
+        )
         lines.append(OcrLine(text=text, polygon=polygon, confidence=1.0))
 
     return OcrPage(
@@ -83,6 +84,63 @@ def _text_layer(page: Page) -> OcrPage | None:
         engine="pdf-text",
         models={"engine": f"pdfplumber {version('pdfplumber')}", "source": "PDF 文字层"},
         duration_ms=round((time.perf_counter() - start) * 1000),
+    )
+
+
+PHRASE_GAP = 0.6
+"""同一行里两个词的空隙不超过"字高 × 0.6"（大约一两个空格），算同一段（"Invoice Number:"）；
+再宽就是另一列（表格里的"入住日期"和"房间数"），分开成两块，出处框才不会横跨整行。"""
+
+
+def _phrases(words: list[dict[str, Any]]) -> list[tuple[str, float, float, float, float]]:
+    """PDF 里的词 → 一段一段的文字：同一行、挨得近的词连起来，离得远的分开。
+
+    以前用 pdfplumber 的 keep_blank_chars 合并，空格多的 PDF（排版用空格对齐）会把一整行连成一块，
+    出处框就从店名一直框到房间数。这里按词之间的实际空隙来分；冒号结尾的词（"Guest Name:"）
+    后面也分开，后面是值。
+    返回 (文字, x0, top, x1, bottom)，单位是 PDF 的点。
+    """
+    rows: list[list[dict[str, Any]]] = []
+    for w in sorted(words, key=lambda w: (round(float(w["top"])), float(w["x0"]))):
+        if not str(w["text"]).strip():
+            continue
+        height = float(w["bottom"]) - float(w["top"])
+        for row in rows:
+            last = row[-1]
+            if abs(float(last["top"]) - float(w["top"])) <= max(1.0, 0.4 * height):
+                row.append(w)
+                break
+        else:
+            rows.append([w])
+
+    phrases: list[tuple[str, float, float, float, float]] = []
+    for row in rows:
+        row.sort(key=lambda w: float(w["x0"]))
+        current: list[dict[str, Any]] = []
+        for w in row:
+            if current:
+                prev = current[-1]
+                height = max(float(prev["bottom"]) - float(prev["top"]), 1.0)
+                wide = float(w["x0"]) - float(prev["x1"]) > PHRASE_GAP * height
+                # "Guest Name: Sanjay"：冒号后面是值，和标签分开，出处框只框值
+                label = str(prev["text"]).rstrip().endswith((":", "："))
+                if wide or label:
+                    phrases.append(_phrase(current))
+                    current = []
+            current.append(w)
+        if current:
+            phrases.append(_phrase(current))
+    return phrases
+
+
+def _phrase(words: list[dict[str, Any]]) -> tuple[str, float, float, float, float]:
+    text = " ".join(str(w["text"]).strip() for w in words)
+    return (
+        text,
+        min(float(w["x0"]) for w in words),
+        min(float(w["top"]) for w in words),
+        max(float(w["x1"]) for w in words),
+        max(float(w["bottom"]) for w in words),
     )
 
 
@@ -97,6 +155,26 @@ def _render_and_ocr(path: Path, number: int, ocr: OcrEngine) -> OcrPage:
         image_path = Path(folder) / f"page-{number + 1}.png"
         image.save(image_path)
         return ocr.recognize(image_path)
+
+
+def page_images(path: Path) -> list[np.ndarray]:
+    """文件的每一页画成图（OpenCV 用的 BGR 数组），给版面模型、表格模型看（ADR 0034）。
+
+    坐标和 OCR 一样：PDF 按 PDF_SCALE 渲染（有文字层的页也画，文字层坐标也乘了同样倍数）；
+    图片按 EXIF 方向转正。
+    """
+    suffix = path.suffix.lower()
+    pictures: list[Image.Image] = []
+    if suffix == ".pdf":
+        pdf = pdfium.PdfDocument(path)
+        try:
+            pictures = [page.render(scale=PDF_SCALE).to_pil() for page in pdf]
+        finally:
+            pdf.close()
+    elif suffix in IMAGE_SUFFIXES:
+        with Image.open(path) as picture:
+            pictures = [ImageOps.exif_transpose(picture).copy()]
+    return [np.ascontiguousarray(np.asarray(p.convert("RGB"))[:, :, ::-1]) for p in pictures]
 
 
 def page_png(data: bytes, is_pdf: bool, number: int) -> bytes:

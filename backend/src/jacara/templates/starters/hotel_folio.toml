@@ -3,7 +3,7 @@
 # 规则和字段说明只写通用规定，不放任何真实单据的内容。
 
 name = "hotel_folio"
-version = 1
+version = 3
 title = "酒店账单"
 category = "住宿"
 description = "酒店退房账单（Folio）：入住离店、房号、逐日消费。字段参考 schema.org LodgingReservation。"
@@ -14,8 +14,8 @@ name = "hotel"
 label = "酒店名称"
 type = "string"
 required = true
-description = "开账单的酒店名称"
-aliases = ["Hotel"]
+description = "开账单的酒店名称，照抄单据上的完整写法（连分店名、所在地区一起）；下面一行的街道地址不算"
+aliases = ["Hotel", "Hotel Name", "Hotel Details", "Property"]
 
 [[fields]]
 name = "guest"
@@ -29,26 +29,28 @@ name = "check_in"
 label = "入住日期"
 type = "date"
 required = true
-aliases = ["Arrival", "Check-in", "入住日期"]
+aliases = ["Arrival", "Check-in", "Check In", "入住日期"]
 
 [[fields]]
 name = "check_out"
 label = "离店日期"
 type = "date"
 required = true
-aliases = ["Departure", "Check-out", "离店日期"]
+aliases = ["Departure", "Check-out", "Check Out", "离店日期"]
 
 [[fields]]
 name = "nights"
 label = "晚数"
 type = "number"
-aliases = ["Nights"]
+description = "住了几晚：离店日期减入住日期，自动算，不从单据上找（Rooms 一栏是房间数，不是晚数）"
+compute = "check_out - check_in"
 
 [[fields]]
 name = "room_no"
 label = "房号"
 type = "string"
-aliases = ["Room", "Room No."]
+description = "房间号码（例如 1208）。Rooms 一栏是房间数，不是房号"
+aliases = ["Room No.", "Room Number"]
 
 [[fields]]
 name = "room_type"
@@ -60,7 +62,7 @@ aliases = ["Room Type"]
 name = "folio_no"
 label = "账单号"
 type = "string"
-aliases = ["Folio No.", "Invoice No.", "Confirmation No."]
+aliases = ["Folio No.", "Invoice No.", "Confirmation No.", "Booking ID", "Reservation No."]
 
 [[fields]]
 name = "issue_date"
@@ -86,7 +88,7 @@ aliases = ["Total", "Total Charges"]
 name = "payment_method"
 label = "付款方式"
 type = "string"
-aliases = ["Payment", "Settlement"]
+aliases = ["Payment", "Payment Mode", "Settlement"]
 
 [[tables]]
 name = "items"
