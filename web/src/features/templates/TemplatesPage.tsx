@@ -165,7 +165,7 @@ export function TemplatesPage() {
     modal.confirm({
       title: `删除「${t.title}」？`,
       content:
-        '模板和它的全部版本都会删掉，不能恢复。有文档用过的模板不能删，只能归档。删除前可以先导出备份。',
+        '删除后模板不再出现在列表和上传里，不能恢复。用过它的文档照常能看、能导出（它们记着用的是哪一版）。删除前可以先导出备份。',
       okText: '删除',
       okButtonProps: { danger: true },
       cancelText: '取消',

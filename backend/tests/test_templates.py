@@ -119,7 +119,7 @@ def test_template_version_is_saved_and_read_back(factory, report, tmp_path):
 
 
 def test_templates_api(client):
-    response = client.get("/api/v1/templates")
+    response = client.get("/api/v1/templates?builtin=true")
     assert response.status_code == 200
     receipt = next(t for t in response.json() if t["name"] == "receipt")
     assert receipt["version"] == 3

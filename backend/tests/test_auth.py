@@ -219,7 +219,7 @@ def test_list_grantable_permissions(client, as_user):
     permissions = client.get("/api/v1/users/permissions", headers=headers).json()
     assert {"name": "document:create", "label": "上传文件"} in permissions
     assert {"name": "template:manage", "label": "管理模板"} in permissions
-    assert len(permissions) == 5
+    assert len(permissions) == 6
 
 
 def test_password_too_short(client, as_user):

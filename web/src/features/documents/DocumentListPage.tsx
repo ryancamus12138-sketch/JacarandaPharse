@@ -1,5 +1,6 @@
 import {
   ClearOutlined,
+  DeleteOutlined,
   FolderOutlined,
   MessageOutlined,
   ReloadOutlined,
@@ -14,6 +15,7 @@ import {
   Checkbox,
   Flex,
   Input,
+  Popconfirm,
   Progress,
   Select,
   Space,
@@ -26,7 +28,7 @@ import {
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { ApiError } from '../../api/client'
-import { listDocuments, listFolders, processDocument } from '../../api/documents'
+import { deleteDocuments, listDocuments, listFolders, processDocument } from '../../api/documents'
 import { listTemplates } from '../../api/templates'
 import type { DocumentFilters, DocumentStatus, DocumentSummary } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
@@ -137,6 +139,22 @@ export function DocumentListPage() {
     onSettled: () => void queryClient.invalidateQueries({ queryKey: ['documents'] }),
   })
 
+  const remove = useMutation({
+    mutationFn: deleteDocuments,
+    onSuccess: ({ deleted, skipped }, ids) => {
+      void message.success(`删除了 ${deleted} 份`)
+      for (const reason of skipped) void message.warning(`没删：${reason}`)
+      setSelected((s) => s.filter((id) => !ids.includes(id)))
+    },
+    onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+      void queryClient.invalidateQueries({ queryKey: ['folders'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+  const canDelete = can('document:delete')
+
   const columns: TableProps<DocumentSummary>['columns'] = [
     {
       title: '文件名',
@@ -228,19 +246,35 @@ export function DocumentListPage() {
     {
       title: '操作',
       key: 'actions',
-      width: 100,
-      render: (_, d) =>
-        can('document:process') &&
-        canRetry(d, documents.dataUpdatedAt) && (
-          <Button
-            size="small"
-            icon={<ReloadOutlined />}
-            loading={retry.isPending && retry.variables === d.id}
-            onClick={() => retry.mutate(d.id)}
-          >
-            重试
-          </Button>
-        ),
+      width: 170,
+      render: (_, d) => (
+        <Flex gap={4}>
+          {can('document:process') && canRetry(d, documents.dataUpdatedAt) && (
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              loading={retry.isPending && retry.variables === d.id}
+              onClick={() => retry.mutate(d.id)}
+            >
+              重试
+            </Button>
+          )}
+          {canDelete && d.status !== 'processing' && (
+            <Popconfirm
+              title={`删除「${d.filename}」？`}
+              description="原始文件、处理结果、审核记录、备注都会删掉，不能恢复。"
+              okText="删除"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={() => remove.mutate([d.id])}
+            >
+              <Button size="small" danger type="text" icon={<DeleteOutlined />} aria-label="删除">
+                删除
+              </Button>
+            </Popconfirm>
+          )}
+        </Flex>
+      ),
     },
   ]
 
@@ -249,6 +283,28 @@ export function DocumentListPage() {
       title="文档"
       extra={
         <Flex gap={8}>
+          {canDelete && (
+            <Popconfirm
+              title={`删除选中的 ${selected.length} 份？`}
+              description="原始文件、处理结果、审核记录、备注都会删掉，不能恢复。正在处理的会跳过。"
+              okText="删除"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              disabled={selected.length === 0}
+              onConfirm={() => remove.mutate(selected)}
+            >
+              <Tooltip title={selected.length === 0 ? '先在左边勾选要删除的' : undefined}>
+                <Button
+                  danger
+                  icon={<DeleteOutlined />}
+                  disabled={selected.length === 0}
+                  loading={remove.isPending}
+                >
+                  删除{selected.length > 0 ? `（${selected.length}）` : ''}
+                </Button>
+              </Tooltip>
+            </Popconfirm>
+          )}
           <ExportButton ids={selected} type="primary" />
           <Button
             icon={<ReloadOutlined />}

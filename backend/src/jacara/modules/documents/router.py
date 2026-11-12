@@ -22,6 +22,8 @@ from jacara.core.storage import ObjectStorage
 from jacara.modules.documents.repository import DocumentFilter
 from jacara.modules.documents.schemas import (
     Dashboard,
+    DeleteIn,
+    DeleteOut,
     DocumentDetail,
     DocumentNeighbors,
     DocumentOut,
@@ -167,6 +169,24 @@ def list_documents(
         folder=folder or None,
     )
     return service.page(limit, offset, filters)
+
+
+@router.delete("/{document_id}", summary="删除一份文档")
+def delete_document(document_id: uuid.UUID, service: Service) -> DeleteOut:
+    """原始文件、处理结果、审核记录、备注都删掉，不能恢复。正在处理的不删。"""
+    try:
+        return service.delete([document_id])
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/delete", summary="一次删除几份文档")
+def delete_documents(data: DeleteIn, service: Service) -> DeleteOut:
+    """勾选的几份一起删。正在处理的跳过，skipped 里说明。"""
+    try:
+        return service.delete(data.ids)
+    except DocumentError as err:
+        raise _http_error(err) from err
 
 
 @router.get("/folders", summary="批量导入的文件夹")

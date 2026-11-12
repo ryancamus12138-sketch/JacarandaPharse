@@ -1,12 +1,13 @@
 import { FolderOpenOutlined, InboxOutlined } from '@ant-design/icons'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, App, Button, Checkbox, Flex, Input, Progress, Select, Tooltip, Typography, Upload } from 'antd'
 import type { RcFile } from 'antd/es/upload'
 import { useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { uploadDocument } from '../../api/documents'
+import { listTemplates } from '../../api/templates'
 import { TemplatePicker } from '../templates/TemplatePicker'
-import { loadUploadTemplate, saveUploadTemplate } from '../templates/uploadChoice'
+import { DISCOVER, loadUploadTemplate, saveUploadTemplate } from '../templates/uploadChoice'
 
 const ACCEPT = '.jpg,.jpeg,.png,.webp,.tif,.tiff,.pdf'
 const SUFFIXES = ACCEPT.split(',')
@@ -50,6 +51,10 @@ export function UploadArea() {
   const [skipDuplicate, setSkipDuplicate] = useState(true)
   const [group, setGroup] = useState('')
   const [batch, setBatch] = useState<Batch>(EMPTY)
+  const templates = useQuery({ queryKey: ['templates'], queryFn: listTemplates })
+  // 还没有自己的模板、也没选：抽出所有键值对（内置的收据模板不再给网页用）
+  const hasOwn = (templates.data ?? []).some((t) => t.kind === 'mine' && !t.archived)
+  const chosen = template ?? (templates.isSuccess && !hasOwn ? DISCOVER : undefined)
   const queue = useRef<{ file: RcFile; folder?: string }[]>([])
   const running = useRef(0)
 
@@ -58,7 +63,7 @@ export function UploadArea() {
       const next = queue.current.shift()
       if (!next) break
       running.current += 1
-      uploadDocument(next.file, template, { folder: next.folder, split, skipDuplicate })
+      uploadDocument(next.file, chosen, { folder: next.folder, split, skipDuplicate })
         .then((document) => {
           setBatch((b) => ({ ...b, done: b.done + 1, skipped: b.skipped + (document.duplicate_skipped ? 1 : 0) }))
         })

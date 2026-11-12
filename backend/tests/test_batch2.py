@@ -209,3 +209,34 @@ def test_watch_folder_imports_new_files_once(tmp_path, factory, storage, queue):
     with session_scope(factory) as session:
         folders = sorted(d.folder or "" for d in session.query(Document).all())
     assert "收件箱/酒店" in folders
+
+
+# ---------- 删除文档 ----------
+
+
+def test_delete_documents_one_and_many(client, factory, storage, receipt_page):
+    from jacara.core.db import session_scope
+    from jacara.models import Comment, Document, ExtractedValue, Extraction
+
+    from .test_template_library import process
+
+    ids = [upload_file(client, data=d)["id"] for d in (b"1", b"2", b"3")]
+    process(factory, storage, ids[0], receipt_page)
+    client.post(f"/api/v1/documents/{ids[0]}/comments", json={"body": "看一下"})
+    assert len(storage.files) == 3
+
+    one = client.delete(f"/api/v1/documents/{ids[0]}")
+    assert one.status_code == 200 and one.json() == {"deleted": 1, "skipped": []}
+    assert client.get(f"/api/v1/documents/{ids[0]}").status_code == 404
+    with session_scope(factory) as session:
+        assert session.query(Extraction).count() == 0
+        assert session.query(ExtractedValue).count() == 0
+        assert session.query(Comment).count() == 0
+        session.get_one(Document, uuid.UUID(ids[1])).status = "processing"
+    assert len(storage.files) == 2
+
+    many = client.post("/api/v1/documents/delete", json={"ids": ids[1:]}).json()
+    assert many["deleted"] == 1 and "正在处理" in many["skipped"][0]
+    assert client.get("/api/v1/documents").json()["total"] == 1
+    actions = [x["action"] for x in client.get("/api/v1/audit-logs").json()["items"]]
+    assert actions.count("document:delete") == 2

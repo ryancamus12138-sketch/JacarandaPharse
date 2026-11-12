@@ -13,6 +13,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -252,12 +253,18 @@ class TemplateService:
 
     # ---- 查看 ----
 
-    def list(self) -> list[TemplateOut]:
-        """我的模板（没归档的在前）+ 内置模板。"""
+    def list(self, builtin: bool = False) -> list[TemplateOut]:
+        """我的模板（没归档的在前）。builtin=True 时再加上内置模板。
+
+        内置模板（receipt、receipt_full）只给评测和命令行用，网页上不再列出（2026-11-12）；
+        以前用它处理的文档照常能看、能重新处理。
+        """
         require(self.owner, "document:read")
         mine = (
             [self._mine_out(r) for r in self.repo.list(self.owner.team_id)] if self.session else []
         )
+        if not builtin:
+            return mine
         return mine + [to_out(load_template(name)) for name in template_names()]
 
     def starters(self) -> list[TemplateOut]:
@@ -590,20 +597,23 @@ class TemplateService:
             raise TemplateFailure("unavailable", "对象存储没有准备好")
         return self.storage
 
-    def delete(self, template_id: uuid.UUID) -> None:
-        """删除模板和它的全部版本。有文档用过（处理过或排队等着用）就不能删，只能归档：
-        删了的话，那些文档的字段中文名、规则、导出的列就还原不出来了。"""
+    def delete(self, template_id: uuid.UUID) -> int:
+        """删除模板（归档的、用过的都能删）。返回有几份文档用过它。
+
+        没有文档用过：模板和全部版本直接删掉。
+        有文档用过（处理过或排队等着用）：从模板列表、上传、重新处理里去掉，但版本留在数据库里，
+        那些文档照常显示字段中文名、检查规则、导出（它们记着用的是哪个版本）。
+        """
         require(self.owner, "template:manage")
         found = self._find(template_id)
         used = self.repo.documents_using(found.id)
+        self._audit("template:delete", found, versions=found.latest_version, documents=used)
         if used:
-            raise TemplateFailure(
-                "conflict",
-                f"有 {used} 份文档用过「{found.title}」，删了这些文档就对不上模板了。"
-                "不想再用的话，请归档",
-            )
-        self._audit("template:delete", found, versions=found.latest_version)
-        self.repo.delete(found)
+            found.deleted_at = datetime.now(UTC)
+            found.archived = True
+        else:
+            self.repo.delete(found)
+        return used
 
     # ---- 上传时选模板 ----
 
@@ -625,7 +635,10 @@ class TemplateService:
         return self.repo.latest(found).id, False
 
     def latest_version_id(self, template_id: uuid.UUID) -> uuid.UUID:
-        return self.repo.latest(self._find(template_id)).id
+        found = self.repo.get(template_id, self.owner.team_id)
+        if found is None:
+            raise TemplateFailure("invalid", "这份文档用的模板已经删除了，请选一个模板再重新处理")
+        return self.repo.latest(found).id
 
     def _last_choice(self) -> tuple[uuid.UUID | None, bool]:
         from sqlalchemy import select

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -65,9 +65,12 @@ def _error(err: TemplateFailure) -> HTTPException:
 
 
 @router.get("", summary="所有模板")
-def list_templates(service: Service) -> list[TemplateOut]:
-    """我的模板（kind=mine，没归档的在前）+ 内置模板（kind=builtin，评测和命令行用）。"""
-    return service.list()
+def list_templates(
+    service: Service,
+    builtin: Annotated[bool, Query(description="也列出内置模板（评测和命令行用）")] = False,
+) -> list[TemplateOut]:
+    """我的模板（kind=mine，没归档的在前）。`?builtin=true` 再加上内置模板（kind=builtin）。"""
+    return service.list(builtin)
 
 
 @router.get("/starters", summary="起步模板库")
@@ -162,7 +165,7 @@ def build_from_excel(upload_id: uuid.UUID, data: ExcelBuildIn, service: Service)
 
 @router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT, summary="删除模板")
 def delete_template(template_id: uuid.UUID, service: Service) -> None:
-    """有文档用过的模板不能删（会返回 409），只能归档。"""
+    """归档的、用过的都能删。用过的不真的删：从列表、上传里去掉，那些文档照常显示。"""
     try:
         service.delete(template_id)
     except TemplateFailure as err:

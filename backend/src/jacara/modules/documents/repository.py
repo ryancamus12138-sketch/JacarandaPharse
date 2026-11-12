@@ -85,6 +85,23 @@ class DocumentRepository:
         )
         return list(self.session.scalars(query))
 
+    def delete(self, document: Document) -> None:
+        """把一个文档和它的全部结果从数据库里删掉：审核记录 → 字段 → 每一轮的抽取 → 备注 → 文档。"""
+        from sqlalchemy import delete
+
+        from jacara.models import Comment
+
+        extractions = select(Extraction.id).where(Extraction.document_id == document.id)
+        values = select(ExtractedValue.id).where(ExtractedValue.extraction_id.in_(extractions))
+        self.session.execute(delete(ValueRevision).where(ValueRevision.value_id.in_(values)))
+        self.session.execute(
+            delete(ExtractedValue).where(ExtractedValue.extraction_id.in_(extractions))
+        )
+        self.session.execute(delete(Extraction).where(Extraction.document_id == document.id))
+        self.session.execute(delete(Comment).where(Comment.document_id == document.id))
+        self.session.execute(delete(Document).where(Document.id == document.id))
+        self.session.expunge(document)
+
     def folders(self, team_id: uuid.UUID) -> list[tuple[str, int]]:
         """批量导入的文件夹和各有几份文档，按名字排序。"""
         rows = self.session.execute(

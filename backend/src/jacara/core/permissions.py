@@ -18,6 +18,7 @@ Action = Literal[
     "document:read",
     "document:download",
     "document:process",
+    "document:delete",
     "document:review",
     "document:export",
     "value:read",
@@ -33,6 +34,7 @@ BASE: set[Action] = {"document:read", "document:download", "document:export", "v
 GRANTABLE: dict[Action, str] = {
     "document:create": "上传文件",
     "document:process": "重新处理",
+    "document:delete": "删除文档",
     "value:review": "修改和确认字段",
     "document:review": "完成审核",
     "template:manage": "管理模板",

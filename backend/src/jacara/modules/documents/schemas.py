@@ -26,6 +26,18 @@ __all__ = [
 """ValueOut 搬到了 fields 模块；这里继续导出，原来从这里 import 的代码不用改。"""
 
 
+class DeleteIn(BaseModel):
+    """一次删除几份文档。"""
+
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+
+
+class DeleteOut(BaseModel):
+    deleted: int
+    skipped: list[str] = []
+    """没删的（正在处理的），每份一句话：文件名 + 原因。"""
+
+
 class FolderOut(BaseModel):
     """批量导入的一个文件夹。"""
 

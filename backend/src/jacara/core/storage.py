@@ -24,6 +24,10 @@ class ObjectStorage(Protocol):
         """取回一个文件。"""
         ...
 
+    def delete(self, key: str) -> None:
+        """删掉一个文件（删除文档时）。文件本来就不在也不算错。"""
+        ...
+
 
 class S3Storage:
     """通过 S3 接口访问对象存储（SeaweedFS、MinIO、AWS S3 都可以）。"""
@@ -69,6 +73,14 @@ class S3Storage:
             return response["Body"].read()
         except (BotoCoreError, ClientError) as err:
             raise StorageError(f"读取文件失败：{err}") from err
+
+    def delete(self, key: str) -> None:
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        try:
+            self._client.delete_object(Bucket=self.bucket, Key=key)
+        except (BotoCoreError, ClientError) as err:
+            raise StorageError(f"删除文件失败：{err}") from err
 
 
 @lru_cache

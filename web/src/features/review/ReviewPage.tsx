@@ -2,6 +2,7 @@ import {
   ArrowLeftOutlined,
   AppstoreAddOutlined,
   CheckOutlined,
+  DeleteOutlined,
   HistoryOutlined,
   DownOutlined,
   LeftOutlined,
@@ -36,6 +37,7 @@ import {
   getNeighbors,
   getPageOcr,
   getPageStructure,
+  deleteDocuments,
 } from '../../api/documents'
 import type { Box, DocumentDetail, Extraction, FieldValue, RevisionIn } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
@@ -184,6 +186,23 @@ function ReviewWorkspace({ id }: { id: string }) {
       } else {
         void message.success('已完成审核。待审核的都审完了')
       }
+    },
+    onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
+  })
+
+  const remove = useMutation({
+    mutationFn: () => deleteDocuments([id]),
+    onSuccess: ({ deleted, skipped }) => {
+      if (deleted === 0) {
+        void message.warning(skipped[0] ?? '没有删除')
+        return
+      }
+      void message.success('已删除')
+      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      // 删完打开下一份待审核的；没有了就回列表
+      const next = neighbors.data?.next ?? neighbors.data?.previous
+      void navigate(next ? `/documents/${next}` : '/documents')
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
@@ -575,6 +594,20 @@ function ReviewWorkspace({ id }: { id: string }) {
         </Popconfirm>
       )}
       <ExportButton ids={[doc.id]} />
+      {can('document:delete') && doc.status !== 'processing' && (
+        <Popconfirm
+          title={`删除「${doc.filename}」？`}
+          description="原始文件、处理结果、审核记录、备注都会删掉，不能恢复。删完打开下一份。"
+          okText="删除"
+          okButtonProps={{ danger: true }}
+          cancelText="取消"
+          onConfirm={() => remove.mutate()}
+        >
+          <Button danger icon={<DeleteOutlined />} loading={remove.isPending}>
+            删除
+          </Button>
+        </Popconfirm>
+      )}
       {back}
     </Flex>
   )

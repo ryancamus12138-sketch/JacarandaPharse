@@ -32,6 +32,7 @@ from jacara.modules.documents.schemas import (
     REPROCESS_REASONS,
     Dashboard,
     DashboardCounts,
+    DeleteOut,
     DocumentDetail,
     DocumentNeighbors,
     DocumentOut,
@@ -319,6 +320,44 @@ class DocumentService:
                 edited=edited,
             )
         return AdoptOut(confirmed=confirmed, edited=edited)
+
+    def delete(self, ids: list[uuid.UUID]) -> DeleteOut:
+        """删除文档：原始文件、每一轮的结果、审核记录、备注都删掉，不能恢复。审计日志记下删了什么。
+
+        正在处理的不删（worker 正在用它），等处理完再删。导出记录里的文件不受影响。
+        """
+        documents = [self._find(i) for i in dict.fromkeys(ids)]
+        for document in documents:
+            require(self.owner, "document:delete", document.team_id)
+        keys: list[str] = []
+        skipped: list[str] = []
+        deleted = 0
+        for document in documents:
+            if document.status == "processing":
+                skipped.append(f"{document.filename}：正在处理，等处理完再删")
+                continue
+            record(
+                self.session,
+                self.owner,
+                "document:delete",
+                "document",
+                document.id,
+                filename=document.filename,
+                pages=document.page_count,
+                status=document.status,
+            )
+            if document.storage_key:
+                keys.append(document.storage_key)
+            self.repo.delete(document)
+            deleted += 1
+        # 先提交，再删原始文件：数据库没删成的话，文件还在
+        self.session.commit()
+        for key in keys:
+            try:
+                self.storage.delete(key)
+            except StorageError:
+                log.warning("删除文档后，原始文件 %s 没能从对象存储删掉", key)
+        return DeleteOut(deleted=deleted, skipped=skipped)
 
     def folders(self) -> list[FolderOut]:
         require(self.owner, "document:read")

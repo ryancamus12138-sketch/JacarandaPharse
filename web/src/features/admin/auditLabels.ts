@@ -24,6 +24,7 @@ export const ACTION_LABELS: Record<string, string> = {
   'document:adopt_previous': '沿用上一轮的审核',
   'document:review': '完成审核',
   'document:export': '导出',
+  'document:delete': '删除文档',
   'export:download': '重新下载导出文件',
   'value:edit': '修改字段',
   'value:confirm': '确认字段',

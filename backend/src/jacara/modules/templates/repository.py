@@ -28,7 +28,7 @@ class TemplateRepository:
         return list(
             self.session.scalars(
                 select(TemplateRecord)
-                .where(TemplateRecord.team_id == team_id)
+                .where(TemplateRecord.team_id == team_id, TemplateRecord.deleted_at.is_(None))
                 .order_by(TemplateRecord.archived, TemplateRecord.updated_at.desc())
                 .options(selectinload(TemplateRecord.versions))
             )
@@ -37,7 +37,11 @@ class TemplateRepository:
     def get(self, template_id: uuid.UUID, team_id: uuid.UUID) -> TemplateRecord | None:
         return self.session.scalar(
             select(TemplateRecord)
-            .where(TemplateRecord.id == template_id, TemplateRecord.team_id == team_id)
+            .where(
+                TemplateRecord.id == template_id,
+                TemplateRecord.team_id == team_id,
+                TemplateRecord.deleted_at.is_(None),
+            )
             .options(selectinload(TemplateRecord.versions))
         )
 

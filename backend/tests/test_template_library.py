@@ -256,7 +256,10 @@ def mine(client):
 def test_template_list_versions_and_archive(client, mine):
     listed = client.get("/api/v1/templates").json()
     assert listed[0]["id"] == mine and listed[0]["title"] == "我的收据"
-    assert any(t["kind"] == "builtin" and t["name"] == "receipt" for t in listed)
+    # 内置模板网页上不列；要的话 ?builtin=true
+    assert all(t["kind"] == "mine" for t in listed)
+    everything = client.get("/api/v1/templates?builtin=true").json()
+    assert any(t["kind"] == "builtin" and t["name"] == "receipt" for t in everything)
     assert len(client.get("/api/v1/templates/starters").json()) == 9
 
     one = client.get(f"/api/v1/templates/{mine}").json()
@@ -489,13 +492,22 @@ def test_delete_unused_template(client):
     assert client.get(f"/api/v1/templates/{created['id']}").status_code == 404
 
 
-def test_used_template_cannot_be_deleted(client, factory, storage, receipt_page, mine):
+def test_used_template_is_hidden_not_removed(client, factory, storage, receipt_page, mine):
+    """用过的模板也能删：从列表、上传里去掉，用过它的文档照常显示。"""
     document_id = upload(client, mine)
-    response = client.delete(f"/api/v1/templates/{mine}")
-    assert response.status_code == 409
-    assert "归档" in response.json()["detail"]
     process(factory, storage, document_id, receipt_page)
-    assert client.delete(f"/api/v1/templates/{mine}").status_code == 409
+    assert client.delete(f"/api/v1/templates/{mine}").status_code == 204
+    assert mine not in {t["id"] for t in client.get("/api/v1/templates").json()}
+    assert client.get(f"/api/v1/templates/{mine}").status_code == 404
+    refused = client.post(
+        "/api/v1/documents", files={"file": ("r.jpg", b"y", "image/jpeg")}, data={"template": mine}
+    )
+    assert refused.status_code in (404, 422)
+    body = detail(client, document_id)
+    assert body["extractions"][0]["template_title"] == "我的收据"
+    assert values(body)["total"]["label"] == "合计"
+    redo = client.post(f"/api/v1/documents/{document_id}/reprocess", json={"reason": "bad_result"})
+    assert redo.status_code == 422 and "已经删除" in redo.json()["detail"]
 
 
 def test_generic_starters_have_no_regional_rules():

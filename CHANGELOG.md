@@ -6,7 +6,7 @@
 ## [未发布]
 
 v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）。
-升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder），再 `cd web && npm run build`。表格结构模型可选，见 README。
+升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at），再 `cd web && npm run build`。表格结构模型可选，见 README。
 
 ### 新增
 
@@ -17,6 +17,8 @@ v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页�
 - 批量导入：一次拖进几百个文件，或者选择整个文件夹（子文件夹一起），显示上传进度、跳过和失败的；按文件夹筛选文档
 - 监视文件夹：`.env` 里写 `JACARA_WATCH_DIR`，放进去的图片和 PDF 自动导入（不动原文件，重复的跳过）；也可以 `jacara watch 文件夹`
 - PDF 文字层是乱码时，这一页自动改用 OCR，审核页顶上说明原因
+- 删除文档：列表每一行、审核页都有"删除"，也可以勾选几份一起删；原始文件、处理结果、审核记录、备注都删掉，审计日志记下删了什么；正在处理的不删。团队模式下"删除文档"是要管理员开通的权限
+- 用过的模板也能删除：从模板列表、上传、重新处理里去掉，用过它的文档照常显示、导出
 - 处理进度更细：判断第几页是不是新单据、分析和抽取第几张单据
 
 - 个人资料页：点右上角的名字，或左边菜单顶上的头像和昵称进去；改昵称、换头像（自动裁成正方形，去掉照片里的拍摄信息）、改密码，看自己的用户名、团队、角色和能做的事。个人模式也能设昵称和头像
@@ -40,6 +42,8 @@ v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页�
 - 出处框只框值：不到 3 个字的文字块不再被当成长值的一部分（店名的框不会拉到房间数）；"Date: 31/12/2017"这种一块里有标签和值的，框只框值那一段
 
 ### 改变
+
+- 内置模板（收据常用 5 个字段、收据全部字段）不再出现在网页上（模板列表、上传、文档筛选），只给评测和命令行用；以前用它处理的文档照常能看、能重新处理。还没有自己的模板时，上传的文件抽出所有键值对
 
 - 顶栏的"修改密码"移到个人资料页
 - 提示词升到 extract-v6（键值对发现 discover-v3）：按文字块回答（`blocks`），不再给行号；以前的评测数字是 v4 的，要重新跑评测才能比较

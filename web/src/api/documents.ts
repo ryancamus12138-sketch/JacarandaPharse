@@ -177,3 +177,11 @@ export function getPageStructure(id: string, page: number, run?: number): Promis
   const query = run ? `?run=${run}` : ''
   return api<PageStructure>(`/documents/${id}/pages/${page}/structure${query}`)
 }
+
+/** 删除文档（一份或几份）：原始文件、处理结果、审核记录、备注都删掉，不能恢复。正在处理的跳过。 */
+export function deleteDocuments(ids: string[]): Promise<{ deleted: number; skipped: string[] }> {
+  return api<{ deleted: number; skipped: string[] }>('/documents/delete', {
+    method: 'POST',
+    json: { ids },
+  })
+}

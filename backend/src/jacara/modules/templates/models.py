@@ -28,6 +28,9 @@ class TemplateRecord(Base, OwnedMixin, TimestampMixin):
     latest_version: Mapped[int] = mapped_column(default=1, server_default="1")
     archived: Mapped[bool] = mapped_column(default=False, server_default="false")
     """归档的模板不出现在上传的选择里，用过它的文档照常显示。"""
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    """删除的时间。用过的模板删除时不真的删（那些文档还要靠它显示中文名、检查规则、导出），
+    只是从模板列表、上传、重新处理里都去掉；没用过的直接删掉。"""
     source: Mapped[str] = mapped_column(String(64), default="blank", server_default="blank")
     """怎么来的：blank（空白）、starter:<起步模板名>、copy:<模板 id>、sample:<文档 id>。"""
     updated_at: Mapped[datetime] = mapped_column(

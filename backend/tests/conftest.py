@@ -118,6 +118,9 @@ class MemoryStorage:
             raise StorageError(f"找不到文件：{key}")  # 和真的 S3Storage 一样，报 StorageError
         return self.files[key][0]
 
+    def delete(self, key: str) -> None:
+        self.files.pop(key, None)
+
 
 class FakeQueue:
     """假的任务队列：只记下放进来的文档 id，不真的发给 Valkey。down=True 模拟 Valkey 没启动。"""

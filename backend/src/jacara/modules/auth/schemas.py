@@ -14,7 +14,12 @@ RoleName = Literal["admin", "member"]
 """admin：管理员；member：使用者。"""
 
 Permission = Literal[
-    "document:create", "document:process", "value:review", "document:review", "template:manage"
+    "document:create",
+    "document:process",
+    "document:delete",
+    "value:review",
+    "document:review",
+    "template:manage",
 ]
 """可以开通给使用者的权限，和 core/permissions.py 的 GRANTABLE 一致。"""
 
