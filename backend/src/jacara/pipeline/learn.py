@@ -103,10 +103,13 @@ def from_database(
     )
     if exclude is not None:
         query = query.where(Document.id != exclude)
+    from jacara.modules.ocr_samples.groups import locked_units
+
+    locked = locked_units(session, team_id)  # 锁定测试集的单据不当例子来源（ADR 0052）
     found: list[tuple[object, Lesson]] = []
     for document in session.scalars(query):
         for extraction in document.extractions:
-            if extraction.template != template:
+            if extraction.template != template or (document.id, extraction.page) in locked:
                 continue
             tpl = template_of(extraction)
             hidden = _sensitive(tpl)

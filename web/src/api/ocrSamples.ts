@@ -54,10 +54,89 @@ export interface SampleFilters {
   template?: string
 }
 
+export type Split = 'train' | 'val' | 'test_locked' | 'quarantined'
+export type ExportKind = 'train_val' | 'test'
+
+export const SPLITS: Record<Split, { name: string; color: string }> = {
+  train: { name: '训练集', color: 'blue' },
+  val: { name: '验证集', color: 'purple' },
+  test_locked: { name: '锁定测试集', color: 'gold' },
+  quarantined: { name: '隔离', color: 'red' },
+}
+
+export interface SplitCount {
+  groups: number
+  rows: number
+}
+
 export interface ExportPreview {
+  kind: ExportKind
   included: number
   categories: Partial<Record<SampleCategory, number>>
   excluded: { reason: string; count: number }[]
+  /** train、val（或 test）各几组、几行。 */
+  splits: Partial<Record<'train' | 'val' | 'test', SplitCount>>
+  split_version: number
+  /** 验证集够不够说明问题。 */
+  evidence: { level: 'process' | 'thin' | 'trend' | 'none'; message: string } | null
+  /** 验证集里每种分类来自几组。 */
+  val_category_groups: Partial<Record<SampleCategory, number>>
+  distributions: { by: 'template' | 'category' | 'source_format'; key: string; train: number; val: number; test: number }[]
+}
+
+export interface GroupMember {
+  id: string
+  document_id: string
+  filename: string
+  first_page: number
+  source_format: SourceFormat
+  samples: number
+}
+
+export interface SampleGroup {
+  group_id: string
+  /** 导出清单里的组号（g_ 开头）。 */
+  code: string
+  split: Split
+  reason: string
+  members: GroupMember[]
+  samples: number
+  exported_as: string[]
+}
+
+export interface GroupList {
+  items: SampleGroup[]
+  split_version: number
+  counts: Partial<Record<Split, number>>
+}
+
+export interface Unit {
+  document_id: string
+  filename: string
+  page: number
+  last_page: number
+  template: string
+  values: Record<string, string>
+  group_id: string | null
+  samples: number
+}
+
+export interface PairResult {
+  group_id: string | null
+  split: Split | null
+  quarantined: boolean
+  affected_exports: number
+  message: string
+}
+
+export interface ExportRecord {
+  id: string
+  created_at: string
+  kind: ExportKind
+  split_version: number
+  counts: Partial<Record<'train' | 'val' | 'test', SplitCount>>
+  filters: { category?: string[]; source_format?: string | null; template?: string | null }
+  affected: { group: string; reason: string; at: string }[]
 }
 
 /** 分类的中文名和颜色。 */
@@ -116,10 +195,45 @@ export function retrySample(id: string): Promise<OcrSample> {
   return api<OcrSample>(`/ocr-samples/${id}/retry`, { method: 'POST' })
 }
 
-export function previewExport(filters: SampleFilters): Promise<ExportPreview> {
-  return api<ExportPreview>(`/ocr-samples/export/preview?${query(filters)}`)
+export function previewExport(filters: SampleFilters, kind: ExportKind = 'train_val'): Promise<ExportPreview> {
+  return api<ExportPreview>(`/ocr-samples/export/preview?${query(filters, { kind })}`)
 }
 
-export function downloadSamples(filters: SampleFilters): Promise<DownloadedFile> {
-  return apiDownload(`/ocr-samples/export?${query(filters)}`, 'OCR样本.zip')
+export function downloadSamples(filters: SampleFilters, kind: ExportKind = 'train_val'): Promise<DownloadedFile> {
+  return apiDownload(`/ocr-samples/export?${query(filters, { kind })}`, 'OCR样本.zip')
+}
+
+export function listGroups(): Promise<GroupList> {
+  return api<GroupList>('/ocr-samples/groups')
+}
+
+export function setGroupSplit(groupId: string, split: Split): Promise<SampleGroup> {
+  return api<SampleGroup>(`/ocr-samples/groups/${groupId}/split`, { method: 'PUT', json: { split } })
+}
+
+export function detachMember(memberId: string): Promise<PairResult> {
+  return api<PairResult>(`/ocr-samples/groups/members/${memberId}/detach`, { method: 'POST' })
+}
+
+export function listPairs(): Promise<{ a: Unit; b: Unit }[]> {
+  return api<{ a: Unit; b: Unit }[]>('/ocr-samples/pairs')
+}
+
+export function decidePair(a: Unit, b: Unit, decision: 'same' | 'different'): Promise<PairResult> {
+  return api<PairResult>('/ocr-samples/pairs', {
+    method: 'POST',
+    json: {
+      a: { document_id: a.document_id, page: a.page },
+      b: { document_id: b.document_id, page: b.page },
+      decision,
+    },
+  })
+}
+
+export function findUnits(q: string): Promise<Unit[]> {
+  return api<Unit[]>(`/ocr-samples/units?${new URLSearchParams({ q })}`)
+}
+
+export function listExports(): Promise<ExportRecord[]> {
+  return api<ExportRecord[]>('/ocr-samples/exports')
 }

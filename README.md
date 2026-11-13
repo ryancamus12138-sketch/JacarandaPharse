@@ -132,7 +132,9 @@ uv run jacara templates                         # 列出所有模板
 | GET | `/api/v1/templates/{name}` | 一个模板 |
 | GET / PUT | `/api/v1/ocr-samples/settings` | 自动收集 OCR 纠错样本的开关（改要管理员） |
 | GET | `/api/v1/ocr-samples` | OCR 样本列表（按分类、状态、来源筛选） |
-| GET | `/api/v1/ocr-samples/export` | OCR 样本导出成 ZIP（PaddleOCR 识别训练格式），`/export/preview` 先看会导出几条 |
+| GET | `/api/v1/ocr-samples/export` | OCR 样本导出成 ZIP（PaddleOCR 识别训练格式，按单据分好训练集和验证集；`kind=test` 导出锁定测试集），`/export/preview` 先看会导出几条 |
+| GET | `/api/v1/ocr-samples/groups` | 单据分组：每组有哪几张单据、分在哪边（`PUT /groups/{id}/split` 管理员改） |
+| GET / POST | `/api/v1/ocr-samples/pairs` | 可能是同一张单据的（PDF 和照片），确认是不是同一张 |
 
 给别人用时，可以在 `.env` 里写 `JACARA_API_DOCS=false` 关掉 `/docs`。
 

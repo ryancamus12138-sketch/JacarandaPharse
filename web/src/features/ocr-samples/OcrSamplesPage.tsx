@@ -6,6 +6,8 @@ import {
   Button,
   Card,
   Checkbox,
+  Collapse,
+  Descriptions,
   Empty,
   Flex,
   Image,
@@ -15,6 +17,7 @@ import {
   Select,
   Switch,
   Table,
+  Tabs,
   type TableProps,
   Tag,
   Tooltip,
@@ -25,6 +28,7 @@ import { Link } from 'react-router'
 import { ApiError } from '../../api/client'
 import {
   CATEGORIES,
+  type ExportKind,
   type OcrSample,
   type SampleCategory,
   type SampleFilters,
@@ -44,6 +48,8 @@ import {
 import { useAuth } from '../../auth/useAuth'
 import { saveFile } from '../../utils/download'
 import { formatTime } from '../../utils/format'
+import { ExportsTab } from './ExportsTab'
+import { GroupsTab } from './GroupsTab'
 
 const PAGE_SIZE = 20
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }
@@ -120,9 +126,11 @@ function CollectSwitch() {
   )
 }
 
-/** 导出：选范围、看预览（会导出几条、不导出的原因），下载 ZIP。 */
+/** 导出：选范围、看预览（训练和验证各几组几行、够不够、不导出的原因），下载 ZIP。 */
 function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: () => void; templates: string[] }) {
   const { message } = App.useApp()
+  const queryClient = useQueryClient()
+  const [kind, setKind] = useState<ExportKind>('train_val')
   const [categories, setCategories] = useState<SampleCategory[]>(['rec_error', 'missed', 'correct'])
   const [format, setFormat] = useState<SourceFormat | ''>('')
   const [template, setTemplate] = useState<string | undefined>()
@@ -132,26 +140,31 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
     template,
   }
   const preview = useQuery({
-    queryKey: ['ocr-sample-preview', filters],
-    queryFn: () => previewExport(filters),
+    queryKey: ['ocr-sample-preview', filters, kind],
+    queryFn: () => previewExport(filters, kind),
     enabled: open && categories.length > 0,
   })
   const download = useMutation({
-    mutationFn: () => downloadSamples(filters),
+    mutationFn: () => downloadSamples(filters, kind),
     onSuccess: ({ blob, filename }) => {
       saveFile(blob, filename)
+      void queryClient.invalidateQueries({ queryKey: ['ocr-exports'] })
+      void queryClient.invalidateQueries({ queryKey: ['ocr-groups'] })
       onClose()
     },
     onError: (err) => void message.error(errorText(err)),
   })
   const data = preview.data
   const ready = categories.length > 0 && (data?.included ?? 0) > 0
+  const parts = kind === 'test' ? (['test'] as const) : (['train', 'val'] as const)
+  const partNames = { train: '训练集', val: '验证集', test: '锁定测试集' }
+  const evidenceType = { process: 'warning', thin: 'warning', trend: 'success', none: 'info' } as const
   return (
     <Modal
       title="导出 OCR 样本"
       open={open}
       onCancel={onClose}
-      width={560}
+      width={620}
       footer={[
         <Button key="cancel" onClick={onClose}>
           取消
@@ -169,10 +182,28 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
       ]}
     >
       <Flex vertical gap={16}>
+        <Radio.Group
+          optionType="button"
+          buttonStyle="solid"
+          value={kind}
+          onChange={(e) => setKind(e.target.value as ExportKind)}
+          options={[
+            { value: 'train_val', label: '训练集和验证集' },
+            { value: 'test', label: '锁定测试集' },
+          ]}
+        />
         <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-          PaddleOCR 识别训练的格式：<Typography.Text code>crop_img/</Typography.Text> 小图、
-          <Typography.Text code>rec_gt.txt</Typography.Text>（图片路径、Tab、图中原文）、
-          <Typography.Text code>manifest.jsonl</Typography.Text>（OCR 当时读的、分类……）和 README。
+          {kind === 'test' ? (
+            <>
+              只导出锁定成测试集的组（<Typography.Text code>rec_gt_test.txt</Typography.Text>）。正式验收用它，平时别反复看。
+            </>
+          ) : (
+            <>
+              PaddleOCR 识别训练的格式：<Typography.Text code>crop_img/</Typography.Text>、
+              <Typography.Text code>rec_gt_train.txt</Typography.Text>、<Typography.Text code>rec_gt_val.txt</Typography.Text>
+              （同一张单据整组在同一边）、<Typography.Text code>manifest.jsonl</Typography.Text> 和 README。
+            </>
+          )}
           不带原文件、文件名和审核人。这是你的业务数据，不要放进代码仓库。
         </Typography.Text>
         <div>
@@ -220,25 +251,92 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
           <Alert type="error" showIcon title={errorText(preview.error)} />
         ) : (
           data && (
-            <Alert
-              type={data.included > 0 ? 'info' : 'warning'}
-              showIcon
-              title={
-                data.included > 0
-                  ? `会导出 ${data.included} 条：${ORDER.filter((c) => data.categories[c])
-                      .map((c) => `${CATEGORIES[c].name} ${data.categories[c]}`)
-                      .join('，')}`
-                  : '按这个范围没有能导出的样本'
-              }
-              description={
-                data.excluded.length > 0
-                  ? `不导出：${data.excluded.map((e) => `${e.reason} ${e.count} 条`).join('；')}`
-                  : undefined
-              }
-            />
+            <Flex vertical gap={8}>
+              <Descriptions
+                size="small"
+                bordered
+                column={parts.length}
+                items={parts.map((p) => ({
+                  key: p,
+                  label: partNames[p],
+                  children: `${data.splits[p]?.groups ?? 0} 组 · ${data.splits[p]?.rows ?? 0} 行`,
+                }))}
+              />
+              {data.evidence && (
+                <Alert
+                  type={evidenceType[data.evidence.level]}
+                  showIcon
+                  title={data.evidence.message}
+                  description={
+                    Object.keys(data.val_category_groups).length > 0
+                      ? `验证集里：${ORDER.filter((c) => data.val_category_groups[c])
+                          .map((c) => `${CATEGORIES[c].name}来自 ${data.val_category_groups[c]} 组`)
+                          .join('，')}。至少 10 组、50 行才不只是检查流程；15 组、100 行以上才看得出趋势。`
+                      : '至少 10 组、50 行才不只是检查流程；15 组、100 行以上才看得出趋势。'
+                  }
+                />
+              )}
+              <Alert
+                type={data.included > 0 ? 'info' : 'warning'}
+                showIcon
+                title={
+                  data.included > 0
+                    ? `会导出 ${data.included} 条：${ORDER.filter((c) => data.categories[c])
+                        .map((c) => `${CATEGORIES[c].name} ${data.categories[c]}`)
+                        .join('，')}`
+                    : '按这个范围没有能导出的样本'
+                }
+                description={
+                  data.excluded.length > 0
+                    ? `不导出：${data.excluded.map((e) => `${e.reason} ${e.count} 条`).join('；')}`
+                    : undefined
+                }
+              />
+              {data.distributions.length > 0 && (
+                <Collapse
+                  size="small"
+                  items={[
+                    {
+                      key: 'dist',
+                      label: '分布（只报告，不为凑比例挪组）',
+                      children: (
+                        <Table
+                          size="small"
+                          pagination={false}
+                          rowKey={(d) => `${d.by}-${d.key}`}
+                          dataSource={data.distributions}
+                          columns={[
+                            {
+                              title: '按',
+                              dataIndex: 'by',
+                              width: 70,
+                              render: (by: string) => ({ template: '模板', category: '分类', source_format: '来源' })[by] ?? by,
+                            },
+                            {
+                              title: '',
+                              dataIndex: 'key',
+                              render: (k: string) =>
+                                ({ pdf: 'PDF', image: '照片' } as Record<string, string>)[k] ??
+                                CATEGORIES[k as SampleCategory]?.name ??
+                                k,
+                            },
+                            ...parts.map((p) => ({
+                              title: partNames[p],
+                              dataIndex: p,
+                              width: 90,
+                              align: 'right' as const,
+                            })),
+                          ]}
+                        />
+                      ),
+                    },
+                  ]}
+                />
+              )}
+            </Flex>
           )
         )}
-        {categories.includes('rec_error') && !categories.includes('correct') && (
+        {kind === 'train_val' && categories.includes('rec_error') && !categories.includes('correct') && (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             只用错例微调，模型容易把原来认得好的字"忘掉"。建议把「认对的行」一起导出。
           </Typography.Text>
@@ -260,6 +358,8 @@ export function OcrSamplesPage() {
   const [template, setTemplate] = useState<string | undefined>()
   const [pageNo, setPageNo] = useState(1)
   const [exporting, setExporting] = useState(false)
+  const [tab, setTab] = useState('samples')
+  const settings = useQuery({ queryKey: ['ocr-sample-settings'], queryFn: getSampleSettings })
   const filters: SampleFilters = {
     category: category ? [category] : undefined,
     status: status || undefined,
@@ -432,87 +532,107 @@ export function OcrSamplesPage() {
         )}
       </Flex>
       <CollectSwitch />
-      <Card size="small">
-        <Flex vertical gap={12}>
-          <Flex justify="space-between" align="center" wrap gap={8}>
-            <Segmented
-              value={category}
-              onChange={(v) => reset(() => setCategory(v as SampleCategory | ''))}
-              options={[
-                { value: '', label: `全部 ${all}` },
-                ...ORDER.map((c) => ({
-                  value: c,
-                  label: (
-                    <Tooltip title={CATEGORIES[c].hint}>
-                      {CATEGORIES[c].name} {counts[c] ?? 0}
-                    </Tooltip>
+      <Tabs
+        activeKey={tab}
+        onChange={setTab}
+        items={[
+          {
+            key: 'samples',
+            label: `样本 ${data?.total ?? ''}`,
+            children: (
+          <Card size="small">
+            <Flex vertical gap={12}>
+              <Flex justify="space-between" align="center" wrap gap={8}>
+                <Segmented
+                  value={category}
+                  onChange={(v) => reset(() => setCategory(v as SampleCategory | ''))}
+                  options={[
+                    { value: '', label: `全部 ${all}` },
+                    ...ORDER.map((c) => ({
+                      value: c,
+                      label: (
+                        <Tooltip title={CATEGORIES[c].hint}>
+                          {CATEGORIES[c].name} {counts[c] ?? 0}
+                        </Tooltip>
+                      ),
+                    })),
+                  ]}
+                />
+                <Flex gap={8} wrap>
+                  <Select
+                    style={{ width: 130 }}
+                    value={status}
+                    onChange={(v) => reset(() => setStatus(v))}
+                    options={[
+                      { value: '', label: '全部状态' },
+                      { value: 'ready', label: `可以导出 ${data?.statuses.ready ?? 0}` },
+                      { value: 'failed', label: `裁图失败 ${data?.statuses.failed ?? 0}` },
+                      { value: 'withdrawn', label: `撤回了 ${data?.statuses.withdrawn ?? 0}` },
+                    ]}
+                  />
+                  <Select
+                    style={{ width: 110 }}
+                    value={format}
+                    onChange={(v) => reset(() => setFormat(v))}
+                    options={[
+                      { value: '', label: '全部来源' },
+                      { value: 'pdf', label: 'PDF' },
+                      { value: 'image', label: '照片' },
+                    ]}
+                  />
+                  <Select
+                    style={{ minWidth: 160 }}
+                    allowClear
+                    placeholder="全部模板"
+                    value={template}
+                    onChange={(v) => reset(() => setTemplate(v))}
+                    options={(templates.data ?? []).map((t) => ({ value: t, label: t }))}
+                  />
+                </Flex>
+              </Flex>
+              {list.isError && <Alert type="error" showIcon title="样本读不出来" description={errorText(list.error)} />}
+              <Table
+                rowKey="id"
+                size="middle"
+                loading={list.isLoading}
+                columns={columns}
+                dataSource={data?.items ?? []}
+                onRow={(s) => ({ style: s.status === 'withdrawn' ? { opacity: 0.5 } : undefined })}
+                scroll={{ x: 1000 }}
+                pagination={{
+                  current: pageNo,
+                  pageSize: PAGE_SIZE,
+                  total: data?.total ?? 0,
+                  showSizeChanger: false,
+                  showTotal: (n) => `共 ${n} 条`,
+                  onChange: setPageNo,
+                }}
+                locale={{
+                  emptyText: (
+                    <Empty
+                      description={
+                        filtered
+                          ? '没有符合条件的样本'
+                          : '还没有样本。打开上面的开关后，审核时核对「图中原文」并保存，就会收集。'
+                      }
+                    />
                   ),
-                })),
-              ]}
-            />
-            <Flex gap={8} wrap>
-              <Select
-                style={{ width: 130 }}
-                value={status}
-                onChange={(v) => reset(() => setStatus(v))}
-                options={[
-                  { value: '', label: '全部状态' },
-                  { value: 'ready', label: `可以导出 ${data?.statuses.ready ?? 0}` },
-                  { value: 'failed', label: `裁图失败 ${data?.statuses.failed ?? 0}` },
-                  { value: 'withdrawn', label: `撤回了 ${data?.statuses.withdrawn ?? 0}` },
-                ]}
-              />
-              <Select
-                style={{ width: 110 }}
-                value={format}
-                onChange={(v) => reset(() => setFormat(v))}
-                options={[
-                  { value: '', label: '全部来源' },
-                  { value: 'pdf', label: 'PDF' },
-                  { value: 'image', label: '照片' },
-                ]}
-              />
-              <Select
-                style={{ minWidth: 160 }}
-                allowClear
-                placeholder="全部模板"
-                value={template}
-                onChange={(v) => reset(() => setTemplate(v))}
-                options={(templates.data ?? []).map((t) => ({ value: t, label: t }))}
+                }}
               />
             </Flex>
-          </Flex>
-          {list.isError && <Alert type="error" showIcon title="样本读不出来" description={errorText(list.error)} />}
-          <Table
-            rowKey="id"
-            size="middle"
-            loading={list.isLoading}
-            columns={columns}
-            dataSource={data?.items ?? []}
-            onRow={(s) => ({ style: s.status === 'withdrawn' ? { opacity: 0.5 } : undefined })}
-            scroll={{ x: 1000 }}
-            pagination={{
-              current: pageNo,
-              pageSize: PAGE_SIZE,
-              total: data?.total ?? 0,
-              showSizeChanger: false,
-              showTotal: (n) => `共 ${n} 条`,
-              onChange: setPageNo,
-            }}
-            locale={{
-              emptyText: (
-                <Empty
-                  description={
-                    filtered
-                      ? '没有符合条件的样本'
-                      : '还没有样本。打开上面的开关后，审核时核对「图中原文」并保存，就会收集。'
-                  }
-                />
-              ),
-            }}
-          />
-        </Flex>
-      </Card>
+          </Card>
+            ),
+          },
+          {
+            key: 'groups',
+            label: '单据分组',
+            children: <GroupsTab canChange={settings.data?.can_change ?? false} canReview={canReview} />,
+          },
+          ...(can('document:export')
+            ? [{ key: 'exports', label: '导出记录', children: <ExportsTab /> }]
+            : []),
+        ]}
+      />
       <ExportDialog open={exporting} onClose={() => setExporting(false)} templates={templates.data ?? []} />
     </Flex>
   )

@@ -300,17 +300,23 @@ def test_export_preview_and_zip(client, factory, document_id):
     assert response.status_code == 200
     archive = zipfile.ZipFile(io.BytesIO(response.content))
     names = set(archive.namelist())
+    # 一张单据只有一组：按哈希整组进训练集或验证集（ADR 0052）
+    part = next(p for p in ("train", "val") if f"rec_gt_{p}.txt" in names)
     assert names == {
         "crop_img/s_0001.png",
         "crop_img/s_0002.png",
+        f"rec_gt_{part}.txt",
         "rec_gt.txt",
         "manifest.jsonl",
         "README.md",
     }
+    assert archive.read(f"rec_gt_{part}.txt") == archive.read("rec_gt.txt")
     labels = archive.read("rec_gt.txt").decode("utf-8")
     assert not labels.startswith("﻿")
     assert labels.splitlines() == ["crop_img/s_0001.png\t1.00", "crop_img/s_0002.png\t9.00"]
     rows = [json.loads(r) for r in archive.read("manifest.jsonl").decode().splitlines()]
+    group = rows[0].pop("document_group")
+    assert group.startswith("g_") and len(group) == 14  # 稳定的组号，不含业务信息
     assert rows[0] == {
         "sample_id": "s_0001",
         "image": "crop_img/s_0001.png",
@@ -320,11 +326,13 @@ def test_export_preview_and_zip(client, factory, document_id):
         "error_tags": ["missing"],
         "template": RECEIPT,
         "field": "change",
-        "document_group": "g_0001",
+        "split": part,
+        "split_version": 1,
+        "sample_revision": 1,
         "source_format": "image",
         "ocr_model_version": "rapidocr test",
     }
-    assert rows[1]["document_group"] == "g_0001"  # 同一张单据
+    assert rows[1]["document_group"] == group  # 同一张单据
     for row in rows:  # 路径都能找到图，图能打开
         Image.open(io.BytesIO(archive.read(row["image"]))).verify()
     readme = archive.read("README.md").decode("utf-8")

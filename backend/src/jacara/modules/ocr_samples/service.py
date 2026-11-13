@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """OCR 纠错样本（ADR 0050）：审核时收集、样本页管理、导出成 PaddleOCR 识别训练数据。"""
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from jacara.core.storage import ObjectStorage, StorageError
 from jacara.modules.audit.service import record
 from jacara.modules.documents.models import Document, Extraction
 from jacara.modules.fields.models import ExtractedValue
+from jacara.modules.ocr_samples import groups
 from jacara.modules.ocr_samples.crop import (
     CATEGORIES,
     TAGS,
@@ -34,14 +36,31 @@ from jacara.modules.ocr_samples.crop import (
     png_bytes,
     sha256,
 )
-from jacara.modules.ocr_samples.models import OcrSample, TeamSetting
+from jacara.modules.ocr_samples.models import (
+    DocGroupMember,
+    OcrSample,
+    OcrSampleExport,
+    PairDecision,
+    TeamSetting,
+)
 from jacara.modules.ocr_samples.schemas import (
+    Distribution,
+    Evidence,
     Excluded,
     ExportPreview,
+    ExportRecordOut,
+    GroupList,
+    GroupMemberOut,
+    GroupOut,
+    PairIn,
+    PairOut,
+    PairResult,
     SampleIn,
     SampleList,
     SampleOut,
     SampleSettings,
+    SplitCount,
+    UnitOut,
 )
 from jacara.pipeline.current import labels_of, template_of
 from jacara.pipeline.pages import ocr_page_json
@@ -152,6 +171,7 @@ def collect(
         value_id=value.id,
         revision_id=revision_id,
         page=page,
+        unit_page=extraction.page,
         kind=kind,
         polygon=polygon,
         transcription=truth,
@@ -170,6 +190,8 @@ def collect(
     )
     _crop(storage, sample, document)
     session.add(sample)
+    # 分组（ADR 0052）：这张业务单据第一次有样本时分好组、分好边
+    groups.ensure_member(session, value.team_id, owner.user_id, (document.id, extraction.page))
     return sample
 
 
@@ -368,6 +390,7 @@ class OcrSampleService:
             if truth != sample.transcription:
                 detail["transcription"] = [sample.transcription, truth]
                 sample.transcription = truth
+                sample.revision += 1  # 标签改了一版：导出清单记着用的是哪一版
                 sample.error_tags = error_tags(sample.ocr_text, truth)
                 if change.category is None and sample.kind == "line":
                     sample.category = category_of(sample.kind, sample.ocr_text, truth)
@@ -401,12 +424,256 @@ class OcrSampleService:
             raise SampleError("storage", f"还是没裁出来：{sample.error}")
         return self._out([sample])[0]
 
+    # ---- 分组（ADR 0052） ----
+
+    def _groups_ready(self) -> None:
+        groups.ensure_sample_groups(self.session, self.owner.team_id, self.owner.user_id)
+
+    def group_list(self) -> GroupList:
+        require(self.owner, "value:read")
+        self._groups_ready()
+        team = self.owner.team_id
+        seed = groups.split_seed(self.session, team)
+        splits = groups.splits_of(self.session, team)
+        members = self.session.scalars(
+            select(DocGroupMember).where(DocGroupMember.team_id == team)
+        ).all()
+        documents = (
+            {
+                d.id: d
+                for d in self.session.scalars(
+                    select(Document).where(Document.id.in_({m.document_id for m in members}))
+                )
+            }
+            if members
+            else {}
+        )
+        counts = Counter(
+            (s.document_id, s.unit_page)
+            for s in self.session.scalars(
+                select(OcrSample).where(OcrSample.team_id == team, OcrSample.status != "withdrawn")
+            )
+        )
+        by_group: dict[uuid.UUID, list[GroupMemberOut]] = defaultdict(list)
+        for m in members:
+            document = documents.get(m.document_id)
+            by_group[m.group_id].append(
+                GroupMemberOut(
+                    id=m.id,
+                    document_id=m.document_id,
+                    filename=document.filename if document else "",
+                    first_page=m.first_page,
+                    source_format="pdf"
+                    if document is not None and document.content_type == "application/pdf"
+                    else "image",
+                    samples=counts.get((m.document_id, m.first_page), 0),
+                )
+            )
+        items: list[GroupOut] = []
+        for group_id, found in by_group.items():
+            split = splits.get(group_id) or groups.ensure_split(self.session, team, group_id)
+            items.append(
+                GroupOut(
+                    group_id=group_id,
+                    code=groups.anonymous(seed, group_id),
+                    split=split.split,  # type: ignore[arg-type]
+                    reason=split.reason,
+                    members=sorted(found, key=lambda m: (m.filename, m.first_page)),
+                    samples=sum(m.samples for m in found),
+                    exported_as=sorted(groups.exported_as(self.session, team, group_id)),
+                )
+            )
+        items.sort(key=lambda g: (-len(g.members), -g.samples, g.code))
+        return GroupList(
+            items=items,
+            split_version=groups.split_version(self.session, team),
+            counts=dict(Counter(g.split for g in items)),
+        )
+
+    def change_split(self, group_id: uuid.UUID, split: str) -> GroupOut:
+        require(self.owner, "system:manage")
+        try:
+            found = groups.set_split(self.session, self.owner.team_id, group_id, split)
+        except groups.GroupError as err:
+            raise SampleError(err.code, err.message) from err
+        record(
+            self.session, self.owner, "ocr_samples:split", "ocr_group", group_id, split=found.split
+        )
+        return next(g for g in self.group_list().items if g.group_id == group_id)
+
+    def _unit_out(self, key: groups.UnitKey, members: dict[groups.Unit, uuid.UUID]) -> UnitOut:
+        document = self.session.get_one(Document, key.unit[0])
+        extraction = next((e for e in document.extractions if e.page == key.unit[1]), None)
+        template = template_of(extraction) if extraction is not None else None
+        samples = self.session.scalar(
+            select(func.count()).where(
+                OcrSample.document_id == key.unit[0],
+                OcrSample.unit_page == key.unit[1],
+                OcrSample.status != "withdrawn",
+            )
+        )
+        labels = labels_of(extraction) if extraction is not None else {}
+        return UnitOut(
+            document_id=document.id,
+            filename=document.filename,
+            page=key.unit[1],
+            last_page=(extraction.last_page or extraction.page) if extraction else key.unit[1],
+            template=_template_title(extraction, template) if extraction is not None else "",
+            values={labels.get(k, k): v for k, v in key.shown.items()},
+            group_id=members.get(key.unit),
+            samples=int(samples or 0),
+        )
+
+    def pairs(self) -> list[PairOut]:
+        """可能是同一张单据（PDF 和照片）、等人确认的。"""
+        require(self.owner, "value:read")
+        self._groups_ready()
+        members = groups.groups_of(self.session, self.owner.team_id)
+        return [
+            PairOut(a=self._unit_out(a, members), b=self._unit_out(b, members))
+            for a, b in groups.nominations(self.session, self.owner.team_id)
+        ]
+
+    def units(self, q: str) -> list[UnitOut]:
+        """按文件名找业务单据（手动配对时用）。"""
+        require(self.owner, "value:read")
+        documents = self.session.scalars(
+            select(Document)
+            .where(
+                Document.team_id == self.owner.team_id,
+                Document.status.in_(("done", "reviewed")),
+                Document.filename.ilike(f"%{q.strip()}%"),
+            )
+            .order_by(Document.created_at.desc())
+            .limit(20)
+        ).all()
+        members = groups.groups_of(self.session, self.owner.team_id)
+        return [
+            self._unit_out(groups.unit_key(e), members) for d in documents for e in d.extractions
+        ]
+
+    def decide_pair(self, change: PairIn) -> PairResult:
+        """人确认两张业务单据是不是同一张。是：合并成一组；不是：记下来，不再提名。"""
+        require(self.owner, "value:review")
+        a = (change.a.document_id, change.a.page)
+        b = (change.b.document_id, change.b.page)
+        if a == b:
+            raise SampleError("invalid", "两边是同一张单据")
+        for unit in (a, b):
+            document = self.session.get(Document, unit[0])
+            if document is None or document.team_id != self.owner.team_id:
+                raise SampleError("not_found", "找不到这张单据")
+            if not any(e.page == unit[1] for e in document.extractions):
+                raise SampleError("invalid", f"{document.filename} 没有从第 {unit[1]} 页开始的单据")
+        team, user = self.owner.team_id, self.owner.user_id
+        self.session.add(
+            PairDecision(
+                a_document=a[0],
+                a_page=a[1],
+                b_document=b[0],
+                b_page=b[1],
+                decision=change.decision,
+                user_id=user,
+                team_id=team,
+            )
+        )
+        if change.decision == "different":
+            record(self.session, self.owner, "ocr_samples:pair", None, None, decision="different")
+            return PairResult(
+                group_id=None,
+                split=None,
+                quarantined=False,
+                affected_exports=0,
+                message="已记下：不是同一张，不再提名",
+            )
+        result = groups.merge(self.session, team, user, a, b)
+        record(
+            self.session,
+            self.owner,
+            "ocr_samples:pair",
+            "ocr_group",
+            result.group_id,
+            decision="same",
+            split=result.split,
+            affected_exports=result.affected_exports,
+        )
+        message = (
+            f"已合并。两组以前导出过、分在不同边，整组隔离，{result.affected_exports} 次导出受影响"
+            if result.quarantined and result.affected_exports
+            else f"已合并成一组（{groups.SPLIT_NAMES[result.split]}）"
+        )
+        return PairResult(
+            group_id=result.group_id,
+            split=result.split,  # type: ignore[arg-type]
+            quarantined=result.quarantined,
+            affected_exports=result.affected_exports,
+            message=message,
+        )
+
+    def detach(self, member_id: uuid.UUID) -> PairResult:
+        require(self.owner, "value:review")
+        try:
+            result = groups.detach(self.session, self.owner.team_id, member_id)
+        except groups.GroupError as err:
+            raise SampleError(err.code, err.message) from err
+        member = self.session.get_one(DocGroupMember, member_id)
+        record(
+            self.session,
+            self.owner,
+            "ocr_samples:detach",
+            "ocr_group",
+            result.group_id,
+            document_id=str(member.document_id),
+            affected_exports=result.affected_exports,
+        )
+        return PairResult(
+            group_id=result.group_id,
+            split=result.split,  # type: ignore[arg-type]
+            quarantined=result.quarantined,
+            affected_exports=result.affected_exports,
+            message="已拆开"
+            + (
+                f"。原来的组导出过，两边都隔离，{result.affected_exports} 次导出受影响"
+                if result.quarantined
+                else ""
+            ),
+        )
+
+    def export_records(self) -> list[ExportRecordOut]:
+        require(self.owner, "document:export")
+        rows = self.session.scalars(
+            select(OcrSampleExport)
+            .where(OcrSampleExport.team_id == self.owner.team_id)
+            .order_by(OcrSampleExport.created_at.desc())
+            .limit(100)
+        ).all()
+        return [
+            ExportRecordOut(
+                id=r.id,
+                created_at=r.created_at,
+                kind=r.kind,  # type: ignore[arg-type]
+                split_version=r.split_version,
+                counts=r.counts,
+                filters=r.filters,
+                affected=list(r.affected or []),
+            )
+            for r in rows
+        ]
+
     # ---- 导出 ----
 
     def _selection(
-        self, category: Sequence[str] | None, source_format: str | None, template: str | None
-    ) -> tuple[list[OcrSample], Counter[str]]:
-        """要导出的样本，和不导出的原因（原因 → 几条）。"""
+        self,
+        category: Sequence[str] | None,
+        source_format: str | None,
+        template: str | None,
+        kind: str = "train_val",
+    ) -> tuple[list[tuple[OcrSample, uuid.UUID, str]], Counter[str]]:
+        """要导出的样本（样本、组、划分），和不导出的原因（原因 → 几条）。"""
+        self._groups_ready()
+        team = self.owner.team_id
+        members = groups.groups_of(self.session, team)
+        splits = groups.splits_of(self.session, team)
         samples = list(
             self.session.scalars(
                 self._query(category, None, source_format, template).order_by(
@@ -415,42 +682,88 @@ class OcrSampleService:
             )
         )
         excluded: Counter[str] = Counter()
-        usable: list[OcrSample] = []
+        usable: list[tuple[OcrSample, uuid.UUID, str]] = []
         for sample in samples:
+            group = members[(sample.document_id, sample.unit_page)]
+            split = (splits.get(group) or groups.ensure_split(self.session, team, group)).split
             if sample.status == "withdrawn":
                 excluded["撤回了"] += 1
             elif sample.status != "ready" or not sample.crop_key or not sample.crop_sha256:
                 excluded["裁图失败，没有图"] += 1
             elif clean(sample.transcription) != sample.transcription:
                 excluded["图中原文是空的或有 Tab、换行"] += 1
+            elif split == "quarantined":
+                excluded["所在的组被隔离了（合并或拆开时发现已经导出过）"] += 1
+            elif kind == "train_val" and split == "test_locked":
+                excluded["锁定测试集（单独导出）"] += 1
+            elif kind == "test" and split != "test_locked":
+                continue  # 导出测试集时，训练、验证的不算"排除"
             else:
-                usable.append(sample)
-        by_image: dict[str, list[OcrSample]] = defaultdict(list)
-        for sample in usable:
-            by_image[str(sample.crop_sha256)].append(sample)
-        kept: list[OcrSample] = []
-        for group in by_image.values():
-            if len({s.transcription for s in group}) > 1:
-                excluded["同一张图有两种写法"] += len(group)
+                usable.append((sample, group, split))
+        by_image: dict[str, list[tuple[OcrSample, uuid.UUID, str]]] = defaultdict(list)
+        for entry in usable:
+            by_image[str(entry[0].crop_sha256)].append(entry)
+        kept: list[tuple[OcrSample, uuid.UUID, str]] = []
+        for same in by_image.values():
+            if len({s.transcription for s, _, _ in same}) > 1:
+                excluded["同一张图有两种写法"] += len(same)
                 continue
-            kept.append(group[0])
-            if len(group) > 1:
-                excluded["同一张图重复，只留一份"] += len(group) - 1
-        kept.sort(key=lambda s: (s.created_at, str(s.id)))
+            kept.append(same[0])
+            if len(same) > 1:
+                excluded["同一张图重复，只留一份"] += len(same) - 1
+        kept.sort(key=lambda e: (e[0].created_at, str(e[0].id)))
         return kept, excluded
+
+    def _summary(self, kept: list[tuple[OcrSample, uuid.UUID, str]], kind: str) -> dict[str, Any]:
+        names = ("test_locked",) if kind == "test" else ("train", "val")
+        splits = {
+            ("test" if n == "test_locked" else n): SplitCount(
+                groups=len({g for _, g, s in kept if s == n}),
+                rows=sum(1 for _, _, s in kept if s == n),
+            )
+            for n in names
+        }
+        val = splits.get("val")
+        evidence = None
+        if kind == "train_val":
+            evidence = _evidence(val.groups if val else 0, val.rows if val else 0)
+        val_groups: dict[str, set[uuid.UUID]] = defaultdict(set)
+        for sample, group, split in kept:
+            if split == "val":
+                val_groups[sample.category].add(group)
+        distributions: list[Distribution] = []
+        for by in ("template", "category", "source_format"):
+            table: dict[str, Counter[str]] = defaultdict(Counter)
+            for sample, _, split in kept:
+                key = str(getattr(sample, by))
+                table[key]["test" if split == "test_locked" else split] += 1
+            distributions += [
+                Distribution(by=by, key=key, **{k: v for k, v in c.items()})  # type: ignore[arg-type]
+                for key, c in sorted(table.items())
+            ]
+        return {
+            "splits": splits,
+            "evidence": evidence,
+            "val_category_groups": {k: len(v) for k, v in val_groups.items()},
+            "distributions": distributions,
+        }
 
     def preview(
         self,
         category: Sequence[str] | None = None,
         source_format: str | None = None,
         template: str | None = None,
+        kind: str = "train_val",
     ) -> ExportPreview:
         require(self.owner, "document:export")
-        kept, excluded = self._selection(category, source_format, template)
+        kept, excluded = self._selection(category, source_format, template, kind)
         return ExportPreview(
+            kind=kind,  # type: ignore[arg-type]
             included=len(kept),
-            categories=dict(Counter(s.category for s in kept)),
+            categories=dict(Counter(s.category for s, _, _ in kept)),
             excluded=[Excluded(reason=r, count=n) for r, n in excluded.most_common()],
+            split_version=groups.split_version(self.session, self.owner.team_id),
+            **self._summary(kept, kind),
         )
 
     def export(
@@ -458,21 +771,26 @@ class OcrSampleService:
         category: Sequence[str] | None = None,
         source_format: str | None = None,
         template: str | None = None,
+        kind: str = "train_val",
     ) -> tuple[str, bytes]:
-        """样本 → zip（文件名, 内容）：crop_img/、rec_gt.txt、manifest.jsonl、README.md。"""
+        """样本 → zip：crop_img/、rec_gt_train.txt、rec_gt_val.txt、rec_gt.txt（或锁定测试集的
+        rec_gt_test.txt）、manifest.jsonl、README.md。每次导出记一条导出记录。"""
         require(self.owner, "document:export")
         if self.storage is None:
             raise SampleError("storage", "对象存储暂时不可用，请稍后再试")
-        kept, excluded = self._selection(category, source_format, template)
+        kept, excluded = self._selection(category, source_format, template, kind)
         if not kept:
             raise SampleError("invalid", "没有能导出的样本")
-        groups: dict[uuid.UUID, str] = {}
-        labels: list[str] = []
+        team = self.owner.team_id
+        seed = groups.split_seed(self.session, team)
+        version = groups.split_version(self.session, team)
+        lists: dict[str, list[str]] = defaultdict(list)
         manifest: list[str] = []
-        exported: list[OcrSample] = []
+        items: list[dict[str, Any]] = []
+        exported: list[tuple[OcrSample, uuid.UUID, str]] = []
         out = io.BytesIO()
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
-            for sample in kept:
+            for sample, group, split in kept:
                 try:
                     png = self.storage.get(str(sample.crop_key))
                     with Image.open(io.BytesIO(png)) as picture:
@@ -482,9 +800,9 @@ class OcrSampleService:
                     continue
                 number = len(exported) + 1
                 name = f"crop_img/s_{number:04d}.png"
-                group = groups.setdefault(sample.document_id, f"g_{len(groups) + 1:04d}")
+                part = "test" if split == "test_locked" else split
                 archive.writestr(name, png)
-                labels.append(f"{name}\t{sample.transcription}\n")
+                lists[part].append(f"{name}\t{sample.transcription}\n")
                 manifest.append(
                     json.dumps(
                         {
@@ -496,7 +814,10 @@ class OcrSampleService:
                             "error_tags": list(sample.error_tags or []),
                             "template": sample.template,
                             "field": sample.field,
-                            "document_group": group,
+                            "document_group": groups.anonymous(seed, group),
+                            "split": part,
+                            "split_version": version,
+                            "sample_revision": sample.revision,
                             "source_format": sample.source_format,
                             "ocr_model_version": sample.ocr_engine,
                         },
@@ -504,12 +825,49 @@ class OcrSampleService:
                     )
                     + "\n"
                 )
-                exported.append(sample)
+                items.append(
+                    {
+                        "sample": str(sample.id),
+                        "revision": sample.revision,
+                        "group": str(group),
+                        "split": split,
+                    }
+                )
+                exported.append((sample, group, split))
             if not exported:
                 raise SampleError("storage", "样本的图片都找不到了")
-            archive.writestr("rec_gt.txt", "".join(labels).encode("utf-8"))
+            for part in ("train", "val", "test"):
+                if part in lists:
+                    archive.writestr(f"rec_gt_{part}.txt", "".join(lists[part]).encode("utf-8"))
+            if kind == "train_val":
+                everything = lists.get("train", []) + lists.get("val", [])
+                archive.writestr("rec_gt.txt", "".join(everything).encode("utf-8"))
             archive.writestr("manifest.jsonl", "".join(manifest).encode("utf-8"))
-            archive.writestr("README.md", _readme(exported, excluded, len(groups)).encode("utf-8"))
+            summary = self._summary(exported, kind)
+            archive.writestr(
+                "README.md",
+                _readme([s for s, _, _ in exported], excluded, summary, kind, version).encode(
+                    "utf-8"
+                ),
+            )
+        counts = {k: v.model_dump() for k, v in summary["splits"].items()}
+        filters = {
+            "category": sorted(set(category or [])),
+            "source_format": source_format,
+            "template": template,
+        }
+        self.session.add(
+            OcrSampleExport(
+                kind=kind,
+                split_version=version,
+                filters=filters,
+                counts=counts,
+                items=items,
+                affected=[],
+                user_id=self.owner.user_id,
+                team_id=team,
+            )
+        )
         record(
             self.session,
             self.owner,
@@ -517,34 +875,71 @@ class OcrSampleService:
             None,
             None,
             count=len(exported),
-            categories=sorted(set(category or [])),
-            source_format=source_format,
-            template=template,
+            kind=kind,
+            split_version=version,
+            **filters,
         )
         stamp = datetime.now().strftime("%Y%m%d-%H%M")
-        return f"OCR样本-{stamp}.zip", out.getvalue()
+        suffix = "测试集" if kind == "test" else ""
+        return f"OCR样本{suffix}-{stamp}.zip", out.getvalue()
 
 
-def _readme(samples: Sequence[OcrSample], excluded: Counter[str], documents: int) -> str:
+def _evidence(groups_: int, rows: int) -> Evidence:
+    """验证集够不够（外部评审给的起步值，ADR 0052）。"""
+    if groups_ == 0:
+        return Evidence(level="none", message="这次没有验证集（组太少，或都分进了训练集）")
+    where = f"验证集 {groups_} 组、{rows} 行"
+    if groups_ < 10 or rows < 50:
+        return Evidence(level="process", message=f"{where}：只能检查流程，不能说明模型好坏")
+    if groups_ >= 15 and rows >= 100:
+        return Evidence(level="trend", message=f"{where}：可以看整体趋势")
+    return Evidence(level="thin", message=f"{where}：偏少，趋势仅供参考")
+
+
+def _readme(
+    samples: Sequence[OcrSample],
+    excluded: Counter[str],
+    summary: dict[str, Any],
+    kind: str,
+    version: int,
+) -> str:
     categories = Counter(s.category for s in samples)
     tags = Counter(t for s in samples for t in (s.error_tags or []))
-    formats = Counter(s.source_format for s in samples)
+    splits: dict[str, SplitCount] = summary["splits"]
+    names = {"train": "训练集", "val": "验证集", "test": "锁定测试集"}
     lines = [
-        "# JacarandaParse OCR 样本",
+        "# JacarandaParse OCR 样本" + ("（锁定测试集）" if kind == "test" else ""),
         "",
-        f"格式版本 {FORMAT_VERSION}，导出时间 {datetime.now():%Y-%m-%d %H:%M}。",
-        f"一共 {len(samples)} 条，来自 {documents} 张单据"
-        f"（PDF {formats.get('pdf', 0)} 条，照片 {formats.get('image', 0)} 条）。",
+        f"格式版本 {FORMAT_VERSION}，划分版本 {version}，导出时间 {datetime.now():%Y-%m-%d %H:%M}。",
+        f"一共 {len(samples)} 条。",
         "",
         "这是你自己的业务数据，不要放进代码仓库、不要上传到公开的地方。",
+        "",
+        "## 划分",
+        "",
+        *(
+            f"- {names[k]}：{v.groups} 组（独立的业务单据）、{v.rows} 行（`rec_gt_{k}.txt`）"
+            for k, v in splits.items()
+        ),
+    ]
+    evidence: Evidence | None = summary["evidence"]
+    if evidence is not None:
+        lines += ["", f"**{evidence.message}**"]
+    if kind == "train_val":
+        lines += [
+            "",
+            "按单据分组：同一张单据（重新处理的几轮、PDF 和照片、重复上传的同一个文件）的样本全在同一边，"
+            "多次导出始终在同一边（`document_group` 是稳定的组号，不含业务信息）。80/20 是按组的目标比例，"
+            "组少时行数比例会偏。`rec_gt.txt` 是训练集和验证集合起来。锁定测试集不在这里，单独导出。",
+        ]
+    lines += [
         "",
         "## 文件",
         "",
         "- `crop_img/`：每条一张单行小图，文件名只是编号。",
-        "- `rec_gt.txt`：每行一条，图片路径、一个 Tab、图上原样的文字（UTF-8，无 BOM）。",
-        "- `manifest.jsonl`：每行一条的详细信息：OCR 当时读成什么（`ocr_text`）、分类、错误标签、"
-        "模板、字段、单据编号（`document_group`，同一张单据的样本编号一样，只在这个导出里有效）、"
-        "来源（pdf / image）、首轮 OCR 的版本。",
+        "- `rec_gt_*.txt`：每行一条，图片路径、一个 Tab、图上原样的文字（UTF-8，无 BOM）。",
+        "- `manifest.jsonl`：每行一条的详细信息：OCR 当时读成什么（`ocr_text`）、分类、错误标签、模板、字段、"
+        "组号、分在哪边（`split`）、划分版本、标签修订号（`sample_revision`）、来源、首轮 OCR 的版本。",
         "",
         "## 分类",
         "",
@@ -559,6 +954,15 @@ def _readme(samples: Sequence[OcrSample], excluded: Counter[str], documents: int
             "错误标签：" + "，".join(f"{TAGS[t]} {n}" for t, n in tags.most_common() if t in TAGS),
             "",
         ]
+    distributions: list[Distribution] = summary["distributions"]
+    if distributions:
+        titles = {"template": "模板", "category": "分类", "source_format": "来源"}
+        lines += ["## 分布（只报告，不为凑比例挪组）", ""]
+        for by, title in titles.items():
+            rows = [d for d in distributions if d.by == by]
+            if rows:
+                lines.append(f"- {title}：" + "；".join(_dist(d, kind) for d in rows))
+        lines.append("")
     if excluded:
         lines += [
             "## 没有导出的",
@@ -571,14 +975,21 @@ def _readme(samples: Sequence[OcrSample], excluded: Counter[str], documents: int
         "",
         "1. 解压到一个文件夹，例如 `/data/jacara_ocr`。",
         "2. 识别训练配置里：`Train.dataset.data_dir` 和 `Eval.dataset.data_dir` 写这个文件夹，"
-        "`label_file_list` 写 `rec_gt.txt`（`SimpleDataSet` 直接能读）。",
+        "`Train.dataset.label_file_list` 写 `rec_gt_train.txt`，`Eval.dataset.label_file_list` 写 "
+        "`rec_gt_val.txt`（`SimpleDataSet` 直接能读）。",
         "3. 用和系统现在用的识别模型同一系列的配置、字典和预训练权重做微调；"
         "字典里没有的字训练时会被跳过，最好先检查一遍。",
         "4. 训练好后导出推理模型、转成 ONNX，放进项目的 `models/ocr/`（文件名带 rec），"
         '在系统信息页"换模型"里选上，jacara stop、jacara start 后生效。',
         "",
-        "这一版还没有分训练集和验证集。验收要用没参与训练的单据，按 `document_group` 整组分开，"
-        "同一张单据的样本不要一部分在训练集、一部分在验证集。",
+        '反复看验证集的结果来调训练，验证集会慢慢"被调过"；正式验收用锁定测试集，或者新进的单据。',
         "",
     ]
     return "\n".join(lines)
+
+
+def _dist(d: Distribution, kind: str) -> str:
+    key = {"pdf": "PDF", "image": "照片"}.get(d.key, CATEGORIES.get(d.key, d.key))
+    if kind == "test":
+        return f"{key} {d.test}"
+    return f"{key} 训练 {d.train} / 验证 {d.val}"

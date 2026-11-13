@@ -15,14 +15,23 @@ from jacara.core.storage import ObjectStorage
 from jacara.modules.documents.router import attachment
 from jacara.modules.ocr_samples.schemas import (
     Category,
+    ExportKind,
     ExportPreview,
+    ExportRecordOut,
+    GroupList,
+    GroupOut,
+    PairIn,
+    PairOut,
+    PairResult,
     SampleIn,
     SampleList,
     SampleOut,
     SampleSettings,
     SampleSettingsIn,
     SourceFormat,
+    SplitIn,
     Status,
+    UnitOut,
 )
 from jacara.modules.ocr_samples.service import OcrSampleService, SampleError
 
@@ -47,6 +56,7 @@ Service = Annotated[OcrSampleService, Depends(get_service)]
 Categories = Annotated[list[Category] | None, Query(description="只看这几种分类")]
 Format = Annotated[SourceFormat | None, Query(description="pdf 或 image")]
 TemplateName = Annotated[str | None, Query(max_length=200, description="只看这个模板")]
+Kind = Annotated[ExportKind, Query(description="train_val：训练和验证；test：锁定测试集")]
 
 
 def _http_error(err: SampleError) -> HTTPException:
@@ -88,9 +98,10 @@ def export_preview(
     category: Categories = None,
     source_format: Format = None,
     template: TemplateName = None,
+    kind: Kind = "train_val",
 ) -> ExportPreview:
-    """会导出几条、不导出的几条和原因（撤回了、裁图失败、同一张图两种写法……）。"""
-    return service.preview(category, source_format, template)
+    """会导出几条、训练和验证各几组几行、验证集够不够、不导出的几条和原因。"""
+    return service.preview(category, source_format, template, kind)
 
 
 @router.get("/export", summary="导出 ZIP", response_class=Response)
@@ -99,13 +110,67 @@ def export_samples(
     category: Categories = None,
     source_format: Format = None,
     template: TemplateName = None,
+    kind: Kind = "train_val",
 ) -> Response:
-    """crop_img/、rec_gt.txt（PaddleOCR 识别训练直接读）、manifest.jsonl、README.md。"""
+    """crop_img/、rec_gt_train.txt、rec_gt_val.txt、rec_gt.txt（或 rec_gt_test.txt）、
+    manifest.jsonl、README.md。每次导出记一条导出记录（ADR 0052）。"""
     try:
-        filename, data = service.export(category, source_format, template)
+        filename, data = service.export(category, source_format, template, kind)
     except SampleError as err:
         raise _http_error(err) from err
     return attachment(filename, data, "application/zip")
+
+
+@router.get("/exports", summary="导出记录")
+def export_records(service: Service) -> list[ExportRecordOut]:
+    """每次导出了几组几行；导出以后发现的问题（合并、拆开时隔离的组）记在 affected 里。"""
+    return service.export_records()
+
+
+@router.get("/groups", summary="单据分组")
+def list_groups(service: Service) -> GroupList:
+    """每一组有哪几张业务单据、几条样本、分在哪边（ADR 0052）。"""
+    return service.group_list()
+
+
+@router.put("/groups/{group_id}/split", summary="改一组的划分")
+def change_split(group_id: uuid.UUID, change: SplitIn, service: Service) -> GroupOut:
+    """管理员：锁定测试集、处理隔离的组。已经导出进训练集的不能再当验证集或测试集。"""
+    try:
+        return service.change_split(group_id, change.split)
+    except SampleError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/groups/members/{member_id}/detach", summary="拆开配错的单据")
+def detach_member(member_id: uuid.UUID, service: Service) -> PairResult:
+    try:
+        return service.detach(member_id)
+    except SampleError as err:
+        raise _http_error(err) from err
+
+
+@router.get("/pairs", summary="可能是同一张单据的")
+def list_pairs(service: Service) -> list[PairOut]:
+    """PDF 和照片：单据类型、单号、日期、金额、币种、发单方对得上的，等人并排看原图确认。"""
+    return service.pairs()
+
+
+@router.post("/pairs", summary="确认是不是同一张单据")
+def decide_pair(change: PairIn, service: Service) -> PairResult:
+    """same：合并成一组（已经导出过、分在不同边的整组隔离）；different：记下来，不再提名。"""
+    try:
+        return service.decide_pair(change)
+    except SampleError as err:
+        raise _http_error(err) from err
+
+
+@router.get("/units", summary="按文件名找单据")
+def find_units(
+    service: Service, q: Annotated[str, Query(min_length=1, max_length=200)]
+) -> list[UnitOut]:
+    """手动配对时用：文件名里有 q 的、处理完的单据。"""
+    return service.units(q)
 
 
 @router.get("/{sample_id}/image", summary="样本的小图", response_class=Response)

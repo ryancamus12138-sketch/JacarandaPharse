@@ -5,11 +5,12 @@
 
 ## [未发布]
 
-v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）、模板标签（ADR 0037）、v3 第 3 批（ADR 0038）、日期范围字段（ADR 0039）、值和原文写法（ADR 0040）、v3 第 4 批（ADR 0041）、PDF 画成图识别（ADR 0042）、物流和质检起步模板（ADR 0043）、修改统计和导出审核数据（ADR 0044）、从人改过的地方学（ADR 0045）、在网页上换模型（ADR 0046）、在样例上框选建模板（ADR 0047）、模板多语言和按地区管理（ADR 0048）、各国法定单据模板（ADR 0049）、OCR 纠错样本（ADR 0050）、后台流水线（ADR 0051）。
-升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at、domains、countries、tags；documents 加 auto、vision，extractions 加 classified、vision；documents 加 pdf_read，extracted_values 加 candidates；新表 team_settings、ocr_samples；documents 加 timings），再 `cd web && npm run build`。表格结构模型可选，见 README。
+v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）、模板标签（ADR 0037）、v3 第 3 批（ADR 0038）、日期范围字段（ADR 0039）、值和原文写法（ADR 0040）、v3 第 4 批（ADR 0041）、PDF 画成图识别（ADR 0042）、物流和质检起步模板（ADR 0043）、修改统计和导出审核数据（ADR 0044）、从人改过的地方学（ADR 0045）、在网页上换模型（ADR 0046）、在样例上框选建模板（ADR 0047）、模板多语言和按地区管理（ADR 0048）、各国法定单据模板（ADR 0049）、OCR 纠错样本（ADR 0050）、后台流水线（ADR 0051）、样本分组和划分（ADR 0052）。
+升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at、domains、countries、tags；documents 加 auto、vision，extractions 加 classified、vision；documents 加 pdf_read，extracted_values 加 candidates；新表 team_settings、ocr_samples；documents 加 timings；新表 doc_group_members、split_assignments、doc_pair_decisions、ocr_sample_exports，ocr_samples 加 unit_page、revision），再 `cd web && npm run build`。表格结构模型可选，见 README。
 
 ### 新增
 
+- OCR 样本按单据分组、划分训练集和验证集（ADR 0052）：同一张业务单据（重新处理的几轮、每一页、字节一样的重复文件、确认过的 PDF 和照片）是一组，整组按哈希分进训练或验证（约 80/20）并存表，多次导出始终在同一边；导出 `rec_gt_train.txt`、`rec_gt_val.txt`，清单记组号、划分版本、标签修订号。PDF 和照片按单号、日期、金额、发单方提名，人并排看原图确认后合并；配错可以拆开；导出以后才发现的重复整组隔离，受影响的导出记录记一笔。管理员可以锁定测试集（单独导出、不当"从人改过的地方学"的例子）。导出预览照实写训练、验证各几组几行，验证集太少时提示"只能检查流程"。"OCR 样本"页加了"单据分组""导出记录"两页
 - 后台流水线（ADR 0051）：OCR 工位和模型工位两个进程同时干活，模型在抽第 1 份时 OCR 已经在认第 2 份，批量导入更快；`JACARA_PIPELINE=false` 改回一个进程。每份记下认字、排队、模型各用了几秒，工作台"每页用时"下面显示平均
 - OCR 纠错样本（ADR 0050）：菜单"OCR 样本"，打开"自动收集纠错样本"（管理员）后，审核页点一块原文先核对「图中原文」，
   按图改对、回车填入；保存审核的同时，这一行按 OCR 当时的四个角裁成小图，连同图上原样的文字存成样本，
