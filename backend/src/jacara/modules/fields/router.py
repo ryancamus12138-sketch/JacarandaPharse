@@ -8,8 +8,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy.orm import Session
 
-from jacara.core.deps import get_owner, get_session
+from jacara.core.deps import get_owner, get_session, get_storage
 from jacara.core.owner import Owner
+from jacara.core.storage import ObjectStorage
 from jacara.modules.fields.schemas import (
     ConfirmManyIn,
     ConfirmManyOut,
@@ -36,9 +37,10 @@ _STATUS = {
 
 def get_service(
     session: Annotated[Session, Depends(get_session)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
     owner: Annotated[Owner, Depends(get_owner)],
 ) -> FieldService:
-    return FieldService(session, owner)
+    return FieldService(session, owner, storage)
 
 
 Service = Annotated[FieldService, Depends(get_service)]
@@ -77,6 +79,8 @@ def revise_value(value_id: uuid.UUID, change: RevisionIn, service: Service) -> V
     - 确认：`{"action": "confirm"}`
     - 从原文选取：`{"action": "edit", "source_lines": [12, 13]}`（这一页 OCR 结果里的第几块，
       见 `/documents/{id}/pages/{n}/ocr`），值从这几块的文字读出，出处换成这几块
+    - 图中原文（ADR 0050）：`{"action": "edit", "source_lines": [4], "transcription": "17/05/24"}`，
+      值从改好的原文读出；开了"自动收集纠错样本"的话同时存成一条 OCR 样本
 
     返回审核之后的字段：current_value 是新值，pending_review 变成 false。
     """

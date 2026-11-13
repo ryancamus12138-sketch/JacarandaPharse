@@ -52,8 +52,8 @@ def test_lab_rule_runs_on_each_result_row():
     assert len(issues) == 1 and "results.1.result" in issues[0].fields
 
 
-def test_template_excel_lists_only_rules_it_can_use(client):
-    """导出模板 Excel 的"规则"表只列用得上的规则：化验单只有 lab_flag，不列发票、收据的。"""
+def test_template_excel_lists_only_chosen_rules(client):
+    """导出模板 Excel 的"规则"表只列这个模板选了的规则：化验单只有 lab_flag，不列发票、收据的。"""
     import io
 
     from openpyxl import load_workbook
@@ -68,20 +68,22 @@ def test_template_excel_lists_only_rules_it_can_use(client):
     hotel = client.post("/api/v1/templates", json={"source": "starter", "starter": "hotel_folio"})
     exported = client.get(f"/api/v1/templates/{hotel.json()['id']}/export")
     sheet = load_workbook(io.BytesIO(exported.content))["规则"]
-    ids = {str(row[0]) for row in sheet.iter_rows(min_row=2, values_only=True) if row[0]}
-    assert {"stay_order", "stay_nights"} <= ids and "cn_invoice_no" not in ids
+    rows = [row for row in sheet.iter_rows(min_row=2, values_only=True) if row[0]]
+    chosen = [r["id"] for r in hotel.json()["rules"]]
+    assert sorted(str(r[0]) for r in rows) == sorted(chosen)
+    assert all(r[3] == "是" for r in rows)
 
 
 def test_every_starter_only_has_rules_it_can_run():
     """每个起步模板：选的规则字段都有（不会永远跳过），国家对得上（通用模板没有某国的规则）。"""
     from jacara.templates import STARTERS
-    from jacara.workbook.standard import _usable
+    from jacara.workbook.standard import usable_rule
 
     for name in STARTERS:
         template = load_starter(name)
         shape = {**template.definition(), "countries": list(template.countries)}
         assert template.foreign_rules() == [], name
-        assert all(_usable(r, shape) for r in template.rules), name
+        assert all(usable_rule(r, shape) for r in template.rules), name
 
 
 def test_radical_code_points_in_pdf_text_become_normal_characters():
@@ -142,3 +144,27 @@ def test_progress_moves_while_the_model_writes():
     assert stages and "模型已写 50%" in stages[0][0] and stages[0][1] == 58
     tell(5000, 1000)  # 一秒之内不重复报
     assert len(stages) == 1
+
+
+def test_saving_drops_rules_the_template_cannot_run(client):
+    """删了字段、去掉国家，依赖它们的规则保存时跟着去掉（不会留着永远跳过）。"""
+    created = client.post(
+        "/api/v1/templates", json={"source": "starter", "starter": "hotel_folio"}
+    ).json()
+    fields = [f for f in created["fields"] if f["name"] != "issue_date"]
+    saved = client.put(
+        f"/api/v1/templates/{created['id']}",
+        json={
+            "title": created["title"],
+            "category": created["category"],
+            "fields": fields,
+            "tables": created["tables"],
+            "rules": [r["id"] for r in created["rules"]] + ["seller_abn", "cn_invoice_no"],
+            "countries": [],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    ids = {r["id"] for r in saved.json()["rules"]}
+    assert "issue_date_exists" not in ids and "issue_date_not_future" not in ids  # 要 issue_date
+    assert "seller_abn" not in ids and "cn_invoice_no" not in ids  # 别的国家的、缺字段的
+    assert ids  # 别的还在

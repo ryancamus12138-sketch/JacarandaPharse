@@ -100,6 +100,9 @@ class RevisionIn(BaseModel):
     source_box: list[float] | None = Field(default=None, min_length=4, max_length=4)
     """框选：人在原图上框出的区域 [x0, y0, x1, y1]（重新识别这块之后确认的值放在 value）。
     新出处就是这个框。"""
+    transcription: str | None = Field(default=None, max_length=500)
+    """图中原文（ADR 0050）：图上原样的文字。只能和一块原文（source_lines 只有一个）或框选一起用。
+    从原文选取时没给 value，值从它读出。团队开了"自动收集纠错样本"时，保存的同时存成 OCR 样本。"""
     page: int | None = Field(default=None, ge=1)
     """从原文选取、框选的是文件的第几页（ADR 0036：一张单据可以占好几页）。
     不写就是这张单据的第一页。"""

@@ -498,6 +498,8 @@ export interface TemplateRule {
 /** 规则库里的一条规则（编辑器里选）。 */
 export interface RuleInfo extends TemplateRule {
   per_row: string | null
+  /** 模板里要有这些字段（值可以空）这条规则才用得上（ADR 0049）。 */
+  requires?: string[]
   /** 只适用于某个国家的规则：国家代码（CN、AU）；通用的是空的。 */
   country: string
 }
@@ -522,6 +524,8 @@ export interface Template {
   titles?: Record<string, string>
   /** 能切换的语言，第一个是默认的中文。 */
   languages?: string[]
+  /** 起步模板的依据：法规条款、使用场景、查证来源。 */
+  basis?: string[]
   description: string
   category: string
   kind: TemplateKind
@@ -667,6 +671,11 @@ export interface RevisionIn {
   source_lines?: number[]
   /** 框选：原图上框出的区域 [x0, y0, x1, y1]（重新识别之后确认的值放在 value）。出处就是这个框。 */
   source_box?: Box
+  /**
+   * 图中原文（ADR 0050）：图上原样的文字。只能和一块原文或框选一起用；从原文选取时值从它读出。
+   * 团队开了"自动收集纠错样本"时，保存的同时存成 OCR 样本。
+   */
+  transcription?: string
   /** 从原文选取、框选的是第几页（一张单据可以占好几页）。 */
   page?: number
 }

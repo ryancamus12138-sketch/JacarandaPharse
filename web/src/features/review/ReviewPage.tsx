@@ -40,6 +40,7 @@ import {
   getPageStructure,
   deleteDocuments,
 } from '../../api/documents'
+import { getSampleSettings } from '../../api/ocrSamples'
 import type { Box, DocumentDetail, Extraction, FieldValue, RevisionIn } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
 import { ExportButton } from '../documents/ExportButton'
@@ -58,6 +59,7 @@ import {
 import { PageViewer } from './PageViewer'
 import { ReasonDialog, type ReasonRequest } from './ReasonDialog'
 import { RegionPanel } from './RegionPanel'
+import { TranscriptionPanel } from './TranscriptionPanel'
 import { openCommentsOnPage, useComments } from './comments'
 import { CommentsButton, SkipButton, SkippedNotice } from './ReviewExtras'
 import { ReprocessButton, RunSwitcher } from './RunControls'
@@ -122,6 +124,8 @@ function ReviewWorkspace({ id }: { id: string }) {
   const [ocrOn, setOcrOn] = useState(false)
   const [altHeld, setAltHeld] = useState(false)
   const [picked, setPicked] = useState<number[]>([])
+  // 开了"自动收集纠错样本"（ADR 0050）：单击的一块原文先核对图中原文再填入
+  const [checking, setChecking] = useState<number | null>(null)
   const [reasonRequest, setReasonRequest] = useState<ReasonRequest | null>(null)
   // 框选：模式开关、正在画的框、画好了等着用的框
   const [drawOn, setDrawOn] = useState(false)
@@ -216,6 +220,12 @@ function ReviewWorkspace({ id }: { id: string }) {
     (document.data.viewing_run ?? 1) !== (document.data.current_run ?? 1)
   // 旧的几轮、正在重新处理的：只能看
   const canEdit = can('value:review') && !viewingOld && doneOrReviewed
+  const sampleSettings = useQuery({
+    queryKey: ['ocr-sample-settings'],
+    queryFn: getSampleSettings,
+    staleTime: 60_000,
+  })
+  const collecting = canEdit && sampleSettings.data?.collect === true
   // 第 page 页属于哪一张单据（一张单据可以占好几页，ADR 0036）
   const currentExtraction = coveringExtraction(document.data?.extractions ?? [], page)
   // 字段名的语言（ADR 0048）：模板写了几种语言就能切换，按模板记住选的
@@ -258,9 +268,9 @@ function ReviewWorkspace({ id }: { id: string }) {
     }
   }
 
-  /** 用框选、重新识别并确认过的文字填进选中的字段。 */
-  function applyBox(box: Box, text: string, reason = '') {
-    applyChange({ action: 'edit', reason, value: text, source_box: box })
+  /** 用框选、重新识别并确认过的文字填进选中的字段。transcription：图中原文（收集 OCR 样本时才有）。 */
+  function applyBox(box: Box, text: string, reason = '', transcription?: string) {
+    applyChange({ action: 'edit', reason, value: text, source_box: box, transcription })
   }
 
   function applyChange(change: RevisionIn) {
@@ -273,6 +283,7 @@ function ReviewWorkspace({ id }: { id: string }) {
       {
         onSuccess: () => {
           setPicked([])
+          setChecking(null)
           setDraft(null)
           setDrawn(null)
           if (splitCell(selected.name)) {
@@ -290,6 +301,7 @@ function ReviewWorkspace({ id }: { id: string }) {
   /** 换了选中的字段：多选到一半的原文、画好还没用的框都作废。null = 取消选中。 */
   function select(valueId: string | null) {
     setPicked([])
+    setChecking(null)
     setDraft(null)
     setDrawn(null)
     setSelectedId(valueId)
@@ -309,7 +321,10 @@ function ReviewWorkspace({ id }: { id: string }) {
       return
     }
     if (multi) {
+      setChecking(null)
       setPicked((p) => (p.includes(index) ? p.filter((i) => i !== index) : [...p, index]))
+    } else if (collecting && picked.length === 0) {
+      setChecking(index) // 先核对图中原文，回车再填入
     } else {
       applyPick([...picked.filter((i) => i !== index), index])
     }
@@ -415,6 +430,8 @@ function ReviewWorkspace({ id }: { id: string }) {
         if (drawn || draft) {
           setDraft(null)
           setDrawn(null)
+        } else if (checking !== null) {
+          setChecking(null)
         } else if (picked.length > 0) {
           setPicked([])
         } else {
@@ -445,7 +462,7 @@ function ReviewWorkspace({ id }: { id: string }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [values, selectedId, canEdit, revise, picked, reasonRequest, drawn, draft])
+  }, [values, selectedId, canEdit, revise, picked, checking, reasonRequest, drawn, draft])
 
   const back = (
     <Link to="/documents">
@@ -487,6 +504,7 @@ function ReviewWorkspace({ id }: { id: string }) {
     setPage(next)
     setSelectedId(null)
     setPicked([])
+    setChecking(null)
   }
 
   const pagePending = values.filter((v) => v.pending_review).map((v) => v.id)
@@ -729,8 +747,9 @@ function ReviewWorkspace({ id }: { id: string }) {
               busy={revise.isPending}
               onUseLines={(indexes) => applyPick(indexes)}
               type={selected.type}
-              onUseText={(text, byModel) =>
-                applyBox(drawn, text, byModel ? '模型看原图读的，人核对过' : '')
+              collecting={collecting}
+              onUseText={(text, byModel, transcription) =>
+                applyBox(drawn, text, byModel ? '模型看原图读的，人核对过' : '', transcription)
               }
               onCancel={() => {
                 setDraft(null)
@@ -744,6 +763,18 @@ function ReviewWorkspace({ id }: { id: string }) {
               showIcon
               style={{ marginBottom: 8 }}
               title="框好了。先在右边选中要填的字段"
+            />
+          )}
+          {checking !== null && selected && (
+            <TranscriptionPanel
+              key={checking} // 换了一块原文，输入框重新开始
+              ocrText={ocr.data?.lines[checking]?.text ?? ''}
+              label={displayLabel(values, selected)}
+              busy={revise.isPending}
+              onUse={(transcription) =>
+                applyChange({ action: 'edit', reason: '', source_lines: [checking], transcription })
+              }
+              onCancel={() => setChecking(null)}
             />
           )}
           {picked.length > 0 && selected && (
@@ -785,7 +816,7 @@ function ReviewWorkspace({ id }: { id: string }) {
             onToggleStructure={() => setStructureOn((on) => !on)}
             showOcr={showOcr}
             onToggleOcr={() => setOcrOn((on) => !on)}
-            picked={picked}
+            picked={checking !== null ? [checking] : picked}
             onPickLine={pickLine}
             canDraw={canEdit}
             drawOn={drawOn}

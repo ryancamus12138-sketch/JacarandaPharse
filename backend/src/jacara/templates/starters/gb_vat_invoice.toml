@@ -1,0 +1,133 @@
+# 起步模板：UK VAT invoice（full / modified / simplified）。
+# 依据：Value Added Tax Regulations 1995 reg 14（full VAT invoice 内容）、reg 16（retailer 的 simplified invoice，≤ £250 含税）；
+#   HMRC VAT Notice 700/21。VAT 税率 20% / 5% / 0%。VAT 号 GB + 9 位（模 97 校验）。
+# 场景：VAT 登记企业凭此抵扣进项 VAT；报销。
+# 来源：invoicedataextraction.com「UK VAT invoice requirements」（引用 HMRC VAT Notice 700/21）。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "gb_vat_invoice"
+version = 1
+title = "英国 VAT 发票"
+titles = { en = "VAT Invoice (UK)" }
+countries = ["GB"]
+domains = ["发票"]
+description = "英国的 VAT invoice：供应商名称地址和 VAT 号、发票号、日期（tax point）、客户名称地址、描述、数量、不含税单价、每项 VAT 税率、不含税合计、VAT 合计。VAT 号校验位不对、税率不是 20/5/0%、超过 £250 没有客户名称地址会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "gb_vat_no", "gb_rates", "gb_full_over_250"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+names = { en = "Document Title" }
+type = "string"
+description = "单据最上面的标题，照抄"
+
+[[fields]]
+name = "invoice_no"
+label = "发票号码"
+names = { en = "Invoice No." }
+type = "string"
+required = true
+unique = true
+description = "照抄，不要改格式"
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue" }
+type = "date"
+required = true
+
+[[fields]]
+name = "supply_date"
+label = "纳税时点"
+names = { en = "Tax Point" }
+type = "date"
+description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller" }
+type = "string"
+required = true
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address" }
+type = "string"
+
+[[fields]]
+name = "seller_tax_id"
+label = "VAT 号"
+names = { en = "VAT Registration No." }
+type = "string"
+aliases = ["VAT No", "VAT Reg No"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer" }
+type = "string"
+
+[[fields]]
+name = "buyer_address"
+label = "买方地址"
+names = { en = "Buyer Address" }
+type = "string"
+
+[[fields]]
+name = "net_total"
+label = "不含税合计"
+names = { en = "Total excl. Tax" }
+type = "number"
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax" }
+type = "number"
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+names = { en = "Total incl. Tax" }
+type = "number"
+required = true
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description" }
+type = "string"
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity" }
+type = "number"
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price" }
+type = "number"
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+
+[[tables.columns]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate" }
+type = "string"

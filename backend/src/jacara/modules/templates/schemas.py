@@ -139,6 +139,8 @@ class TemplateOut(BaseModel):
     """模板名的别的语言写法（ADR 0048）。"""
     languages: list[str] = ["zh"]
     """能切换的语言，第一个是默认的中文。"""
+    basis: list[str] = []
+    """起步模板的依据：法规条款、使用场景、查证来源。我的模板是空的。"""
     description: str
     fields: list[TemplateFieldOut]
     rules: list[TemplateRuleOut]
@@ -180,6 +182,8 @@ class RuleInfo(BaseModel):
     needs: list[str]
     severity: str
     per_row: str | None = None
+    requires: list[str] = []
+    """模板里要有这些字段（值可以空）这条规则才用得上（ADR 0049）。"""
     country: str = ""
     """只适用于某个国家的规则：国家代码（CN、AU）；通用的是空的。"""
 

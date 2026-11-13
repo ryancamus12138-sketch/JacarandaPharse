@@ -55,7 +55,7 @@ def is_standard(data: bytes) -> bool:
 # ---------- 模板 → Excel ----------
 
 
-def _usable(rule: Rule, template: dict[str, Any]) -> bool:
+def usable_rule(rule: Rule, template: dict[str, Any]) -> bool:
     """这条内置规则这个模板用得上：要的字段（表格的列）都有；某国的规则只给选了这个国家的模板。"""
     country = REGIONS.get(rule.id)
     if country and country not in (template.get("countries") or []):
@@ -63,8 +63,8 @@ def _usable(rule: Rule, template: dict[str, Any]) -> bool:
     fields = {f["name"] for f in template.get("fields", [])}
     columns = {t["name"]: {c["name"] for c in t["columns"]} for t in template.get("tables", [])}
     if rule.per_row:
-        return all(n in columns.get(rule.per_row, set()) for n in rule.needs)
-    for need in rule.needs:
+        return all(n in columns.get(rule.per_row, set()) for n in (*rule.needs, *rule.requires))
+    for need in (*rule.needs, *rule.requires):
         table, _, column = need.partition(".*.")
         if column and column not in columns.get(table, set()):
             return False
@@ -122,9 +122,9 @@ def to_excel(template: dict[str, Any]) -> bytes:
     rules_ws = book.create_sheet("规则")
     _setup(rules_ws, ["编号", "名称", "级别", "用"], [22, 46, 8, 6])
     chosen = set(template.get("rules", []))
-    # 只列这个模板用得上的规则（和编辑器一样）：选了的，加上字段都有、国家对得上的；
-    # 化验单不会列出发票、收据、机票的规则
-    listed = [r for r in ALL_RULES if r.id in chosen or _usable(r, template)]
+    # 只列这个模板选了的规则（化验单不会列出发票、收据、机票的规则）。
+    # 想加别的规则，在下面空行里写规则编号、"用"填"是"，导入时会检查
+    listed = [r for r in ALL_RULES if r.id in chosen]
     for rule in listed:
         rules_ws.append(
             [

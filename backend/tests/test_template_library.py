@@ -535,8 +535,8 @@ def test_generic_starters_have_no_regional_rules():
     assert {"seller_abn", "au_buyer_1000", "au_tax_invoice_title"} <= au
 
 
-def test_my_templates_can_use_any_rule_and_labels(client, mine):
-    """我的模板不限制规则；标签（领域、国家、自定义）可以随便改，只改标签不出新版本。"""
+def test_my_templates_rules_follow_fields_and_countries(client, mine):
+    """我的模板的规则跟着字段和国家走（ADR 0048）；标签可以随便改，只改标签不出新版本。"""
     body = client.get(f"/api/v1/templates/{mine}").json()
     assert body["domains"] == ["收据"] and body["countries"] == [] and body["tags"] == []
     saved = client.put(
@@ -570,7 +570,21 @@ def test_my_templates_can_use_any_rule_and_labels(client, mine):
             "title": "新名字",
             "rules": ["ato_evidence"],
             "domains": ["收据"],
+            "countries": ["AU"],
+        },
+    ).json()
+    assert (
+        again["version"] == version and again["title"] == "新名字" and again["countries"] == ["AU"]
+    )
+
+    # 去掉澳洲：澳洲的规则跟着去掉（规则变了，出新版本）
+    general = client.put(
+        f"/api/v1/templates/{mine}",
+        json={
+            **{k: saved.json()[k] for k in ("fields", "tables")},
+            "title": "新名字",
+            "rules": ["ato_evidence"],
             "countries": [],
         },
     ).json()
-    assert again["version"] == version and again["title"] == "新名字" and again["countries"] == []
+    assert general["countries"] == [] and general["rules"] == []

@@ -20,8 +20,13 @@ interface Props {
   onUseLines: (indexes: number[]) => void
   /** 字段类型（string、number、date），让模型按类型写值。 */
   type?: string
-  /** 用重新识别（或模型看图读出）、人确认过的文字。byModel：是模型看图读的。 */
-  onUseText: (text: string, byModel: boolean) => void
+  /**
+   * 用重新识别（或模型看图读出）、人确认过的文字。byModel：是模型看图读的。
+   * transcription：图中原文（开了"自动收集纠错样本"才有，ADR 0050）。
+   */
+  onUseText: (text: string, byModel: boolean, transcription?: string) => void
+  /** 开了"自动收集纠错样本"：填入的同时把框里的图和图中原文存成 OCR 样本。 */
+  collecting?: boolean
   onCancel: () => void
 }
 
@@ -52,10 +57,13 @@ export function RegionPanel({
   type,
   onUseLines,
   onUseText,
+  collecting = false,
   onCancel,
 }: Props) {
   const inside = linesIn(lines, box)
   const [text, setText] = useState<string | null>(null)
+  // 图中原文单独填的（框里还有别的字，和要填的值不一样）；null = 和填入的值一样
+  const [own, setOwn] = useState<string | null>(null)
   const [byModel, setByModel] = useState(false)
   const [seen, setSeen] = useState<string | null>(null)
   const vision = useQuery({ queryKey: ['vision'], queryFn: getVision, staleTime: 60_000 })
@@ -76,6 +84,11 @@ export function RegionPanel({
     },
   })
   const error = read.error ?? look.error
+  // 模型看图读的值可能已经转过格式，图中原文默认用它在图上看到的字
+  const transcription = collecting ? (own ?? (byModel && seen ? seen : text) ?? undefined) : undefined
+  const use = () => {
+    if (text?.trim()) onUseText(text.trim(), byModel, transcription?.trim() || undefined)
+  }
 
   return (
     <Alert
@@ -143,7 +156,7 @@ export function RegionPanel({
                 value={text}
                 placeholder="没认出文字，可以直接输入"
                 onChange={(e) => setText(e.target.value)}
-                onPressEnter={() => text.trim() && onUseText(text.trim(), byModel)}
+                onPressEnter={use}
                 style={{ flex: 1 }}
               />
               <Button
@@ -151,10 +164,32 @@ export function RegionPanel({
                 type="primary"
                 disabled={!text.trim()}
                 loading={busy}
-                onClick={() => onUseText(text.trim(), byModel)}
+                onClick={use}
               >
                 填入
               </Button>
+            </Flex>
+          )}
+          {text !== null && collecting && own === null && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              图中原文{byModel && seen ? `用模型在图上看到的「${seen}」` : '和上面填入的一样'}
+              ，会和框里的图一起存成 OCR 样本。框里还有别的字（比如标签）？
+              <Button type="link" size="small" onClick={() => setOwn(transcription ?? text)}>
+                单独填写图中原文
+              </Button>
+            </Typography.Text>
+          )}
+          {text !== null && collecting && own !== null && (
+            <Flex gap={8} align="center">
+              <Typography.Text>图中原文：</Typography.Text>
+              <Input
+                size="small"
+                value={own}
+                placeholder="框里所有的字，按图上原样"
+                onChange={(e) => setOwn(e.target.value)}
+                onPressEnter={use}
+                style={{ flex: 1, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}
+              />
             </Flex>
           )}
         </Flex>

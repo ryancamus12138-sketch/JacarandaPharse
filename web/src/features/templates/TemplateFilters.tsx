@@ -1,10 +1,15 @@
-import { SearchOutlined } from '@ant-design/icons'
-import { Flex, Input, Select, Tag, Typography } from 'antd'
+import { DownOutlined, SearchOutlined, UpOutlined } from '@ant-design/icons'
+import { Button, Flex, Input, Select, Tag, Typography } from 'antd'
+import { useState } from 'react'
 import type { Template } from '../../api/types'
 import { countryName } from './labels'
 import { domainsOf, type Filters, SOURCE_TEXT, sourceKind } from './filtering'
 
-/** 一排可以点的标签（像微信的标签分类）：点一下选上，再点取消；"全部"清空。 */
+/** 一排默认显示几个，多的点"展开"再看。 */
+const FIRST = 5
+
+/** 一排可以点的标签（像微信的标签分类）：点一下选上，再点取消；"全部"清空。
+ * 多于 5 个时只显示前 5 个（选中的总是显示），后面一个按钮展开其余的、收起。 */
 function ChipRow({
   label,
   items,
@@ -18,7 +23,10 @@ function ChipRow({
   onToggle: (value: string) => void
   onClear: () => void
 }) {
+  const [open, setOpen] = useState(false)
   if (items.length === 0) return null
+  const hidden = items.slice(FIRST).filter((i) => !selected.includes(i.value))
+  const shown = open ? items : items.filter((i, n) => n < FIRST || selected.includes(i.value))
   return (
     <Flex gap={4} wrap align="center">
       <Typography.Text type="secondary" style={{ width: 72, flexShrink: 0 }}>
@@ -27,7 +35,7 @@ function ChipRow({
       <Tag.CheckableTag checked={selected.length === 0} onChange={onClear}>
         全部
       </Tag.CheckableTag>
-      {items.map((i) => (
+      {shown.map((i) => (
         <Tag.CheckableTag
           key={i.value}
           checked={selected.includes(i.value)}
@@ -36,6 +44,18 @@ function ChipRow({
           {i.text}（{i.count}）
         </Tag.CheckableTag>
       ))}
+      {(open || hidden.length > 0) && (
+        <Button
+          type="link"
+          size="small"
+          icon={open ? <UpOutlined /> : <DownOutlined />}
+          iconPosition="end"
+          onClick={() => setOpen(!open)}
+          style={{ paddingInline: 4 }}
+        >
+          {open ? '收起' : `展开其余 ${hidden.length} 个`}
+        </Button>
+      )}
     </Flex>
   )
 }

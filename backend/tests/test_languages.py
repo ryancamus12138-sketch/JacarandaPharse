@@ -58,6 +58,14 @@ def test_names_go_into_the_prompt_once():
     assert "Inv No、Invoice number、請求書番号" in field.spec.description
 
 
+def test_prompt_only_has_english_and_local_names():
+    """通用模板只给模型英文名；日本模板再加日文名（ADR 0049）。"""
+    generic = parse_template(RAW, "demo").specs[0].description
+    assert "Invoice number" in generic and "請求書番号" not in generic
+    japan = parse_template({**RAW, "countries": ["JP"]}, "demo").specs[0].description
+    assert "請求書番号" in japan
+
+
 def test_names_round_trip_through_definition():
     template = parse_template(RAW, "demo")
     again = from_definition(template.definition(), "demo", 1, template.title)

@@ -1,0 +1,176 @@
+# 起步模板：Polska faktura VAT（KSeF：ustrukturyzowana；打印件 / wizualizacja）。
+# 依据：ustawa o VAT art. 106e ust. 1：data wystawienia、kolejny numer、imiona i nazwiska lub nazwy oraz adresy、NIP sprzedawcy i
+#   nabywcy、data dostawy、nazwa towaru lub usługi、miara i ilość、cena jednostkowa netto、wartość netto、stawka podatku、
+#   suma wartości netto według stawek、kwota podatku、kwota należności ogółem。Stawki VAT 23 / 8 / 5 / 0 %。
+#   KSeF obowiązkowy：od 1 lutego 2026（sprzedaż > 200 mln zł w 2024）、od 1 kwietnia 2026 pozostali（Dz.U. 2025 poz. 1203）。
+# 场景：波兰企业间开票（KSeF 编号），买方抵扣 VAT naliczony。
+# 来源：ksef.podatki.gov.pl「Podstawy prawne oraz kluczowe terminy」。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "pl_faktura"
+version = 1
+title = "波兰增值税发票（Faktura）"
+titles = { en = "VAT Invoice (Poland)", pl = "Faktura VAT" }
+countries = ["PL"]
+domains = ["发票"]
+description = "波兰的 faktura VAT：开具日期、编号、卖方和买方的名称地址 NIP、交付日期、品名、单位数量、不含税单价和金额、税率、各税率的净额和税额、应付总额，以及 KSeF 编号。NIP 校验位不对、税率不是 23/8/5/0% 会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "pl_seller_nip", "pl_buyer_nip", "pl_rates"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+names = { en = "Document Title", pl = "Rodzaj dokumentu" }
+type = "string"
+description = "单据最上面的标题，照抄"
+aliases = ["Rodzaj dokumentu"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票号码"
+names = { en = "Invoice No.", pl = "Numer faktury" }
+type = "string"
+required = true
+unique = true
+description = "照抄，不要改格式"
+aliases = ["Numer faktury"]
+
+[[fields]]
+name = "ksef_no"
+label = "KSeF 编号"
+names = { en = "KSeF No.", pl = "Numer KSeF" }
+type = "string"
+unique = true
+description = "KSeF 给的编号，照抄"
+aliases = ["Numer KSeF"]
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue", pl = "Data wystawienia" }
+type = "date"
+required = true
+aliases = ["Data wystawienia"]
+
+[[fields]]
+name = "supply_date"
+label = "交易日期"
+names = { en = "Date of Supply", pl = "Data dostawy" }
+type = "date"
+description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+aliases = ["Data dostawy"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller", pl = "Sprzedawca" }
+type = "string"
+required = true
+aliases = ["Sprzedawca"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address", pl = "Adres sprzedawcy" }
+type = "string"
+aliases = ["Adres sprzedawcy"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "卖方税号"
+names = { en = "Seller Tax ID", pl = "NIP sprzedawcy" }
+type = "string"
+description = "照抄，带上字母和分隔符"
+aliases = ["NIP sprzedawcy"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer", pl = "Nabywca" }
+type = "string"
+aliases = ["Nabywca"]
+
+[[fields]]
+name = "buyer_address"
+label = "买方地址"
+names = { en = "Buyer Address", pl = "Adres nabywcy" }
+type = "string"
+aliases = ["Adres nabywcy"]
+
+[[fields]]
+name = "buyer_tax_id"
+label = "买方税号"
+names = { en = "Buyer Tax ID", pl = "NIP nabywcy" }
+type = "string"
+description = "照抄；没有就留空"
+aliases = ["NIP nabywcy"]
+
+[[fields]]
+name = "net_total"
+label = "不含税合计"
+names = { en = "Total excl. Tax", pl = "Wartość netto" }
+type = "number"
+aliases = ["Wartość netto"]
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax", pl = "Kwota VAT" }
+type = "number"
+aliases = ["Kwota VAT"]
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+names = { en = "Total incl. Tax", pl = "Kwota należności ogółem" }
+type = "number"
+required = true
+aliases = ["Kwota należności ogółem"]
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items", pl = "Pozycje" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description", pl = "Nazwa towaru lub usługi" }
+type = "string"
+aliases = ["Nazwa towaru lub usługi"]
+
+[[tables.columns]]
+name = "unit"
+label = "单位"
+names = { en = "Unit", pl = "Miara" }
+type = "string"
+aliases = ["Miara"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity", pl = "Ilość" }
+type = "number"
+aliases = ["Ilość"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price", pl = "Cena jednostkowa netto" }
+type = "number"
+aliases = ["Cena jednostkowa netto"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount", pl = "Wartość netto" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+aliases = ["Wartość netto"]
+
+[[tables.columns]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate", pl = "Stawka VAT" }
+type = "string"
+aliases = ["Stawka VAT"]

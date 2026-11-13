@@ -17,6 +17,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path, PurePath
 from typing import Any, cast
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from jacara.core.config import get_settings
@@ -340,6 +341,16 @@ class DocumentService:
             )
         return AdoptOut(confirmed=confirmed, edited=edited)
 
+    def _sample_crops(self, document_id: uuid.UUID) -> list[str]:
+        from jacara.models import OcrSample
+
+        keys = self.session.scalars(
+            select(OcrSample.crop_key).where(
+                OcrSample.document_id == document_id, OcrSample.crop_key.is_not(None)
+            )
+        )
+        return [k for k in keys if k]
+
     def delete(self, ids: list[uuid.UUID]) -> DeleteOut:
         """删除文档：原始文件、每一轮的结果、审核记录、备注都删掉，不能恢复。审计日志记下删了什么。
 
@@ -367,6 +378,7 @@ class DocumentService:
             )
             if document.storage_key:
                 keys.append(document.storage_key)
+            keys += self._sample_crops(document.id)  # OCR 样本的小图（ADR 0050）一起删
             self.repo.delete(document)
             deleted += 1
         # 先提交，再删原始文件：数据库没删成的话，文件还在
@@ -375,7 +387,7 @@ class DocumentService:
             try:
                 self.storage.delete(key)
             except StorageError:
-                log.warning("删除文档后，原始文件 %s 没能从对象存储删掉", key)
+                log.warning("删除文档后，文件 %s 没能从对象存储删掉", key)
         return DeleteOut(deleted=deleted, skipped=skipped)
 
     def folders(self) -> list[FolderOut]:

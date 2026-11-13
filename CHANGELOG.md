@@ -5,13 +5,24 @@
 
 ## [未发布]
 
-v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）、模板标签（ADR 0037）、v3 第 3 批（ADR 0038）、日期范围字段（ADR 0039）、值和原文写法（ADR 0040）、v3 第 4 批（ADR 0041）、PDF 画成图识别（ADR 0042）、物流和质检起步模板（ADR 0043）、修改统计和导出审核数据（ADR 0044）、从人改过的地方学（ADR 0045）、在网页上换模型（ADR 0046）、在样例上框选建模板（ADR 0047）、模板多语言和按地区管理（ADR 0048）。
-升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at、domains、countries、tags；documents 加 auto、vision，extractions 加 classified、vision；documents 加 pdf_read，extracted_values 加 candidates），再 `cd web && npm run build`。表格结构模型可选，见 README。
+v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）、模板标签（ADR 0037）、v3 第 3 批（ADR 0038）、日期范围字段（ADR 0039）、值和原文写法（ADR 0040）、v3 第 4 批（ADR 0041）、PDF 画成图识别（ADR 0042）、物流和质检起步模板（ADR 0043）、修改统计和导出审核数据（ADR 0044）、从人改过的地方学（ADR 0045）、在网页上换模型（ADR 0046）、在样例上框选建模板（ADR 0047）、模板多语言和按地区管理（ADR 0048）、各国法定单据模板（ADR 0049）、OCR 纠错样本（ADR 0050）。
+升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at、domains、countries、tags；documents 加 auto、vision，extractions 加 classified、vision；documents 加 pdf_read，extracted_values 加 candidates；新表 team_settings、ocr_samples），再 `cd web && npm run build`。表格结构模型可选，见 README。
 
 ### 新增
 
+- OCR 纠错样本（ADR 0050）：菜单"OCR 样本"，打开"自动收集纠错样本"（管理员）后，审核页点一块原文先核对「图中原文」，
+  按图改对、回车填入；保存审核的同时，这一行按 OCR 当时的四个角裁成小图，连同图上原样的文字存成样本，
+  自动分成认错字、认对的行、漏认、原因未确定，标出字认错、漏字、多字等。框选重新识别的也能收集（框里还有别的字时单独填图中原文）。
+  样本页看小图、改原文和分类、撤回、重试；导出 ZIP（crop_img/、rec_gt.txt、manifest.jsonl、README.md），
+  PaddleOCR 识别训练直接读，先预览会导出几条、排除的原因。敏感字段、PDF 自带的文字不收集；删除文档时样本一起删
+- 模板预览：起步模板和我的模板的卡片上点"预览"，弹窗里分页看字段（名称、类型、必填、单据上可能写作、说明）、表格、规则（带国家）、依据（起步模板的法规条款、使用场景、查证来源；从起步模板复制的我的模板也能看），名称可以切换语言；底下直接"添加到我的模板"或"编辑"
+- 批量操作：起步模板库可以勾选几个（或全选当前筛选的）一起添加到我的模板，已经添加过的跳过；我的模板可以勾选几个一起删除。"复制"挪到了"更多"里
+- 模板筛选："功能领域""国家和地区"两行各只显示前 5 个，其余用"展开其余 N 个 / 收起"切换；已选中的一项收起时也保留显示
+- 22 个国家和地区的法定单据起步模板（ADR 0049）：日本適格請求書、韩国세금계산서、台湾统一发票、新加坡 GST tax invoice、马来西亚 MyInvois、越南电子发票、印度 GST invoice、新西兰 taxable supply information、美国 CLIA 检验报告、英国 VAT invoice、德国 Rechnung 和 Kassenbeleg、泰国ใบกำกับภาษี、印尼 Faktur Pajak、菲律宾 VAT invoice、法国 facture、意大利 fattura、西班牙 factura、荷兰 factuur、波兰 faktura、加拿大 GST/HST invoice、阿联酋和沙特 tax invoice。每个都写了法规依据和查证来源，配了本国的规则：税号校验位、现行税率（按开票日期）、简易发票门槛。香港没有法定发票格式，不做
+- 通用模板可以切换 17 种语言（中文、英文和 15 种当地语言）；给模型的提示词只放英文和本国语言
 - 模板多语言（ADR 0048）：字段名、表名、模板名可以写中文、英文和当地语言。审核页右边"字段名"下拉框切换，导出的列名跟着变（导出按钮的小箭头里也能选"列名语言"）；模板编辑器右上角选"名称语言"就能填那种语言的名字。没写的语言显示中文。别的语言的名字也会告诉模型，单据上这么写也能对上
 - 起步模板都有英文名（版本号各加 1）；模板库按地区分组：通用、中国、澳洲……
+- 模板编辑器的规则只列跟这个模板有关的（字段都有、通用或本国的），去掉了"显示全部"；删了字段、去掉了国家，依赖它们的规则保存时自动去掉；导出模板 Excel 的"规则"表只列选了的规则
 - 新的起步模板"检验检测报告（中国 · CMA）"：在通用质检报告上加了 CMA 资质认定证书编号、检验检测专用章、机构和委托单位地址、样品状态、抽样信息、总页数，依据《检验检测机构资质认定管理办法》《检验检测机构监督管理办法》；证书编号不是 12 位数字、抽样日期晚于签发日期会提醒
 - 在样例上框选建模板（ADR 0047）：审核页"框选建模板"，原图上用虚线标出系统读到的键值对，点一下就加成字段（名称用它的标题）；没有配对的值自己框，标签留空时点原图上的标签文字填上。存成模板后可以直接用新模板重新处理这份样例
 - 版面分析配对更准：值不再吞掉下一行别的标签的值（Date 吞了 Cashier 的 MANIS）；没认出表格时，表格行的行名配最右边的金额（Room Charges → Rs 1939）

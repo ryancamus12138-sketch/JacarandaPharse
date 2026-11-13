@@ -107,6 +107,19 @@ Names = tuple[tuple[str, str], ...]
 """别的语言的名字（ADR 0048）：((语言代码, 名字), ...)。label 本身是默认语言。"""
 
 
+PROMPT_LANGUAGES: dict[str, str] = {
+    "CN": "zh", "TW": "zh-Hant", "HK": "zh-Hant", "JP": "ja", "KR": "ko", "MY": "ms",
+    "VN": "vi", "IN": "hi", "TH": "th", "ID": "id", "DE": "de", "AT": "de", "FR": "fr",
+    "IT": "it", "ES": "es", "NL": "nl", "PL": "pl", "CA": "fr", "AE": "ar", "SA": "ar",
+}  # fmt: skip
+"""国家 → 单据上常见的当地语言。给模型的提示词里只放英文和这些语言的名字（ADR 0049）："""
+
+
+def prompt_languages(countries: tuple[str, ...]) -> frozenset[str]:
+    """通用模板只给英文名；国家模板再加当地语言。界面切换语言不受影响。"""
+    return frozenset({"en", *(PROMPT_LANGUAGES[c] for c in countries if c in PROMPT_LANGUAGES)})
+
+
 def name_in(label: str, names: Names, language: str | None) -> str:
     """这种语言的名字；没指定语言、或者没写这种语言，用 label。"""
     if not language:
@@ -158,13 +171,14 @@ class TemplateField:
 
     @property
     def spec(self) -> FieldSpec:
-        """抽取器认识的字段格式。别名、可选值写进说明里，模型才知道还有哪些写法、只能填什么。"""
+        return self.spec_in(None)
+
+    def spec_in(self, languages: frozenset[str] | None) -> FieldSpec:
+        """抽取器认识的字段格式。别名、可选值写进说明里，模型才知道还有哪些写法、只能填什么。
+        languages：别的语言的名字只放这几种（None = 全部）。"""
         description = self.description
-        written = [
-            w
-            for w in dict.fromkeys((*self.aliases, *(n for _, n in self.names)))
-            if w != self.label
-        ]
+        others = (n for lang, n in self.names if languages is None or lang in languages)
+        written = [w for w in dict.fromkeys((*self.aliases, *others)) if w != self.label]
         if written:
             description = f"{description}（单据上可能写作：{'、'.join(written)}）".lstrip()
         if self.options:
@@ -193,7 +207,10 @@ class TemplateTable:
 
     @property
     def spec(self) -> TableSpec:
-        columns = tuple(c.spec for c in self.columns if c.asks_model)
+        return self.spec_in(None)
+
+    def spec_in(self, languages: frozenset[str] | None) -> TableSpec:
+        columns = tuple(c.spec_in(languages) for c in self.columns if c.asks_model)
         return TableSpec(self.name, self.description, columns)
 
 
@@ -259,6 +276,8 @@ class Template:
     """功能领域（发票、交通、收据、住宿……），可以有几个。"""
     titles: Names = ()
     """模板名的别的语言写法（ADR 0048）。"""
+    basis: tuple[str, ...] = ()
+    """起步模板的依据：法规条款、使用场景、查证来源（模板文件开头的注释），预览时给人看。"""
 
     @property
     def languages(self) -> tuple[str, ...]:
@@ -400,11 +419,15 @@ class Template:
     @property
     def specs(self) -> tuple[FieldSpec, ...]:
         """交给模型抽的字段（人工填的不交）。"""
-        return tuple(f.spec for f in self.fields if f.asks_model)
+        languages = prompt_languages(self.countries)
+        return tuple(f.spec_in(languages) for f in self.fields if f.asks_model)
 
     @property
     def table_specs(self) -> tuple[TableSpec, ...]:
-        return tuple(t.spec for t in self.tables if any(c.asks_model for c in t.columns))
+        languages = prompt_languages(self.countries)
+        return tuple(
+            t.spec_in(languages) for t in self.tables if any(c.asks_model for c in t.columns)
+        )
 
     @property
     def manual_fields(self) -> tuple[TemplateField, ...]:
@@ -553,6 +576,30 @@ STARTERS = (
     "cn_express_waybill",
     "bill_of_lading",
     "air_waybill",
+    # 各国、各地区法定单据（ADR 0049）
+    "jp_qualified_invoice",
+    "kr_tax_invoice",
+    "tw_uniform_invoice",
+    "sg_tax_invoice",
+    "my_einvoice",
+    "vn_einvoice",
+    "in_gst_invoice",
+    "nz_taxable_supply",
+    "us_lab_report",
+    "gb_vat_invoice",
+    "de_rechnung",
+    "de_kassenbeleg",
+    "th_tax_invoice",
+    "id_faktur_pajak",
+    "ph_vat_invoice",
+    "fr_facture",
+    "it_fattura",
+    "es_factura",
+    "nl_factuur",
+    "pl_faktura",
+    "ca_gst_hst_invoice",
+    "ae_tax_invoice",
+    "sa_tax_invoice",
 )
 """起步模板库，按这个顺序显示（ADR 0030）。"""
 
@@ -567,7 +614,31 @@ def load_starter(name: str) -> Template:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as err:
         raise TemplateError(f"起步模板 {name}.toml 格式不对：{err}") from err
-    return replace(parse_template(raw, name), enforce_required=True)
+    text = path.read_text(encoding="utf-8")
+    return replace(parse_template(raw, name), enforce_required=True, basis=header_notes(text))
+
+
+def header_notes(text: str) -> tuple[str, ...]:
+    """模板文件开头的注释 → 一条一条的说明。缩进的、或者上一行没写完（不以句号结尾）的接到上一条；
+    "只写字段……"这句不要。"""
+    notes: list[str] = []
+    for line in text.splitlines():
+        if not line.startswith("#"):
+            break
+        body = line[1:]
+        content = body.strip()
+        if not content or content.startswith("只写字段") or "不放任何真实" in content:
+            continue
+        content = re.sub(r"^起步模板：", "适用：", content)
+        if notes and (body.startswith("   ") or not notes[-1].endswith(("。", "；", "：", "."))):
+            last = notes[-1]
+            space = (
+                " " if last[-1:].isascii() and last[-1:].isalnum() and content[:1].isascii() else ""
+            )
+            notes[-1] = last + space + content
+        else:
+            notes.append(content)
+    return tuple(notes)
 
 
 def from_definition(

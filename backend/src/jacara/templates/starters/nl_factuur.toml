@@ -1,0 +1,166 @@
+# 起步模板：Nederland factuur / vereenvoudigde factuur。
+# 依据：Wet op de omzetbelasting 1968 art. 35a（factuurvereisten：factuurdatum、uniek nummer、naam en adres、btw-id、
+#   naam en adres afnemer、omschrijving、leveringsdatum、bedrag per tarief、btw-tarief en btw-bedrag、totaal）；
+#   vereenvoudigde factuur tot € 100 incl. btw；KvK-nummer verplicht（Handelsregisterbesluit 2008 art. 50）。
+#   Btw-tarieven 21 % / 9 % / 0 %。btw-id NL + 9 cijfers + B + 2 cijfers。
+# 场景：荷兰企业之间开票、voorbelasting 抵扣、报销。
+# 来源：deonlinerekenmachine.nl「Factuur eisen Belastingdienst 2026」。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "nl_factuur"
+version = 1
+title = "荷兰发票（Factuur）"
+titles = { en = "Invoice (Netherlands)", nl = "Factuur" }
+countries = ["NL"]
+domains = ["发票"]
+description = "荷兰的 factuur：发票日期和唯一编号、卖方名称地址、btw-id 和 KvK 号、买方名称地址（和 btw-id）、描述、交付日期、各税率的净额、税率和税额、总额。btw-id 校验不对、税率不是 21/9/0%、超过 € 100 缺发票号或买方会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "nl_btw_id", "nl_rates", "nl_full_over_100"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+names = { en = "Document Title", nl = "Documentsoort" }
+type = "string"
+description = "单据最上面的标题，照抄"
+aliases = ["Documentsoort"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票号码"
+names = { en = "Invoice No.", nl = "Factuurnummer" }
+type = "string"
+unique = true
+description = "照抄，不要改格式"
+aliases = ["Factuurnummer"]
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue", nl = "Factuurdatum" }
+type = "date"
+required = true
+aliases = ["Factuurdatum"]
+
+[[fields]]
+name = "supply_date"
+label = "交易日期"
+names = { en = "Date of Supply", nl = "Leverdatum" }
+type = "date"
+description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+aliases = ["Leverdatum"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller", nl = "Leverancier" }
+type = "string"
+required = true
+aliases = ["Leverancier"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address", nl = "Adres leverancier" }
+type = "string"
+aliases = ["Adres leverancier"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "卖方税号"
+names = { en = "Seller Tax ID", nl = "Btw-id" }
+type = "string"
+description = "照抄，带上字母和分隔符"
+aliases = ["Btw-id"]
+
+[[fields]]
+name = "seller_kvk"
+label = "商会登记号（KvK）"
+names = { en = "Chamber of Commerce No.", nl = "KvK-nummer" }
+type = "string"
+aliases = ["KvK", "KvK-nummer"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer", nl = "Afnemer" }
+type = "string"
+aliases = ["Afnemer"]
+
+[[fields]]
+name = "buyer_address"
+label = "买方地址"
+names = { en = "Buyer Address", nl = "Adres afnemer" }
+type = "string"
+aliases = ["Adres afnemer"]
+
+[[fields]]
+name = "buyer_tax_id"
+label = "买方税号"
+names = { en = "Buyer Tax ID", nl = "Btw-id afnemer" }
+type = "string"
+description = "照抄；没有就留空"
+aliases = ["Btw-id afnemer"]
+
+[[fields]]
+name = "net_total"
+label = "不含税合计"
+names = { en = "Total excl. Tax", nl = "Totaal excl. btw" }
+type = "number"
+aliases = ["Totaal excl. btw"]
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax", nl = "Btw-bedrag" }
+type = "number"
+aliases = ["Btw-bedrag"]
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+names = { en = "Total incl. Tax", nl = "Totaal incl. btw" }
+type = "number"
+required = true
+aliases = ["Totaal incl. btw"]
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items", nl = "Regels" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description", nl = "Omschrijving" }
+type = "string"
+aliases = ["Omschrijving"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity", nl = "Aantal" }
+type = "number"
+aliases = ["Aantal"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price", nl = "Prijs per stuk" }
+type = "number"
+aliases = ["Prijs per stuk"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount", nl = "Bedrag" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+aliases = ["Bedrag"]
+
+[[tables.columns]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate", nl = "Btw-tarief" }
+type = "string"
+aliases = ["Btw-tarief"]

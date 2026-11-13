@@ -129,6 +129,9 @@ uv run jacara templates                         # 列出所有模板
 | GET | `/api/v1/audit-logs` | 审计日志：谁、什么时候、做了什么（管理员） |
 | GET | `/api/v1/templates` | 所有模板：字段、中文名、类型、规则 |
 | GET | `/api/v1/templates/{name}` | 一个模板 |
+| GET / PUT | `/api/v1/ocr-samples/settings` | 自动收集 OCR 纠错样本的开关（改要管理员） |
+| GET | `/api/v1/ocr-samples` | OCR 样本列表（按分类、状态、来源筛选） |
+| GET | `/api/v1/ocr-samples/export` | OCR 样本导出成 ZIP（PaddleOCR 识别训练格式），`/export/preview` 先看会导出几条 |
 
 给别人用时，可以在 `.env` 里写 `JACARA_API_DOCS=false` 关掉 `/docs`。
 

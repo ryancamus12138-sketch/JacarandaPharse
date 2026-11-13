@@ -1,0 +1,141 @@
+# 起步模板：Deutschland Kassenbeleg（elektronisches Aufzeichnungssystem mit TSE）。
+# 依据：§146a AO（Belegausgabepflicht）、§6 KassenSichV：Name und Anschrift、Datum der Belegausstellung und Zeitpunkt des
+#   Vorgangsbeginns sowie der Vorgangsbeendigung、Menge und Art、Transaktionsnummer、Entgelt und Steuerbetrag mit Steuersatz、
+#   Seriennummer des Aufzeichnungssystems und des Sicherheitsmoduls、Prüfwert und fortlaufender Signaturzähler。
+# 场景：德国商店、餐厅收银机打出的小票；出差报销、税务审计核对 TSE 信息。
+# 来源：gesetze-im-internet.de § 6 KassenSichV。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "de_kassenbeleg"
+version = 1
+title = "德国收银小票（Kassenbeleg）"
+titles = { en = "Till Receipt (Germany)", de = "Kassenbeleg" }
+countries = ["DE"]
+domains = ["收据", "购物"]
+description = "德国收银小票：商家名称地址、日期、交易开始和结束时间、品名数量、交易号、金额、税率和税额，以及 TSE 信息（收银系统序列号、安全模块序列号、校验值、签名计数器）。缺 TSE 信息、税率不是 19/7/0%、开始时间晚于结束时间会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "de_kassenbeleg", "de_kasse_times", "de_rates"]
+
+[[fields]]
+name = "seller_name"
+label = "商家"
+names = { en = "Seller", de = "Unternehmen" }
+type = "string"
+required = true
+aliases = ["Unternehmen"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address", de = "Anschrift" }
+type = "string"
+aliases = ["Anschrift"]
+
+[[fields]]
+name = "issue_date"
+label = "日期"
+names = { en = "Date of Issue", de = "Datum" }
+type = "date"
+required = true
+aliases = ["Datum"]
+
+[[fields]]
+name = "start_time"
+label = "交易开始时间"
+names = { en = "Start of Transaction", de = "Vorgangsbeginn" }
+type = "string"
+description = "照抄，如 14:03:12"
+aliases = ["Vorgangsbeginn"]
+
+[[fields]]
+name = "end_time"
+label = "交易结束时间"
+names = { en = "End of Transaction", de = "Vorgangsende" }
+type = "string"
+aliases = ["Vorgangsende"]
+
+[[fields]]
+name = "transaction_no"
+label = "交易号"
+names = { en = "Transaction No.", de = "Transaktionsnummer" }
+type = "string"
+unique = true
+aliases = ["Transaktionsnummer"]
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax", de = "MwSt." }
+type = "number"
+aliases = ["MwSt."]
+
+[[fields]]
+name = "gross_total"
+label = "总额"
+names = { en = "Total incl. Tax", de = "Summe" }
+type = "number"
+required = true
+aliases = ["Summe"]
+
+[[fields]]
+name = "pos_serial"
+label = "收银系统序列号"
+names = { en = "POS Serial No.", de = "Seriennummer Kasse" }
+type = "string"
+aliases = ["Seriennummer Kasse"]
+
+[[fields]]
+name = "tse_serial"
+label = "TSE 序列号"
+names = { en = "TSE Serial No.", de = "Seriennummer TSE" }
+type = "string"
+aliases = ["Seriennummer TSE"]
+
+[[fields]]
+name = "tse_signature"
+label = "TSE 校验值"
+names = { en = "TSE Signature", de = "Prüfwert" }
+type = "string"
+description = "很长的一串，照抄能认出的部分"
+aliases = ["Prüfwert"]
+
+[[fields]]
+name = "signature_counter"
+label = "签名计数器"
+names = { en = "Signature Counter", de = "Signaturzähler" }
+type = "string"
+aliases = ["Signaturzähler"]
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items", de = "Positionen" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description", de = "Bezeichnung" }
+type = "string"
+aliases = ["Bezeichnung"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity", de = "Menge" }
+type = "number"
+aliases = ["Menge"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount", de = "Betrag" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+aliases = ["Betrag"]
+
+[[tables.columns]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate", de = "Steuersatz" }
+type = "string"
+aliases = ["Steuersatz"]

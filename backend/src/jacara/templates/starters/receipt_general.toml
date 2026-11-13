@@ -6,7 +6,7 @@
 name = "receipt_general"
 version = 4
 title = "通用收据"
-titles = { en = "Receipt" }
+titles = { en = "Receipt", ar = "إيصال", de = "Quittung", es = "Recibo", fr = "Reçu", hi = "रसीद", id = "Kuitansi", it = "Ricevuta", ja = "領収書", ko = "영수증", ms = "Resit", nl = "Kassabon", pl = "Paragon", th = "ใบเสร็จรับเงิน", vi = "Biên lai", "zh-Hant" = "收據" }
 domains = ["收据"]
 description = "任何国家、任何商家的收据：商家、日期、买了什么、金额、付款方式，以及 小计 − 折扣 + 附加费 + 小费 + 调整 = 总额 这类不分地区的金额关系。"
 rules = ["total_positive", "date_exists", "date_not_future", "receipt_balance", "items_sum", "item_line"]
@@ -14,7 +14,7 @@ rules = ["total_positive", "date_exists", "date_not_future", "receipt_balance", 
 [[fields]]
 name = "merchant"
 label = "商家"
-names = { en = "Merchant" }
+names = { en = "Merchant", ar = "التاجر", de = "Händler", es = "Comercio", fr = "Commerçant", hi = "व्यापारी", id = "Toko", it = "Esercente", ja = "店名", ko = "상호", ms = "Peniaga", nl = "Winkel", pl = "Sprzedawca", th = "ร้านค้า", vi = "Cửa hàng", "zh-Hant" = "商家" }
 type = "string"
 required = true
 description = "开收据的商家或公司名称，一般在最上面"
@@ -23,7 +23,7 @@ aliases = ["Store", "Shop", "商户名称"]
 [[fields]]
 name = "merchant_tax_id"
 label = "商家税号"
-names = { en = "Merchant Tax ID" }
+names = { en = "Merchant Tax ID", ar = "الرقم الضريبي للتاجر", de = "Steuernummer Händler", es = "NIF del comercio", fr = "N° fiscal du commerçant", hi = "व्यापारी कर संख्या", id = "NPWP toko", it = "Partita IVA esercente", ja = "店舗登録番号", ko = "가맹점 사업자번호", ms = "No. cukai peniaga", nl = "Btw-nummer winkel", pl = "NIP sprzedawcy", th = "เลขประจำตัวผู้เสียภาษีร้านค้า", vi = "Mã số thuế cửa hàng", "zh-Hant" = "商家統一編號" }
 type = "string"
 description = "商家的税务登记号或公司注册号，叫法各地不同（税号、统一社会信用代码、ABN、VAT No.、GST No. 等），原样照抄；没有就留空"
 aliases = ["税号", "Tax ID", "VAT No.", "GST No.", "ABN", "Co. Reg No", "Company No", "GST Reg No", "SST No", "TIN", "统一社会信用代码"]
@@ -31,14 +31,14 @@ aliases = ["税号", "Tax ID", "VAT No.", "GST No.", "ABN", "Co. Reg No", "Compa
 [[fields]]
 name = "document_title"
 label = "单据标题"
-names = { en = "Document Title" }
+names = { en = "Document Title", ar = "عنوان المستند", de = "Belegart", es = "Tipo de documento", fr = "Titre du document", hi = "दस्तावेज़ का शीर्षक", id = "Jenis dokumen", it = "Tipo documento", ja = "書類名", ko = "문서명", ms = "Jenis dokumen", nl = "Documentsoort", pl = "Rodzaj dokumentu", th = "ชื่อเอกสาร", vi = "Tên chứng từ", "zh-Hant" = "單據標題" }
 type = "string"
 description = "收据上写的标题，如 收据、Receipt、Invoice，原样照抄"
 
 [[fields]]
 name = "document_no"
 label = "单号"
-names = { en = "Receipt No." }
+names = { en = "Receipt No.", ar = "رقم الإيصال", de = "Belegnummer", es = "N.º de ticket", fr = "N° de ticket", hi = "रसीद संख्या", id = "Nomor struk", it = "N. documento", ja = "レシート番号", ko = "영수증 번호", ms = "No. resit", nl = "Bonnummer", pl = "Numer paragonu", th = "เลขที่ใบเสร็จ", vi = "Số biên lai", "zh-Hant" = "收據號碼" }
 type = "string"
 description = "收据号、小票号、发票号或交易号"
 aliases = ["Receipt No", "Invoice No", "单号", "流水号", "Document No", "Doc No", "Bill No", "Receipt #", "Ref No", "单据号", "小票号"]
@@ -46,7 +46,7 @@ aliases = ["Receipt No", "Invoice No", "单号", "流水号", "Document No", "Do
 [[fields]]
 name = "date"
 label = "日期"
-names = { en = "Date" }
+names = { en = "Date", ar = "التاريخ", de = "Datum", es = "Fecha", fr = "Date", hi = "दिनांक", id = "Tanggal", it = "Data", ja = "日付", ko = "일자", ms = "Tarikh", nl = "Datum", pl = "Data", th = "วันที่", vi = "Ngày", "zh-Hant" = "日期" }
 type = "date"
 required = true
 description = "交易日期"
@@ -55,7 +55,7 @@ aliases = ["Date", "日期"]
 [[fields]]
 name = "time"
 label = "时间"
-names = { en = "Time" }
+names = { en = "Time", ar = "الوقت", de = "Uhrzeit", es = "Hora", fr = "Heure", hi = "समय", id = "Waktu", it = "Ora", ja = "時刻", ko = "시각", ms = "Masa", nl = "Tijd", pl = "Godzina", th = "เวลา", vi = "Giờ", "zh-Hant" = "時間" }
 type = "string"
 aliases = ["Time", "时间"]
 description = "交易时间，如 14:05"
@@ -63,21 +63,21 @@ description = "交易时间，如 14:05"
 [[fields]]
 name = "description"
 label = "购买内容"
-names = { en = "Purchase" }
+names = { en = "Purchase", ar = "المشتريات", de = "Einkauf", es = "Compra", fr = "Achat", hi = "खरीद", id = "Pembelian", it = "Acquisto", ja = "購入内容", ko = "구매내역", ms = "Pembelian", nl = "Aankoop", pl = "Zakup", th = "รายการซื้อ", vi = "Nội dung mua", "zh-Hant" = "購買內容" }
 type = "string"
 description = "收据上没有逐项明细时，概括写的购买内容"
 
 [[fields]]
 name = "subtotal"
 label = "小计"
-names = { en = "Subtotal" }
+names = { en = "Subtotal", ar = "المجموع الفرعي", de = "Zwischensumme", es = "Subtotal", fr = "Sous-total", hi = "उप-योग", id = "Subtotal", it = "Subtotale", ja = "小計", ko = "소계", ms = "Jumlah kecil", nl = "Subtotaal", pl = "Suma częściowa", th = "รวมย่อย", vi = "Tạm tính", "zh-Hant" = "小計" }
 type = "number"
 aliases = ["Subtotal", "小计"]
 
 [[fields]]
 name = "discount"
 label = "折扣"
-names = { en = "Discount" }
+names = { en = "Discount", ar = "الخصم", de = "Rabatt", es = "Descuento", fr = "Remise", hi = "छूट", id = "Diskon", it = "Sconto", ja = "値引", ko = "할인", ms = "Diskaun", nl = "Korting", pl = "Rabat", th = "ส่วนลด", vi = "Giảm giá", "zh-Hant" = "折扣" }
 type = "number"
 description = "整单折扣的金额，写正数"
 aliases = ["Discount", "优惠"]
@@ -85,7 +85,7 @@ aliases = ["Discount", "优惠"]
 [[fields]]
 name = "surcharge"
 label = "附加费"
-names = { en = "Surcharge" }
+names = { en = "Surcharge", ar = "رسوم إضافية", de = "Zuschlag", es = "Recargo", fr = "Supplément", hi = "अधिभार", id = "Biaya tambahan", it = "Supplemento", ja = "追加料金", ko = "부가요금", ms = "Caj tambahan", nl = "Toeslag", pl = "Dopłata", th = "ค่าบริการเพิ่ม", vi = "Phụ phí", "zh-Hant" = "附加費" }
 type = "number"
 description = "服务费、刷卡手续费等附加费"
 aliases = ["Surcharge", "Service charge", "服务费"]
@@ -93,7 +93,7 @@ aliases = ["Surcharge", "Service charge", "服务费"]
 [[fields]]
 name = "tax"
 label = "税额"
-names = { en = "Tax" }
+names = { en = "Tax", ar = "الضريبة", de = "Steuer", es = "Impuesto", fr = "TVA", hi = "कर", id = "Pajak", it = "Imposta", ja = "税額", ko = "세액", ms = "Cukai", nl = "Btw", pl = "Podatek", th = "ภาษี", vi = "Tiền thuế", "zh-Hant" = "稅額" }
 type = "number"
 description = "收据上单独写出的税额（叫法各地不同：税额、Tax、VAT、GST、Sales tax）；没写就留空"
 aliases = ["Tax", "VAT", "GST", "税额"]
@@ -101,7 +101,7 @@ aliases = ["Tax", "VAT", "GST", "税额"]
 [[fields]]
 name = "total"
 label = "总额"
-names = { en = "Total" }
+names = { en = "Total", ar = "الإجمالي", de = "Summe", es = "Total", fr = "Total", hi = "कुल", id = "Total", it = "Totale", ja = "合計", ko = "합계", ms = "Jumlah", nl = "Totaal", pl = "Suma", th = "รวม", vi = "Tổng cộng", "zh-Hant" = "總額" }
 type = "number"
 required = true
 description = "最终应付的总额"
@@ -110,14 +110,14 @@ aliases = ["Total", "Amount", "合计", "实收"]
 [[fields]]
 name = "currency"
 label = "币种"
-names = { en = "Currency" }
+names = { en = "Currency", ar = "العملة", de = "Währung", es = "Moneda", fr = "Devise", hi = "मुद्रा", id = "Mata uang", it = "Valuta", ja = "通貨", ko = "통화", ms = "Mata wang", nl = "Valuta", pl = "Waluta", th = "สกุลเงิน", vi = "Loại tiền", "zh-Hant" = "幣別" }
 type = "string"
 description = "三个字母的币种代码，如 CNY、USD、AUD；收据上只有符号时可以留空"
 
 [[fields]]
 name = "payment_method"
 label = "付款方式"
-names = { en = "Payment Method" }
+names = { en = "Payment Method", ar = "طريقة الدفع", de = "Zahlungsart", es = "Forma de pago", fr = "Mode de paiement", hi = "भुगतान का तरीका", id = "Metode pembayaran", it = "Metodo di pagamento", ja = "支払方法", ko = "결제수단", ms = "Kaedah pembayaran", nl = "Betaalwijze", pl = "Forma płatności", th = "วิธีชำระเงิน", vi = "Hình thức thanh toán", "zh-Hant" = "付款方式" }
 type = "string"
 description = "如 现金、银行卡、微信、支付宝、Visa"
 aliases = ["Payment", "Paid by", "付款方式"]
@@ -125,34 +125,34 @@ aliases = ["Payment", "Paid by", "付款方式"]
 [[tables]]
 name = "items"
 label = "商品明细"
-names = { en = "Items" }
+names = { en = "Items", ar = "البنود", de = "Positionen", es = "Conceptos", fr = "Lignes", hi = "विवरण", id = "Rincian", it = "Righe", ja = "明細", ko = "품목", ms = "Butiran", nl = "Regels", pl = "Pozycje", th = "รายการ", vi = "Hàng hóa, dịch vụ", "zh-Hant" = "明細" }
 description = "收据上的商品或服务，每样一行。小计、税、合计这些行不算明细"
 
 [[tables.columns]]
 name = "description"
 label = "商品"
-names = { en = "Item" }
+names = { en = "Item", ar = "الصنف", de = "Artikel", es = "Artículo", fr = "Article", hi = "वस्तु", id = "Barang", it = "Articolo", ja = "品名", ko = "상품명", ms = "Barang", nl = "Artikel", pl = "Towar", th = "สินค้า", vi = "Mặt hàng", "zh-Hant" = "商品" }
 type = "string"
 aliases = ["Item", "Description", "品名"]
 
 [[tables.columns]]
 name = "quantity"
 label = "数量"
-names = { en = "Quantity" }
+names = { en = "Quantity", ar = "الكمية", de = "Menge", es = "Cantidad", fr = "Quantité", hi = "मात्रा", id = "Jumlah", it = "Quantità", ja = "数量", ko = "수량", ms = "Kuantiti", nl = "Aantal", pl = "Ilość", th = "จำนวน", vi = "Số lượng", "zh-Hant" = "數量" }
 type = "number"
 aliases = ["Qty", "数量"]
 
 [[tables.columns]]
 name = "unit_price"
 label = "单价"
-names = { en = "Unit Price" }
+names = { en = "Unit Price", ar = "سعر الوحدة", de = "Einzelpreis", es = "Precio unitario", fr = "Prix unitaire", hi = "इकाई मूल्य", id = "Harga satuan", it = "Prezzo unitario", ja = "単価", ko = "단가", ms = "Harga seunit", nl = "Prijs per stuk", pl = "Cena jednostkowa", th = "ราคาต่อหน่วย", vi = "Đơn giá", "zh-Hant" = "單價" }
 type = "number"
 aliases = ["Price", "Unit Price", "单价"]
 
 [[tables.columns]]
 name = "amount"
 label = "金额"
-names = { en = "Amount" }
+names = { en = "Amount", ar = "المبلغ", de = "Betrag", es = "Importe", fr = "Montant", hi = "राशि", id = "Nilai", it = "Importo", ja = "金額", ko = "금액", ms = "Jumlah", nl = "Bedrag", pl = "Wartość", th = "จำนวนเงิน", vi = "Thành tiền", "zh-Hant" = "金額" }
 type = "number"
 description = "这一行的金额；折扣行是负数"
 aliases = ["Amount", "金额"]

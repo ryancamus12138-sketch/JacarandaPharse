@@ -1,0 +1,211 @@
+# 起步模板：France facture（B2B）。
+# 依据：CGI art. 242 nonies A（mentions obligatoires：numéro unique et séquentiel、date、noms et adresses、n° TVA du vendeur et
+#   de l'acquéreur、désignation et quantité、date de la livraison、prix unitaire HT、taux et montant de TVA par taux、mentions
+#   d'exonération）；Code de commerce L441-9（SIREN、conditions de paiement、pénalités de retard、indemnité forfaitaire 40 €）；
+#   décret 2022-1299 新增四项（SIREN du client、adresse de livraison、nature des opérations、option pour le paiement de la TVA
+#   d'après les débits），随电子发票改革（2026-09-01 起大中型企业）适用。Taux de TVA 20 / 10 / 5,5 / 2,1 %。
+# 场景：法国企业之间开票、TVA déductible、报销。
+# 来源：legifiscal「Factures : 4 nouvelles mentions obligatoires」；comparatif-facture-electronique.fr（2026-08 更新）。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "fr_facture"
+version = 1
+title = "法国发票（Facture）"
+titles = { en = "Invoice (France)", fr = "Facture" }
+countries = ["FR"]
+domains = ["发票"]
+description = "法国的 facture：卖方名称地址 SIREN 和 TVA 号、买方名称地址 SIREN 和 TVA 号、发票号、日期、交付日期和地址、业务性质、品名数量、不含税单价、各税率的税额、付款条件和逾期罚则。SIREN 校验位、TVA 号的校验码不对、税率不是 20/10/5.5/2.1% 会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "fr_seller_siren", "fr_seller_tva", "fr_rates"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+names = { en = "Document Title", fr = "Titre" }
+type = "string"
+description = "单据最上面的标题，照抄"
+aliases = ["Titre"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票号码"
+names = { en = "Invoice No.", fr = "Numéro de facture" }
+type = "string"
+required = true
+unique = true
+description = "照抄，不要改格式"
+aliases = ["Numéro de facture"]
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue", fr = "Date de facture" }
+type = "date"
+required = true
+aliases = ["Date de facture"]
+
+[[fields]]
+name = "supply_date"
+label = "交易日期"
+names = { en = "Date of Supply", fr = "Date de livraison" }
+type = "date"
+description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+aliases = ["Date de livraison"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller", fr = "Vendeur" }
+type = "string"
+required = true
+aliases = ["Vendeur"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address", fr = "Adresse du vendeur" }
+type = "string"
+aliases = ["Adresse du vendeur"]
+
+[[fields]]
+name = "seller_siren"
+label = "卖方 SIREN / SIRET"
+names = { en = "Seller SIREN / SIRET", fr = "SIREN / SIRET" }
+type = "string"
+aliases = ["SIREN", "SIRET", "RCS", "SIREN / SIRET"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "卖方欧盟增值税号"
+names = { en = "Seller VAT No.", fr = "N° TVA intracommunautaire" }
+type = "string"
+aliases = ["N° TVA", "TVA intracommunautaire", "N° TVA intracommunautaire"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer", fr = "Client" }
+type = "string"
+aliases = ["Client"]
+
+[[fields]]
+name = "buyer_address"
+label = "买方地址"
+names = { en = "Buyer Address", fr = "Adresse du client" }
+type = "string"
+aliases = ["Adresse du client"]
+
+[[fields]]
+name = "buyer_siren"
+label = "买方 SIREN"
+names = { en = "Buyer SIREN", fr = "SIREN du client" }
+type = "string"
+aliases = ["SIREN du client"]
+
+[[fields]]
+name = "buyer_tax_id"
+label = "买方税号"
+names = { en = "Buyer Tax ID", fr = "N° TVA du client" }
+type = "string"
+description = "照抄；没有就留空"
+aliases = ["N° TVA du client"]
+
+[[fields]]
+name = "delivery_address"
+label = "交付地址"
+names = { en = "Delivery Address", fr = "Adresse de livraison" }
+type = "string"
+aliases = ["Adresse de livraison"]
+
+[[fields]]
+name = "operation_type"
+label = "业务性质"
+names = { en = "Nature of Operations", fr = "Nature des opérations" }
+type = "string"
+description = "livraison de biens / prestation de services / mixte，照抄"
+aliases = ["Nature des opérations"]
+
+[[fields]]
+name = "vat_on_debits"
+label = "按开票缴 TVA 声明"
+names = { en = "VAT on Debits Option", fr = "Option pour le paiement de la TVA d'après les débits" }
+type = "string"
+description = "option pour le paiement de la taxe d'après les débits，照抄"
+aliases = ["Option pour le paiement de la TVA d'après les débits"]
+
+[[fields]]
+name = "net_total"
+label = "不含税合计"
+names = { en = "Total excl. Tax", fr = "Total HT" }
+type = "number"
+aliases = ["Total HT"]
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax", fr = "Total TVA" }
+type = "number"
+aliases = ["Total TVA"]
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+names = { en = "Total incl. Tax", fr = "Total TTC" }
+type = "number"
+required = true
+aliases = ["Total TTC"]
+
+[[fields]]
+name = "payment_terms"
+label = "付款条件"
+names = { en = "Payment Terms", fr = "Conditions de paiement" }
+type = "string"
+aliases = ["Conditions de paiement"]
+
+[[fields]]
+name = "late_penalties"
+label = "逾期罚则"
+names = { en = "Late Payment Penalties", fr = "Pénalités de retard" }
+type = "string"
+aliases = ["Pénalités de retard"]
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items", fr = "Lignes" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description", fr = "Désignation" }
+type = "string"
+aliases = ["Désignation"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity", fr = "Quantité" }
+type = "number"
+aliases = ["Quantité"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price", fr = "Prix unitaire HT" }
+type = "number"
+aliases = ["Prix unitaire HT"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount", fr = "Montant HT" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+aliases = ["Montant HT"]
+
+[[tables.columns]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate", fr = "Taux de TVA" }
+type = "string"
+aliases = ["Taux de TVA"]

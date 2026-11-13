@@ -12,6 +12,7 @@ from jacara.modules.comments.models import Comment
 from jacara.modules.documents.models import Document, Extraction
 from jacara.modules.exports.models import Export
 from jacara.modules.fields.models import ExtractedValue, ValueRevision
+from jacara.modules.ocr_samples.models import OcrSample, TeamSetting
 from jacara.modules.templates.models import TemplateRecord, TemplateVersion
 
 __all__ = [
@@ -23,9 +24,11 @@ __all__ = [
     "Export",
     "ExtractedValue",
     "Extraction",
+    "OcrSample",
     "PasswordResetCode",
     "Profile",
     "Team",
+    "TeamSetting",
     "TemplateRecord",
     "TemplateVersion",
     "User",

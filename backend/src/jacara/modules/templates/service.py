@@ -59,6 +59,7 @@ from jacara.modules.templates.schemas import (
 )
 from jacara.plugins.extractors.base import AUTO, DISCOVER
 from jacara.plugins.validators import ALL_RULES, REGIONS
+from jacara.plugins.validators.rules import RULES
 from jacara.templates import (
     STARTERS,
     Template,
@@ -107,6 +108,7 @@ def to_out(t: Template, kind: TemplateKind = "builtin") -> TemplateOut:
         title=t.title,
         titles=dict(t.titles),
         languages=list(t.languages),
+        basis=list(t.basis),
         description=t.description,
         category=t.category,
         kind=kind,
@@ -269,14 +271,34 @@ def _field_dump(f: TemplateFieldIn) -> dict[str, Any]:
     return data
 
 
+def runnable_rules(
+    rules: list[str], definition: dict[str, Any], countries: list[str] | None
+) -> list[str]:
+    """只留下这个模板跑得了的内置规则：要的字段都有；某国的规则只给选了这个国家的模板。
+    删了字段、换了国家，依赖它们的规则保存时跟着去掉，不会留着永远跳过。
+    countries 是 None（旧的模板文件没写国家）时不按国家筛。不认识的编号留着，后面会报错说清楚。"""
+    from jacara.workbook.standard import usable_rule
+
+    kept: list[str] = []
+    for rule_id in dict.fromkeys(rules):
+        rule = RULES.get(rule_id)
+        # 没写国家：当成规则自己的国家，只按字段筛
+        place = [c.upper() for c in countries] if countries is not None else [REGIONS.get(rule_id)]
+        if rule is None or usable_rule(rule, {**definition, "countries": place}):
+            kept.append(rule_id)
+    return kept
+
+
 def definition_of(data: TemplateIn) -> dict[str, Any]:
     """编辑器提交的内容 → 存进数据库的定义（和 .toml 一样结构）。"""
+    fields = [_field_dump(f) for f in data.fields]
+    tables = [
+        {**t.model_dump(), "columns": [_field_dump(c) for c in t.columns]} for t in data.tables
+    ]
     return {
-        "fields": [_field_dump(f) for f in data.fields],
-        "tables": [
-            {**t.model_dump(), "columns": [_field_dump(c) for c in t.columns]} for t in data.tables
-        ],
-        "rules": list(dict.fromkeys(data.rules)),
+        "fields": fields,
+        "tables": tables,
+        "rules": runnable_rules(data.rules, {"fields": fields, "tables": tables}, data.countries),
         "custom_rules": [c.model_dump() for c in data.custom_rules],
         **({"titles": data.titles} if data.titles else {}),
     }
@@ -377,6 +399,7 @@ class TemplateService:
                 needs=list(r.needs),
                 severity=r.severity,
                 per_row=r.per_row,
+                requires=list(r.requires),
                 country=REGIONS.get(r.id, ""),
             )
             for r in ALL_RULES
@@ -586,7 +609,14 @@ class TemplateService:
         definition = {
             "fields": [f.model_dump() for f in data.fields],
             "tables": [t.model_dump() for t in data.tables],
-            "rules": list(dict.fromkeys(data.rules)),
+            "rules": runnable_rules(
+                data.rules,
+                {
+                    "fields": [f.model_dump() for f in data.fields],
+                    "tables": [t.model_dump() for t in data.tables],
+                },
+                data.countries,
+            ),
             "custom_rules": [c.model_dump() for c in data.custom_rules],
             "entities": data.entities,
             "references": data.references,
@@ -880,7 +910,8 @@ class TemplateService:
             if original is not None and original.label and original.label != f.label:
                 item["aliases"] = list(dict.fromkeys([*f.aliases, original.label]))
             fields.append(item)
-        definition = {"fields": fields, "tables": [], "rules": list(dict.fromkeys(data.rules))}
+        rules = runnable_rules(data.rules, {"fields": fields, "tables": []}, None)
+        definition = {"fields": fields, "tables": [], "rules": rules}
         found = self._new(
             data.title.strip(),
             data.category.strip(),

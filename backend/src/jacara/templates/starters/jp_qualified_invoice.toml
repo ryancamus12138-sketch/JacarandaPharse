@@ -1,0 +1,175 @@
+# 起步模板：日本 適格請求書（インボイス）/ 適格簡易請求書。
+# 依据：消費税法第57条の4第1項（適格請求書の記載事項 6 項）、第2項（適格簡易請求書：小売・飲食・タクシー等、宛名省略可）；
+#   消費税法施行令第70条の10（消費税額の端数処理は 1 枚の請求書につき税率ごとに 1 回）。2023-10-01 起实施。
+#   登録番号：T + 13 桁（法人は法人番号）。税率：標準 10%、軽減 8%（飲食料品・新聞）。
+# 场景：日本企业之间的请款、报销时取得进项税额抵扣（仕入税額控除）必须保存适格请求书。
+# 来源：国税庁「適格請求書等保存方式の手引き」；弥生「登録番号」説明；国税庁 法人番号チェックデジット。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "jp_qualified_invoice"
+version = 1
+title = "日本适格请求书（发票）"
+titles = { en = "Qualified Invoice (Japan)", ja = "適格請求書（インボイス）" }
+countries = ["JP"]
+domains = ["发票"]
+description = "日本的適格請求書（インボイス）和適格簡易請求書：发行事业者名称和登録番号（T+13 位）、交易日期、内容（轻减税率对象要标出）、按税率（10%、8%）分开的对价合计和消费税额、收件方名称。登録番号格式不对、各税率的消费税额和对价对不上会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "jp_registration_no", "jp_tax_per_rate", "jp_rates", "item_line"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+names = { en = "Document Title", ja = "書類名" }
+type = "string"
+description = "单据最上面的标题，照抄"
+aliases = ["書類名"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票号码"
+names = { en = "Invoice No.", ja = "請求書番号" }
+type = "string"
+unique = true
+description = "照抄，不要改格式"
+aliases = ["請求書番号"]
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue", ja = "発行日" }
+type = "date"
+required = true
+aliases = ["発行日"]
+
+[[fields]]
+name = "supply_date"
+label = "交易日期"
+names = { en = "Date of Supply", ja = "取引年月日" }
+type = "date"
+description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+aliases = ["取引年月日"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller", ja = "適格請求書発行事業者" }
+type = "string"
+required = true
+aliases = ["適格請求書発行事業者"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "登録番号"
+names = { en = "Registration No.", ja = "登録番号" }
+type = "string"
+required = true
+description = "T 加 13 位数字，照抄"
+aliases = ["登録番号", "T番号", "インボイス番号"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address", ja = "住所" }
+type = "string"
+aliases = ["住所"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer", ja = "宛名" }
+type = "string"
+aliases = ["宛名"]
+
+[[fields]]
+name = "amount_10"
+label = "10% 对象金额"
+names = { en = "10% Taxable Amount", ja = "10%対象" }
+type = "number"
+description = "10% 对象の合計（税抜か税込か、単据上の書き方のまま）"
+aliases = ["10%対象"]
+
+[[fields]]
+name = "tax_10"
+label = "10% 消费税额"
+names = { en = "10% Consumption Tax", ja = "消費税（10%）" }
+type = "number"
+aliases = ["消費税（10%）"]
+
+[[fields]]
+name = "amount_8"
+label = "8% 对象金额"
+names = { en = "8% Taxable Amount", ja = "8%対象" }
+type = "number"
+description = "軽減税率 8% 对象の合計"
+aliases = ["8%対象"]
+
+[[fields]]
+name = "tax_8"
+label = "8% 消费税额"
+names = { en = "8% Consumption Tax", ja = "消費税（8%）" }
+type = "number"
+aliases = ["消費税（8%）"]
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax", ja = "消費税額等" }
+type = "number"
+aliases = ["消費税額等"]
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+names = { en = "Total incl. Tax", ja = "合計金額" }
+type = "number"
+required = true
+aliases = ["合計金額"]
+
+[[fields]]
+name = "reduced_mark"
+label = "轻减税率标记说明"
+names = { en = "Reduced-rate Note", ja = "軽減税率対象の表示" }
+type = "string"
+description = "「※は軽減税率対象」这类说明照抄"
+aliases = ["軽減税率対象の表示"]
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items", ja = "明細" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description", ja = "品名" }
+type = "string"
+aliases = ["品名"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity", ja = "数量" }
+type = "number"
+aliases = ["数量"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price", ja = "単価" }
+type = "number"
+aliases = ["単価"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount", ja = "金額" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+aliases = ["金額"]
+
+[[tables.columns]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate", ja = "税率" }
+type = "string"
+aliases = ["税率"]

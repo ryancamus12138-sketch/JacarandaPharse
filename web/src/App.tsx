@@ -23,6 +23,9 @@ const DocumentListPage = lazy(() =>
 const InsightsPage = lazy(() =>
   import('./features/insights/InsightsPage').then((m) => ({ default: m.InsightsPage })),
 )
+const OcrSamplesPage = lazy(() =>
+  import('./features/ocr-samples/OcrSamplesPage').then((m) => ({ default: m.OcrSamplesPage })),
+)
 const ExportsPage = lazy(() =>
   import('./features/exports/ExportsPage').then((m) => ({ default: m.ExportsPage })),
 )
@@ -96,6 +99,9 @@ export default function App() {
                 </Page>} />
             <Route path="insights" element={<Page>
                   <InsightsPage />
+                </Page>} />
+            <Route path="ocr-samples" element={<Page>
+                  <OcrSamplesPage />
                 </Page>} />
             <Route
               path="templates"

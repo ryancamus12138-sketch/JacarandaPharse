@@ -5,7 +5,7 @@
 name = "hotel_folio"
 version = 6
 title = "酒店账单"
-titles = { en = "Hotel Folio" }
+titles = { en = "Hotel Folio", ar = "فاتورة الفندق", de = "Hotelrechnung", es = "Factura de hotel", fr = "Facture d'hôtel", hi = "होटल बिल", id = "Tagihan hotel", it = "Conto dell'hotel", ja = "ホテル明細書", ko = "호텔 청구서", ms = "Bil hotel", nl = "Hotelrekening", pl = "Rachunek hotelowy", th = "ใบแจ้งค่าห้องพัก", vi = "Hóa đơn khách sạn", "zh-Hant" = "酒店帳單" }
 domains = ["住宿"]
 description = "酒店退房账单（Folio）：入住离店、房号、逐日消费。字段参考 schema.org LodgingReservation。"
 rules = ["total_positive", "stay_order", "stay_nights", "issue_date_exists", "issue_date_not_future", "items_sum"]
@@ -13,7 +13,7 @@ rules = ["total_positive", "stay_order", "stay_nights", "issue_date_exists", "is
 [[fields]]
 name = "hotel"
 label = "酒店名称"
-names = { en = "Hotel" }
+names = { en = "Hotel", ar = "الفندق", de = "Hotel", es = "Hotel", fr = "Hôtel", hi = "होटल", id = "Hotel", it = "Hotel", ja = "ホテル名", ko = "호텔명", ms = "Hotel", nl = "Hotel", pl = "Hotel", th = "โรงแรม", vi = "Khách sạn", "zh-Hant" = "酒店名稱" }
 type = "string"
 required = true
 description = "开账单的酒店名称，照抄单据上的完整写法（连分店名、所在地区一起）；下面一行的街道地址不算"
@@ -22,7 +22,7 @@ aliases = ["Hotel", "Hotel Name", "Hotel Details", "Property"]
 [[fields]]
 name = "guest"
 label = "住客姓名"
-names = { en = "Guest Name" }
+names = { en = "Guest Name", ar = "اسم النزيل", de = "Gastname", es = "Nombre del huésped", fr = "Nom du client", hi = "अतिथि का नाम", id = "Nama tamu", it = "Nome dell'ospite", ja = "宿泊者名", ko = "투숙객", ms = "Nama tetamu", nl = "Naam gast", pl = "Imię i nazwisko gościa", th = "ชื่อผู้เข้าพัก", vi = "Tên khách", "zh-Hant" = "住客姓名" }
 type = "string"
 required = true
 aliases = ["Guest", "Guest Name"]
@@ -30,7 +30,7 @@ aliases = ["Guest", "Guest Name"]
 [[fields]]
 name = "check_in"
 label = "入住日期"
-names = { en = "Arrival" }
+names = { en = "Arrival", ar = "الوصول", de = "Anreise", es = "Llegada", fr = "Arrivée", hi = "आगमन", id = "Check-in", it = "Arrivo", ja = "チェックイン", ko = "체크인", ms = "Daftar masuk", nl = "Aankomst", pl = "Przyjazd", th = "วันเข้าพัก", vi = "Ngày đến", "zh-Hant" = "入住日期" }
 type = "date"
 required = true
 aliases = ["Arrival", "Check-in", "Check In", "入住日期"]
@@ -38,7 +38,7 @@ aliases = ["Arrival", "Check-in", "Check In", "入住日期"]
 [[fields]]
 name = "check_out"
 label = "离店日期"
-names = { en = "Departure" }
+names = { en = "Departure", ar = "المغادرة", de = "Abreise", es = "Salida", fr = "Départ", hi = "प्रस्थान", id = "Check-out", it = "Partenza", ja = "チェックアウト", ko = "체크아웃", ms = "Daftar keluar", nl = "Vertrek", pl = "Wyjazd", th = "วันออก", vi = "Ngày đi", "zh-Hant" = "退房日期" }
 type = "date"
 required = true
 aliases = ["Departure", "Check-out", "Check Out", "离店日期"]
@@ -46,7 +46,7 @@ aliases = ["Departure", "Check-out", "Check Out", "离店日期"]
 [[fields]]
 name = "nights"
 label = "晚数"
-names = { en = "Nights" }
+names = { en = "Nights", ar = "عدد الليالي", de = "Nächte", es = "Noches", fr = "Nuits", hi = "रातें", id = "Malam", it = "Notti", ja = "泊数", ko = "숙박일수", ms = "Malam", nl = "Nachten", pl = "Noce", th = "จำนวนคืน", vi = "Số đêm", "zh-Hant" = "晚數" }
 type = "number"
 description = "住了几晚：离店日期减入住日期，自动算，不从单据上找（Rooms 一栏是房间数，不是晚数）"
 compute = "check_out - check_in"
@@ -54,7 +54,7 @@ compute = "check_out - check_in"
 [[fields]]
 name = "room_no"
 label = "房号"
-names = { en = "Room No." }
+names = { en = "Room No.", ar = "رقم الغرفة", de = "Zimmernummer", es = "N.º de habitación", fr = "N° de chambre", hi = "कमरा संख्या", id = "Nomor kamar", it = "N. camera", ja = "部屋番号", ko = "객실번호", ms = "No. bilik", nl = "Kamernummer", pl = "Numer pokoju", th = "หมายเลขห้อง", vi = "Số phòng", "zh-Hant" = "房號" }
 type = "string"
 description = "房间号码（例如 1208）。Rooms 一栏是房间数，不是房号"
 aliases = ["Room No.", "Room Number"]
@@ -62,14 +62,14 @@ aliases = ["Room No.", "Room Number"]
 [[fields]]
 name = "room_type"
 label = "房型"
-names = { en = "Room Type" }
+names = { en = "Room Type", ar = "نوع الغرفة", de = "Zimmerkategorie", es = "Tipo de habitación", fr = "Type de chambre", hi = "कमरे का प्रकार", id = "Tipe kamar", it = "Tipo di camera", ja = "部屋タイプ", ko = "객실유형", ms = "Jenis bilik", nl = "Kamertype", pl = "Typ pokoju", th = "ประเภทห้อง", vi = "Loại phòng", "zh-Hant" = "房型" }
 type = "string"
 aliases = ["Room Type"]
 
 [[fields]]
 name = "folio_no"
 label = "账单号"
-names = { en = "Folio No." }
+names = { en = "Folio No.", ar = "رقم الفاتورة", de = "Rechnungsnummer", es = "N.º de factura", fr = "N° de note", hi = "बिल संख्या", id = "Nomor tagihan", it = "N. conto", ja = "明細書番号", ko = "청구서 번호", ms = "No. bil", nl = "Rekeningnummer", pl = "Numer rachunku", th = "เลขที่ใบแจ้ง", vi = "Số phiếu", "zh-Hant" = "帳單號碼" }
 unique = true
 type = "string"
 aliases = ["Folio No.", "Invoice No.", "Confirmation No.", "Booking ID", "Reservation No."]
@@ -77,21 +77,21 @@ aliases = ["Folio No.", "Invoice No.", "Confirmation No.", "Booking ID", "Reserv
 [[fields]]
 name = "issue_date"
 label = "开具日期"
-names = { en = "Date of Issue" }
+names = { en = "Date of Issue", ar = "تاريخ الإصدار", de = "Ausstellungsdatum", es = "Fecha de emisión", fr = "Date d'émission", hi = "जारी करने की तिथि", id = "Tanggal terbit", it = "Data di emissione", ja = "発行日", ko = "발행일", ms = "Tarikh dikeluarkan", nl = "Uitgiftedatum", pl = "Data wystawienia", th = "วันที่ออก", vi = "Ngày phát hành", "zh-Hant" = "開立日期" }
 type = "date"
 aliases = ["Date", "Invoice Date"]
 
 [[fields]]
 name = "tax"
 label = "税额"
-names = { en = "Tax" }
+names = { en = "Tax", ar = "الضريبة", de = "Steuer", es = "Impuesto", fr = "TVA", hi = "कर", id = "Pajak", it = "Imposta", ja = "税額", ko = "세액", ms = "Cukai", nl = "Btw", pl = "Podatek", th = "ภาษี", vi = "Tiền thuế", "zh-Hant" = "稅額" }
 type = "number"
 aliases = ["GST", "VAT", "Tax"]
 
 [[fields]]
 name = "total"
 label = "总额"
-names = { en = "Total" }
+names = { en = "Total", ar = "الإجمالي", de = "Summe", es = "Total", fr = "Total", hi = "कुल", id = "Total", it = "Totale", ja = "合計", ko = "합계", ms = "Jumlah", nl = "Totaal", pl = "Suma", th = "รวม", vi = "Tổng cộng", "zh-Hant" = "總額" }
 type = "number"
 required = true
 description = "账单的总额（消费合计，不是付款后的余额）"
@@ -100,32 +100,32 @@ aliases = ["Total", "Total Charges"]
 [[fields]]
 name = "payment_method"
 label = "付款方式"
-names = { en = "Payment Method" }
+names = { en = "Payment Method", ar = "طريقة الدفع", de = "Zahlungsart", es = "Forma de pago", fr = "Mode de paiement", hi = "भुगतान का तरीका", id = "Metode pembayaran", it = "Metodo di pagamento", ja = "支払方法", ko = "결제수단", ms = "Kaedah pembayaran", nl = "Betaalwijze", pl = "Forma płatności", th = "วิธีชำระเงิน", vi = "Hình thức thanh toán", "zh-Hant" = "付款方式" }
 type = "string"
 aliases = ["Payment", "Payment Mode", "Settlement"]
 
 [[tables]]
 name = "items"
 label = "消费明细"
-names = { en = "Charges" }
+names = { en = "Charges", ar = "الرسوم", de = "Leistungen", es = "Cargos", fr = "Prestations", hi = "शुल्क", id = "Rincian biaya", it = "Addebiti", ja = "利用明細", ko = "이용내역", ms = "Caj", nl = "Kosten", pl = "Obciążenia", th = "รายการค่าใช้จ่าย", vi = "Chi tiết chi phí", "zh-Hant" = "消費明細" }
 description = "账单上逐笔的消费（房费、餐饮等），每笔一行。付款、押金退还这些行不算"
 
 [[tables.columns]]
 name = "date"
 label = "日期"
-names = { en = "Date" }
+names = { en = "Date", ar = "التاريخ", de = "Datum", es = "Fecha", fr = "Date", hi = "दिनांक", id = "Tanggal", it = "Data", ja = "日付", ko = "일자", ms = "Tarikh", nl = "Datum", pl = "Data", th = "วันที่", vi = "Ngày", "zh-Hant" = "日期" }
 type = "date"
 
 [[tables.columns]]
 name = "description"
 label = "内容"
-names = { en = "Description" }
+names = { en = "Description", ar = "الوصف", de = "Bezeichnung", es = "Descripción", fr = "Désignation", hi = "विवरण", id = "Uraian", it = "Descrizione", ja = "内容", ko = "내용", ms = "Perihalan", nl = "Omschrijving", pl = "Nazwa", th = "รายละเอียด", vi = "Tên hàng", "zh-Hant" = "品名" }
 type = "string"
 aliases = ["Description"]
 
 [[tables.columns]]
 name = "amount"
 label = "金额"
-names = { en = "Amount" }
+names = { en = "Amount", ar = "المبلغ", de = "Betrag", es = "Importe", fr = "Montant", hi = "राशि", id = "Nilai", it = "Importo", ja = "金額", ko = "금액", ms = "Jumlah", nl = "Bedrag", pl = "Wartość", th = "จำนวนเงิน", vi = "Thành tiền", "zh-Hant" = "金額" }
 type = "number"
 aliases = ["Charges", "Amount"]

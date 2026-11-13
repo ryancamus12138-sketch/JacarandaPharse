@@ -1,0 +1,153 @@
+# 起步模板：中國臺灣地區 統一發票（三聯式、二聯式、收銀機、電子發票證明聯）。
+# 依据：統一發票使用辦法（113-12-12 修正，114-01-01 施行）第7條（種類）、第9條（應記載字軌號碼、交易日期、品名、數量、
+#   單價、金額、銷售額、課稅別、稅額及總計；三聯式另載買受人名稱及統一編號）；加值型及非加值型營業稅法第10條（稅率 5%）。
+#   營利事業統一編號檢查碼依財政部 112 年修正：總和被 5 整除。發票號碼為字軌 2 碼英文 + 8 位數字。
+# 场景：营业人销售货物或劳务开立；三联式的扣抵联供买方申报进项。
+# 来源：財政部 法規 FL006084 統一發票使用辦法；財政部財政資訊中心 統一編號檢查碼邏輯修正說明。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "tw_uniform_invoice"
+version = 1
+title = "台湾统一发票"
+titles = { en = "Uniform Invoice (Taiwan)", "zh-Hant" = "統一發票" }
+countries = ["TW"]
+domains = ["发票"]
+description = "台湾的统一发票：发票号码（字轨 2 码 + 8 位）、交易日期、卖方和买受人统一编号、品名、数量、单价、金额、销售额、课税别、营业税、总计。统一编号检查码不对、发票号码格式不对、营业税不等于销售额 × 5% 会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "tw_invoice_no", "tw_seller_ban", "tw_buyer_ban", "tw_tax_5", "net_tax_gross", "item_line"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+names = { en = "Document Title", "zh-Hant" = "發票名稱" }
+type = "string"
+description = "单据最上面的标题，照抄"
+aliases = ["發票名稱"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票号码"
+names = { en = "Invoice No.", "zh-Hant" = "發票號碼" }
+type = "string"
+required = true
+unique = true
+description = "照抄，不要改格式"
+aliases = ["發票號碼"]
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue", "zh-Hant" = "開立日期" }
+type = "date"
+required = true
+aliases = ["開立日期"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller", "zh-Hant" = "賣方" }
+type = "string"
+required = true
+aliases = ["賣方"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "卖方税号"
+names = { en = "Seller Tax ID", "zh-Hant" = "賣方統一編號" }
+type = "string"
+description = "照抄，带上字母和分隔符"
+aliases = ["賣方統一編號"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address", "zh-Hant" = "賣方地址" }
+type = "string"
+aliases = ["賣方地址"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer", "zh-Hant" = "買受人" }
+type = "string"
+aliases = ["買受人"]
+
+[[fields]]
+name = "buyer_tax_id"
+label = "买方税号"
+names = { en = "Buyer Tax ID", "zh-Hant" = "買受人統一編號" }
+type = "string"
+description = "照抄；没有就留空"
+aliases = ["買受人統一編號"]
+
+[[fields]]
+name = "tax_type"
+label = "课税别"
+names = { en = "Tax Type", "zh-Hant" = "課稅別" }
+type = "string"
+description = "照抄：應稅、零稅率、免稅"
+aliases = ["課稅別"]
+
+[[fields]]
+name = "net_total"
+label = "不含税合计"
+names = { en = "Total excl. Tax", "zh-Hant" = "銷售額合計" }
+type = "number"
+aliases = ["銷售額合計"]
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax", "zh-Hant" = "營業稅" }
+type = "number"
+aliases = ["營業稅"]
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+names = { en = "Total incl. Tax", "zh-Hant" = "總計" }
+type = "number"
+required = true
+aliases = ["總計"]
+
+[[fields]]
+name = "random_code"
+label = "随机码"
+names = { en = "Random Code", "zh-Hant" = "隨機碼" }
+type = "string"
+description = "电子发票证明联上的 4 位随机码"
+aliases = ["隨機碼"]
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items", "zh-Hant" = "品項" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description", "zh-Hant" = "品名" }
+type = "string"
+aliases = ["品名"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity", "zh-Hant" = "數量" }
+type = "number"
+aliases = ["數量"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price", "zh-Hant" = "單價" }
+type = "number"
+aliases = ["單價"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount", "zh-Hant" = "金額" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+aliases = ["金額"]

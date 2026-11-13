@@ -16,6 +16,7 @@ from datetime import date
 from jacara.core.cnmoney import parse_chinese_amount
 from jacara.plugins.extractors.base import ExtractedField, split_cell_name
 from jacara.plugins.validators.base import Issue, Rule, ValidationResult, Values
+from jacara.plugins.validators.countries import COUNTRY_REGIONS, COUNTRY_RULES
 
 TOLERANCE = 0.005
 """金额比较的容差：差不到半分钱就算相等（小数在电脑里有微小误差）。"""
@@ -1005,7 +1006,7 @@ LOGISTICS_RULES: tuple[Rule, ...] = (
     ),
 )
 
-ALL_RULES = RECEIPT_RULES + TEMPLATE_RULES + LAB_RULES + LOGISTICS_RULES
+ALL_RULES = RECEIPT_RULES + TEMPLATE_RULES + LAB_RULES + LOGISTICS_RULES + COUNTRY_RULES
 
 RULES: dict[str, Rule] = {rule.id: rule for rule in ALL_RULES}
 """规则编号 → 规则。模板文件里按编号选规则。"""
@@ -1041,6 +1042,7 @@ REGIONS: dict[str, str] = {
         "AU",
     ),
 }
+REGIONS.update(COUNTRY_REGIONS)  # 各国法定单据的规则（ADR 0049）
 """只适用于某个国家的规则 → 国家代码（ISO 3166-1，CN 中国、AU 澳大利亚）。
 其他规则是通用的。起步模板库里，国家模板只用通用规则和本国的规则，通用模板只用通用规则；
 "我的模板"不限制，编辑器默认先列通用的和本模板所属国家的（ADR 0037）。"""

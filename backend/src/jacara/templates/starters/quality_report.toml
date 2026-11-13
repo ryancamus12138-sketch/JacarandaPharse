@@ -7,7 +7,7 @@
 name = "quality_report"
 version = 2
 title = "检验检测报告（质检报告）"
-titles = { en = "Test Report" }
+titles = { en = "Test Report", ar = "تقرير الاختبار", de = "Prüfbericht", es = "Informe de ensayo", fr = "Rapport d'essai", hi = "परीक्षण रिपोर्ट", id = "Laporan hasil uji", it = "Rapporto di prova", ja = "試験報告書", ko = "시험성적서", ms = "Laporan ujian", nl = "Testrapport", pl = "Sprawozdanie z badań", th = "รายงานผลการทดสอบ", vi = "Phiếu kết quả thử nghiệm", "zh-Hant" = "檢驗報告（品質）" }
 domains = ["质检", "检验报告"]
 description = "产品质量检验报告、第三方检测报告、出厂检验报告（COA）：报告编号、检测机构、样品名称、规格型号、批号、生产和委托单位、检验依据、收样和签发日期、检验结论，以及每一项的标准要求、检验结果、单项判定。有一项不合格结论却写合格（或者反过来）、收样晚于签发会提醒。"
 rules = ["qc_conclusion", "qc_dates"]
@@ -15,7 +15,7 @@ rules = ["qc_conclusion", "qc_dates"]
 [[fields]]
 name = "lab_name"
 label = "检测机构"
-names = { en = "Laboratory" }
+names = { en = "Laboratory", ar = "المختبر", de = "Prüflabor", es = "Laboratorio", fr = "Laboratoire", hi = "प्रयोगशाला", id = "Laboratorium", it = "Laboratorio", ja = "試験機関", ko = "시험기관", ms = "Makmal", nl = "Laboratorium", pl = "Laboratorium", th = "ห้องปฏิบัติการ", vi = "Phòng thử nghiệm", "zh-Hant" = "檢測機構" }
 type = "string"
 required = true
 description = "出报告的检验检测机构、实验室或企业质检部门的名称"
@@ -24,7 +24,7 @@ aliases = ["检验机构", "检测单位", "实验室", "Laboratory", "Testing L
 [[fields]]
 name = "report_no"
 label = "报告编号"
-names = { en = "Report No." }
+names = { en = "Report No.", ar = "رقم التقرير", de = "Berichtsnummer", es = "N.º de informe", fr = "N° de rapport", hi = "रिपोर्ट संख्या", id = "Nomor laporan", it = "N. rapporto", ja = "報告書番号", ko = "성적서 번호", ms = "No. laporan", nl = "Rapportnummer", pl = "Numer sprawozdania", th = "เลขที่รายงาน", vi = "Số phiếu", "zh-Hant" = "報告編號" }
 type = "string"
 required = true
 unique = true
@@ -33,7 +33,7 @@ aliases = ["报告编号", "编号", "No.", "Report No", "Certificate No"]
 [[fields]]
 name = "report_title"
 label = "报告名称"
-names = { en = "Report Title" }
+names = { en = "Report Title", ar = "عنوان التقرير", de = "Berichtstitel", es = "Título del informe", fr = "Titre du compte rendu", hi = "रिपोर्ट का शीर्षक", id = "Judul laporan", it = "Titolo del referto", ja = "報告書名", ko = "보고서명", ms = "Tajuk laporan", nl = "Titel uitslag", pl = "Tytuł wyniku", th = "ชื่อรายงาน", vi = "Tên phiếu", "zh-Hant" = "報告名稱" }
 type = "string"
 description = "报告标题照抄，如 检验报告、检测报告、出厂检验报告、Certificate of Analysis"
 aliases = ["Test Report", "Certificate of Analysis", "COA"]
@@ -41,7 +41,7 @@ aliases = ["Test Report", "Certificate of Analysis", "COA"]
 [[fields]]
 name = "product_name"
 label = "样品名称"
-names = { en = "Sample Name" }
+names = { en = "Sample Name", ar = "اسم العينة", de = "Probenbezeichnung", es = "Nombre de la muestra", fr = "Nom de l'échantillon", hi = "नमूने का नाम", id = "Nama contoh", it = "Nome del campione", ja = "試料名", ko = "시료명", ms = "Nama sampel", nl = "Naam monster", pl = "Nazwa próbki", th = "ชื่อตัวอย่าง", vi = "Tên mẫu", "zh-Hant" = "樣品名稱" }
 type = "string"
 required = true
 aliases = ["产品名称", "样品名称", "Sample Name", "Product", "Product Name"]
@@ -49,14 +49,14 @@ aliases = ["产品名称", "样品名称", "Sample Name", "Product", "Product Na
 [[fields]]
 name = "model"
 label = "规格型号"
-names = { en = "Model / Specification" }
+names = { en = "Model / Specification", ar = "الطراز / المواصفة", de = "Modell / Spezifikation", es = "Modelo / especificación", fr = "Modèle / spécification", hi = "मॉडल / विनिर्देश", id = "Model / spesifikasi", it = "Modello / specifica", ja = "型式・規格", ko = "모델·규격", ms = "Model / spesifikasi", nl = "Model / specificatie", pl = "Model / specyfikacja", th = "รุ่น / ข้อกำหนด", vi = "Kiểu / quy cách", "zh-Hant" = "規格型號" }
 type = "string"
 aliases = ["型号规格", "规格", "型号", "Model", "Specification"]
 
 [[fields]]
 name = "batch_no"
 label = "批号"
-names = { en = "Batch / Lot No." }
+names = { en = "Batch / Lot No.", ar = "رقم التشغيلة", de = "Charge / Los", es = "N.º de lote", fr = "N° de lot", hi = "बैच / लॉट संख्या", id = "Nomor batch", it = "Lotto", ja = "ロット番号", ko = "로트번호", ms = "No. kelompok", nl = "Partij / lot", pl = "Partia", th = "รุ่นการผลิต", vi = "Số lô", "zh-Hant" = "批號" }
 type = "string"
 description = "生产批号、批次、编号，照抄"
 aliases = ["生产批号", "批次", "Batch No", "Lot No", "Lot"]
@@ -64,28 +64,28 @@ aliases = ["生产批号", "批次", "Batch No", "Lot No", "Lot"]
 [[fields]]
 name = "production_date"
 label = "生产日期"
-names = { en = "Production Date" }
+names = { en = "Production Date", ar = "تاريخ الإنتاج", de = "Herstellungsdatum", es = "Fecha de fabricación", fr = "Date de fabrication", hi = "निर्माण तिथि", id = "Tanggal produksi", it = "Data di produzione", ja = "製造日", ko = "제조일자", ms = "Tarikh pengeluaran", nl = "Productiedatum", pl = "Data produkcji", th = "วันที่ผลิต", vi = "Ngày sản xuất", "zh-Hant" = "生產日期" }
 type = "date"
 aliases = ["生产日期", "Manufacturing Date", "Production Date", "MFG Date"]
 
 [[fields]]
 name = "manufacturer"
 label = "生产单位"
-names = { en = "Manufacturer" }
+names = { en = "Manufacturer", ar = "الشركة المصنعة", de = "Hersteller", es = "Fabricante", fr = "Fabricant", hi = "निर्माता", id = "Produsen", it = "Produttore", ja = "製造者", ko = "제조사", ms = "Pengilang", nl = "Fabrikant", pl = "Producent", th = "ผู้ผลิต", vi = "Nhà sản xuất", "zh-Hant" = "製造商" }
 type = "string"
 aliases = ["生产企业", "制造商", "Manufacturer"]
 
 [[fields]]
 name = "client"
 label = "委托单位"
-names = { en = "Client" }
+names = { en = "Client", ar = "العميل", de = "Auftraggeber", es = "Cliente", fr = "Client", hi = "ग्राहक", id = "Pelanggan", it = "Committente", ja = "依頼者", ko = "의뢰인", ms = "Pelanggan", nl = "Opdrachtgever", pl = "Zleceniodawca", th = "ผู้ว่าจ้าง", vi = "Khách hàng", "zh-Hant" = "委託單位" }
 type = "string"
 aliases = ["委托方", "送检单位", "受检单位", "Client", "Applicant", "Customer"]
 
 [[fields]]
 name = "inspection_type"
 label = "检验类别"
-names = { en = "Type of Inspection" }
+names = { en = "Type of Inspection", ar = "نوع الفحص", de = "Prüfart", es = "Tipo de inspección", fr = "Type de contrôle", hi = "निरीक्षण का प्रकार", id = "Jenis pemeriksaan", it = "Tipo di prova", ja = "検査区分", ko = "시험구분", ms = "Jenis pemeriksaan", nl = "Soort keuring", pl = "Rodzaj badania", th = "ประเภทการตรวจ", vi = "Loại kiểm tra", "zh-Hant" = "檢驗類別" }
 type = "string"
 description = "照抄，如 委托检验、监督抽查、型式检验、出厂检验"
 aliases = ["检验类型", "检测类别", "Test Type"]
@@ -93,7 +93,7 @@ aliases = ["检验类型", "检测类别", "Test Type"]
 [[fields]]
 name = "sample_quantity"
 label = "样品数量"
-names = { en = "Sample Quantity" }
+names = { en = "Sample Quantity", ar = "كمية العينة", de = "Probenmenge", es = "Cantidad de muestra", fr = "Quantité d'échantillon", hi = "नमूने की मात्रा", id = "Jumlah contoh", it = "Quantità del campione", ja = "試料数量", ko = "시료수량", ms = "Kuantiti sampel", nl = "Hoeveelheid monster", pl = "Ilość próbki", th = "จำนวนตัวอย่าง", vi = "Số lượng mẫu", "zh-Hant" = "樣品數量" }
 type = "string"
 description = "照抄，带单位"
 aliases = ["样品数量", "Sample Quantity"]
@@ -101,14 +101,14 @@ aliases = ["样品数量", "Sample Quantity"]
 [[fields]]
 name = "sample_received"
 label = "收样日期"
-names = { en = "Date of Receipt" }
+names = { en = "Date of Receipt", ar = "تاريخ الاستلام", de = "Eingangsdatum", es = "Fecha de recepción", fr = "Date de réception", hi = "प्राप्ति तिथि", id = "Tanggal penerimaan", it = "Data di ricevimento", ja = "受付日", ko = "접수일", ms = "Tarikh terima", nl = "Ontvangstdatum", pl = "Data przyjęcia", th = "วันที่รับตัวอย่าง", vi = "Ngày nhận mẫu", "zh-Hant" = "收樣日期" }
 type = "date"
 aliases = ["到样日期", "收样日期", "接收日期", "Date of Receipt", "Received"]
 
 [[fields]]
 name = "test_period"
 label = "检验日期"
-names = { en = "Test Date" }
+names = { en = "Test Date", ar = "تاريخ الاختبار", de = "Prüfdatum", es = "Fecha de ensayo", fr = "Date d'essai", hi = "परीक्षण तिथि", id = "Tanggal pengujian", it = "Data di prova", ja = "試験日", ko = "시험일", ms = "Tarikh ujian", nl = "Testdatum", pl = "Data badania", th = "วันที่ทดสอบ", vi = "Ngày thử nghiệm", "zh-Hant" = "檢驗日期" }
 type = "date_range"
 description = "检验、检测开始到结束的日期；只有一天的写成同一天开始和结束"
 aliases = ["检验日期", "检测日期", "检测时间", "Test Date", "Date of Test"]
@@ -116,7 +116,7 @@ aliases = ["检验日期", "检测日期", "检测时间", "Test Date", "Date of
 [[fields]]
 name = "test_standard"
 label = "检验依据"
-names = { en = "Test Method / Standard" }
+names = { en = "Test Method / Standard", ar = "طريقة / مواصفة الاختبار", de = "Prüfverfahren / Norm", es = "Método / norma", fr = "Méthode / norme", hi = "परीक्षण विधि / मानक", id = "Metode / standar uji", it = "Metodo / norma", ja = "試験方法・規格", ko = "시험방법·규격", ms = "Kaedah / piawai ujian", nl = "Testmethode / norm", pl = "Metoda / norma", th = "วิธีทดสอบ / มาตรฐาน", vi = "Phương pháp / tiêu chuẩn", "zh-Hant" = "檢驗依據" }
 type = "string"
 description = "标准号和名称照抄（如 GB/T 1234-2020），几条用分号连起来"
 aliases = ["检测依据", "检验标准", "判定依据", "Test Method", "Standard"]
@@ -124,7 +124,7 @@ aliases = ["检测依据", "检验标准", "判定依据", "Test Method", "Stand
 [[fields]]
 name = "conclusion"
 label = "检验结论"
-names = { en = "Conclusion" }
+names = { en = "Conclusion", ar = "الخلاصة", de = "Ergebnis der Prüfung", es = "Conclusión", fr = "Conclusion", hi = "निष्कर्ष", id = "Kesimpulan", it = "Conclusione", ja = "結論", ko = "결론", ms = "Kesimpulan", nl = "Conclusie", pl = "Wniosek", th = "สรุปผล", vi = "Kết luận", "zh-Hant" = "檢驗結論" }
 type = "string"
 required = true
 description = "结论照抄，如 所检项目符合 GB/T xxxx 要求、合格、Pass；不要自己判断"
@@ -133,63 +133,63 @@ aliases = ["检测结论", "结论", "Conclusion", "Result"]
 [[fields]]
 name = "issue_date"
 label = "签发日期"
-names = { en = "Date of Issue" }
+names = { en = "Date of Issue", ar = "تاريخ الإصدار", de = "Ausstellungsdatum", es = "Fecha de emisión", fr = "Date d'émission", hi = "जारी करने की तिथि", id = "Tanggal terbit", it = "Data di emissione", ja = "発行日", ko = "발행일", ms = "Tarikh dikeluarkan", nl = "Uitgiftedatum", pl = "Data wystawienia", th = "วันที่ออก", vi = "Ngày phát hành", "zh-Hant" = "開立日期" }
 type = "date"
 aliases = ["签发日期", "报告日期", "Date of Issue", "Issue Date"]
 
 [[fields]]
 name = "tester"
 label = "主检"
-names = { en = "Tested by" }
+names = { en = "Tested by", ar = "أجراه", de = "Untersucht von", es = "Analizado por", fr = "Analysé par", hi = "जाँचकर्ता", id = "Diperiksa oleh", it = "Eseguito da", ja = "検査者", ko = "검사자", ms = "Diuji oleh", nl = "Uitgevoerd door", pl = "Wykonał", th = "ผู้ตรวจ", vi = "Người thực hiện", "zh-Hant" = "檢驗者" }
 type = "string"
 aliases = ["主检", "检验", "检验员", "Tested by"]
 
 [[fields]]
 name = "reviewer"
 label = "审核"
-names = { en = "Checked by" }
+names = { en = "Checked by", ar = "راجعه", de = "Geprüft von", es = "Revisado por", fr = "Vérifié par", hi = "जाँचकर्ता", id = "Diperiksa oleh", it = "Verificato da", ja = "確認者", ko = "검토자", ms = "Disemak oleh", nl = "Gecontroleerd door", pl = "Sprawdził", th = "ผู้ตรวจสอบ", vi = "Người kiểm tra", "zh-Hant" = "審核" }
 type = "string"
 aliases = ["审核", "Checked by", "Reviewed by"]
 
 [[fields]]
 name = "approver"
 label = "批准"
-names = { en = "Approved by" }
+names = { en = "Approved by", ar = "اعتمده", de = "Freigegeben von", es = "Aprobado por", fr = "Approuvé par", hi = "अनुमोदनकर्ता", id = "Disetujui oleh", it = "Approvato da", ja = "承認者", ko = "승인자", ms = "Diluluskan oleh", nl = "Goedgekeurd door", pl = "Zatwierdził", th = "ผู้อนุมัติ", vi = "Người phê duyệt", "zh-Hant" = "核准" }
 type = "string"
 aliases = ["批准", "签发", "授权签字人", "Approved by", "Authorized Signatory"]
 
 [[tables]]
 name = "items"
 label = "检验项目"
-names = { en = "Test Items" }
+names = { en = "Test Items", ar = "بنود الاختبار", de = "Prüfpunkte", es = "Ensayos", fr = "Essais", hi = "परीक्षण मद", id = "Parameter uji", it = "Prove", ja = "試験項目", ko = "시험항목", ms = "Perkara ujian", nl = "Testpunten", pl = "Badania", th = "รายการทดสอบ", vi = "Chỉ tiêu thử nghiệm", "zh-Hant" = "檢驗項目" }
 required = true
 description = "每一个检验项目一行。表头、分组标题、备注不算一行"
 
 [[tables.columns]]
 name = "no"
 label = "序号"
-names = { en = "No." }
+names = { en = "No.", ar = "م", de = "Nr.", es = "N.º", fr = "N°", hi = "क्रमांक", id = "No.", it = "N.", ja = "番号", ko = "번호", ms = "No.", nl = "Nr.", pl = "Lp.", th = "ลำดับ", vi = "STT", "zh-Hant" = "序號" }
 type = "string"
 aliases = ["序号", "No."]
 
 [[tables.columns]]
 name = "item"
 label = "检验项目"
-names = { en = "Test Item" }
+names = { en = "Test Item", ar = "بند الاختبار", de = "Prüfpunkt", es = "Ensayo", fr = "Essai", hi = "परीक्षण मद", id = "Parameter", it = "Prova", ja = "試験項目", ko = "시험항목", ms = "Perkara ujian", nl = "Testpunt", pl = "Badanie", th = "รายการทดสอบ", vi = "Chỉ tiêu", "zh-Hant" = "檢驗項目" }
 type = "string"
 aliases = ["检测项目", "项目", "Test Item", "Item", "Parameter"]
 
 [[tables.columns]]
 name = "unit"
 label = "单位"
-names = { en = "Unit" }
+names = { en = "Unit", ar = "الوحدة", de = "Einheit", es = "Unidad", fr = "Unité", hi = "इकाई", id = "Satuan", it = "Unità", ja = "単位", ko = "단위", ms = "Unit", nl = "Eenheid", pl = "Jednostka", th = "หน่วย", vi = "Đơn vị", "zh-Hant" = "單位" }
 type = "string"
 aliases = ["单位", "Unit"]
 
 [[tables.columns]]
 name = "requirement"
 label = "标准要求"
-names = { en = "Requirement" }
+names = { en = "Requirement", ar = "المتطلب", de = "Anforderung", es = "Requisito", fr = "Exigence", hi = "आवश्यकता", id = "Persyaratan", it = "Requisito", ja = "規格値", ko = "기준", ms = "Keperluan", nl = "Eis", pl = "Wymaganie", th = "เกณฑ์", vi = "Yêu cầu", "zh-Hant" = "標準要求" }
 type = "string"
 description = "技术要求、标准值、限值，照抄（如 ≤0.5、≥95、无异味）"
 aliases = ["技术要求", "标准值", "标准要求", "Specification", "Requirement", "Limit"]
@@ -197,7 +197,7 @@ aliases = ["技术要求", "标准值", "标准要求", "Specification", "Requir
 [[tables.columns]]
 name = "result"
 label = "检验结果"
-names = { en = "Result" }
+names = { en = "Result", ar = "النتيجة", de = "Ergebnis", es = "Resultado", fr = "Résultat", hi = "परिणाम", id = "Hasil pemeriksaan", it = "Risultato", ja = "結果", ko = "결과", ms = "Keputusan ujian", nl = "Uitslag", pl = "Wynik", th = "ผล", vi = "Kết quả xét nghiệm", "zh-Hant" = "結果" }
 type = "string"
 description = "照抄（数字、未检出、ND、<0.01 都照原样）"
 aliases = ["检测结果", "实测值", "结果", "Result", "Test Result"]
@@ -205,7 +205,7 @@ aliases = ["检测结果", "实测值", "结果", "Result", "Test Result"]
 [[tables.columns]]
 name = "judgment"
 label = "单项判定"
-names = { en = "Verdict" }
+names = { en = "Verdict", ar = "الحكم", de = "Bewertung", es = "Dictamen", fr = "Verdict", hi = "निर्णय", id = "Penilaian", it = "Esito", ja = "判定", ko = "판정", ms = "Keputusan penilaian", nl = "Oordeel", pl = "Ocena", th = "ผลการประเมิน", vi = "Đánh giá", "zh-Hant" = "單項判定" }
 type = "string"
 description = "照抄：合格、不合格、符合、不符合、Pass、Fail；没有这一列就留空"
 aliases = ["单项结论", "判定", "单项判定", "Conclusion", "Pass/Fail"]
