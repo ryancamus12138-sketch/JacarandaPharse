@@ -45,12 +45,28 @@ import type { Template } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
 import { saveFile } from '../../utils/download'
 import { formatTime } from '../../utils/format'
+import { languageName } from '../../utils/languages'
+import { countryName } from './labels'
 import { applyFilters, type Filters, NO_FILTERS, SOURCE_TEXT, sourceKind } from './filtering'
 import { LabelFields, LabelTags } from './LabelWidgets'
 import { TemplateFilters } from './TemplateFilters'
 import { Tip } from '../../components/Tip'
 
 /** 字段、表格、规则各有几个（卡片上的一行小字）。 */
+/** 起步模板按地区分组：通用（没写国家）在前，然后中国、澳洲，其余按国家的中文名排。 */
+function regionGroups(templates: Template[]): [string, Template[]][] {
+  const groups = new Map<string, Template[]>()
+  for (const t of templates) {
+    const region = t.countries?.[0] ?? ''
+    groups.set(region, [...(groups.get(region) ?? []), t])
+  }
+  const first = ['', 'CN', 'AU']
+  const rank = (r: string) => (first.includes(r) ? first.indexOf(r) : first.length)
+  return [...groups].sort(
+    ([a], [b]) => rank(a) - rank(b) || countryName(a).localeCompare(countryName(b), 'zh-CN'),
+  )
+}
+
 function counts(t: Template): string {
   const columns = t.tables.reduce((n, table) => n + table.columns.length, 0)
   const tables = t.tables.length > 0 ? ` · ${t.tables.length} 张表（${columns} 列）` : ''
@@ -319,8 +335,7 @@ export function TemplatesPage() {
   const starterList = (
     <Flex vertical gap={16}>
       <Typography.Text type="secondary">
-        起步模板的字段按官方规定整理（国家税务总局公告、ATO、EN 16931 等，见每个模板的说明）。
-        添加到我的模板之后可以随便改，不影响这里的原版。
+        添加到我的模板后可以随便改，不影响原版。
       </Typography.Text>
       <TemplateFilters
         templates={starters.data ?? []}
@@ -328,50 +343,66 @@ export function TemplatesPage() {
         onChange={setStarterFilters}
         mine={false}
       />
-      <Row gutter={[16, 16]}>
-        {startersShown.map((t) => (
-          <Col key={t.name} xs={24} md={12} xl={8}>
-            <Card
-              size="small"
-              title={
-                <Flex gap={8} align="center">
-                  <Typography.Text strong ellipsis>
-                    {t.title}
+      {/* 按地区分组（ADR 0048）：通用在前，中国、澳洲，再按国家名排 */}
+      {regionGroups(startersShown).map(([region, group]) => (
+        <Flex key={region} vertical gap={8}>
+          <Typography.Title level={5} style={{ margin: 0 }}>
+            {region ? countryName(region) : '通用（不分国家）'}
+            <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: 400, marginInlineStart: 8 }}>
+              {group.length} 个
+            </Typography.Text>
+          </Typography.Title>
+          <Row gutter={[16, 16]}>
+            {group.map((t) => (
+              <Col key={t.name} xs={24} md={12} xl={8}>
+                <Card
+                  size="small"
+                  title={
+                    <Flex gap={8} align="center">
+                      <Typography.Text strong ellipsis>
+                        {t.title}
+                      </Typography.Text>
+                    </Flex>
+                  }
+                  extra={added.has(`starter:${t.name}`) ? <Tag color="green">已添加</Tag> : null}
+                  actions={[
+                    <Tooltip key="add" title={canManage ? undefined : '没有"管理模板"的权限'}>
+                      <Button
+                        type="link"
+                        icon={<PlusOutlined />}
+                        disabled={!canManage}
+                        loading={create.isPending && create.variables?.starter === t.name}
+                        onClick={() => create.mutate({ source: 'starter', starter: t.name })}
+                      >
+                        添加到我的模板
+                      </Button>
+                    </Tooltip>,
+                    <ExportMenu key="export" onExport={(format) => exportOne.mutate({ t, format })} />,
+                  ]}
+                >
+                  <Flex wrap gap={4} style={{ marginBottom: 8 }}>
+                    <LabelTags template={t} custom={false} />
+                  </Flex>
+                  <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ minHeight: 66 }}>
+                    {t.description}
+                  </Typography.Paragraph>
+                  {(t.languages?.length ?? 0) > 1 && (
+                    <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>
+                      名称语言：{(t.languages ?? []).map(languageName).join(' · ')}
+                    </Typography.Paragraph>
+                  )}
+                  <Typography.Paragraph style={{ fontSize: 12, marginBottom: 4 }} ellipsis={{ rows: 2 }}>
+                    {t.fields.map((f) => f.label).join('、')}
+                  </Typography.Paragraph>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {counts(t)}
                   </Typography.Text>
-                </Flex>
-              }
-              extra={added.has(`starter:${t.name}`) ? <Tag color="green">已添加</Tag> : null}
-              actions={[
-                <Tooltip key="add" title={canManage ? undefined : '没有"管理模板"的权限'}>
-                  <Button
-                    type="link"
-                    icon={<PlusOutlined />}
-                    disabled={!canManage}
-                    loading={create.isPending && create.variables?.starter === t.name}
-                    onClick={() => create.mutate({ source: 'starter', starter: t.name })}
-                  >
-                    添加到我的模板
-                  </Button>
-                </Tooltip>,
-                <ExportMenu key="export" onExport={(format) => exportOne.mutate({ t, format })} />,
-              ]}
-            >
-              <Flex wrap gap={4} style={{ marginBottom: 8 }}>
-                <LabelTags template={t} custom={false} />
-              </Flex>
-              <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ minHeight: 66 }}>
-                {t.description}
-              </Typography.Paragraph>
-              <Typography.Paragraph style={{ fontSize: 12, marginBottom: 4 }} ellipsis={{ rows: 2 }}>
-                {t.fields.map((f) => f.label).join('、')}
-              </Typography.Paragraph>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {counts(t)}
-              </Typography.Text>
-            </Card>
-          </Col>
-        ))}
-      </Row>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </Flex>
+      ))}
     </Flex>
   )
 

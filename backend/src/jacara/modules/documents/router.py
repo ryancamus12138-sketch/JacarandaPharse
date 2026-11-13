@@ -33,6 +33,7 @@ from jacara.modules.documents.schemas import (
     LookOut,
     PageOcr,
     PageStructureOut,
+    RegionDescription,
     RegionIn,
     RegionOut,
     ReprocessIn,
@@ -209,13 +210,16 @@ def dashboard(service: Service) -> Dashboard:
 def export_documents(
     service: Service,
     ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
+    lang: Annotated[
+        str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
+    ] = None,
 ) -> Response:
     """把多个文档导出到一个 Excel：汇总表一行一张单据，方便对账。
 
     写法：`/api/v1/documents/export.xlsx?ids=第一个id&ids=第二个id`
     """
     try:
-        filename, data = service.export(ids)
+        filename, data = service.export(ids, lang)
     except DocumentError as err:
         raise _http_error(err) from err
     return attachment(filename, data, XLSX)
@@ -225,6 +229,9 @@ def export_documents(
 def export_documents_csv(
     service: Service,
     ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
+    lang: Annotated[
+        str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
+    ] = None,
 ) -> Response:
     """导出 CSV（UTF-8），内容和汇总 Excel 一样：一行一张单据。
 
@@ -232,7 +239,7 @@ def export_documents_csv(
     写法：`/api/v1/documents/export.csv?ids=第一个id&ids=第二个id`
     """
     try:
-        filename, data, kind = service.export_csv(ids)
+        filename, data, kind = service.export_csv(ids, lang)
     except DocumentError as err:
         raise _http_error(err) from err
     return attachment(filename, data, "text/csv; charset=utf-8" if kind == "csv" else ZIP)
@@ -242,13 +249,16 @@ def export_documents_csv(
 def export_documents_zip(
     service: Service,
     ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
+    lang: Annotated[
+        str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
+    ] = None,
 ) -> Response:
     """每个文档单独一个 Excel，打包成一个 zip 下载，解压后就是一个文件夹。
 
     写法：`/api/v1/documents/export.zip?ids=第一个id&ids=第二个id`
     """
     try:
-        filename, data = service.export_zip(ids)
+        filename, data = service.export_zip(ids, lang)
     except DocumentError as err:
         raise _http_error(err) from err
     return attachment(filename, data, ZIP)
@@ -307,6 +317,26 @@ def page_image(
     )
 
 
+@router.get(
+    "/{document_id}/pages/{page}/crop", summary="某一页上一块区域的放大图", response_class=Response
+)
+def page_crop(
+    document_id: uuid.UUID,
+    page: Annotated[int, Path(ge=1)],
+    service: Service,
+    box: Annotated[str, Query(pattern=r"^-?[\d.]+(,-?[\d.]+){3}$")],
+) -> Response:
+    """box="x0,y0,x1,y1"（和页面图片一样的坐标）这一块放大后的 PNG（ADR 0042）。
+    审核页在候选值旁边显示，看清是哪个字。"""
+    try:
+        data = service.page_crop(document_id, page, [float(v) for v in box.split(",")])
+    except DocumentError as err:
+        raise _http_error(err) from err
+    return Response(
+        content=data, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"}
+    )
+
+
 @router.get("/{document_id}/pages/{page}/structure", summary="某一页的结构")
 def page_structure(
     document_id: uuid.UUID,
@@ -354,6 +384,20 @@ def ocr_region(
         raise _http_error(err) from err
 
 
+@router.post("/{document_id}/pages/{page}/describe-region", summary="框选建模板：框里是什么")
+def describe_region(
+    document_id: uuid.UUID,
+    page: Annotated[int, Path(ge=1)],
+    region: RegionIn,
+    service: Service,
+) -> RegionDescription:
+    """框选建模板（ADR 0047）：框里的值、旁边的标签、在页面哪里、像什么类型。只看不存。"""
+    try:
+        return service.describe_region(document_id, page, region.box)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
 @router.post("/{document_id}/pages/{page}/look-region", summary="让模型看一块区域")
 def look_region(
     document_id: uuid.UUID,
@@ -373,10 +417,16 @@ def look_region(
 
 
 @router.get("/{document_id}/export.xlsx", summary="导出 Excel", response_class=Response)
-def export_document(document_id: uuid.UUID, service: Service) -> Response:
+def export_document(
+    document_id: uuid.UUID,
+    service: Service,
+    lang: Annotated[
+        str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
+    ] = None,
+) -> Response:
     """把一个文档导出成 Excel。格子里是审核之后的值，改过的标蓝，批注里有原值和原因。"""
     try:
-        filename, data = service.export([document_id])
+        filename, data = service.export([document_id], lang)
     except DocumentError as err:
         raise _http_error(err) from err
     return attachment(filename, data, XLSX)

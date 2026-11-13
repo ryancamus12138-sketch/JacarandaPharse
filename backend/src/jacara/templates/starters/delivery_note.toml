@@ -1,0 +1,180 @@
+# 起步模板：送货单（发货单、出库单）。
+# 字段按国内企业送货单的通用要素设计：单号、日期、订单号、送货单位、收货单位、收货地址和联系人，
+# 每一行的物料编码、品名、规格型号、单位、数量、单价、金额、备注，以及送货人、签收人。
+# 送货单常是多联单（存根、客户、回单），签收联是对账、入库的依据。只写字段，不放任何真实单据的内容。
+
+name = "delivery_note"
+version = 2
+title = "送货单"
+titles = { en = "Delivery Note" }
+domains = ["物流", "采购"]
+description = "供应商送货、仓库出库时的送货单（发货单、出库单）：单号、日期、订单号、送货和收货单位、每一行的品名、规格、数量、单价、金额，以及签收人。数量 × 单价和金额对不上、每行数量加起来和合计对不上会提醒。"
+rules = ["item_line", "items_sum", "delivery_quantity"]
+
+[[fields]]
+name = "document_title"
+label = "单据名称"
+names = { en = "Document Title" }
+type = "string"
+description = "单据上的标题，照抄，如 送货单、发货单、出库单、Delivery Note"
+aliases = ["Delivery Note", "Delivery Order", "D/O"]
+
+[[fields]]
+name = "document_no"
+label = "送货单号"
+names = { en = "Delivery Note No." }
+type = "string"
+required = true
+unique = true
+description = "单据编号，照抄（常印在右上角，红色流水号）"
+aliases = ["单号", "No.", "NO", "编号", "送货单号", "发货单号", "出库单号", "Delivery No", "D/N No", "DO No"]
+
+[[fields]]
+name = "delivery_date"
+label = "送货日期"
+names = { en = "Delivery Date" }
+type = "date"
+required = true
+aliases = ["日期", "发货日期", "出库日期", "Date", "Delivery Date"]
+
+[[fields]]
+name = "order_no"
+label = "订单号"
+names = { en = "Order No." }
+type = "string"
+description = "客户的采购订单号、合同号，照抄"
+aliases = ["订单编号", "采购单号", "合同号", "PO No", "P.O. No", "Order No"]
+
+[[fields]]
+name = "supplier"
+label = "送货单位"
+names = { en = "Supplier" }
+type = "string"
+required = true
+description = "发货的公司（供应商），常在标题上面"
+aliases = ["供应商", "供货单位", "发货单位", "Supplier", "From"]
+
+[[fields]]
+name = "customer"
+label = "收货单位"
+names = { en = "Customer" }
+type = "string"
+required = true
+aliases = ["客户", "客户名称", "购货单位", "Customer", "Deliver To", "Ship To", "To"]
+
+[[fields]]
+name = "delivery_address"
+label = "收货地址"
+names = { en = "Delivery Address" }
+type = "string"
+aliases = ["送货地址", "地址", "Address", "Delivery Address"]
+
+[[fields]]
+name = "contact"
+label = "联系人"
+names = { en = "Contact" }
+type = "string"
+sensitive = true
+description = "收货方的联系人和电话，照抄"
+aliases = ["联系人", "联系电话", "电话", "Contact", "Attn", "Tel"]
+
+[[fields]]
+name = "total_quantity"
+label = "合计数量"
+names = { en = "Total Quantity" }
+type = "number"
+aliases = ["合计数量", "数量合计", "Total Qty", "Total Quantity"]
+
+[[fields]]
+name = "total"
+label = "合计金额"
+names = { en = "Total Amount" }
+type = "number"
+description = "金额合计（没有金额的送货单留空）"
+aliases = ["合计", "金额合计", "合计金额", "总金额", "Total", "Total Amount"]
+
+[[fields]]
+name = "deliverer"
+label = "送货人"
+names = { en = "Delivered by" }
+type = "string"
+aliases = ["送货人", "发货人", "司机", "Delivered by"]
+
+[[fields]]
+name = "receiver"
+label = "签收人"
+names = { en = "Received by" }
+type = "string"
+description = "收货方签字的人，照抄；手写看不清的留空"
+aliases = ["收货人签字", "签收", "收货人", "Received by", "Signature"]
+
+[[fields]]
+name = "remarks"
+label = "备注"
+names = { en = "Remarks" }
+type = "string"
+aliases = ["备注", "说明", "Remarks", "Note"]
+
+[[tables]]
+name = "items"
+label = "送货明细"
+names = { en = "Items" }
+required = true
+description = "每一行一种货物。表头、合计行、空行不算一行"
+
+[[tables.columns]]
+name = "code"
+label = "物料编码"
+names = { en = "Item Code" }
+type = "string"
+aliases = ["编码", "物料号", "货号", "Item Code", "Part No", "SKU"]
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description" }
+type = "string"
+description = "货物名称，照抄"
+aliases = ["名称", "品名", "产品名称", "货物名称", "Description", "Item"]
+
+[[tables.columns]]
+name = "spec"
+label = "规格型号"
+names = { en = "Specification" }
+type = "string"
+aliases = ["规格", "型号", "Spec", "Specification", "Model"]
+
+[[tables.columns]]
+name = "unit"
+label = "单位"
+names = { en = "Unit" }
+type = "string"
+aliases = ["单位", "Unit", "UOM"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity" }
+type = "number"
+aliases = ["数量", "实发数量", "Qty", "Quantity"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price" }
+type = "number"
+aliases = ["单价", "Unit Price", "Price"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount" }
+type = "number"
+aliases = ["金额", "Amount"]
+
+[[tables.columns]]
+name = "remark"
+label = "备注"
+names = { en = "Remark" }
+type = "string"
+aliases = ["备注", "Remark"]

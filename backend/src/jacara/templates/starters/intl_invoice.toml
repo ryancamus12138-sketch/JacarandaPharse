@@ -4,8 +4,9 @@
 # 规则和字段说明只写通用规定，不放任何真实单据的内容。
 
 name = "intl_invoice"
-version = 3
+version = 4
 title = "通用发票"
+titles = { en = "Invoice" }
 domains = ["发票"]
 description = "任何国家的商业发票（Invoice）：卖方、买方、明细、不含税合计 + 税额 = 含税合计。字段和金额关系参考 EN 16931，不带地区规定。"
 rules = ["issue_date_exists", "issue_date_not_future", "lines_net", "net_tax_gross", "due_not_above_gross", "item_line"]
@@ -13,6 +14,7 @@ rules = ["issue_date_exists", "issue_date_not_future", "lines_net", "net_tax_gro
 [[fields]]
 name = "document_title"
 label = "单据标题"
+names = { en = "Document Title" }
 type = "string"
 description = "单据上写的标题，如 Invoice、Tax Invoice，原样照抄"
 aliases = ["Invoice", "Tax Invoice", "发票"]
@@ -20,6 +22,7 @@ aliases = ["Invoice", "Tax Invoice", "发票"]
 [[fields]]
 name = "invoice_no"
 label = "发票号"
+names = { en = "Invoice No." }
 unique = true
 type = "string"
 required = true
@@ -28,6 +31,7 @@ aliases = ["Invoice No.", "Invoice #", "Invoice Number"]
 [[fields]]
 name = "issue_date"
 label = "开票日期"
+names = { en = "Invoice Date" }
 type = "date"
 required = true
 aliases = ["Invoice Date", "Date", "Date of issue"]
@@ -35,12 +39,14 @@ aliases = ["Invoice Date", "Date", "Date of issue"]
 [[fields]]
 name = "due_date"
 label = "付款截止日"
+names = { en = "Due Date" }
 type = "date"
 aliases = ["Due Date", "Payment Due"]
 
 [[fields]]
 name = "currency"
 label = "币种"
+names = { en = "Currency" }
 type = "string"
 description = "三个字母的币种代码，如 AUD、USD、EUR；单据上只有符号时按符号和国家判断"
 aliases = ["Currency"]
@@ -48,6 +54,7 @@ aliases = ["Currency"]
 [[fields]]
 name = "seller_name"
 label = "卖方名称"
+names = { en = "Seller Name" }
 type = "string"
 required = true
 description = "开发票的公司名称"
@@ -56,6 +63,7 @@ aliases = ["From", "Supplier", "Seller"]
 [[fields]]
 name = "seller_tax_id"
 label = "卖方税号"
+names = { en = "Seller Tax ID" }
 type = "string"
 description = "卖方的税号，如 ABN、VAT No.、GST No."
 aliases = ["ABN", "VAT No.", "GST No.", "Tax ID"]
@@ -63,23 +71,27 @@ aliases = ["ABN", "VAT No.", "GST No.", "Tax ID"]
 [[fields]]
 name = "seller_address"
 label = "卖方地址"
+names = { en = "Seller Address" }
 type = "string"
 
 [[fields]]
 name = "buyer_name"
 label = "买方名称"
+names = { en = "Buyer Name" }
 type = "string"
 aliases = ["Bill To", "Customer", "Buyer", "Invoice To"]
 
 [[fields]]
 name = "buyer_tax_id"
 label = "买方税号"
+names = { en = "Buyer Tax ID" }
 type = "string"
 aliases = ["Customer Tax ID", "Buyer VAT No."]
 
 [[fields]]
 name = "net_total"
 label = "不含税合计"
+names = { en = "Total excl. Tax" }
 type = "number"
 description = "不含税的合计金额"
 aliases = ["Subtotal", "Total excl. tax", "Net amount"]
@@ -87,6 +99,7 @@ aliases = ["Subtotal", "Total excl. tax", "Net amount"]
 [[fields]]
 name = "tax_total"
 label = "税额"
+names = { en = "Tax" }
 type = "number"
 description = "税额合计"
 aliases = ["Tax", "VAT", "GST", "Sales tax", "Total tax"]
@@ -94,6 +107,7 @@ aliases = ["Tax", "VAT", "GST", "Sales tax", "Total tax"]
 [[fields]]
 name = "gross_total"
 label = "含税合计"
+names = { en = "Total incl. Tax" }
 type = "number"
 required = true
 description = "含税的合计金额"
@@ -102,6 +116,7 @@ aliases = ["Total", "Total incl. tax", "Grand total"]
 [[fields]]
 name = "amount_due"
 label = "应付金额"
+names = { en = "Amount Due" }
 type = "number"
 description = "扣掉已付款后还要付的金额"
 aliases = ["Amount Due", "Balance Due"]
@@ -109,35 +124,41 @@ aliases = ["Amount Due", "Balance Due"]
 [[fields]]
 name = "payment_terms"
 label = "付款条件"
+names = { en = "Payment Terms" }
 type = "string"
 aliases = ["Terms", "Payment Terms"]
 
 [[tables]]
 name = "items"
 label = "明细"
+names = { en = "Items" }
 description = "发票的明细行，每个商品或服务一行"
 
 [[tables.columns]]
 name = "description"
 label = "内容"
+names = { en = "Description" }
 type = "string"
 aliases = ["Description", "Item"]
 
 [[tables.columns]]
 name = "quantity"
 label = "数量"
+names = { en = "Quantity" }
 type = "number"
 aliases = ["Qty", "Quantity"]
 
 [[tables.columns]]
 name = "unit_price"
 label = "单价"
+names = { en = "Unit Price" }
 type = "number"
 aliases = ["Unit Price", "Rate"]
 
 [[tables.columns]]
 name = "amount"
 label = "金额"
+names = { en = "Amount" }
 type = "number"
 description = "这一行不含税的金额"
 aliases = ["Amount", "Line Total"]
@@ -145,5 +166,6 @@ aliases = ["Amount", "Line Total"]
 [[tables.columns]]
 name = "tax_rate"
 label = "税率"
+names = { en = "Tax Rate" }
 type = "string"
 aliases = ["Tax %", "VAT %", "GST %"]

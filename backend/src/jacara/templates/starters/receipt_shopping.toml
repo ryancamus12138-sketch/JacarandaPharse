@@ -4,8 +4,9 @@
 # 规则和字段说明只写通用规定，不放任何真实单据的内容。
 
 name = "receipt_shopping"
-version = 2
+version = 4
 title = "购物小票"
+titles = { en = "Shopping Receipt" }
 domains = ["收据", "购物"]
 description = "超市、商店的小票：逐项商品、折扣、找整，不分国家和地区。"
 rules = ["total_positive", "date_exists", "date_not_future", "receipt_balance", "items_sum", "item_line", "cash_covers_total", "change"]
@@ -13,6 +14,7 @@ rules = ["total_positive", "date_exists", "date_not_future", "receipt_balance", 
 [[fields]]
 name = "merchant"
 label = "商家"
+names = { en = "Merchant" }
 type = "string"
 required = true
 description = "开收据的商家名称，一般在最上面"
@@ -21,25 +23,30 @@ aliases = ["Store", "Shop"]
 [[fields]]
 name = "merchant_tax_id"
 label = "商家税号"
+names = { en = "Merchant Tax ID" }
 type = "string"
+aliases = ["Co. Reg No", "Company No", "GST Reg No", "SST No", "TIN", "统一社会信用代码"]
 description = "商家的税务登记号或公司注册号，叫法各地不同（税号、统一社会信用代码、ABN、VAT No.、GST No. 等），原样照抄；没有就留空"
 
 [[fields]]
 name = "document_title"
 label = "单据标题"
+names = { en = "Document Title" }
 type = "string"
 description = "收据上写的标题，如 收据、Receipt、Tax Invoice，原样照抄"
 
 [[fields]]
 name = "document_no"
 label = "单号"
+names = { en = "Receipt No." }
 type = "string"
 description = "收据号、发票号或交易号"
-aliases = ["Receipt No", "Invoice No", "Trans #"]
+aliases = ["Receipt No", "Invoice No", "Trans #", "Document No", "Doc No", "Bill No", "Receipt #", "Ref No", "单据号", "小票号"]
 
 [[fields]]
 name = "date"
 label = "日期"
+names = { en = "Date" }
 type = "date"
 required = true
 description = "交易日期"
@@ -48,24 +55,29 @@ aliases = ["Date"]
 [[fields]]
 name = "time"
 label = "时间"
+names = { en = "Time" }
 type = "string"
+aliases = ["Time", "时间"]
 description = "交易时间，如 14:05"
 
 [[fields]]
 name = "description"
 label = "购买内容"
+names = { en = "Purchase" }
 type = "string"
 description = "收据上没有逐项明细时，概括写的购买内容"
 
 [[fields]]
 name = "subtotal"
 label = "小计"
+names = { en = "Subtotal" }
 type = "number"
 aliases = ["Subtotal", "Sub Total"]
 
 [[fields]]
 name = "discount"
 label = "折扣"
+names = { en = "Discount" }
 type = "number"
 description = "整单折扣的金额，写正数"
 aliases = ["Discount", "Savings"]
@@ -73,37 +85,43 @@ aliases = ["Discount", "Savings"]
 [[fields]]
 name = "surcharge"
 label = "附加费"
+names = { en = "Surcharge" }
 type = "number"
 aliases = ["Surcharge", "Card surcharge"]
 
 [[fields]]
 name = "rounding"
 label = "找整调整"
+names = { en = "Rounding" }
 type = "number"
 description = "现金找整（四舍五入）的调整金额，减少写负数"
-aliases = ["Rounding"]
+aliases = ["Rounding", "Rounding Adjustment", "Rounding Adj", "Round Adj", "舍入"]
 
 [[fields]]
 name = "cash"
 label = "现金"
+names = { en = "Cash" }
 type = "number"
 aliases = ["Cash", "Tendered"]
 
 [[fields]]
 name = "change"
 label = "找零"
+names = { en = "Change" }
 type = "number"
 aliases = ["Change"]
 
 [[fields]]
 name = "tax"
 label = "税额"
+names = { en = "Tax" }
 type = "number"
 description = "收据上单独写出的税额（叫法各地不同：税额、Tax、VAT、GST、Sales tax）；只写了“含税”多少时填那个金额；没写就留空"
 
 [[fields]]
 name = "total"
 label = "总额"
+names = { en = "Total" }
 type = "number"
 required = true
 description = "最终应付总额"
@@ -112,6 +130,7 @@ aliases = ["Total", "Amount"]
 [[fields]]
 name = "payment_method"
 label = "付款方式"
+names = { en = "Payment Method" }
 type = "string"
 description = "如 现金、银行卡、微信、支付宝、Visa"
 aliases = ["Card", "Cash"]
@@ -119,30 +138,35 @@ aliases = ["Card", "Cash"]
 [[tables]]
 name = "items"
 label = "商品明细"
+names = { en = "Items" }
 description = "收据上的商品或服务，每样一行。小计、税、合计这些行不算明细"
 required = true
 
 [[tables.columns]]
 name = "description"
 label = "商品"
+names = { en = "Item" }
 type = "string"
 aliases = ["Item", "Description"]
 
 [[tables.columns]]
 name = "quantity"
 label = "数量"
+names = { en = "Quantity" }
 type = "number"
 aliases = ["Qty"]
 
 [[tables.columns]]
 name = "unit_price"
 label = "单价"
+names = { en = "Unit Price" }
 type = "number"
 aliases = ["Price", "Unit Price"]
 
 [[tables.columns]]
 name = "amount"
 label = "金额"
+names = { en = "Amount" }
 type = "number"
 description = "这一行的金额；折扣行是负数"
 aliases = ["Amount"]

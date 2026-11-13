@@ -4,6 +4,7 @@ import { Alert, Button, Card, Col, Descriptions, Flex, List, Row, Tag, Typograph
 import { ApiError } from '../../api/client'
 import { getSystemInfo } from '../../api/system'
 import { formatBytes } from '../../utils/format'
+import { ModelsCard } from './ModelsCard'
 
 /**
  * 系统信息（只读）：版本、模型、OCR、模板、数据量，和各个服务连不连得上。
@@ -118,6 +119,7 @@ export function SystemPage() {
           </Card>
         </Col>
       </Row>
+      <ModelsCard />
       <Card
         title="服务状态"
         extra={

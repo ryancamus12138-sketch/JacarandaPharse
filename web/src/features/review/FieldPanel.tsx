@@ -1,5 +1,5 @@
 import { CloseOutlined, DeleteOutlined, MessageOutlined, ScanOutlined } from '@ant-design/icons'
-import { Alert, Button, Flex, Segmented, Tag, Tooltip, Typography } from 'antd'
+import { Button, Flex, Segmented, Tag, Tooltip, Typography } from 'antd'
 import { useEffect, useRef } from 'react'
 import type { Extraction, FieldValue, Level } from '../../api/types'
 import {
@@ -13,7 +13,9 @@ import {
   type TableRow,
   tableLayouts,
 } from './fields'
+import { IssueToggle } from './IssueToggle'
 import { ItemsTable } from './ItemsTable'
+import { Candidates } from './Candidates'
 import { ReviewForm } from './ReviewForm'
 import { RevisionHistory } from './RevisionHistory'
 import type { Revise } from './useRevise'
@@ -87,16 +89,7 @@ export function FieldPanel({
 
   return (
     <Flex vertical gap={12} ref={box}>
-      {checks.issues.map((issue, i) => (
-        <Alert
-          // 同一条规则可能报好几次（商品明细每一行单独检查）
-          key={`${issue.rule}:${i}`}
-          type={issue.severity === 'error' ? 'error' : 'warning'}
-          showIcon
-          title={issue.title}
-          description={issue.message}
-        />
-      ))}
+      <IssueToggle checks={checks} />
       <Flex justify="space-between" align="center" gap={8} wrap>
         <Typography.Text type="secondary">
           {plain.length} 个字段
@@ -379,7 +372,10 @@ export function FieldDetail({
   onClear,
   onAdjustBox,
   onClose,
+  documentId,
 }: {
+  /** 文档 ID：候选值旁边的局部图要用。 */
+  documentId: string
   value: FieldValue
   label: string
   canEdit: boolean
@@ -446,6 +442,13 @@ export function FieldDetail({
           {ev ? '调整框 / 重新识别' : '在原图上框出来'}
         </Button>
       )}
+      <Candidates
+        documentId={documentId}
+        value={v}
+        revise={revise}
+        canEdit={canEdit && !v.deleted}
+        onDone={onReviewed}
+      />
       {/* key 带上当前值：改完之后表单用新值重新开始 */}
       {canEdit && !v.deleted && (
         <ReviewForm key={`${v.id}:${v.current_value}`} value={v} revise={revise} onDone={onReviewed} />

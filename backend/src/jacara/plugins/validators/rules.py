@@ -660,7 +660,352 @@ LAB_RULES: tuple[Rule, ...] = (
     ),
 )
 
-ALL_RULES = RECEIPT_RULES + TEMPLATE_RULES + LAB_RULES
+# ---------- 物流、送货、质检（v4 第 1 批，ADR 0043） ----------
+
+
+def _column(values: Values, table: str, column: str) -> list[float]:
+    return [
+        v
+        for k, v in values.items()
+        if fnmatch.fnmatch(k, f"{table}.*.{column}") and isinstance(v, float)
+    ]
+
+
+def _sum_equals(table: str, column: str, total: str, what: str) -> Callable[[Values], str | None]:
+    """表里某一列加起来 = 一个合计字段（件数、数量、重量、体积）。重量、体积常四舍五入，容差取
+    合计的千分之五和 0.015 中大的那个。"""
+
+    def check(values: Values) -> str | None:
+        rows = _column(values, table, column)
+        expected = _num(values, total)
+        added = sum(rows)
+        if abs(added - expected) <= max(ITEM_TOLERANCE, abs(expected) * 0.005):
+            return None
+        return (
+            f"{len(rows)} 行的{what}加起来是 {added:g}，但合计写的是 {expected:g}"
+            "（可能漏了行或多了行）"
+        )
+
+    return check
+
+
+def check_net_not_over_gross(values: Values) -> str | None:
+    net, gross = _num(values, "net_weight"), _num(values, "gross_weight")
+    if net <= gross + TOLERANCE:
+        return None
+    return f"净重 {net:g} 比毛重 {gross:g} 还大（毛重 = 净重 + 包装）"
+
+
+def check_total_net_not_over_gross(values: Values) -> str | None:
+    net, gross = _num(values, "total_net_weight"), _num(values, "total_gross_weight")
+    if net <= gross + TOLERANCE:
+        return None
+    return f"总净重 {net:g} 比总毛重 {gross:g} 还大"
+
+
+_CONTAINER = re.compile(r"^([A-Z]{3}[UJZR])(\d{6})(\d)$")
+_LETTER_VALUES = {
+    letter: value
+    for letter, value in zip(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        (n for n in range(10, 39) if n % 11 != 0),
+        strict=False,
+    )
+}
+
+
+def container_check_digit(number: str) -> int | None:
+    """ISO 6346 集装箱号的校验位：4 个字母 + 6 位数字，按位置加权（2 的次方）求和，除以 11 取余，
+    余 10 算 0。格式不对返回 None。"""
+    m = _CONTAINER.match(re.sub(r"[\s-]", "", number.upper()))
+    if m is None:
+        return None
+    digits = [_LETTER_VALUES[c] for c in m[1]] + [int(c) for c in m[2]]
+    total = sum(v * 2**i for i, v in enumerate(digits))
+    return total % 11 % 10
+
+
+def check_container_no(values: Values) -> str | None:
+    raw = str(values.get("container_no") or "")
+    number = re.sub(r"[\s-]", "", raw.upper())
+    m = _CONTAINER.match(number)
+    if m is None:
+        return f"集装箱号「{raw}」格式不对（应是 4 个字母 + 7 位数字，如 MSKU1234565）"
+    expected = container_check_digit(number)
+    if expected == int(m[3]):
+        return None
+    return f"集装箱号「{raw}」最后一位校验位应是 {expected}，可能有字认错了"
+
+
+_AWB = re.compile(r"^(\d{3})[\s-]?(\d{4})\s?(\d{4})$")
+
+
+def check_awb_no(values: Values) -> str | None:
+    """航空运单号：3 位航空公司代码 + 8 位序号，序号前 7 位除以 7 的余数等于第 8 位（IATA）。"""
+    raw = str(values.get("awb_no") or "")
+    m = _AWB.match(raw.strip())
+    if m is None:
+        return f"运单号「{raw}」格式不对（应是 3 位航空公司代码 + 8 位数字，如 176-12345675）"
+    serial = m[2] + m[3]
+    if int(serial[:7]) % 7 == int(serial[7]):
+        return None
+    return f"运单号「{raw}」的校验位应是 {int(serial[:7]) % 7}，可能有数字认错了"
+
+
+def check_rate_line(values: Values) -> str | None:
+    """航空运单的计费行：计费重量 × 费率 = 运费（有最低运费时会不一样，所以只是提醒）。"""
+    weight, rate, total = (
+        _num(values, "chargeable_weight"),
+        _num(values, "rate"),
+        _num(values, "total"),
+    )
+    expected = weight * rate
+    if abs(expected - total) <= max(ITEM_TOLERANCE, abs(total) * 0.005):
+        return None
+    return (
+        f"计费重量 {weight:g} × 费率 {rate:g} = {_money(expected)}，但这一行运费是 {_money(total)}"
+        "（如果是最低运费 M 类可以忽略）"
+    )
+
+
+def check_waybill_fees(values: Values) -> str | None:
+    """运单费用：运费 + 保价费 + 包装费 + 其他费用 = 费用合计（没写的项当 0）。"""
+    parts = {"运费": _num(values, "freight")}
+    for name, label in (
+        ("insurance_fee", "保价费"),
+        ("packing_fee", "包装费"),
+        ("other_fees", "其他费用"),
+    ):
+        if isinstance(values.get(name), float):
+            parts[label] = _num(values, name)
+    total = _num(values, "total")
+    added = sum(parts.values())
+    if abs(added - total) < TOLERANCE:
+        return None
+    shown = " + ".join(f"{k} {_money(v)}" for k, v in parts.items())
+    return f"{shown} = {_money(added)}，但费用合计是 {_money(total)}"
+
+
+_FAIL = re.compile(r"不合格|不符合|不通过|^\s*(?:fail(?:ed)?|ng|x|×|✗)\s*$", re.IGNORECASE)
+_PASS = re.compile(
+    r"合格|符合|通过|^\s*(?:pass(?:ed)?|ok|√|✓|conform(?:s|ing)?)\s*$", re.IGNORECASE
+)
+
+
+def _verdict(text: str) -> str | None:
+    if _FAIL.search(text):
+        return "fail"
+    if _PASS.search(text):
+        return "pass"
+    return None
+
+
+def check_qc_conclusion(values: Values) -> str | None:
+    """单项判定里有不合格，结论却是合格；或者单项全合格，结论却是不合格。只看单据自己前后一不一致。"""
+    judgments = [
+        (k, str(v))
+        for k, v in values.items()
+        if fnmatch.fnmatch(k, "items.*.judgment") and v not in (None, "")
+    ]
+    conclusion = _verdict(str(values.get("conclusion") or ""))
+    verdicts = [_verdict(v) for _, v in judgments]
+    failed = [v for (_, v), r in zip(judgments, verdicts, strict=True) if r == "fail"]
+    if conclusion == "pass" and failed:
+        return f"有 {len(failed)} 项判定不合格，结论却写的是合格"
+    if conclusion == "fail" and verdicts and all(r == "pass" for r in verdicts):
+        return f"{len(verdicts)} 项判定都合格，结论却写的是不合格（请看是否还有表外的项目）"
+    return None
+
+
+def _date_order(first: str, second: str, what: str) -> Callable[[Values], str | None]:
+    def check(values: Values) -> str | None:
+        try:
+            a = date.fromisoformat(str(values[first]))
+            b = date.fromisoformat(str(values[second]))
+        except ValueError:
+            return None  # 日期本身不对由别的规则管
+        return None if a <= b else f"{what}：{a} 在 {b} 之后"
+
+    return check
+
+
+_CMA = re.compile(r"^\d{12}$")
+
+
+def check_cma_no(values: Values) -> str | None:
+    """资质认定证书编号：CMA 标志下面的 12 位数字（国认实〔2015〕49 号）。"""
+    raw = str(values.get("cma_no") or "")
+    if _CMA.match(re.sub(r"\s", "", raw)):
+        return None
+    return f"资质认定证书编号「{raw}」应是 12 位数字，可能有字认错了"
+
+
+LOGISTICS_RULES: tuple[Rule, ...] = (
+    Rule(
+        "packing_packages",
+        "每行件数加起来 = 总件数",
+        ("packages.*.cartons", "total_packages"),
+        _sum_equals("packages", "cartons", "total_packages", "件数"),
+        "warning",
+        flags=("packages.*.cartons", "total_packages"),
+    ),
+    Rule(
+        "packing_quantity",
+        "每行数量加起来 = 总数量",
+        ("packages.*.quantity", "total_quantity"),
+        _sum_equals("packages", "quantity", "total_quantity", "数量"),
+        "warning",
+        flags=("packages.*.quantity", "total_quantity"),
+    ),
+    Rule(
+        "packing_net",
+        "每行净重加起来 = 总净重",
+        ("packages.*.net_weight", "total_net_weight"),
+        _sum_equals("packages", "net_weight", "total_net_weight", "净重"),
+        "warning",
+        flags=("packages.*.net_weight", "total_net_weight"),
+    ),
+    Rule(
+        "packing_gross",
+        "每行毛重加起来 = 总毛重",
+        ("packages.*.gross_weight", "total_gross_weight"),
+        _sum_equals("packages", "gross_weight", "total_gross_weight", "毛重"),
+        "warning",
+        flags=("packages.*.gross_weight", "total_gross_weight"),
+    ),
+    Rule(
+        "packing_volume",
+        "每行体积加起来 = 总体积",
+        ("packages.*.volume", "total_volume"),
+        _sum_equals("packages", "volume", "total_volume", "体积"),
+        "warning",
+        flags=("packages.*.volume", "total_volume"),
+    ),
+    Rule(
+        "net_not_over_gross",
+        "净重不超过毛重（每一行）",
+        ("net_weight", "gross_weight"),
+        check_net_not_over_gross,
+        "warning",
+        per_row="packages",
+    ),
+    Rule(
+        "total_net_not_over_gross",
+        "总净重不超过总毛重",
+        ("total_net_weight", "total_gross_weight"),
+        check_total_net_not_over_gross,
+    ),
+    Rule(
+        "delivery_quantity",
+        "每行数量加起来 = 合计数量",
+        ("items.*.quantity", "total_quantity"),
+        _sum_equals("items", "quantity", "total_quantity", "数量"),
+        "warning",
+        flags=("items.*.quantity", "total_quantity"),
+    ),
+    Rule(
+        "waybill_fees",
+        "运费 + 保价费 + 包装费 + 其他 = 费用合计",
+        ("freight", "total"),
+        check_waybill_fees,
+        "warning",
+    ),
+    Rule(
+        "container_no",
+        "集装箱号校验位正确（ISO 6346）",
+        ("container_no",),
+        check_container_no,
+        "warning",
+        per_row="containers",
+    ),
+    Rule(
+        "bl_packages",
+        "每个集装箱的件数加起来 = 总件数",
+        ("containers.*.packages", "total_packages"),
+        _sum_equals("containers", "packages", "total_packages", "件数"),
+        "warning",
+        flags=("containers.*.packages", "total_packages"),
+    ),
+    Rule(
+        "bl_weight",
+        "每个集装箱的毛重加起来 = 总毛重",
+        ("containers.*.gross_weight", "total_gross_weight"),
+        _sum_equals("containers", "gross_weight", "total_gross_weight", "毛重"),
+        "warning",
+        flags=("containers.*.gross_weight", "total_gross_weight"),
+    ),
+    Rule(
+        "bl_measurement",
+        "每个集装箱的体积加起来 = 总体积",
+        ("containers.*.measurement", "total_measurement"),
+        _sum_equals("containers", "measurement", "total_measurement", "体积"),
+        "warning",
+        flags=("containers.*.measurement", "total_measurement"),
+    ),
+    Rule(
+        "bl_onboard_before_issue",
+        "装船日期不晚于签发日期",
+        ("shipped_on_board_date", "issue_date"),
+        _date_order("shipped_on_board_date", "issue_date", "装船日期晚于签发日期"),
+        "warning",
+    ),
+    Rule("awb_no", "航空运单号校验位正确（IATA）", ("awb_no",), check_awb_no, "warning"),
+    Rule(
+        "awb_pieces",
+        "计费行件数加起来 = 总件数",
+        ("rates.*.pieces", "total_pieces"),
+        _sum_equals("rates", "pieces", "total_pieces", "件数"),
+        "warning",
+        flags=("rates.*.pieces", "total_pieces"),
+    ),
+    Rule(
+        "awb_weight",
+        "计费行毛重加起来 = 总毛重",
+        ("rates.*.gross_weight", "total_gross_weight"),
+        _sum_equals("rates", "gross_weight", "total_gross_weight", "毛重"),
+        "warning",
+        flags=("rates.*.gross_weight", "total_gross_weight"),
+    ),
+    Rule(
+        "awb_rate_line",
+        "计费重量 × 费率 = 运费（每一行）",
+        ("chargeable_weight", "rate", "total"),
+        check_rate_line,
+        "warning",
+        per_row="rates",
+    ),
+    Rule(
+        "qc_conclusion",
+        "单项判定和检验结论一致",
+        ("items.*.judgment", "conclusion"),
+        check_qc_conclusion,
+        "warning",
+        flags=("conclusion",),
+    ),
+    Rule(
+        "qc_dates",
+        "收样日期不晚于签发日期",
+        ("sample_received", "issue_date"),
+        _date_order("sample_received", "issue_date", "收样日期晚于签发日期"),
+        "warning",
+    ),
+    Rule(
+        "cn_cma_no",
+        "资质认定证书编号是 12 位数字（CMA）",
+        ("cma_no",),
+        check_cma_no,
+        "warning",
+    ),
+    Rule(
+        "cn_sampling_dates",
+        "抽样日期不晚于签发日期",
+        ("sampling_date", "issue_date"),
+        _date_order("sampling_date", "issue_date", "抽样日期晚于签发日期"),
+        "warning",
+    ),
+)
+
+ALL_RULES = RECEIPT_RULES + TEMPLATE_RULES + LAB_RULES + LOGISTICS_RULES
 
 RULES: dict[str, Rule] = {rule.id: rule for rule in ALL_RULES}
 """规则编号 → 规则。模板文件里按编号选规则。"""
@@ -676,6 +1021,8 @@ REGIONS: dict[str, str] = {
             "fare_tax_balance",
             "air_total",
             "air_vat",
+            "cn_cma_no",
+            "cn_sampling_dates",
         ),
         "CN",
     ),

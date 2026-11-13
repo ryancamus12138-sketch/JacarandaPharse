@@ -159,6 +159,13 @@ uv run jacara eval sroie --limit 20       # 要先启动大模型
 
 指标的意思和历次结果见 [docs/eval/README.md](docs/eval/README.md)。
 
+同一张单据的照片和 PDF 成对比较（ADR 0042）：清单写在 `data/eval/pairs.toml`（格式见 `backend/src/jacara/eval/pairs.py`，data/ 不进 Git）：
+
+```bash
+uv run jacara eval pairs                                   # 标准答案当回答，不用模型，只量 OCR 和核对
+uv run jacara eval pairs --server http://127.0.0.1:8080    # 真的用模型抽，要先启动大模型
+```
+
 ### 检查与测试
 
 ```bash

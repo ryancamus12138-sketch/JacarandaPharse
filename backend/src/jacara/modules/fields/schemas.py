@@ -55,6 +55,8 @@ class ValueOut(BaseModel):
     """抽取时找到的出处，永远不变。"""
     current_evidence: dict[str, Any] | None = None
     """当前出处：从原文选取过就是选的那几块，否则等于 evidence。原图上画的是这个。"""
+    candidates: dict[str, Any] | None = None
+    """候选（ADR 0042）：{"items": [...]}，各个来源读出来的不同的值，给人选。"""
     origin: str = "model"
     """model：模型抽的；manual：人工填的；computed：按模板的公式算的（ADR 0035）。"""
     deleted: bool = False
@@ -69,6 +71,8 @@ class ValueOut(BaseModel):
     """颜色：red、yellow、grey、green（证据 × 校验 × 有没有人审核过）。只有文档详情里有。"""
     label: str | None = None
     """中文名：模板里的 label；键值对发现时是单据上的原名。只有文档详情里有。"""
+    names: dict[str, str] = {}
+    """别的语言的名字（ADR 0048）：语言代码 → 名字。模板里没写的语言没有。只有文档详情里有。"""
     suggestion: SuggestionOut | None = None
     """重新处理之后：上一轮人审核过、可以直接沿用的结果。只有文档详情里有。"""
     range: RangeOut | None = None

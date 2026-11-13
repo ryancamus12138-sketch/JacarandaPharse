@@ -97,6 +97,22 @@ class TemplateError(ValueError):
 RangeExport = Literal["normalized", "original", "columns"]
 """日期范围导出成：统一格式、原文、拆成两列（ADR 0039）。"""
 
+LANGUAGE = re.compile(r"^[a-z]{2,3}(-[A-Z][a-z]{3}|-[A-Z]{2})?$")
+"""语言代码（BCP 47 的简写，ADR 0048）：zh、en、ja、ko、de、zh-Hant……"""
+
+DEFAULT_LANGUAGE = "zh"
+"""label 默认是哪种语言：起步模板都写中文。"""
+
+Names = tuple[tuple[str, str], ...]
+"""别的语言的名字（ADR 0048）：((语言代码, 名字), ...)。label 本身是默认语言。"""
+
+
+def name_in(label: str, names: Names, language: str | None) -> str:
+    """这种语言的名字；没指定语言、或者没写这种语言，用 label。"""
+    if not language:
+        return label
+    return dict(names).get(language, label)
+
 
 @dataclass(frozen=True)
 class TemplateField:
@@ -128,6 +144,12 @@ class TemplateField:
     original 原文、columns 拆成开始、结束两列。别的类型用不到。"""
     range_separator: str = " ~ "
     """统一格式里开始、结束之间写什么。"""
+    names: Names = ()
+    """别的语言的名字（英文、当地语言，ADR 0048）：审核页、导出可以切换。
+    也告诉模型单据上可能这么写。"""
+
+    def label_in(self, language: str | None) -> str:
+        return name_in(self.label, self.names, language)
 
     @property
     def asks_model(self) -> bool:
@@ -138,8 +160,13 @@ class TemplateField:
     def spec(self) -> FieldSpec:
         """抽取器认识的字段格式。别名、可选值写进说明里，模型才知道还有哪些写法、只能填什么。"""
         description = self.description
-        if self.aliases:
-            description = f"{description}（单据上可能写作：{'、'.join(self.aliases)}）".lstrip()
+        written = [
+            w
+            for w in dict.fromkeys((*self.aliases, *(n for _, n in self.names)))
+            if w != self.label
+        ]
+        if written:
+            description = f"{description}（单据上可能写作：{'、'.join(written)}）".lstrip()
         if self.options:
             description = f"{description}（只能是以下之一：{'、'.join(self.options)}）".lstrip()
         if self.type == "date_range":
@@ -158,6 +185,11 @@ class TemplateTable:
     required: bool = False
     """至少要有一行。"""
     export: bool = True
+    names: Names = ()
+    """别的语言的表名（ADR 0048）。"""
+
+    def label_in(self, language: str | None) -> str:
+        return name_in(self.label, self.names, language)
 
     @property
     def spec(self) -> TableSpec:
@@ -225,6 +257,22 @@ class Template:
     """国家和地区（ADR 0037）：空 = 通用。我的模板以数据库里 templates 表记的为准。"""
     domains: tuple[str, ...] = ()
     """功能领域（发票、交通、收据、住宿……），可以有几个。"""
+    titles: Names = ()
+    """模板名的别的语言写法（ADR 0048）。"""
+
+    @property
+    def languages(self) -> tuple[str, ...]:
+        """能切换的语言：默认语言（中文）在前，再按模板里写的顺序。"""
+        groups: list[Names] = [self.titles, *(f.names for f in self.fields)]
+        for t in self.tables:
+            groups += [t.names, *(c.names for c in t.columns)]
+        found = dict.fromkeys([DEFAULT_LANGUAGE])
+        for names in groups:
+            found.update(dict.fromkeys(lang for lang, _ in names))
+        return tuple(found)
+
+    def title_in(self, language: str | None) -> str:
+        return name_in(self.title, self.titles, language)
 
     @property
     def day_first(self) -> bool | None:
@@ -405,12 +453,13 @@ class Template:
         required += [(t.name, t.label) for t in self.tables if t.required]
         return RuleValidator(self.all_rules(), required=required, options=options, lookups=lookups)
 
-    def labels(self) -> dict[str, str]:
-        """字段 ID → 中文名。表格写成 items（表名）和 items.amount（列）。"""
-        labels = {f.name: f.label for f in self.fields}
+    def labels(self, language: str | None = None) -> dict[str, str]:
+        """字段 ID → 显示名（默认中文；指定语言就用那种语言，没写的用中文，ADR 0048）。
+        表格写成 items（表名）和 items.amount（列）。"""
+        labels = {f.name: f.label_in(language) for f in self.fields}
         for t in self.tables:
-            labels[t.name] = t.label
-            labels.update({f"{t.name}.{c.name}": c.label for c in t.columns})
+            labels[t.name] = t.label_in(language)
+            labels.update({f"{t.name}.{c.name}": c.label_in(language) for c in t.columns})
         return labels
 
     def definition(self) -> dict[str, Any]:
@@ -425,6 +474,7 @@ class Template:
                     "required": t.required,
                     "export": t.export,
                     "columns": [_field_dict(c) for c in t.columns],
+                    **({"names": dict(t.names)} if t.names else {}),
                 }
                 for t in self.tables
             ],
@@ -433,6 +483,7 @@ class Template:
             "references": [reference_dict(r) for r in self.references],
             "workbook": workbook_dict(self.workbook) if self.workbook else None,
             "custom_rules": [c.as_dict() for c in self.custom_rules],
+            **({"titles": dict(self.titles)} if self.titles else {}),
         }
 
 
@@ -466,6 +517,7 @@ def _field_dict(f: TemplateField) -> dict[str, Any]:
         "extract": f.extract,
         "compute": f.compute,
         "unique": f.unique,
+        **({"names": dict(f.names)} if f.names else {}),
         **(
             {"range_export": f.range_export, "range_separator": f.range_separator}
             if f.type == "date_range"
@@ -494,6 +546,13 @@ STARTERS = (
     "receipt_restaurant",
     "hotel_folio",
     "lab_report",
+    "quality_report",
+    "cn_quality_report",
+    "packing_list",
+    "delivery_note",
+    "cn_express_waybill",
+    "bill_of_lading",
+    "air_waybill",
 )
 """起步模板库，按这个顺序显示（ADR 0030）。"""
 
@@ -577,6 +636,7 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
                 columns=tuple(columns),
                 required=bool(item.get("required", False)),
                 export=bool(item.get("export", True)),
+                names=_names(item.get("names"), where, f"表 {table_name}"),
             )
         )
 
@@ -636,6 +696,7 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
         references=references,
         workbook=workbook,
         custom_rules=_custom_rules(raw.get("custom_rules"), tables, where),
+        titles=_names(raw.get("titles"), where, "模板名"),
     )
     _check_formulas(template, where)
     for i, custom in enumerate(template.custom_rules, start=1):
@@ -645,6 +706,26 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
             name = custom.title or f"第 {i} 条"
             raise TemplateError(f"{where}：自定义规则「{name}」：{err}") from err
     return template
+
+
+def _names(value: object, where: str, what: str) -> Names:
+    """{语言代码: 名字} → ((代码, 名字), ...)（ADR 0048）。空的名字不要；代码、长度写错说清楚。"""
+    if value is None:
+        return ()
+    if not isinstance(value, dict):
+        raise TemplateError(f'{where}：{what}的别的语言名字要写成 {{ en = "...", ja = "..." }}')
+    found: list[tuple[str, str]] = []
+    for lang, text in value.items():
+        if not isinstance(lang, str) or not LANGUAGE.match(lang):
+            raise TemplateError(f"{where}：{what}的语言代码「{lang}」不对，应该像 en、ja、zh-Hant")
+        if not isinstance(text, str):
+            raise TemplateError(f"{where}：{what}的 {lang} 名字应该是文字")
+        text = text.strip()
+        if len(text) > 200:
+            raise TemplateError(f"{where}：{what}的 {lang} 名字太长了（最多 200 个字）")
+        if text:
+            found.append((lang, text))
+    return tuple(found)
 
 
 def _custom_rules(items: Any, tables: list[TemplateTable], where: str) -> tuple[CustomRule, ...]:
@@ -748,6 +829,7 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
                 unique=bool(item.get("unique", False)),
                 range_export=range_export,
                 range_separator=separator,
+                names=_names(item.get("names"), where, f"字段 {field_name}"),
             )
         )
     return fields

@@ -26,6 +26,7 @@ Action = Literal[
     "template:manage",
     "user:manage",
     "audit:read",
+    "system:manage",
 ]
 
 BASE: set[Action] = {"document:read", "document:download", "document:export", "value:read"}
@@ -41,7 +42,11 @@ GRANTABLE: dict[Action, str] = {
 }
 """管理员可以给使用者单独开通的权限（权限名 → 界面上显示的名字）。"""
 
-ADMIN_ONLY: dict[Action, str] = {"user:manage": "管理用户", "audit:read": "查看审计日志"}
+ADMIN_ONLY: dict[Action, str] = {
+    "user:manage": "管理用户",
+    "audit:read": "查看审计日志",
+    "system:manage": "换模型",
+}
 """只有管理员能做，不能开通给使用者。"""
 
 

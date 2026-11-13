@@ -12,6 +12,7 @@ import logging
 import mimetypes
 import tempfile
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
@@ -24,18 +25,43 @@ from jacara.core.storage import ObjectStorage, StorageError
 from jacara.models import Document, Extraction, TemplateRecord, TemplateVersion
 from jacara.pipeline.classify import AutoChoice, Candidate
 from jacara.pipeline.current import template_from_version
+from jacara.pipeline.learn import Lesson, from_database
 from jacara.pipeline.run import Pipeline, TemplateChoice
 from jacara.pipeline.store import add_extractions, page_count
 from jacara.pipeline.vision import VisionMode
 from jacara.plugins.extractors import ExtractionError
 from jacara.plugins.extractors.base import DISCOVER
 from jacara.plugins.model_backends import ModelBackendError
-from jacara.plugins.ocr.loader import UnsupportedFileError
+from jacara.plugins.ocr.loader import PdfRead, UnsupportedFileError
 from jacara.templates import DEFAULT_TEMPLATE
 
 log = logging.getLogger(__name__)
 
 Outcome = Literal["done", "failed", "skipped"]
+
+
+def _lessons_for(
+    pipeline: Pipeline,
+    factory: sessionmaker[Session] | None,
+    team_id: uuid.UUID,
+    document_id: uuid.UUID,
+) -> Callable[[str], list[Lesson]] | None:
+    """打开了"从人改过的地方学"（ADR 0045）：按模板去数据库找以前人工改过的例子
+    （同一个团队、审核完成的、不含这张单据自己）。没打开、抽取器不支持返回 None。"""
+    from jacara.core.config import get_settings
+
+    if not get_settings().jacara_learn or not hasattr(pipeline.extractor, "lessons"):
+        return None
+
+    def lessons(template: str) -> list[Lesson]:
+        try:
+            with session_scope(factory) as session:
+                return from_database(session, team_id, template, exclude=document_id)
+        except Exception:  # 找例子出错不影响处理
+            log.exception("找以前改过的例子出错")
+            return []
+
+    return lessons
 
 
 def process_document(
@@ -62,8 +88,11 @@ def process_document(
             template, version_id = choose_template(session, document)
             split = document.split
             vision = cast(VisionMode | None, document.vision)
+            pdf_read = cast(PdfRead | None, document.pdf_read)
+            history = answer_lengths(session, document.team_id)
             run = next_run(session, document)
             reason = document.run_reason
+            team_id = document.team_id
         if key is None:
             raise StorageError("没有原始文件")
 
@@ -72,14 +101,22 @@ def process_document(
             # 流水线按后缀判断文件类型，所以临时文件的后缀按 content_type 取
             path = Path(tmp) / f"original{suffix_for(filename, content_type)}"
             path.write_bytes(data)
-            reports = pipeline.run(
-                path,
-                name=filename,
-                template=template,
-                progress=lambda stage, percent: _report(document_id, stage, percent, factory),
-                split=split,
-                vision=vision,
-            )
+            # 这一次处理用的例子；处理完换回原来的（同一个流水线还要处理别的文档）
+            before = pipeline.lessons
+            pipeline.lessons = _lessons_for(pipeline, factory, team_id, document_id)
+            try:
+                reports = pipeline.run(
+                    path,
+                    name=filename,
+                    template=template,
+                    progress=lambda stage, percent: _report(document_id, stage, percent, factory),
+                    split=split,
+                    vision=vision,
+                    history=history,
+                    pdf_read=pdf_read,
+                )
+            finally:
+                pipeline.lessons = before
 
         _report(document_id, "保存结果", 98, factory)
         with session_scope(factory) as session:
@@ -145,6 +182,16 @@ def candidates(session: Session, team_id: uuid.UUID) -> tuple[Candidate, ...]:
         if version is not None:
             found.append(Candidate(template_from_version(version), record.id, version.id))
     return tuple(found)
+
+
+def answer_lengths(session: Session, team_id: uuid.UUID) -> dict[str, int]:
+    """每个模板以前模型回答的平均长度（字数）：估这次要写多久，处理进度按它走。"""
+    rows = session.execute(
+        select(Extraction.template, func.avg(func.length(Extraction.raw_output)))
+        .where(Extraction.team_id == team_id)
+        .group_by(Extraction.template)
+    ).all()
+    return {name: int(avg) for name, avg in rows if avg}
 
 
 def next_run(session: Session, document: Document) -> int:

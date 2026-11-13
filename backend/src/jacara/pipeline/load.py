@@ -20,8 +20,9 @@ from jacara.plugins.validators.base import Issue, ValidationResult
 from jacara.templates import Template
 
 
-def load_reports(document: Document) -> list[DocumentReport]:
-    """一个文档的每张单据 → 一份 DocumentReport。要先把抽取、字段、审核记录都查出来。"""
+def load_reports(document: Document, language: str | None = None) -> list[DocumentReport]:
+    """一个文档的每张单据 → 一份 DocumentReport。要先把抽取、字段、审核记录都查出来。
+    language：导出时字段名（列名）用哪种语言（ADR 0048），不写是中文。"""
     from jacara.pipeline.current import page_range
 
     several = len(document.extractions) > 1
@@ -29,12 +30,13 @@ def load_reports(document: Document) -> list[DocumentReport]:
         _report(
             extraction,
             f"{document.filename} {page_range(extraction)}" if several else document.filename,
+            language,
         )
         for extraction in document.extractions
     ]
 
 
-def _report(extraction: Extraction, source: str) -> DocumentReport:
+def _report(extraction: Extraction, source: str, language: str | None = None) -> DocumentReport:
     """当前的结果：删掉的行不导出，表格按显示顺序编号，规则按审核之后的值重新检查。"""
     from jacara.pipeline.current import current_checks, current_values, labels_of, template_of
 
@@ -82,7 +84,7 @@ def _report(extraction: Extraction, source: str) -> DocumentReport:
         template=extraction.template,
         template_version=extraction.template_version,
         reviews=reviews,
-        labels=labels_of(extraction),
+        labels=labels_of(extraction, language),
         hidden=_hidden(template_of(extraction)),
         ranges=range_settings(template_of(extraction)),
     )

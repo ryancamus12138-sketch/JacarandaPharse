@@ -30,6 +30,8 @@ class TemplateFieldOut(BaseModel):
     range_export: str = "normalized"
     """日期范围导出成：normalized 统一格式、original 原文、columns 拆成两列（ADR 0039）。"""
     range_separator: str = " ~ "
+    names: dict[str, str] = {}
+    """别的语言的名字（ADR 0048）：语言代码 → 名字。label 是默认的中文名。"""
 
 
 class TemplateRuleOut(BaseModel):
@@ -46,6 +48,7 @@ class TemplateTableOut(BaseModel):
     columns: list[TemplateFieldOut]
     required: bool = False
     export: bool = True
+    names: dict[str, str] = {}
 
 
 class EntityOut(BaseModel):
@@ -132,6 +135,10 @@ class TemplateOut(BaseModel):
     """内置和起步模板是文件名（receipt、cn_einvoice）；我的模板是 id。"""
     version: int
     title: str
+    titles: dict[str, str] = {}
+    """模板名的别的语言写法（ADR 0048）。"""
+    languages: list[str] = ["zh"]
+    """能切换的语言，第一个是默认的中文。"""
     description: str
     fields: list[TemplateFieldOut]
     rules: list[TemplateRuleOut]
@@ -199,6 +206,8 @@ class TemplateFieldIn(BaseModel):
     range_export: Literal["normalized", "original", "columns"] = "normalized"
     """日期范围（ADR 0039）导出成：统一格式、原文、拆成开始和结束两列。别的类型用不到。"""
     range_separator: str = Field(default=" ~ ", min_length=1, max_length=10)
+    names: dict[str, str] = Field(default={}, max_length=30)
+    """别的语言的名字（ADR 0048）：{"en": "Invoice number", "ja": "請求書番号"}。"""
 
 
 class TemplateTableIn(BaseModel):
@@ -207,6 +216,7 @@ class TemplateTableIn(BaseModel):
     description: str = Field(default="", max_length=2000)
     required: bool = False
     export: bool = True
+    names: dict[str, str] = Field(default={}, max_length=30)
     columns: list[TemplateFieldIn] = Field(min_length=1, max_length=30)
 
 
@@ -214,6 +224,8 @@ class TemplateIn(BaseModel):
     """保存模板（每次保存是一个新版本）。"""
 
     title: str = Field(min_length=1, max_length=100)
+    titles: dict[str, str] = Field(default={}, max_length=30)
+    """模板名的别的语言写法（ADR 0048）。"""
     category: str = Field(default="", max_length=32)
     description: str = Field(default="", max_length=2000)
     fields: list[TemplateFieldIn] = Field(min_length=1, max_length=80)
@@ -272,6 +284,23 @@ class SampleIn(BaseModel):
     description: str = Field(default="", max_length=2000)
     fields: list[SampleFieldIn] = Field(min_length=1, max_length=80)
     rules: list[str] = []
+
+
+class BoxFieldIn(TemplateFieldIn):
+    """框选建模板（ADR 0047）的一个字段：在样例第几页、框在哪（只用来记录，不进模板定义）。"""
+
+    page: int = Field(default=1, ge=1)
+    box: list[float] = Field(default=[], max_length=4)
+
+
+class BoxesIn(BaseModel):
+    """框选建模板：样例文档 + 框好的字段。样例可以是任何处理过的文档。"""
+
+    document_id: uuid.UUID
+    title: str = Field(min_length=1, max_length=100)
+    category: str = Field(default="", max_length=32)
+    description: str = Field(default="", max_length=2000)
+    fields: list[BoxFieldIn] = Field(min_length=1, max_length=80)
 
 
 class SampleOut(BaseModel):

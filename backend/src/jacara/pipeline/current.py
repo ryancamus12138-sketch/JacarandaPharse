@@ -60,13 +60,14 @@ def template_of(extraction: Extraction) -> Template | None:
         return None
 
 
-def labels_of(extraction: Extraction) -> dict[str, str]:
-    """字段 ID → 中文名（审核页面、导出用）。表格的格子按"表名.列名"找。
+def labels_of(extraction: Extraction, language: str | None = None) -> dict[str, str]:
+    """字段 ID → 显示名（审核页面、导出用）。表格的格子按"表名.列名"找。
 
+    默认中文；指定语言（ADR 0048）就用模板里那种语言的名字，没写的还是中文。
     键值对发现的字段用单据上的原名。模板里没有的字段（模板文件找不到了）不在里面。
     """
     template = template_of(extraction)
-    labels = template.labels() if template else {}
+    labels = template.labels(language) if template else {}
     labels.update({v.name: v.label for v in extraction.values if v.label})
     return labels
 

@@ -1,0 +1,234 @@
+# 起步模板：航空运单（Air Waybill，AWB）。
+# 字段按 IATA 第 600a 号决议规定的航空运单格式的栏目设计：运单号（3 位航空公司代码 + 8 位序号）、
+# 托运人、收货人、出票代理、始发站和目的站、航班、供运输和海关用的声明价值、件数、毛重、运价等级、
+# 计费重量、费率、运费、其他费用、预付和到付合计、签发日期和地点。分运单（HAWB）也能用。
+# 只写字段和通用要求，不放任何真实运单的内容。
+
+name = "air_waybill"
+version = 2
+title = "航空运单（AWB）"
+titles = { en = "Air Waybill (AWB)" }
+domains = ["物流", "外贸单证"]
+description = "航空货运的主运单、分运单：运单号、航空公司、托运人、收货人、代理、始发和目的机场、航班日期、声明价值、件数、毛重、计费重量，每一行运价（等级、费率、运费、品名），以及其他费用和预付、到付合计。运单号校验位不对、件数和重量加起来对不上、计费重量 × 费率和运费对不上会提醒。"
+rules = ["awb_no", "awb_pieces", "awb_weight", "awb_rate_line"]
+
+[[fields]]
+name = "awb_no"
+label = "运单号"
+names = { en = "Air Waybill No." }
+type = "string"
+required = true
+unique = true
+description = "照抄，如 176-12345675（3 位航空公司代码、横线、8 位序号）；分运单号照抄"
+aliases = ["主运单号", "分运单号", "AWB No", "Air Waybill No", "MAWB", "HAWB", "HAWB No"]
+
+[[fields]]
+name = "airline"
+label = "航空公司"
+names = { en = "Issuing Carrier" }
+type = "string"
+description = "出运单的航空公司（Issued by），照抄"
+aliases = ["承运人", "Issued by", "Carrier", "Airline"]
+
+[[fields]]
+name = "shipper"
+label = "托运人"
+names = { en = "Shipper" }
+type = "string"
+required = true
+description = "Shipper's Name and Address 一栏的公司名称（地址不用写）"
+aliases = ["发货人", "Shipper", "Shipper's Name"]
+
+[[fields]]
+name = "consignee"
+label = "收货人"
+names = { en = "Consignee" }
+type = "string"
+required = true
+aliases = ["收货人", "Consignee", "Consignee's Name"]
+
+[[fields]]
+name = "agent"
+label = "出票代理"
+names = { en = "Issuing Carrier's Agent" }
+type = "string"
+description = "Issuing Carrier's Agent 一栏的名称，照抄"
+aliases = ["代理人", "Agent", "Issuing Carrier's Agent"]
+
+[[fields]]
+name = "airport_of_departure"
+label = "始发站"
+names = { en = "Airport of Departure" }
+type = "string"
+required = true
+description = "照抄，机场名称或三字代码（PVG、HKG）"
+aliases = ["始发站", "始发机场", "Airport of Departure", "Origin"]
+
+[[fields]]
+name = "airport_of_destination"
+label = "目的站"
+names = { en = "Airport of Destination" }
+type = "string"
+required = true
+aliases = ["目的站", "目的机场", "Airport of Destination", "Destination"]
+
+[[fields]]
+name = "flight"
+label = "航班 / 日期"
+names = { en = "Flight / Date" }
+type = "string"
+description = "Flight/Date 一栏照抄，如 CZ3101/15"
+aliases = ["航班", "Flight/Date", "Flight", "Requested Flight"]
+
+[[fields]]
+name = "currency"
+label = "币种"
+names = { en = "Currency" }
+type = "string"
+aliases = ["币种", "Currency"]
+
+[[fields]]
+name = "declared_value_carriage"
+label = "供运输用声明价值"
+names = { en = "Declared Value for Carriage" }
+type = "string"
+description = "Declared Value for Carriage 照抄（常写 NVD）"
+aliases = ["Declared Value for Carriage"]
+
+[[fields]]
+name = "declared_value_customs"
+label = "供海关用声明价值"
+names = { en = "Declared Value for Customs" }
+type = "string"
+description = "Declared Value for Customs 照抄（常写 NCV）"
+aliases = ["Declared Value for Customs"]
+
+[[fields]]
+name = "handling_information"
+label = "操作信息"
+names = { en = "Handling Information" }
+type = "string"
+aliases = ["储运注意事项", "Handling Information"]
+
+[[fields]]
+name = "total_pieces"
+label = "总件数"
+names = { en = "Total No. of Pieces" }
+type = "number"
+aliases = ["件数", "No. of Pieces", "Pieces", "RCP"]
+
+[[fields]]
+name = "total_gross_weight"
+label = "总毛重"
+names = { en = "Total Gross Weight" }
+type = "number"
+description = "公斤，只要数字"
+aliases = ["毛重", "Gross Weight", "Total Gross Weight"]
+
+[[fields]]
+name = "weight_charge"
+label = "航空运费"
+names = { en = "Weight Charge" }
+type = "number"
+description = "Weight Charge（预付或到付那一格有数的），只要数字"
+aliases = ["航空运费", "Weight Charge"]
+
+[[fields]]
+name = "other_charges_agent"
+label = "代理人收取的其他费用"
+names = { en = "Total Other Charges Due Agent" }
+type = "number"
+aliases = ["Total Other Charges Due Agent", "Other Charges Due Agent"]
+
+[[fields]]
+name = "other_charges_carrier"
+label = "承运人收取的其他费用"
+names = { en = "Total Other Charges Due Carrier" }
+type = "number"
+aliases = ["Total Other Charges Due Carrier", "Other Charges Due Carrier"]
+
+[[fields]]
+name = "total_prepaid"
+label = "预付合计"
+names = { en = "Total Prepaid" }
+type = "number"
+aliases = ["预付总额", "Total Prepaid"]
+
+[[fields]]
+name = "total_collect"
+label = "到付合计"
+names = { en = "Total Collect" }
+type = "number"
+aliases = ["到付总额", "Total Collect"]
+
+[[fields]]
+name = "issue_date"
+label = "签发日期"
+names = { en = "Executed on (Date)" }
+type = "date"
+aliases = ["填开日期", "Executed on", "Date", "Issue Date"]
+
+[[fields]]
+name = "issue_place"
+label = "签发地点"
+names = { en = "Executed at (Place)" }
+type = "string"
+aliases = ["填开地点", "at (place)", "Place"]
+
+[[tables]]
+name = "rates"
+label = "运价"
+names = { en = "Rates" }
+required = true
+description = "运价栏每一行（No. of Pieces、Gross Weight、Rate Class、Chargeable Weight、Rate/Charge、Total、Nature and Quantity of Goods）。合计行不算"
+
+[[tables.columns]]
+name = "pieces"
+label = "件数"
+names = { en = "No. of Pieces" }
+type = "number"
+aliases = ["件数", "No. of Pieces", "RCP"]
+
+[[tables.columns]]
+name = "gross_weight"
+label = "毛重"
+names = { en = "Gross Weight" }
+type = "number"
+aliases = ["毛重", "Gross Weight"]
+
+[[tables.columns]]
+name = "rate_class"
+label = "运价等级"
+names = { en = "Rate Class" }
+type = "string"
+description = "照抄：M（最低运费）、N、Q、C、R、S"
+aliases = ["运价等级", "Rate Class"]
+
+[[tables.columns]]
+name = "chargeable_weight"
+label = "计费重量"
+names = { en = "Chargeable Weight" }
+type = "number"
+aliases = ["计费重量", "Chargeable Weight"]
+
+[[tables.columns]]
+name = "rate"
+label = "费率"
+names = { en = "Rate / Charge" }
+type = "number"
+aliases = ["费率", "Rate/Charge", "Rate"]
+
+[[tables.columns]]
+name = "total"
+label = "运费"
+names = { en = "Total" }
+type = "number"
+aliases = ["运费", "Total"]
+
+[[tables.columns]]
+name = "goods"
+label = "货物品名和数量"
+names = { en = "Nature and Quantity of Goods" }
+type = "string"
+description = "Nature and Quantity of Goods 照抄（含尺寸、体积）"
+aliases = ["货物品名", "Nature and Quantity of Goods"]

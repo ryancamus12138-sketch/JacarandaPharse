@@ -5,16 +5,18 @@
 # 规则和字段说明只写通用规定，不放任何真实单据的内容。
 
 name = "cn_air_itinerary"
-version = 3
+version = 5
 title = "航空运输电子客票行程单"
+titles = { en = "Air Itinerary e-Invoice (China)" }
 domains = ["交通", "发票"]
 countries = ["CN"]
 description = "电子发票（航空运输电子客票行程单）。票面要素按国家税务总局 中国民用航空局公告 2024 年第 9 号。"
-rules = ["issue_date_exists", "issue_date_not_future", "cn_invoice_no", "air_total", "air_vat"]
+rules = ["total_positive", "issue_date_exists", "issue_date_not_future", "cn_invoice_no", "air_total", "air_vat"]
 
 [[fields]]
 name = "invoice_no"
 label = "发票号码"
+names = { en = "Invoice No." }
 unique = true
 type = "string"
 required = true
@@ -24,6 +26,7 @@ aliases = ["发票号码"]
 [[fields]]
 name = "issuing_status"
 label = "开票状态"
+names = { en = "Issuing Status" }
 type = "string"
 description = "开票状态，原样照抄（例如是否已退票、改签）；没有就留空"
 aliases = ["开票状态"]
@@ -31,6 +34,7 @@ aliases = ["开票状态"]
 [[fields]]
 name = "domestic_international"
 label = "国内国际标识"
+names = { en = "Domestic / International" }
 type = "string"
 description = "国内或国际 / 港澳台航线的标识，原样照抄"
 aliases = ["国内国际标识"]
@@ -38,6 +42,7 @@ aliases = ["国内国际标识"]
 [[fields]]
 name = "gp_no"
 label = "GP单号"
+names = { en = "GP No." }
 type = "string"
 description = "政府采购机票（公务卡）的 GP 单号；不是公务票就留空"
 aliases = ["GP单号"]
@@ -45,6 +50,7 @@ aliases = ["GP单号"]
 [[fields]]
 name = "passenger"
 label = "旅客姓名"
+names = { en = "Passenger Name" }
 type = "string"
 required = true
 aliases = ["旅客姓名"]
@@ -52,6 +58,7 @@ aliases = ["旅客姓名"]
 [[fields]]
 name = "passenger_id"
 label = "有效身份证件号码"
+names = { en = "ID Document No." }
 type = "string"
 description = "旅客的身份证件号码，可能有部分被遮住，原样照抄"
 aliases = ["有效身份证件号码"]
@@ -60,6 +67,7 @@ sensitive = true
 [[fields]]
 name = "restriction"
 label = "签注"
+names = { en = "Endorsements / Restrictions" }
 type = "string"
 description = "“签注”栏的文字（例如不得签转、退改收费），原样照抄"
 aliases = ["签注"]
@@ -67,6 +75,7 @@ aliases = ["签注"]
 [[fields]]
 name = "fare"
 label = "票价"
+names = { en = "Fare" }
 type = "number"
 description = "票价金额"
 aliases = ["票价"]
@@ -74,12 +83,14 @@ aliases = ["票价"]
 [[fields]]
 name = "fuel_surcharge"
 label = "燃油附加费"
+names = { en = "Fuel Surcharge" }
 type = "number"
 aliases = ["燃油附加费"]
 
 [[fields]]
 name = "vat_rate"
 label = "增值税税率"
+names = { en = "VAT Rate" }
 type = "string"
 description = "增值税税率，如 9%"
 aliases = ["增值税税率"]
@@ -87,12 +98,14 @@ aliases = ["增值税税率"]
 [[fields]]
 name = "vat"
 label = "增值税税额"
+names = { en = "VAT Amount" }
 type = "number"
 aliases = ["增值税税额"]
 
 [[fields]]
 name = "caac_fund"
 label = "民航发展基金"
+names = { en = "CAAC Development Fund" }
 type = "number"
 description = "民航发展基金（政府性基金，不算增值税）"
 aliases = ["民航发展基金"]
@@ -100,12 +113,14 @@ aliases = ["民航发展基金"]
 [[fields]]
 name = "other_taxes"
 label = "其他税费"
+names = { en = "Other Taxes" }
 type = "number"
 aliases = ["其他税费"]
 
 [[fields]]
 name = "insurance"
 label = "保险费"
+names = { en = "Insurance" }
 type = "number"
 description = "保险费；没有买保险就留空"
 aliases = ["保险费"]
@@ -113,6 +128,7 @@ aliases = ["保险费"]
 [[fields]]
 name = "total"
 label = "合计"
+names = { en = "Total" }
 type = "number"
 required = true
 description = "“合计”金额"
@@ -121,6 +137,7 @@ aliases = ["合计"]
 [[fields]]
 name = "ticket_no"
 label = "电子客票号码"
+names = { en = "E-ticket No." }
 type = "string"
 required = true
 description = "电子客票号码，一般是 13 位数字（前 3 位是航空公司代码）"
@@ -129,18 +146,21 @@ aliases = ["电子客票号码"]
 [[fields]]
 name = "check_code"
 label = "验证码"
+names = { en = "Check Code" }
 type = "string"
 aliases = ["验证码"]
 
 [[fields]]
 name = "agent_code"
 label = "销售网点代号"
+names = { en = "Agent Code" }
 type = "string"
 aliases = ["销售网点代号"]
 
 [[fields]]
 name = "issuer"
 label = "填开单位"
+names = { en = "Issued by" }
 type = "string"
 description = "填开单位（航空公司或销售代理）的名称"
 aliases = ["填开单位"]
@@ -148,6 +168,7 @@ aliases = ["填开单位"]
 [[fields]]
 name = "issue_date"
 label = "填开日期"
+names = { en = "Date of Issue" }
 type = "date"
 required = true
 aliases = ["填开日期", "开票日期"]
@@ -155,6 +176,7 @@ aliases = ["填开日期", "开票日期"]
 [[fields]]
 name = "original_invoice_no"
 label = "原发票号码"
+names = { en = "Original Invoice No." }
 type = "string"
 description = "改签、退票重开时票面上的原发票号码；没有就留空"
 aliases = ["原发票号码"]
@@ -162,12 +184,14 @@ aliases = ["原发票号码"]
 [[fields]]
 name = "buyer_name"
 label = "购买方名称"
+names = { en = "Buyer Name" }
 type = "string"
 aliases = ["购买方名称"]
 
 [[fields]]
 name = "buyer_tax_id"
 label = "购买方税号"
+names = { en = "Buyer Tax ID" }
 type = "string"
 description = "购买方统一社会信用代码或纳税人识别号；个人购票可能是空的"
 aliases = ["统一社会信用代码/纳税人识别号", "统一社会信用代码"]
@@ -175,6 +199,7 @@ aliases = ["统一社会信用代码/纳税人识别号", "统一社会信用代
 [[fields]]
 name = "notice"
 label = "提示信息"
+names = { en = "Notice" }
 type = "string"
 description = "票面上的提示信息，原样照抄；没有就留空"
 aliases = ["提示信息"]
@@ -182,12 +207,14 @@ aliases = ["提示信息"]
 [[tables]]
 name = "segments"
 label = "航段"
+names = { en = "Flight Segments" }
 description = "行程表，每个航段一行（从哪里到哪里那一行）。票面上没有航班的空行不算"
 required = true
 
 [[tables.columns]]
 name = "origin"
 label = "出发地"
+names = { en = "From" }
 type = "string"
 description = "“自”一栏的城市或机场"
 aliases = ["自"]
@@ -195,6 +222,7 @@ aliases = ["自"]
 [[tables.columns]]
 name = "destination"
 label = "到达地"
+names = { en = "To" }
 type = "string"
 description = "“至”一栏的城市或机场"
 aliases = ["至"]
@@ -202,53 +230,62 @@ aliases = ["至"]
 [[tables.columns]]
 name = "carrier"
 label = "承运人"
+names = { en = "Carrier" }
 type = "string"
 aliases = ["承运人"]
 
 [[tables.columns]]
 name = "flight_no"
 label = "航班号"
+names = { en = "Flight No." }
 type = "string"
 aliases = ["航班号"]
 
 [[tables.columns]]
 name = "seat_class"
 label = "座位等级"
+names = { en = "Class" }
 type = "string"
 aliases = ["座位等级"]
 
 [[tables.columns]]
 name = "travel_date"
 label = "日期"
+names = { en = "Date" }
 type = "date"
 aliases = ["日期"]
 
 [[tables.columns]]
 name = "departure_time"
 label = "时间"
+names = { en = "Time" }
 type = "string"
 aliases = ["时间"]
 
 [[tables.columns]]
 name = "fare_basis"
 label = "客票级别/客票类别"
+names = { en = "Fare Basis" }
 type = "string"
 aliases = ["客票级别/客票类别", "客票级别"]
 
 [[tables.columns]]
 name = "not_valid_before"
 label = "客票生效日期"
+names = { en = "Not Valid Before" }
 type = "string"
 aliases = ["客票生效日期"]
 
 [[tables.columns]]
 name = "not_valid_after"
 label = "有效截止日期"
+names = { en = "Not Valid After" }
 type = "string"
 aliases = ["有效截止日期"]
 
 [[tables.columns]]
 name = "baggage"
 label = "免费行李"
+names = { en = "Free Baggage Allowance" }
 type = "string"
 aliases = ["免费行李"]

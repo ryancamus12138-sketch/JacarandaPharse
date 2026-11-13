@@ -1,0 +1,232 @@
+# 起步模板：海运提单（Bill of Lading）。
+# 字段按 UCP 600 第 20 条对提单的要求（承运人名称、装运港和卸货港、已装船批注和日期、正本份数、
+# 签发人）和提单正面的通用栏目（托运人、收货人、通知方、船名航次、唛头、件数、货物描述、毛重、体积、
+# 运费支付方式、集装箱号和封号）设计。只写字段和通用要求，不放任何真实提单的内容。
+
+name = "bill_of_lading"
+version = 2
+title = "海运提单（B/L）"
+titles = { en = "Bill of Lading (B/L)" }
+domains = ["物流", "外贸单证"]
+description = "海运提单、海运单（Sea Waybill）：提单号、承运人、托运人、收货人、通知方、船名航次、装货港和卸货港、装船日期、正本份数、件数、毛重、体积、运费条款，以及每个集装箱的箱号、封号、箱型、件数、毛重、体积。集装箱号校验位不对、件数和重量加起来对不上、装船日期晚于签发日期会提醒。"
+rules = ["container_no", "bl_packages", "bl_weight", "bl_measurement", "bl_onboard_before_issue"]
+
+[[fields]]
+name = "bl_no"
+label = "提单号"
+names = { en = "B/L No." }
+type = "string"
+required = true
+unique = true
+aliases = ["提单号码", "B/L No", "B/L No.", "Bill of Lading No", "BL No", "Waybill No"]
+
+[[fields]]
+name = "carrier"
+label = "承运人"
+names = { en = "Carrier" }
+type = "string"
+required = true
+description = "船公司或承运人名称（常在标题旁边的 Logo 或签发处），照抄"
+aliases = ["承运人", "船公司", "Carrier", "Shipping Line"]
+
+[[fields]]
+name = "shipper"
+label = "托运人"
+names = { en = "Shipper" }
+type = "string"
+required = true
+description = "Shipper 一栏的公司名称（地址不用写）"
+aliases = ["发货人", "Shipper", "Shipper/Exporter"]
+
+[[fields]]
+name = "consignee"
+label = "收货人"
+names = { en = "Consignee" }
+type = "string"
+description = "Consignee 一栏照抄，写 TO ORDER、TO ORDER OF 某银行的也照抄"
+aliases = ["收货人", "Consignee"]
+
+[[fields]]
+name = "notify_party"
+label = "通知方"
+names = { en = "Notify Party" }
+type = "string"
+description = "Notify Party 一栏的公司名称；写 SAME AS CONSIGNEE 的照抄"
+aliases = ["通知人", "Notify Party", "Notify"]
+
+[[fields]]
+name = "vessel"
+label = "船名"
+names = { en = "Vessel" }
+type = "string"
+aliases = ["船名", "Vessel", "Ocean Vessel", "Vessel Name"]
+
+[[fields]]
+name = "voyage"
+label = "航次"
+names = { en = "Voyage No." }
+type = "string"
+aliases = ["航次", "Voyage", "Voy. No", "Voyage No"]
+
+[[fields]]
+name = "place_of_receipt"
+label = "收货地"
+names = { en = "Place of Receipt" }
+type = "string"
+aliases = ["收货地点", "Place of Receipt"]
+
+[[fields]]
+name = "port_of_loading"
+label = "装货港"
+names = { en = "Port of Loading" }
+type = "string"
+required = true
+aliases = ["装运港", "Port of Loading", "POL"]
+
+[[fields]]
+name = "port_of_discharge"
+label = "卸货港"
+names = { en = "Port of Discharge" }
+type = "string"
+required = true
+aliases = ["卸货港", "Port of Discharge", "POD"]
+
+[[fields]]
+name = "place_of_delivery"
+label = "交货地"
+names = { en = "Place of Delivery" }
+type = "string"
+aliases = ["交货地点", "Place of Delivery", "Final Destination"]
+
+[[fields]]
+name = "shipped_on_board_date"
+label = "装船日期"
+names = { en = "Shipped on Board Date" }
+type = "date"
+description = "已装船批注（Shipped on Board / Laden on Board）上的日期；没有批注的留空"
+aliases = ["装船日期", "Shipped on Board", "On Board Date", "Laden on Board"]
+
+[[fields]]
+name = "issue_place"
+label = "签发地点"
+names = { en = "Place of Issue" }
+type = "string"
+aliases = ["签发地点", "Place of Issue"]
+
+[[fields]]
+name = "issue_date"
+label = "签发日期"
+names = { en = "Date of Issue" }
+type = "date"
+aliases = ["签发日期", "Date of Issue", "Place and Date of Issue"]
+
+[[fields]]
+name = "originals"
+label = "正本份数"
+names = { en = "No. of Original B/Ls" }
+type = "string"
+description = "Number of Original B(s)/L 照抄，如 THREE (3)；海运单写 ZERO 或 NIL 的照抄"
+aliases = ["正本份数", "Number of Original", "No. of Original B/L"]
+
+[[fields]]
+name = "freight_terms"
+label = "运费条款"
+names = { en = "Freight Terms" }
+type = "string"
+description = "运费预付还是到付，照抄（FREIGHT PREPAID、FREIGHT COLLECT）"
+aliases = ["运费支付", "Freight", "Freight Payable at", "Freight & Charges"]
+
+[[fields]]
+name = "shipping_marks"
+label = "唛头"
+names = { en = "Marks and Numbers" }
+type = "string"
+aliases = ["唛头", "Marks and Numbers", "Marks & Nos"]
+
+[[fields]]
+name = "description_of_goods"
+label = "货物描述"
+names = { en = "Description of Goods" }
+type = "string"
+description = "Description of Goods 照抄（多行用空格连起来），SAID TO CONTAIN 等套话也照抄"
+aliases = ["货物描述", "品名", "Description of Goods", "Description of Packages and Goods"]
+
+[[fields]]
+name = "total_packages"
+label = "总件数"
+names = { en = "Total No. of Packages" }
+type = "number"
+aliases = ["件数", "No. of Packages", "Number of Packages", "Total Packages"]
+
+[[fields]]
+name = "package_unit"
+label = "包装单位"
+names = { en = "Kind of Packages" }
+type = "string"
+aliases = ["包装种类", "Kind of Packages"]
+
+[[fields]]
+name = "total_gross_weight"
+label = "总毛重"
+names = { en = "Total Gross Weight" }
+type = "number"
+description = "公斤，只要数字"
+aliases = ["毛重", "Gross Weight", "G.W.", "Total Gross Weight"]
+
+[[fields]]
+name = "total_measurement"
+label = "总体积"
+names = { en = "Total Measurement" }
+type = "number"
+description = "立方米（CBM），只要数字"
+aliases = ["体积", "Measurement", "CBM"]
+
+[[tables]]
+name = "containers"
+label = "集装箱"
+names = { en = "Containers" }
+description = "每个集装箱一行（散货、拼箱没有箱号的就没有这张表）"
+
+[[tables.columns]]
+name = "container_no"
+label = "箱号"
+names = { en = "Container No." }
+type = "string"
+description = "4 个字母 + 7 位数字，照抄，如 MSKU1234565"
+aliases = ["集装箱号", "Container No", "CNTR No"]
+
+[[tables.columns]]
+name = "seal_no"
+label = "封号"
+names = { en = "Seal No." }
+type = "string"
+aliases = ["铅封号", "Seal No", "Seal"]
+
+[[tables.columns]]
+name = "container_type"
+label = "箱型"
+names = { en = "Container Type" }
+type = "string"
+description = "照抄，如 20GP、40HQ、40'HC"
+aliases = ["箱型", "Type", "Size/Type"]
+
+[[tables.columns]]
+name = "packages"
+label = "件数"
+names = { en = "Packages" }
+type = "number"
+aliases = ["件数", "Packages", "PKGS"]
+
+[[tables.columns]]
+name = "gross_weight"
+label = "毛重"
+names = { en = "Gross Weight" }
+type = "number"
+aliases = ["毛重", "Gross Weight", "G.W."]
+
+[[tables.columns]]
+name = "measurement"
+label = "体积"
+names = { en = "Measurement" }
+type = "number"
+aliases = ["体积", "Measurement", "CBM"]

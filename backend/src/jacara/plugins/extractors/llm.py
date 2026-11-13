@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 from jacara.plugins.extractors.base import (
@@ -20,7 +20,7 @@ from jacara.plugins.extractors.base import (
     cell_name,
     kv_name,
 )
-from jacara.plugins.model_backends import ChatMessage, ModelBackend
+from jacara.plugins.model_backends import ChatMessage, ChatResult, ModelBackend
 from jacara.plugins.ocr.base import OcrPage
 from jacara.plugins.ocr.layout import continuation_rows, group_rows
 from jacara.structure.analyze import analyze_page
@@ -244,8 +244,11 @@ def build_messages(
     tables: Sequence[TableSpec] = (),
     structure: PageStructure | None = None,
     images: Sequence[bytes] = (),
+    lessons: str = "",
 ) -> list[ChatMessage]:
     """拼出发给模型的消息：系统规则 + 字段和表格说明 + 单据（版面原样 + 结构）。
+
+    lessons 是以前人工改过的例子（ADR 0045），放在单据前面。
 
     images 是单据原图（ADR 0038）：附在后面，并说明 OCR 可能认错的地方以图为准。"""
     structure = structure or analyze_page(page)
@@ -253,7 +256,8 @@ def build_messages(
     for t in tables:
         columns = "\n".join(_field_line(c, "  ") for c in t.columns)
         field_lines += f"\n- {t.name}（表格，每行一个对象）：{t.description}\n{columns}"
-    user = f"要抽取的字段：\n{field_lines}\n\n{page_prompt(structure)}"
+    learned = f"{lessons}\n\n" if lessons else ""
+    user = f"要抽取的字段：\n{field_lines}\n\n{learned}{page_prompt(structure)}"
     if images:
         user += "\n\n" + VISION_NOTE.format(n=len(images))
     return [ChatMessage("system", SYSTEM_PROMPT), ChatMessage("user", user, tuple(images))]
@@ -327,6 +331,17 @@ class LlmExtractor:
 
     def __init__(self, backend: ModelBackend) -> None:
         self.backend = backend
+        self.on_text: Callable[[int], None] | None = None
+        """抽取时模型每写一段就告诉它一共写了多少字（处理进度用）。不设就不流式。"""
+        self.lessons: tuple[str, int] = ("", 0)
+        """以前人工改过的例子（ADR 0045）：（提示词里的那一段, 几条）。流水线抽取前设、抽完清掉。"""
+
+    def _ask(self, messages: list[ChatMessage], schema: dict[str, object]) -> ChatResult:
+        """问模型。要报进度、模型服务又能边写边传时，用流式；否则一次拿回来。"""
+        stream = getattr(self.backend, "chat_stream", None)
+        if self.on_text is not None and callable(stream):
+            return cast(ChatResult, stream(messages, json_schema=schema, on_text=self.on_text))
+        return self.backend.chat(messages, json_schema=schema)
 
     def continues(self, previous: OcrPage, current: OcrPage) -> bool | None:
         """这一页是不是上一页那张单据的续页（ADR 0036）。模型答不上来返回 None（当作新单据）。"""
@@ -381,9 +396,8 @@ class LlmExtractor:
     ) -> ExtractionResult:
         structure = structure or analyze_page(page)
         schema = build_schema(fields, tables)
-        result = self.backend.chat(
-            build_messages(page, fields, tables, structure, images), json_schema=schema
-        )
+        lessons, count = self.lessons
+        result = self._ask(build_messages(page, fields, tables, structure, images, lessons), schema)
         try:
             data = json.loads(result.text)
         except json.JSONDecodeError as err:
@@ -425,7 +439,8 @@ class LlmExtractor:
             raw_output=result.text,
             model=result.model,
             backend=result.backend,
-            prompt_version=VISION_PROMPT_VERSION if images else PROMPT_VERSION,
+            prompt_version=(VISION_PROMPT_VERSION if images else PROMPT_VERSION)
+            + (f"+lessons{count}" if count else ""),
             duration_ms=result.duration_ms,
         )
 
@@ -439,7 +454,7 @@ def _discover(self: LlmExtractor, page: OcrPage, structure: PageStructure) -> Ex
         ChatMessage("system", DISCOVER_PROMPT),
         ChatMessage("user", page_prompt(structure)),
     ]
-    result = self.backend.chat(messages, json_schema=DISCOVER_SCHEMA)
+    result = self._ask(messages, DISCOVER_SCHEMA)
     try:
         data = json.loads(result.text)
     except json.JSONDecodeError as err:

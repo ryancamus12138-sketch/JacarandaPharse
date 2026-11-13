@@ -35,7 +35,7 @@ export function countryName(code: string): string {
 }
 
 /** 常用的功能领域（也可以自己写别的）。 */
-export const DOMAIN_SUGGESTIONS = ['发票', '收据', '交通', '住宿', '餐饮', '购物', '医疗', '物流', '办公', '其他']
+export const DOMAIN_SUGGESTIONS = ['发票', '收据', '交通', '住宿', '餐饮', '购物', '医疗', '检验报告', '质检', '物流', '外贸单证', '采购', '办公', '其他']
 
 export const DOMAIN_COLORS: Record<string, string> = {
   发票: 'purple',

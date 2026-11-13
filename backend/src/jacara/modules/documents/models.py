@@ -66,6 +66,9 @@ class Document(Base, OwnedMixin, TimestampMixin):
     """下一次处理自动判断用哪个模板（ADR 0038）：每张单据从我的模板里挑最合适的。"""
     vision: Mapped[str | None] = mapped_column(String(8))
     """下一次处理看不看原图（ADR 0038）：always 每张都看、off 不看；空的按 JACARA_VISION。"""
+    pdf_read: Mapped[str | None] = mapped_column(String(8))
+    """下一次处理时 PDF 怎么读（ADR 0042）：image 画成图做 OCR、text 只读文字层；
+    空的按 JACARA_PDF_READ。"""
     folder: Mapped[str | None] = mapped_column(String(255), index=True)
     """批量导入时文件所在的文件夹（相对路径，如"2026-10 出差/酒店"）。
     列表按它分组、筛选（ADR 0036）。"""

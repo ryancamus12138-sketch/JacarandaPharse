@@ -91,7 +91,7 @@ def test_upload_with_auto_picks_a_template_per_document(client, factory, storage
 
     backend = ChoosingBackend(HOTEL, choice=1)
     pipeline = Pipeline(ocr=None, extractor=LlmExtractor(backend))  # type: ignore[arg-type]
-    monkeypatch.setattr(pipeline, "read", lambda _path: hotel_pages()[:2])
+    monkeypatch.setattr(pipeline, "read", lambda _path, _how=None: hotel_pages()[:2])
     outcome = process_document(
         uuid.UUID(document["id"]), storage=storage, pipeline=pipeline, factory=factory
     )
@@ -118,7 +118,7 @@ def test_auto_without_a_fitting_template_extracts_all_pairs(client, factory, sto
     document = upload_file(client, template="auto", split="one")
     backend = ChoosingBackend(HOTEL, choice=0)
     pipeline = Pipeline(ocr=None, extractor=LlmExtractor(backend))  # type: ignore[arg-type]
-    monkeypatch.setattr(pipeline, "read", lambda _path: hotel_pages()[:1])
+    monkeypatch.setattr(pipeline, "read", lambda _path, _how=None: hotel_pages()[:1])
     process_document(uuid.UUID(document["id"]), storage=storage, pipeline=pipeline, factory=factory)
     [extraction] = detail(client, document["id"])["extractions"]
     assert extraction["template"] == "discover"
@@ -157,7 +157,7 @@ def test_model_looks_at_the_picture_when_ocr_is_weak(client, factory, storage, m
     # 模型在图上看清了账单号是 F-100（OCR 认成了 F-1OO）
     backend = ChoosingBackend(HOTEL, choice=1, vision=True)
     pipeline = Pipeline(ocr=None, extractor=LlmExtractor(backend), vision="auto")  # type: ignore[arg-type]
-    monkeypatch.setattr(pipeline, "read", lambda _path: [blurry_page()])
+    monkeypatch.setattr(pipeline, "read", lambda _path, _how=None: [blurry_page()])
     picture = np.zeros((40, 60, 3), dtype=np.uint8)
     monkeypatch.setattr(run_module, "page_images", lambda _path: [picture])
     process_document(uuid.UUID(document["id"]), storage=storage, pipeline=pipeline, factory=factory)
@@ -174,7 +174,7 @@ def test_model_looks_at_the_picture_when_ocr_is_weak(client, factory, storage, m
     # 模型服务没有视觉模型：不给图
     backend = ChoosingBackend(HOTEL, choice=1, vision=False)
     pipeline = Pipeline(ocr=None, extractor=LlmExtractor(backend), vision="auto")  # type: ignore[arg-type]
-    monkeypatch.setattr(pipeline, "read", lambda _path: [blurry_page()])
+    monkeypatch.setattr(pipeline, "read", lambda _path, _how=None: [blurry_page()])
     redo = client.post(
         f"/api/v1/documents/{document['id']}/reprocess",
         json={"reason": "bad_result", "vision": "always"},

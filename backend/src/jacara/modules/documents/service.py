@@ -45,6 +45,7 @@ from jacara.modules.documents.schemas import (
     OcrLineOut,
     PageOcr,
     PageStructureOut,
+    RegionDescription,
     RegionOut,
     ReprocessIn,
     RunOut,
@@ -286,6 +287,8 @@ class DocumentService:
         document.auto = pick.auto
         if data.vision is not None:
             document.vision = None if data.vision == "default" else data.vision
+        if data.pdf_read is not None:
+            document.pdf_read = None if data.pdf_read == "default" else data.pdf_read
         document.run_reason = f"{label}：{note}" if note else label
         document.status = "uploaded"
         document.error = None
@@ -301,6 +304,7 @@ class DocumentService:
             note=note,
             template=pick.audit,
             **({"vision": data.vision} if data.vision is not None else {}),
+            **({"pdf_read": data.pdf_read} if data.pdf_read is not None else {}),
         )
         if not self._enqueue(document):
             raise DocumentError("queue", "任务队列暂时不可用，请稍后再试")
@@ -548,13 +552,15 @@ class DocumentService:
             record(self.session, self.owner, "document:unskip", "document", document.id)
         return self._with_counts([document])[0]
 
-    def export(self, document_ids: list[uuid.UUID]) -> tuple[str, bytes]:
+    def export(
+        self, document_ids: list[uuid.UUID], language: str | None = None
+    ) -> tuple[str, bytes]:
         """把一个或多个文档导出成一个 Excel（汇总表一行一张单据），返回（文件名，文件内容）。
 
         格子里是审核之后的值（current_value）；改过的标蓝，批注里写原值和原因。
         """
         documents = self._exportable(document_ids)
-        data, layout = self._excel(documents)
+        data, layout = self._excel(documents, language)
         if len(documents) == 1:
             name = f"{PurePath(documents[0].filename).stem}.xlsx"
         elif layout:
@@ -565,7 +571,9 @@ class DocumentService:
         self._record_export(documents, "xlsx", name, data)
         return name, data
 
-    def export_zip(self, document_ids: list[uuid.UUID]) -> tuple[str, bytes]:
+    def export_zip(
+        self, document_ids: list[uuid.UUID], language: str | None = None
+    ) -> tuple[str, bytes]:
         """每个文档单独一个 Excel，打包成一个 zip。
 
         浏览器一次只能下载一个文件，没法直接下载文件夹，所以打包；解压后就是一个文件夹。
@@ -578,20 +586,22 @@ class DocumentService:
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
             for document in documents:
                 name = _unique(f"{PurePath(document.filename).stem}.xlsx", used)
-                archive.writestr(name, self._excel([document])[0])
+                archive.writestr(name, self._excel([document], language)[0])
         name = f"jacara-{date.today():%Y%m%d}-{len(documents)}份.zip"
         data = out.getvalue()
         self._record_export(documents, "zip", name, data)
         return name, data
 
-    def export_csv(self, document_ids: list[uuid.UUID]) -> tuple[str, bytes, str]:
+    def export_csv(
+        self, document_ids: list[uuid.UUID], language: str | None = None
+    ) -> tuple[str, bytes, str]:
         """导出 CSV：内容和标准格式的 Excel 一样（汇总一行一张单据，明细表、键值对各一张）。
 
         只有汇总一张表时下载一个 .csv；还有明细表、键值对时，每张表一个 .csv 打包成 zip。
         返回（文件名，内容，格式 csv 或 zip）。
         """
         documents = self._exportable(document_ids)
-        files = workbook_to_csv(_workbook(documents))
+        files = workbook_to_csv(_workbook(documents, language))
         if len(documents) == 1:
             stem = PurePath(documents[0].filename).stem
         else:
@@ -608,7 +618,7 @@ class DocumentService:
         self._record_export(documents, "csv" if kind == "csv" else "csv-zip", name, data)
         return name, data, kind
 
-    def _excel(self, documents: list[Document]) -> tuple[bytes, str]:
+    def _excel(self, documents: list[Document], language: str | None = None) -> tuple[bytes, str]:
         """导出成 Excel：模板有原表样式（从 Excel 建的模板）就填回原表，否则用标准格式。
 
         返回（文件内容，原表的文件名；标准格式时为空）。原表在对象存储里取不到时退回标准格式。
@@ -623,7 +633,7 @@ class DocumentService:
                 rows = _doc_rows(documents, template)
                 title = f"{date.today():%Y-%m-%d} 导出"
                 return fill_workbook(template, original, rows, title), template.workbook.filename
-        return _workbook(documents), ""
+        return _workbook(documents, language), ""
 
     def _exportable(self, document_ids: list[uuid.UUID]) -> list[Document]:
         """导出前的检查（两种导出都一样）：有权限、数量对、都找得到、都处理完了。按用户选的顺序返回。"""
@@ -691,6 +701,79 @@ class DocumentService:
         except Exception as err:
             raise DocumentError("unreadable", "这个文件打不开，可能已损坏") from err
 
+    def describe_region(
+        self, document_id: uuid.UUID, page: int, box: list[float]
+    ) -> RegionDescription:
+        """框选建模板（ADR 0047）：框里的值（先用存下的 OCR，没有再局部重新识别）、旁边的标签、
+        在页面哪里、像什么类型。"""
+        from jacara.modules.templates.boxes import (
+            field_id,
+            guess_type,
+            hint,
+            lines_in,
+            pair_for,
+            position,
+        )
+
+        document = self._find(document_id)
+        require(self.owner, "template:manage", document.team_id)
+        extraction = covering(document.extractions, page)
+        ocr = ocr_page_json(extraction.ocr, page, extraction.page) if extraction else None
+        lines = (ocr or {}).get("lines", [])
+        inside = lines_in(lines, box)
+        text = " ".join(str(ln["text"]) for ln in inside)
+        confidence = min((float(ln["confidence"]) for ln in inside), default=None)
+        if not text and self.ocr is not None:
+            try:
+                text, confidence = read_region(self.page_image(document_id, page), box, self.ocr)
+            except ValueError as err:
+                raise DocumentError("invalid", str(err)) from err
+        # 标签只用版面分析配好的"标题 → 值"（处理单据时就算好了），对不上就留空，不猜
+        structure = (
+            structure_view(extraction.structure, page, extraction.page) if extraction else None
+        )
+        pair = pair_for(structure.pairs, box) if structure else None
+        label = pair.key if pair else None
+        side = SIDES.get(pair.rule) if pair else None
+        where = position(
+            box, float((ocr or {}).get("width") or 1), float((ocr or {}).get("height") or 1)
+        )
+        return RegionDescription(
+            text=text,
+            confidence=confidence,
+            label=label,
+            side=side,
+            type=guess_type(text),  # type: ignore[arg-type]
+            position=where,
+            name=field_id(label or "", set(), 1) if label else "",
+            description=hint(where, label, side),
+        )
+
+    def page_crop(self, document_id: uuid.UUID, page: int, box: list[float]) -> bytes:
+        """这一页上 box（和页面图片一样的坐标）这一块放大后的 PNG（ADR 0042）：审核页在候选旁边
+        显示局部图。PDF 按局部放大再识别时的倍数重新画，图片用原图。"""
+        from jacara.pipeline.region import crop_region
+        from jacara.pipeline.zoom import ZOOM_SCALE
+        from jacara.plugins.ocr.loader import PDF_SCALE
+
+        self.page_image(document_id, page)  # 检查权限、页码、文件
+        document = self._find(document_id)
+        data = self.storage.get(document.storage_key or "")
+        is_pdf = document.content_type == "application/pdf"
+        try:
+            image = (
+                page_png(data, is_pdf, page, scale=ZOOM_SCALE)
+                if is_pdf
+                else page_png(data, False, 1)
+            )
+            factor = ZOOM_SCALE / PDF_SCALE if is_pdf else 1.0
+            crop = crop_region(image, [v * factor for v in box])
+        except ValueError as err:
+            raise DocumentError("invalid", str(err)) from err
+        out = io.BytesIO()
+        crop.save(out, format="PNG")
+        return out.getvalue()
+
     def ocr_region(self, document_id: uuid.UUID, page: int, box: list[float]) -> RegionOut:
         """把页面上的一块区域裁下来重新 OCR。要能看文档，也要能改字段（不然认出来也没用）。"""
         document = self._find(document_id)
@@ -746,6 +829,18 @@ class DocumentService:
         if document is None:
             raise DocumentError("not_found", "找不到这个文档")
         return document
+
+
+SIDES = {
+    "inline": "后面",
+    "colon": "右边",
+    "label_left": "右边",
+    "row_label": "这一行右边",
+    "colon_below": "下面",
+    "header_above": "下面",
+    "two_column_table": "右边",
+}
+"""版面分析的配对规则 → 值在标签的哪边（框选建模板写说明用）。"""
 
 
 def structure_view(data: dict[str, Any] | None, page: int = 1, first: int = 1) -> PageStructureOut:
@@ -947,6 +1042,9 @@ def _with_states(
     lines = (extraction.ocr or {}).get("lines") if needs_ocr else None
     shape = template if template is not None else template_of(extraction)
     day_first = shape.day_first if shape is not None else None
+    # 字段名的别的语言（ADR 0048）：第一个是默认的中文
+    languages = list(shape.languages) if shape is not None else []
+    others = {lang: labels_of(extraction, lang) for lang in languages[1:]}
     values = [
         v.model_copy(
             update={
@@ -955,6 +1053,11 @@ def _with_states(
                 "level": states[v.id][1],
                 "source_value": source_value(by_id[v.id], evidence_text(by_id[v.id], lines)),
                 "label": label_for(labels, v.name),
+                "names": {
+                    lang: found
+                    for lang, names in others.items()
+                    if (found := label_for(names, v.name)) is not None
+                },
                 "suggestion": (
                     SuggestionOut(action=hints[v.id][0], value=hints[v.id][1], run=hints[v.id][2])
                     if v.id in hints
@@ -974,6 +1077,8 @@ def _with_states(
             "current_checks": checks,
             "values": values,
             "labels": labels,
+            "languages": languages if len(languages) > 1 else [],
+            "label_sets": others,
             "template_title": _template_title(extraction),
             "source_notes": notes,
         }
@@ -1033,9 +1138,9 @@ def _doc_rows(documents: list[Document], template: Template) -> list[DocRow]:
     return rows
 
 
-def _workbook(documents: list[Document]) -> bytes:
-    """几个文档写进一个 Excel，返回文件内容。"""
-    reports = [report for d in documents for report in load_reports(d)]
+def _workbook(documents: list[Document], language: str | None = None) -> bytes:
+    """几个文档写进一个 Excel，返回文件内容。language：列名用哪种语言（ADR 0048）。"""
+    reports = [report for d in documents for report in load_reports(d, language)]
     exporter = create_exporter("excel")
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / f"export{exporter.suffix}"

@@ -15,6 +15,8 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
 from jacara.plugins.validators import ALL_RULES
+from jacara.plugins.validators.base import Rule
+from jacara.plugins.validators.rules import REGIONS
 
 FORMAT = "jacarandaparse-template"
 TYPES = {"string": "文字", "number": "数字", "date": "日期", "date_range": "日期范围"}
@@ -51,6 +53,24 @@ def is_standard(data: bytes) -> bool:
 
 
 # ---------- 模板 → Excel ----------
+
+
+def _usable(rule: Rule, template: dict[str, Any]) -> bool:
+    """这条内置规则这个模板用得上：要的字段（表格的列）都有；某国的规则只给选了这个国家的模板。"""
+    country = REGIONS.get(rule.id)
+    if country and country not in (template.get("countries") or []):
+        return False
+    fields = {f["name"] for f in template.get("fields", [])}
+    columns = {t["name"]: {c["name"] for c in t["columns"]} for t in template.get("tables", [])}
+    if rule.per_row:
+        return all(n in columns.get(rule.per_row, set()) for n in rule.needs)
+    for need in rule.needs:
+        table, _, column = need.partition(".*.")
+        if column and column not in columns.get(table, set()):
+            return False
+        if not column and need not in fields:
+            return False
+    return True
 
 
 def to_excel(template: dict[str, Any]) -> bytes:
@@ -102,7 +122,10 @@ def to_excel(template: dict[str, Any]) -> bytes:
     rules_ws = book.create_sheet("规则")
     _setup(rules_ws, ["编号", "名称", "级别", "用"], [22, 46, 8, 6])
     chosen = set(template.get("rules", []))
-    for rule in ALL_RULES:
+    # 只列这个模板用得上的规则（和编辑器一样）：选了的，加上字段都有、国家对得上的；
+    # 化验单不会列出发票、收据、机票的规则
+    listed = [r for r in ALL_RULES if r.id in chosen or _usable(r, template)]
+    for rule in listed:
         rules_ws.append(
             [
                 rule.id,
@@ -111,7 +134,7 @@ def to_excel(template: dict[str, Any]) -> bytes:
                 _yes(rule.id in chosen),
             ]
         )
-    _yes_no(rules_ws, "D", len(ALL_RULES) + 1)
+    _yes_no(rules_ws, "D", max(len(listed), 30) + 1)  # 留几行空的，导入时可以自己加
 
     entities_ws = book.create_sheet("对象")
     _setup(entities_ws, ["对象ID", "中文名", "编号字段", "包含的字段"], [14, 14, 16, 50])

@@ -92,6 +92,17 @@ export function trialTemplate(id: string, documentId: string): Promise<TrialResu
 }
 
 /** 用样例建模板：样例文档里选好的键值对 → 新模板；样例换成按新模板的结果。 */
+/** 在样例上框选建模板（ADR 0047）：框好的字段 → 新模板。 */
+export function createFromBoxes(body: {
+  document_id: string
+  title: string
+  category: string
+  description: string
+  fields: (TemplateField & { page: number; box: number[] })[]
+}): Promise<Template> {
+  return api<Template>('/templates/from-boxes', { method: 'POST', json: body })
+}
+
 export function createFromSample(body: {
   document_id: string
   title: string

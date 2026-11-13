@@ -20,6 +20,9 @@ const DashboardPage = lazy(() =>
 const DocumentListPage = lazy(() =>
   import('./features/documents/DocumentListPage').then((m) => ({ default: m.DocumentListPage })),
 )
+const InsightsPage = lazy(() =>
+  import('./features/insights/InsightsPage').then((m) => ({ default: m.InsightsPage })),
+)
 const ExportsPage = lazy(() =>
   import('./features/exports/ExportsPage').then((m) => ({ default: m.ExportsPage })),
 )
@@ -31,6 +34,9 @@ const SystemPage = lazy(() =>
 )
 const TemplatesPage = lazy(() =>
   import('./features/templates/TemplatesPage').then((m) => ({ default: m.TemplatesPage })),
+)
+const BoxTemplatePage = lazy(() =>
+  import('./features/templates/BoxTemplatePage').then((m) => ({ default: m.BoxTemplatePage })),
 )
 const ExcelImportPage = lazy(() =>
   import('./features/templates/ExcelImportPage').then((m) => ({ default: m.ExcelImportPage })),
@@ -88,11 +94,22 @@ export default function App() {
             <Route path="exports" element={<Page>
                   <ExportsPage />
                 </Page>} />
+            <Route path="insights" element={<Page>
+                  <InsightsPage />
+                </Page>} />
             <Route
               path="templates"
               element={
                 <Page>
                   <TemplatesPage />
+                </Page>
+              }
+            />
+            <Route
+              path="templates/from-boxes/:documentId"
+              element={
+                <Page>
+                  <BoxTemplatePage />
                 </Page>
               }
             />

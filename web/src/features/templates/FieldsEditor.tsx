@@ -1,6 +1,7 @@
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { Button, Flex, Input, Select, Switch, Table, type TableProps, Tooltip } from 'antd'
 import type { TemplateField, TemplateTable } from '../../api/types'
+import { languageName } from '../../utils/languages'
 import { FormulaInput } from './FormulaInput'
 import { blankField, FIELD_ID, RANGE_EXPORTS, TYPE_OPTIONS } from './templateFields'
 
@@ -14,7 +15,10 @@ export function FieldsEditor({
   locked,
   readOnly,
   scope,
+  language = 'zh',
 }: {
+  /** 正在编辑哪种语言的名字（ADR 0048）：zh 改 label，别的改 names 里那一种。 */
+  language?: string
   fields: TemplateField[]
   onChange: (fields: TemplateField[]) => void
   locked: Set<string>
@@ -32,20 +36,30 @@ export function FieldsEditor({
   }
   const duplicate = (name: string) => fields.filter((f) => f.name === name).length > 1
 
+  const other = language !== 'zh'
   const columns: TableProps<TemplateField>['columns'] = [
     {
-      title: '中文名',
+      title: other ? `${languageName(language)} 名称` : '中文名',
       dataIndex: 'label',
       width: 150,
-      render: (_, f, i) => (
-        <Input
-          value={f.label}
-          disabled={readOnly}
-          status={f.label.trim() ? undefined : 'error'}
-          placeholder="例如：总额"
-          onChange={(e) => update(i, { label: e.target.value })}
-        />
-      ),
+      render: (_, f, i) =>
+        other ? (
+          // 别的语言：没写就导出、显示中文名，所以可以留空
+          <Input
+            value={f.names?.[language] ?? ''}
+            disabled={readOnly}
+            placeholder={f.label}
+            onChange={(e) => update(i, { names: { ...f.names, [language]: e.target.value } })}
+          />
+        ) : (
+          <Input
+            value={f.label}
+            disabled={readOnly}
+            status={f.label.trim() ? undefined : 'error'}
+            placeholder="例如：总额"
+            onChange={(e) => update(i, { label: e.target.value })}
+          />
+        ),
     },
     {
       title: (

@@ -88,6 +88,8 @@ export function reprocessDocument(
     split?: string
     /** 看不看原图（ADR 0038）：always、off、default（按系统设置）。不写：和上次一样。 */
     vision?: 'always' | 'off' | 'default'
+    /** PDF 怎么读（ADR 0042）：image 画成图识别、text 只读文字层、default 按系统设置。 */
+    pdf_read?: 'image' | 'text' | 'default'
   },
 ): Promise<DocumentSummary> {
   return api<DocumentSummary>(`/documents/${id}/reprocess`, { method: 'POST', json: body })
@@ -101,6 +103,31 @@ export function adoptPrevious(id: string): Promise<{ confirmed: number; edited: 
 /** 某一页的图片（PNG）。出处框的坐标就是这张图上的像素。 */
 export function getPageImage(id: string, page: number): Promise<Blob> {
   return apiBlob(`/documents/${id}/pages/${page}/image`)
+}
+
+/** 框选建模板（ADR 0047）：框里的值、旁边的标签、在页面哪里、像什么类型。 */
+export interface RegionDescription {
+  text: string
+  confidence: number | null
+  label: string | null
+  /** 值在标签的"右边"还是"下面"。 */
+  side: string | null
+  type: 'string' | 'number' | 'date' | 'date_range'
+  position: string
+  name: string
+  description: string
+}
+
+export function describeRegion(id: string, page: number, box: Box): Promise<RegionDescription> {
+  return api<RegionDescription>(`/documents/${id}/pages/${page}/describe-region`, {
+    method: 'POST',
+    json: { box },
+  })
+}
+
+/** 某一页上一块区域放大后的图（ADR 0042）：候选值旁边显示，看清是哪个字。 */
+export function getPageCrop(id: string, page: number, box: number[]): Promise<Blob> {
+  return apiBlob(`/documents/${id}/pages/${page}/crop?box=${box.map((v) => v.toFixed(1)).join(',')}`)
 }
 
 /** 某一页的 OCR 结果：每个文字块的文字和位置。审核时"从原文选取"用。 */
@@ -139,19 +166,28 @@ export function completeReview(id: string): Promise<DocumentSummary> {
 export type ExportMode = 'separate' | 'summary' | 'csv'
 
 /** 导出：一个文档就是一个 Excel；多个文档按 mode 打包成 zip 或汇总成一个 Excel。 */
-export function exportDocuments(ids: string[], mode: ExportMode): Promise<DownloadedFile> {
+/** language：列名用哪种语言（ADR 0048），不写或 zh 是中文；模板没写这种语言的列还是中文。 */
+export function exportDocuments(
+  ids: string[],
+  mode: ExportMode,
+  language?: string,
+): Promise<DownloadedFile> {
+  const lang = language && language !== 'zh' ? language : null
   if (mode === 'csv') {
     const query = new URLSearchParams()
     for (const id of ids) query.append('ids', id)
+    if (lang) query.append('lang', lang)
     return apiDownload(`/documents/export.csv?${query}`, 'export.csv')
   }
   if (ids.length === 1) {
-    return apiDownload(`/documents/${ids[0]}/export.xlsx`, 'export.xlsx')
+    const one = lang ? `?${new URLSearchParams({ lang })}` : ''
+    return apiDownload(`/documents/${ids[0]}/export.xlsx${one}`, 'export.xlsx')
   }
   const query = new URLSearchParams()
   for (const id of ids) {
     query.append('ids', id) // 后端要的格式：?ids=第一个&ids=第二个
   }
+  if (lang) query.append('lang', lang)
   return mode === 'separate'
     ? apiDownload(`/documents/export.zip?${query}`, 'export.zip')
     : apiDownload(`/documents/export.xlsx?${query}`, 'export.xlsx')

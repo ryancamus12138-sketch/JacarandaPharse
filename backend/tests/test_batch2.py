@@ -78,7 +78,7 @@ def test_two_page_folio_is_one_document(client, factory, storage, monkeypatch):
     template_id = created.json()["id"]
     document_id = upload(client, template_id)
     pipeline = Pipeline(ocr=None, extractor=LlmExtractor(SchemaBackend(HOTEL)))  # type: ignore[arg-type]
-    monkeypatch.setattr(pipeline, "read", lambda _path: hotel_pages())
+    monkeypatch.setattr(pipeline, "read", lambda _path, _how=None: hotel_pages())
     outcome = process_document(
         uuid.UUID(document_id), storage=storage, pipeline=pipeline, factory=factory
     )
@@ -162,7 +162,7 @@ def test_same_invoice_number_is_flagged(client, factory, storage, monkeypatch):
     for data in (b"a", b"b"):
         document_id = upload_file(client, data=data, template=template_id, split="one")["id"]
         pipeline = Pipeline(ocr=None, extractor=LlmExtractor(SchemaBackend(HOTEL)))  # type: ignore[arg-type]
-        monkeypatch.setattr(pipeline, "read", lambda _path: hotel_pages()[:2])
+        monkeypatch.setattr(pipeline, "read", lambda _path, _how=None: hotel_pages()[:2])
         process_document(
             uuid.UUID(document_id), storage=storage, pipeline=pipeline, factory=factory
         )

@@ -26,6 +26,7 @@ from jacara.models import Document, ExtractedValue, Extraction, TemplateRecord, 
 from jacara.modules.audit.service import record
 from jacara.modules.templates.repository import TemplateRepository
 from jacara.modules.templates.schemas import (
+    BoxesIn,
     CustomRuleIO,
     EntityOut,
     ExcelAnalysisOut,
@@ -104,6 +105,8 @@ def to_out(t: Template, kind: TemplateKind = "builtin") -> TemplateOut:
         name=t.name,
         version=t.version,
         title=t.title,
+        titles=dict(t.titles),
+        languages=list(t.languages),
         description=t.description,
         category=t.category,
         kind=kind,
@@ -123,6 +126,7 @@ def to_out(t: Template, kind: TemplateKind = "builtin") -> TemplateOut:
                 columns=[_field(c) for c in tb.columns],
                 required=tb.required,
                 export=tb.export,
+                names=dict(tb.names),
             )
             for tb in t.tables
         ],
@@ -181,6 +185,7 @@ def _field(f: TemplateField) -> TemplateFieldOut:
         unique=f.unique,
         range_export=f.range_export,
         range_separator=f.range_separator,
+        names=dict(f.names),
     )
 
 
@@ -259,6 +264,8 @@ def _field_dump(f: TemplateFieldIn) -> dict[str, Any]:
     if f.type != "date_range":
         data.pop("range_export", None)
         data.pop("range_separator", None)
+    if not data.get("names"):
+        data.pop("names", None)
     return data
 
 
@@ -271,6 +278,7 @@ def definition_of(data: TemplateIn) -> dict[str, Any]:
         ],
         "rules": list(dict.fromkeys(data.rules)),
         "custom_rules": [c.model_dump() for c in data.custom_rules],
+        **({"titles": data.titles} if data.titles else {}),
     }
 
 
@@ -885,6 +893,24 @@ class TemplateService:
         template = self._template(found, version)
         self._apply_sample(document, version, template, data)
         return self._mine_out(found), document.id
+
+    def from_boxes(self, data: BoxesIn) -> TemplateOut:
+        """在样例上框好的字段 → 新模板第 1 版（ADR 0047）。字段的名称、类型、别名（框旁边的标签）、
+        说明（在单据哪里）由页面上框选时填好；框的位置只记进模板的来源，不进定义。
+        样例不自动换成新模板的结果：页面上可以接着"用新模板重新处理"。"""
+        require(self.owner, "template:manage")
+        document = self._document(data.document_id)
+        fields = [f.model_dump(exclude={"page", "box"}) for f in data.fields]
+        definition = {"fields": fields, "tables": [], "rules": []}
+        found = self._new(
+            data.title.strip(),
+            data.category.strip(),
+            data.description.strip(),
+            f"boxes:{document.id}",
+            definition,
+            "在样例上框选建模板",
+        )
+        return self._mine_out(found)
 
     def _apply_sample(
         self, document: Document, version: TemplateVersion, template: Template, data: SampleIn

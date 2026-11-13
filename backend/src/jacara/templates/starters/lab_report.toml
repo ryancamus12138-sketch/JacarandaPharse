@@ -6,8 +6,9 @@
 # 只写字段和通用规定，不放任何真实报告的内容。
 
 name = "lab_report"
-version = 1
+version = 2
 title = "检验报告（化验单）"
+titles = { en = "Laboratory Report" }
 domains = ["医疗", "检验报告"]
 description = "医院、体检中心、第三方实验室出具的检验报告：血常规、生化、尿常规、免疫等。患者信息、标本、送检和报告时间，以及每一项检验的结果、单位、参考范围、高低提示；检查结果超出参考范围却没标高低的会提醒。"
 rules = ["lab_flag"]
@@ -15,6 +16,7 @@ rules = ["lab_flag"]
 [[fields]]
 name = "institution"
 label = "医疗机构"
+names = { en = "Institution" }
 type = "string"
 description = "出报告的医院、体检中心或检验所名称，一般在最上面"
 aliases = ["医院", "Hospital", "Laboratory", "Lab"]
@@ -22,6 +24,7 @@ aliases = ["医院", "Hospital", "Laboratory", "Lab"]
 [[fields]]
 name = "report_title"
 label = "报告名称"
+names = { en = "Report Title" }
 type = "string"
 description = "报告单的标题或检验组合，例如 血常规、肝功能、尿常规检验报告单，照抄"
 aliases = ["检验项目", "检验目的", "组合项目", "Test", "Panel"]
@@ -29,6 +32,7 @@ aliases = ["检验项目", "检验目的", "组合项目", "Test", "Panel"]
 [[fields]]
 name = "patient_name"
 label = "姓名"
+names = { en = "Patient Name" }
 type = "string"
 required = true
 sensitive = true
@@ -37,6 +41,7 @@ aliases = ["患者姓名", "病人姓名", "Patient", "Name"]
 [[fields]]
 name = "gender"
 label = "性别"
+names = { en = "Sex" }
 type = "string"
 options = ["男", "女", "Male", "Female", "M", "F"]
 aliases = ["Sex", "Gender"]
@@ -44,6 +49,7 @@ aliases = ["Sex", "Gender"]
 [[fields]]
 name = "age"
 label = "年龄"
+names = { en = "Age" }
 type = "string"
 description = "照抄，带单位（35岁、3月、10天）"
 aliases = ["Age"]
@@ -51,6 +57,7 @@ aliases = ["Age"]
 [[fields]]
 name = "record_no"
 label = "病历号"
+names = { en = "Medical Record No." }
 type = "string"
 sensitive = true
 description = "门诊号、住院号、病历号、ID 号、体检号，照抄"
@@ -59,6 +66,7 @@ aliases = ["门诊号", "住院号", "病人ID", "ID号", "体检号", "MRN", "P
 [[fields]]
 name = "department"
 label = "科别"
+names = { en = "Department" }
 type = "string"
 description = "申请检验的科室"
 aliases = ["科室", "申请科室", "送检科室", "Department", "Ward"]
@@ -66,18 +74,21 @@ aliases = ["科室", "申请科室", "送检科室", "Department", "Ward"]
 [[fields]]
 name = "bed_no"
 label = "床号"
+names = { en = "Bed No." }
 type = "string"
 aliases = ["Bed"]
 
 [[fields]]
 name = "doctor"
 label = "送检医生"
+names = { en = "Requesting Physician" }
 type = "string"
 aliases = ["申请医生", "开单医生", "临床医生", "Requesting Physician", "Doctor"]
 
 [[fields]]
 name = "diagnosis"
 label = "临床诊断"
+names = { en = "Clinical Diagnosis" }
 type = "string"
 sensitive = true
 aliases = ["诊断", "Clinical Diagnosis"]
@@ -85,6 +96,7 @@ aliases = ["诊断", "Clinical Diagnosis"]
 [[fields]]
 name = "specimen"
 label = "标本类型"
+names = { en = "Specimen Type" }
 type = "string"
 description = "血清、全血、尿液、粪便等"
 aliases = ["样本类型", "标本", "样本", "Specimen", "Sample Type"]
@@ -92,6 +104,7 @@ aliases = ["样本类型", "标本", "样本", "Specimen", "Sample Type"]
 [[fields]]
 name = "specimen_no"
 label = "标本号"
+names = { en = "Specimen No." }
 type = "string"
 unique = true
 description = "标本条码号、样本号、检验单号，照抄"
@@ -100,6 +113,7 @@ aliases = ["条码号", "样本号", "检验号", "Specimen No", "Barcode", "Acc
 [[fields]]
 name = "collected_at"
 label = "采集时间"
+names = { en = "Collected" }
 type = "string"
 description = "采样、采集时间，照抄（含时分）"
 aliases = ["采样时间", "采集时间", "Collected", "Collection Time"]
@@ -107,6 +121,7 @@ aliases = ["采样时间", "采集时间", "Collected", "Collection Time"]
 [[fields]]
 name = "received_at"
 label = "接收时间"
+names = { en = "Received" }
 type = "string"
 description = "实验室接收标本的时间，照抄（含时分）"
 aliases = ["接收时间", "收样时间", "Received"]
@@ -114,6 +129,7 @@ aliases = ["接收时间", "收样时间", "Received"]
 [[fields]]
 name = "reported_at"
 label = "报告时间"
+names = { en = "Reported" }
 type = "string"
 description = "出报告、审核的时间，照抄（含时分）"
 aliases = ["报告时间", "报告日期", "Reported", "Report Date"]
@@ -121,24 +137,28 @@ aliases = ["报告时间", "报告日期", "Reported", "Report Date"]
 [[fields]]
 name = "tester"
 label = "检验者"
+names = { en = "Tested by" }
 type = "string"
 aliases = ["检验人", "检验医师", "操作者", "Tested by"]
 
 [[fields]]
 name = "reviewer"
 label = "审核者"
+names = { en = "Verified by" }
 type = "string"
 aliases = ["审核人", "审核医师", "Verified by", "Approved by"]
 
 [[tables]]
 name = "results"
 label = "检验结果"
+names = { en = "Results" }
 required = true
 description = "报告上每一项检验一行（例如白细胞、血红蛋白、谷丙转氨酶）。表头、分组标题、备注不算一行；两栏排版的报告左右两栏都要"
 
 [[tables.columns]]
 name = "code"
 label = "代号"
+names = { en = "Code" }
 type = "string"
 description = "项目的英文缩写，如 WBC、HGB、ALT；没有就留空"
 aliases = ["缩写", "代号", "Code"]
@@ -146,6 +166,7 @@ aliases = ["缩写", "代号", "Code"]
 [[tables.columns]]
 name = "name"
 label = "项目"
+names = { en = "Test" }
 type = "string"
 description = "检验项目的中文或英文名称，照抄"
 aliases = ["项目名称", "检验项目", "Test", "Item"]
@@ -153,6 +174,7 @@ aliases = ["项目名称", "检验项目", "Test", "Item"]
 [[tables.columns]]
 name = "result"
 label = "结果"
+names = { en = "Result" }
 type = "string"
 description = "照抄结果：数字（12.3）、定性（阴性、阳性、+、-）、带符号（<0.1、>1000）都照原样；高低箭头不要写进结果"
 aliases = ["结果", "测定值", "Result", "Value"]
@@ -160,6 +182,7 @@ aliases = ["结果", "测定值", "Result", "Value"]
 [[tables.columns]]
 name = "flag"
 label = "提示"
+names = { en = "Flag" }
 type = "string"
 description = "异常提示：↑、↓、H、L、高、低、阳性、* 等，照抄；正常没有就留空"
 aliases = ["提示", "标志", "异常", "Flag"]
@@ -167,6 +190,7 @@ aliases = ["提示", "标志", "异常", "Flag"]
 [[tables.columns]]
 name = "unit"
 label = "单位"
+names = { en = "Unit" }
 type = "string"
 description = "结果的单位，如 10^9/L、g/L、mmol/L、U/L，照抄"
 aliases = ["单位", "Unit", "Units"]
@@ -174,6 +198,7 @@ aliases = ["单位", "Unit", "Units"]
 [[tables.columns]]
 name = "reference"
 label = "参考范围"
+names = { en = "Reference Range" }
 type = "string"
 description = "参考范围或参考区间，照抄，如 3.5-9.5、<5.0、阴性"
 aliases = ["参考值", "参考区间", "正常值", "Reference", "Reference Range", "Ref"]
@@ -181,6 +206,7 @@ aliases = ["参考值", "参考区间", "正常值", "Reference", "Reference Ran
 [[tables.columns]]
 name = "method"
 label = "方法"
+names = { en = "Method" }
 type = "string"
 description = "检验方法，有才写"
 aliases = ["检验方法", "Method"]

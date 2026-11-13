@@ -1,4 +1,4 @@
-import { EyeOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { BulbOutlined, EyeOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { Flex, Popover, Tag, Tooltip, Typography } from 'antd'
 import type { Extraction } from '../../api/types'
 
@@ -11,7 +11,9 @@ const BY_TEXT = { model: '模型选的', keywords: '按字段名、模板名对�
 export function ExtractionNotes({ extraction }: { extraction: Extraction | undefined }) {
   const classified = extraction?.classified
   const vision = extraction?.vision
-  if (!classified && !vision) return null
+  // 从人改过的地方学（ADR 0045）：提示词版本记成 extract-v8+lessons3
+  const lessons = Number(/\+lessons(\d+)/.exec(extraction?.prompt_version ?? '')?.[1] ?? 0)
+  if (!classified && !vision && !lessons) return null
   return (
     <Flex gap={8} wrap align="center" style={{ marginBottom: 12 }}>
       {classified && (
@@ -58,6 +60,15 @@ export function ExtractionNotes({ extraction }: { extraction: Extraction | undef
         <Tooltip title={`${vision}。OCR 文字里对不上的值标了"看原图读的"，请对着原图核对。`}>
           <Tag icon={<EyeOutlined />} color="orange">
             模型看了原图
+          </Tag>
+        </Tooltip>
+      )}
+      {lessons > 0 && (
+        <Tooltip
+          title={`抽取时告诉了模型：同一个模板以前人工改过的 ${lessons} 个地方（容易错在哪），值仍然按这张单据的原文。在 .env 里 JACARA_LEARN=false 可以关掉。`}
+        >
+          <Tag icon={<BulbOutlined />} color="cyan">
+            参考了以前改过的 {lessons} 处
           </Tag>
         </Tooltip>
       )}

@@ -8,12 +8,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from jacara.plugins.ocr.base import OcrLine, OcrPage, Point
+from jacara.plugins.ocr.base import FormValue, OcrLine, OcrPage, Point
 from jacara.structure.engines import LayoutDetector, Region, StructureEngines
 
 if TYPE_CHECKING:
@@ -45,11 +45,15 @@ def stack_pages(pages: Sequence[OcrPage]) -> Stacked:
     if len(pages) == 1:
         return Stacked(pages[0], (0.0,), tuple(pages))
     lines: list[OcrLine] = []
+    layer: list[OcrLine] = []
+    forms: list[FormValue] = []
     starts: list[float] = []
     top = 0.0
     for page in pages:
         starts.append(top)
         lines += [_shift(line, top) for line in page.lines]
+        layer += [_shift(line, top) for line in page.text_layer]
+        forms += [_shift_form(f, top) for f in page.forms]
         top += page.height + GAP
     engines = sorted({p.engine for p in pages})
     models: dict[str, str] = {}
@@ -63,10 +67,17 @@ def stack_pages(pages: Sequence[OcrPage]) -> Stacked:
             engine=engines[0] if len(engines) == 1 else "mixed",
             models=models,
             duration_ms=sum(p.duration_ms for p in pages),
+            text_layer=tuple(layer),
+            forms=tuple(forms),
         ),
         tuple(starts),
         tuple(pages),
     )
+
+
+def _shift_form(form: FormValue, dy: float) -> FormValue:
+    x0, y0, x1, y1 = form.box
+    return replace(form, box=(x0, y0 + dy, x1, y1 + dy))
 
 
 def _shift(line: OcrLine, dy: float) -> OcrLine:

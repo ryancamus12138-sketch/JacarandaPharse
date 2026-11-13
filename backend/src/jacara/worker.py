@@ -43,6 +43,7 @@ def get_pipeline() -> Pipeline:
         extractor=LlmExtractor(backend),
         structure=default_engines(),
         vision=get_settings().jacara_vision,
+        pdf_read=get_settings().jacara_pdf_read,
     )
 
 

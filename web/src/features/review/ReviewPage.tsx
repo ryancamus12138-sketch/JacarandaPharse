@@ -22,6 +22,7 @@ import {
   Popconfirm,
   Result,
   Segmented,
+  Select,
   Space,
   Spin,
   Tooltip,
@@ -42,6 +43,7 @@ import {
 import type { Box, DocumentDetail, Extraction, FieldValue, RevisionIn } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
 import { ExportButton } from '../documents/ExportButton'
+import { languageOptions, useLanguage } from '../../utils/languages'
 import { StatusTag } from '../documents/StatusTag'
 import { FieldDetail, FieldPanel } from './FieldPanel'
 import {
@@ -216,8 +218,15 @@ function ReviewWorkspace({ id }: { id: string }) {
   const canEdit = can('value:review') && !viewingOld && doneOrReviewed
   // 第 page 页属于哪一张单据（一张单据可以占好几页，ADR 0036）
   const currentExtraction = coveringExtraction(document.data?.extractions ?? [], page)
-  // 字段的中文名用这份文档的模板里的（换了文档、换了轮次就换）
-  setTemplateLabels(currentExtraction?.labels)
+  // 字段名的语言（ADR 0048）：模板写了几种语言就能切换，按模板记住选的
+  const languages = currentExtraction?.languages?.length ? currentExtraction.languages : ['zh']
+  const languageKey = `review.${currentExtraction?.template ?? ''}`
+  const [language, setLanguage] = useLanguage(languageKey, languages)
+  const otherLabels = currentExtraction?.label_sets?.[language]
+  // 字段名用这份文档的模板里的（换了文档、换了轮次、换了语言就换）
+  setTemplateLabels(
+    otherLabels ? { ...currentExtraction?.labels, ...otherLabels } : currentExtraction?.labels,
+  )
   const adopt = useMutation({
     mutationFn: () => adoptPrevious(id),
     onSuccess: ({ confirmed, edited }) => {
@@ -528,6 +537,13 @@ function ReviewWorkspace({ id }: { id: string }) {
           存成模板
         </Button>
       )}
+      {!viewingOld && can('template:manage') && (
+        <Tooltip title="在这份单据的原图上框出要的值，建一个新模板（ADR 0047）">
+          <Button icon={<AppstoreAddOutlined />} onClick={() => navigate(`/templates/from-boxes/${doc.id}`)}>
+            框选建模板
+          </Button>
+        </Tooltip>
+      )}
       {!viewingOld && can('document:process') && <ReprocessButton doc={doc} />}
       {doc.status === 'done' && !viewingOld && !doc.skipped_at && can('document:review') && (
         <SkipButton doc={doc} next={() => goTo(neighbors.data?.next ?? neighbors.data?.previous)} />
@@ -595,7 +611,7 @@ function ReviewWorkspace({ id }: { id: string }) {
           </Tooltip>
         </Popconfirm>
       )}
-      <ExportButton ids={[doc.id]} />
+      <ExportButton ids={[doc.id]} languages={languages} language={language} onLanguage={setLanguage} />
       {can('document:delete') && doc.status !== 'processing' && (
         <Popconfirm
           title={`删除「${doc.filename}」？`}
@@ -841,6 +857,7 @@ function ReviewWorkspace({ id }: { id: string }) {
               style={{ maxHeight: '55%', overflow: 'auto', flexShrink: 0, paddingRight: 4 }}
             >
               <FieldDetail
+                documentId={doc.id}
                 value={selected}
                 label={displayLabel(values, selected)}
                 canEdit={canEdit}
@@ -861,6 +878,20 @@ function ReviewWorkspace({ id }: { id: string }) {
                 }}
               />
             </div>
+          )}
+          {languages.length > 1 && (
+            <Flex align="center" gap={8} style={{ marginBottom: 8 }}>
+              <Typography.Text type="secondary">字段名</Typography.Text>
+              <Select
+                data-keep-selection
+                size="small"
+                aria-label="字段名的语言"
+                value={language}
+                options={languageOptions(languages)}
+                onChange={setLanguage}
+                style={{ minWidth: 140 }}
+              />
+            </Flex>
           )}
           <div style={{ flex: 1, minHeight: 0, overflow: 'auto', paddingRight: 4 }}>
           {extraction ? (

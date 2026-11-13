@@ -45,6 +45,7 @@ const SAME = '__same__'
 interface Choice {
   template: string
   vision: Vision
+  pdfRead: PdfRead
   reason: ReprocessReason
   note: string
   split: string
@@ -66,6 +67,14 @@ const VISION_CHOICES: { value: Vision; label: string }[] = [
   { value: 'off', label: '只看文字（最快）' },
 ]
 
+type PdfRead = 'default' | 'image' | 'text'
+
+const PDF_READ_CHOICES: { value: PdfRead; label: string }[] = [
+  { value: 'default', label: '系统决定（推荐）' },
+  { value: 'image', label: '画成图识别' },
+  { value: 'text', label: '只读 PDF 自带的文字（最快）' },
+]
+
 /** 现在的分法 → 表单里的选项。 */
 function splitChoice(split: string | undefined): { split: string; ranges?: string } {
   if (!split || ['auto', 'one', 'pages'].includes(split)) return { split: split || 'auto' }
@@ -84,6 +93,8 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
   const vision = useQuery({ queryKey: ['vision'], queryFn: getVision, enabled: open, staleTime: 60_000 })
   const sees = vision.data?.sees_images ?? false
   const currentVision: Vision = doc.vision === 'always' || doc.vision === 'off' ? doc.vision : 'default'
+  const currentPdfRead: PdfRead = doc.pdf_read === 'image' || doc.pdf_read === 'text' ? doc.pdf_read : 'default'
+  const isPdf = doc.content_type === 'application/pdf'
 
   const reprocess = useMutation({
     mutationFn: (v: Choice) =>
@@ -93,6 +104,7 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
         note: v.note ?? '',
         split: v.split === 'ranges' ? (v.ranges ?? '') : v.split,
         vision: v.vision === currentVision ? undefined : v.vision,
+        pdf_read: !isPdf || v.pdfRead === currentPdfRead ? undefined : v.pdfRead,
       }),
     onSuccess: () => {
       setOpen(false)
@@ -127,6 +139,7 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
           initialValues={{
             template: SAME,
             vision: currentVision,
+            pdfRead: currentPdfRead,
             reason: 'template_changed',
             note: '',
             ...splitChoice(doc.split),
@@ -188,6 +201,15 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
               options={VISION_CHOICES}
             />
           </Form.Item>
+          {isPdf && (
+            <Form.Item
+              name="pdfRead"
+              label="PDF 怎么读"
+              extra="画成图识别：和照片走同一条路，PDF 自带的文字只拿来核对（有的 PDF 自带的文字是错的，比如把“示”存成部首“⽰”、把 0 存成 8）。只读自带的文字：快，只适合确定干净的电子版。"
+            >
+              <Radio.Group optionType="button" options={PDF_READ_CHOICES} />
+            </Form.Item>
+          )}
           <Form.Item name="reason" label="为什么" rules={[{ required: true }]}>
             <Radio.Group
               options={Object.entries(REPROCESS_REASONS).map(([value, label]) => ({ value, label }))}

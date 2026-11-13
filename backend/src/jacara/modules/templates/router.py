@@ -15,6 +15,7 @@ from jacara.core.storage import ObjectStorage
 from jacara.modules.documents.router import XLSX, attachment
 from jacara.modules.templates.schemas import (
     ArchiveIn,
+    BoxesIn,
     ExcelAnalysisOut,
     ExcelBuildIn,
     FormulaCheckIn,
@@ -108,6 +109,15 @@ def create_from_sample(data: SampleIn, service: Service) -> SampleOut:
     except TemplateFailure as err:
         raise _error(err) from err
     return SampleOut(template=template, document_id=document_id)
+
+
+@router.post("/from-boxes", status_code=status.HTTP_201_CREATED, summary="在样例上框选建模板")
+def create_from_boxes(data: BoxesIn, service: Service) -> TemplateOut:
+    """在样例上框好的字段 → 新模板（ADR 0047）。"""
+    try:
+        return service.from_boxes(data)
+    except TemplateFailure as err:
+        raise _error(err) from err
 
 
 @router.post("/import", status_code=status.HTTP_201_CREATED, summary="导入模板")

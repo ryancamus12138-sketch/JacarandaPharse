@@ -87,6 +87,8 @@ class DocumentOut(BaseModel):
     """下一次（或这一次）处理自动判断用哪个模板（ADR 0038）。"""
     vision: str | None = None
     """看不看原图：always、off；null 按系统设置（ADR 0038）。"""
+    pdf_read: str | None = None
+    """PDF 怎么读：image 画成图做 OCR、text 只读文字层；null 按系统设置（ADR 0042）。"""
     skipped_at: datetime | None = None
     """审核时点了"先跳过"的时间；没跳过是 null。"""
     skip_reason: str | None = None
@@ -129,6 +131,10 @@ class ExtractionOut(BaseModel):
     run_reason: str | None = None
     labels: dict[str, str] = {}
     """字段 ID → 中文名。表格的列写成 items.amount，表名写成 items。"""
+    languages: list[str] = []
+    """字段名能切换的语言（ADR 0048），第一个是默认的中文；模板只有中文时是空的。"""
+    label_sets: dict[str, dict[str, str]] = {}
+    """别的语言的 labels：语言代码 → {字段 ID → 名字}，格式和 labels 一样（ADR 0048）。"""
     checks: dict[str, Any]
     """抽取时的规则结果，永远不变。"""
     current_checks: dict[str, Any] | None = None
@@ -183,6 +189,9 @@ class ReprocessIn(BaseModel):
     """文件里有几张单据（ADR 0036）：auto、one、pages 或"1-2, 3, 4-6"。不写：和上次一样。"""
     vision: Literal["always", "off", "default"] | None = None
     """看不看原图（ADR 0038）：always 每张都看、off 不看、default 按系统设置。不写：和上次一样。"""
+    pdf_read: Literal["image", "text", "default"] | None = None
+    """PDF 怎么读（ADR 0042）：image 画成图做 OCR（文字层只核对）、text 只读文字层、
+    default 按系统设置。不写：和上次一样。"""
 
 
 class DocumentPage(BaseModel):
@@ -226,6 +235,24 @@ class LookOut(BaseModel):
     value: str | None
     """要填的字段的值（数字只有数字、日期 YYYY-MM-DD）；没说字段或者图里没有是 null。"""
     model: str
+
+
+class RegionDescription(BaseModel):
+    """框选建模板（ADR 0047）：框里的值、旁边的标签、在页面哪里、像什么类型。"""
+
+    text: str
+    confidence: float | None
+    label: str | None
+    """框左边（同一行）或上面最近的标签，去掉了冒号；没有是 null。"""
+    side: str | None
+    """值在标签的"右边"还是"下面"。"""
+    type: Literal["string", "number", "date", "date_range"]
+    position: str
+    """在页面哪里：左上角、上方中间、右下角……"""
+    name: str
+    """从标签猜的字段 ID（英文标签才猜得出，中文是 field_1 这种，要人改）。"""
+    description: str
+    """给模型看的位置说明：在单据右上角，「Invoice No」右边。"""
 
 
 class RegionOut(BaseModel):

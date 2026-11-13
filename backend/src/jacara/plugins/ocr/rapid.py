@@ -31,6 +31,7 @@ class RapidOcrEngine:
             "Global.log_level": "warning",
             "Global.use_cls": c.use_angle_cls,
             "Global.text_score": c.min_confidence,
+            "Global.max_side_len": c.max_side,
             "EngineConfig.onnxruntime.use_cuda": c.device == "cuda",
             "EngineConfig.onnxruntime.use_coreml": c.device == "coreml",
         }

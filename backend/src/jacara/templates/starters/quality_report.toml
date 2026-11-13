@@ -1,0 +1,211 @@
+# 起步模板：检验检测报告（质检报告）。
+# 字段按 ISO/IEC 17025:2017（GB/T 27025-2019）7.8.2.1 规定的报告内容设计：报告标题、实验室名称、
+# 报告的唯一编号、委托方、所用方法（检验依据）、样品描述和状态、样品接收日期、检测日期、签发日期、
+# 结果及单位、批准人；再加上产品质检报告上常见的规格型号、批号、生产单位、检验类别、
+# 每一项的标准要求和单项判定、检验结论。只写字段和通用要求，不放任何真实报告的内容。
+
+name = "quality_report"
+version = 2
+title = "检验检测报告（质检报告）"
+titles = { en = "Test Report" }
+domains = ["质检", "检验报告"]
+description = "产品质量检验报告、第三方检测报告、出厂检验报告（COA）：报告编号、检测机构、样品名称、规格型号、批号、生产和委托单位、检验依据、收样和签发日期、检验结论，以及每一项的标准要求、检验结果、单项判定。有一项不合格结论却写合格（或者反过来）、收样晚于签发会提醒。"
+rules = ["qc_conclusion", "qc_dates"]
+
+[[fields]]
+name = "lab_name"
+label = "检测机构"
+names = { en = "Laboratory" }
+type = "string"
+required = true
+description = "出报告的检验检测机构、实验室或企业质检部门的名称"
+aliases = ["检验机构", "检测单位", "实验室", "Laboratory", "Testing Laboratory"]
+
+[[fields]]
+name = "report_no"
+label = "报告编号"
+names = { en = "Report No." }
+type = "string"
+required = true
+unique = true
+aliases = ["报告编号", "编号", "No.", "Report No", "Certificate No"]
+
+[[fields]]
+name = "report_title"
+label = "报告名称"
+names = { en = "Report Title" }
+type = "string"
+description = "报告标题照抄，如 检验报告、检测报告、出厂检验报告、Certificate of Analysis"
+aliases = ["Test Report", "Certificate of Analysis", "COA"]
+
+[[fields]]
+name = "product_name"
+label = "样品名称"
+names = { en = "Sample Name" }
+type = "string"
+required = true
+aliases = ["产品名称", "样品名称", "Sample Name", "Product", "Product Name"]
+
+[[fields]]
+name = "model"
+label = "规格型号"
+names = { en = "Model / Specification" }
+type = "string"
+aliases = ["型号规格", "规格", "型号", "Model", "Specification"]
+
+[[fields]]
+name = "batch_no"
+label = "批号"
+names = { en = "Batch / Lot No." }
+type = "string"
+description = "生产批号、批次、编号，照抄"
+aliases = ["生产批号", "批次", "Batch No", "Lot No", "Lot"]
+
+[[fields]]
+name = "production_date"
+label = "生产日期"
+names = { en = "Production Date" }
+type = "date"
+aliases = ["生产日期", "Manufacturing Date", "Production Date", "MFG Date"]
+
+[[fields]]
+name = "manufacturer"
+label = "生产单位"
+names = { en = "Manufacturer" }
+type = "string"
+aliases = ["生产企业", "制造商", "Manufacturer"]
+
+[[fields]]
+name = "client"
+label = "委托单位"
+names = { en = "Client" }
+type = "string"
+aliases = ["委托方", "送检单位", "受检单位", "Client", "Applicant", "Customer"]
+
+[[fields]]
+name = "inspection_type"
+label = "检验类别"
+names = { en = "Type of Inspection" }
+type = "string"
+description = "照抄，如 委托检验、监督抽查、型式检验、出厂检验"
+aliases = ["检验类型", "检测类别", "Test Type"]
+
+[[fields]]
+name = "sample_quantity"
+label = "样品数量"
+names = { en = "Sample Quantity" }
+type = "string"
+description = "照抄，带单位"
+aliases = ["样品数量", "Sample Quantity"]
+
+[[fields]]
+name = "sample_received"
+label = "收样日期"
+names = { en = "Date of Receipt" }
+type = "date"
+aliases = ["到样日期", "收样日期", "接收日期", "Date of Receipt", "Received"]
+
+[[fields]]
+name = "test_period"
+label = "检验日期"
+names = { en = "Test Date" }
+type = "date_range"
+description = "检验、检测开始到结束的日期；只有一天的写成同一天开始和结束"
+aliases = ["检验日期", "检测日期", "检测时间", "Test Date", "Date of Test"]
+
+[[fields]]
+name = "test_standard"
+label = "检验依据"
+names = { en = "Test Method / Standard" }
+type = "string"
+description = "标准号和名称照抄（如 GB/T 1234-2020），几条用分号连起来"
+aliases = ["检测依据", "检验标准", "判定依据", "Test Method", "Standard"]
+
+[[fields]]
+name = "conclusion"
+label = "检验结论"
+names = { en = "Conclusion" }
+type = "string"
+required = true
+description = "结论照抄，如 所检项目符合 GB/T xxxx 要求、合格、Pass；不要自己判断"
+aliases = ["检测结论", "结论", "Conclusion", "Result"]
+
+[[fields]]
+name = "issue_date"
+label = "签发日期"
+names = { en = "Date of Issue" }
+type = "date"
+aliases = ["签发日期", "报告日期", "Date of Issue", "Issue Date"]
+
+[[fields]]
+name = "tester"
+label = "主检"
+names = { en = "Tested by" }
+type = "string"
+aliases = ["主检", "检验", "检验员", "Tested by"]
+
+[[fields]]
+name = "reviewer"
+label = "审核"
+names = { en = "Checked by" }
+type = "string"
+aliases = ["审核", "Checked by", "Reviewed by"]
+
+[[fields]]
+name = "approver"
+label = "批准"
+names = { en = "Approved by" }
+type = "string"
+aliases = ["批准", "签发", "授权签字人", "Approved by", "Authorized Signatory"]
+
+[[tables]]
+name = "items"
+label = "检验项目"
+names = { en = "Test Items" }
+required = true
+description = "每一个检验项目一行。表头、分组标题、备注不算一行"
+
+[[tables.columns]]
+name = "no"
+label = "序号"
+names = { en = "No." }
+type = "string"
+aliases = ["序号", "No."]
+
+[[tables.columns]]
+name = "item"
+label = "检验项目"
+names = { en = "Test Item" }
+type = "string"
+aliases = ["检测项目", "项目", "Test Item", "Item", "Parameter"]
+
+[[tables.columns]]
+name = "unit"
+label = "单位"
+names = { en = "Unit" }
+type = "string"
+aliases = ["单位", "Unit"]
+
+[[tables.columns]]
+name = "requirement"
+label = "标准要求"
+names = { en = "Requirement" }
+type = "string"
+description = "技术要求、标准值、限值，照抄（如 ≤0.5、≥95、无异味）"
+aliases = ["技术要求", "标准值", "标准要求", "Specification", "Requirement", "Limit"]
+
+[[tables.columns]]
+name = "result"
+label = "检验结果"
+names = { en = "Result" }
+type = "string"
+description = "照抄（数字、未检出、ND、<0.01 都照原样）"
+aliases = ["检测结果", "实测值", "结果", "Result", "Test Result"]
+
+[[tables.columns]]
+name = "judgment"
+label = "单项判定"
+names = { en = "Verdict" }
+type = "string"
+description = "照抄：合格、不合格、符合、不符合、Pass、Fail；没有这一列就留空"
+aliases = ["单项结论", "判定", "单项判定", "Conclusion", "Pass/Fail"]

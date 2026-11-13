@@ -18,6 +18,7 @@ import {
   Spin,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd'
 import { useMemo, useState } from 'react'
@@ -35,6 +36,7 @@ import {
 import type { Template, TemplateIn, TemplateTable, TrialResult } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
 import { formatTime } from '../../utils/format'
+import { LANGUAGE_NAMES, languageName, languageOptions } from '../../utils/languages'
 import { FieldsEditor } from './FieldsEditor'
 import { RulesCard } from './RulesCard'
 import { StructureCard } from './StructureCard'
@@ -53,6 +55,7 @@ const STATUS_TEXT: Record<string, [string, string]> = {
 function draftOf(t: Template): TemplateIn {
   return {
     title: t.title,
+    titles: t.titles ?? {},
     category: t.category,
     description: t.description,
     fields: t.fields,
@@ -152,6 +155,11 @@ function Editor({ template }: { template: Template }) {
   const [viewing, setViewing] = useState<number | null>(null)
   const [trialDoc, setTrialDoc] = useState<string>()
   const set = (patch: Partial<TemplateIn>) => setDraft((d) => ({ ...d, ...patch }))
+  // 名称语言（ADR 0048）：模板已经写了的语言在前，后面是别的常用语言，选了就能填
+  const [language, setLanguage] = useState('zh')
+  const editorLanguages = [
+    ...new Set(['zh', ...(template.languages ?? []), ...Object.keys(LANGUAGE_NAMES)]),
+  ]
   // 已经存过的字段 ID 不能改（新建的还没存过，都能改）
   const saved = template.id !== null
   const locked = useMemo(
@@ -301,8 +309,17 @@ function Editor({ template }: { template: Template }) {
         )}
         {!readOnly && <StarterFormulas template={template} draft={draft} set={set} />}
         <Descriptions column={{ xs: 1, md: 3 }} size="small">
-          <Descriptions.Item label="模板名">
-            <Input value={draft.title} disabled={readOnly} onChange={(e) => set({ title: e.target.value })} />
+          <Descriptions.Item label={language === 'zh' ? '模板名' : `模板名（${languageName(language)}）`}>
+            {language === 'zh' ? (
+              <Input value={draft.title} disabled={readOnly} onChange={(e) => set({ title: e.target.value })} />
+            ) : (
+              <Input
+                value={draft.titles?.[language] ?? ''}
+                placeholder={draft.title}
+                disabled={readOnly}
+                onChange={(e) => set({ titles: { ...draft.titles, [language]: e.target.value } })}
+              />
+            )}
           </Descriptions.Item>
           <Descriptions.Item label="说明" span={2}>
             <Input
@@ -325,8 +342,29 @@ function Editor({ template }: { template: Template }) {
         </div>
       </Card>
 
-      <Card title={`字段（${draft.fields.length}）`} size="small">
+      <Card
+        title={`字段（${draft.fields.length}）`}
+        size="small"
+        extra={
+          <Flex align="center" gap={8}>
+            <Tooltip title="字段名可以写几种语言：审核页、导出时切换。没写的语言显示中文名。也会告诉模型单据上可能这么写">
+              <Typography.Text type="secondary">名称语言</Typography.Text>
+            </Tooltip>
+            <Select
+              size="small"
+              aria-label="名称语言"
+              value={language}
+              options={languageOptions(editorLanguages)}
+              onChange={setLanguage}
+              style={{ minWidth: 150 }}
+              showSearch
+              optionFilterProp="label"
+            />
+          </Flex>
+        }
+      >
         <FieldsEditor
+          language={language}
           fields={draft.fields}
           onChange={(fields) => set({ fields })}
           locked={locked}
@@ -374,13 +412,24 @@ function Editor({ template }: { template: Template }) {
                 size="small"
                 title={
                   <Flex gap={8} align="center" wrap>
-                    <Input
-                      value={t.label}
-                      disabled={readOnly}
-                      onChange={(e) => setTable(i, { label: e.target.value })}
-                      style={{ width: 140 }}
-                      addonBefore="中文名"
-                    />
+                    {language === 'zh' ? (
+                      <Input
+                        value={t.label}
+                        disabled={readOnly}
+                        onChange={(e) => setTable(i, { label: e.target.value })}
+                        style={{ width: 140 }}
+                        addonBefore="中文名"
+                      />
+                    ) : (
+                      <Input
+                        value={t.names?.[language] ?? ''}
+                        placeholder={t.label}
+                        disabled={readOnly}
+                        onChange={(e) => setTable(i, { names: { ...t.names, [language]: e.target.value } })}
+                        style={{ width: 200 }}
+                        addonBefore={languageName(language)}
+                      />
+                    )}
                     <Input
                       value={t.name}
                       disabled={readOnly || lockedTables.has(t.name)}
@@ -419,6 +468,7 @@ function Editor({ template }: { template: Template }) {
                   style={{ marginBottom: 8 }}
                 />
                 <FieldsEditor
+                  language={language}
                   fields={t.columns}
                   onChange={(columns) => setTable(i, { columns })}
                   locked={

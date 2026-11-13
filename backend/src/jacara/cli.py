@@ -130,6 +130,27 @@ def main(argv: list[str] | None = None) -> int:
     p_sroie.add_argument("--limit", type=int, help="只评前 N 张，先少量试跑")
     p_sroie.add_argument("--out", type=Path, default=Path("results/eval"), help="结果放在哪里")
     p_sroie.add_argument("--server", default="http://127.0.0.1:8080", help="模型服务地址")
+    p_pairs = eval_sub.add_parser(
+        "pairs", help="成对测评：同一张单据的照片和 PDF，比较几种读法（ADR 0042）"
+    )
+    p_pairs.add_argument(
+        "--manifest", type=Path, default=Path("data/eval/pairs.toml"), help="成对样本清单"
+    )
+    p_pairs.add_argument(
+        "--server", help="模型服务地址；不写就把标准答案当回答（oracle，只量 OCR 和核对）"
+    )
+    p_pairs.add_argument("--out", type=Path, default=Path("data/eval/results"), help="结果放在哪里")
+    p_pairs.add_argument("--docs", help="只跑这几份文档（id，用逗号分开）")
+    p_pairs.add_argument("--arms", help="只跑这几种读法（例如 AB），默认 A～E 全跑")
+    p_pairs.add_argument(
+        "--part", type=Path, help="分批跑：这一批的结果存到这个文件，最后用 --merge 合并"
+    )
+    p_pairs.add_argument("--merge", type=Path, help="合并这个文件夹里分批跑的结果，出总表")
+    p_pairs.add_argument(
+        "--learn",
+        type=Path,
+        help="导出的审核数据里的 train.jsonl：用别的单据人改过的例子（ADR 0045），看能不能少错",
+    )
 
     p_user = sub.add_parser("user", help="管理用户（团队模式）")
     user_sub = p_user.add_subparsers(dest="user_command", required=True)
@@ -517,12 +538,83 @@ def _user(args: argparse.Namespace) -> int:
     return 0
 
 
+def _eval_pairs(args: argparse.Namespace) -> int:
+    import tempfile
+    from datetime import datetime
+
+    from jacara.eval.pairs import (
+        OracleExtractor,
+        load_manifest,
+        pipeline_factory,
+        run_pairs,
+        summary,
+        write_summary,
+    )
+    from jacara.pipeline.learn import from_dataset
+    from jacara.plugins.ocr import create_ocr_engine
+    from jacara.structure.engines import default_engines
+
+    if not args.manifest.exists():
+        print(f"找不到清单：{args.manifest}（格式见 backend/src/jacara/eval/pairs.py）")
+        return 1
+    docs = load_manifest(args.manifest)
+    mode = "llm" if args.server else "oracle"
+    if args.merge:
+        from jacara.eval.pairs import merge_parts
+
+        parts = sorted(args.merge.glob("part-*.json"))
+        result = summary(merge_parts(parts), docs, mode)
+        md = write_summary(result, args.merge)
+        print(md.read_text(encoding="utf-8"))
+        return 0
+    if args.docs:
+        wanted = set(args.docs.split(","))
+        docs = [d for d in docs if d.id in wanted]
+    oracle: OracleExtractor | None = None
+    if args.server:
+        from jacara.core.config import model_api_key
+        from jacara.plugins.extractors import LlmExtractor
+        from jacara.plugins.model_backends import ModelConfig, create_model_backend
+
+        backend = create_model_backend(ModelConfig(base_url=args.server, api_key=model_api_key()))
+        extractor: object = LlmExtractor(backend)
+    else:
+        oracle = OracleExtractor()
+        extractor = oracle
+    make = pipeline_factory(create_ocr_engine(), extractor, default_engines())
+    print(f"成对测评 {len(docs)} 份文档（{'模型' if args.server else '标准答案当回答'}）")
+    with tempfile.TemporaryDirectory() as scratch:
+        results = run_pairs(
+            docs,
+            make,
+            oracle,
+            Path(scratch),
+            lambda m: print("  " + m),
+            list(args.arms or "ABCDE"),
+            from_dataset(args.learn) if args.learn else None,
+        )
+    if args.part:
+        from jacara.eval.pairs import save_part
+
+        args.part.parent.mkdir(parents=True, exist_ok=True)
+        save_part(results, args.part)
+        print(f"这一批的结果在 {args.part}")
+        return 0
+    result = summary(results, docs, mode)
+    md = write_summary(result, args.out / datetime.now().strftime("%Y%m%d-%H%M%S"))
+    print(md.read_text(encoding="utf-8"))
+    print(f"结果在 {md.parent}")
+    return 0
+
+
 def _eval(args: argparse.Namespace) -> int:
     import subprocess
     from datetime import datetime
 
     from jacara.eval.sroie import download_sroie, load_sroie
 
+    if args.eval_command == "pairs":
+        return _eval_pairs(args)
     if args.eval_command == "download":
         try:
             count = download_sroie(args.data)

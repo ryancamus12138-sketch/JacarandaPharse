@@ -57,6 +57,9 @@ class ExtractedValue(Base, OwnedMixin, TimestampMixin):
     note: Mapped[str] = mapped_column(Text, default="")
     evidence: Mapped[dict[str, Any] | None]
     """出处：行号、行文字、坐标框、OCR 置信度、相似度。"""
+    candidates: Mapped[dict[str, Any] | None]
+    """候选（ADR 0042）：{"items": [{source, text, value, page, box, confidence, note, dpi,
+    rule_ok}]}。OCR、PDF 文字层、局部放大再识别、表单字段读出来的不同的值，给人选，不会自己替换。"""
 
     extraction: Mapped[Extraction] = relationship(back_populates="values")
     revisions: Mapped[list[ValueRevision]] = relationship(

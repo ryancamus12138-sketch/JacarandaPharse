@@ -98,6 +98,8 @@ export interface DocumentSummary {
   auto?: boolean
   /** 看不看原图：always、off；null 按系统设置（ADR 0038）。 */
   vision?: string | null
+  /** PDF 怎么读（ADR 0042）：image、text；null 按系统设置。 */
+  pdf_read?: string | null
   /** 审核时点了"先跳过"的时间；没跳过是 null。 */
   skipped_at?: string | null
   skip_reason?: string | null
@@ -249,6 +251,9 @@ export interface Evidence {
   blocks?: number[]
   /** 在文件的第几页（ADR 0036：一张单据可以占好几页）。更新前处理的没有，就是这张单据的第一页。 */
   page?: number
+  /** 和 PDF 文字层核对的结果（ADR 0042）：none 没有文字层、absent 这里文字层没有字、agree 一致、
+   * ambiguous 对不上是哪一行、conflict 不一样。 */
+  text_layer?: 'none' | 'absent' | 'agree' | 'ambiguous' | 'conflict'
 }
 
 /**
@@ -264,6 +269,24 @@ export type AlignStatus =
   | 'computed'
   /** 看原图读的（ADR 0038）：OCR 认错或漏了，要人对着原图核对。 */
   | 'seen'
+
+/** 一个字段的候选值（ADR 0042）：各个来源读出来的不同的值，给人选，系统不会自己替换。 */
+export interface Candidate {
+  /** ocr 整页 OCR；text_layer PDF 自带的文字；zoom 局部放大再识别；form PDF 表单字段。 */
+  source: 'ocr' | 'text_layer' | 'zoom' | 'form'
+  text: string
+  /** 按字段类型整理过的值（数字、日期）；整理不出来是 null，用 text。 */
+  value: string | null
+  page: number
+  /** 这一页图片上的框 [左, 上, 右, 下]。 */
+  box: [number, number, number, number] | null
+  confidence: number | null
+  /** 表单字段：页面上能看到 / 页面不可见 / 可见性待确认。 */
+  note: string
+  dpi: number | null
+  /** 换成这个值，和这个字段有关的规则过不过（只是提示）；规则不管这个字段是 null。 */
+  rule_ok: boolean | null
+}
 
 /** 一个字段（后端的 ValueOut）。 */
 export interface FieldValue {
@@ -288,6 +311,8 @@ export interface FieldValue {
   note: string
   /** 抽取时找到的出处，永远不变。 */
   evidence: Evidence | null
+  /** 候选（ADR 0042）：有冲突、可能漏读时才有。 */
+  candidates?: { items: Candidate[] } | null
   /** 当前出处：从原文选取过就是选的那几块，否则等于 evidence。原图上画这个。 */
   current_evidence: Evidence | null
   /** model：模型抽的；manual：审核时人工增加的行。 */
@@ -368,6 +393,10 @@ export interface Extraction {
   run_reason?: string | null
   /** 字段 ID → 中文名。表格的列写成 items.amount，表名写成 items。 */
   labels?: Record<string, string>
+  /** 字段名能切换的语言（ADR 0048），第一个是中文；模板只有中文时是空的。 */
+  languages?: string[]
+  /** 别的语言的 labels：语言代码 → {字段 ID → 名字}。 */
+  label_sets?: Record<string, Record<string, string>>
   /** 抽取时的规则结果，永远不变。 */
   checks: Checks
   /** 按审核之后的当前值重新检查的结果（删掉的行不算）。页面显示这个。 */
@@ -444,6 +473,8 @@ export interface TemplateField {
   range_export?: RangeExport
   /** 统一格式里开始、结束之间写什么，默认 " ~ "。 */
   range_separator?: string
+  /** 别的语言的名字（ADR 0048）：语言代码 → 名字。label 是默认的中文名。 */
+  names?: Record<string, string>
 }
 
 export interface TemplateTable {
@@ -453,6 +484,8 @@ export interface TemplateTable {
   required: boolean
   export: boolean
   columns: TemplateField[]
+  /** 别的语言的表名（ADR 0048）。 */
+  names?: Record<string, string>
 }
 
 export interface TemplateRule {
@@ -485,6 +518,10 @@ export interface Template {
   name: string
   version: number
   title: string
+  /** 模板名的别的语言写法（ADR 0048）。 */
+  titles?: Record<string, string>
+  /** 能切换的语言，第一个是默认的中文。 */
+  languages?: string[]
   description: string
   category: string
   kind: TemplateKind
@@ -587,6 +624,7 @@ export interface ExcelAnalysis {
 /** 保存模板（每次保存是一个新版本）。 */
 export interface TemplateIn {
   title: string
+  titles?: Record<string, string>
   category: string
   description: string
   fields: TemplateField[]

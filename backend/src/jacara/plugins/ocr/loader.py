@@ -1,8 +1,12 @@
 """把任何输入文件（图片、PDF）变成 OcrPage 列表，一页一个。
 
 - 图片：直接交给 OCR 引擎。
-- 有文字层的 PDF（电脑生成的发票）：用 pdfplumber 直接读出文字和坐标，不用 OCR，又快又准。
-- 没有文字层的 PDF（扫描件、拍照转的 PDF）：用 pypdfium2 把每页渲染成图片，再交给 OCR。
+- PDF，默认（pdf_read="image"，ADR 0042）：每页用 pypdfium2 画成图（连表单一起画），
+  和照片走同一条 OCR 路；PDF 自带的文字层、表单字段的值另外读出来，只拿来核对。
+  以前有文字层就直接用，遇到把"示"记成部首"⽰"、字体对照表错了一位的 PDF，抽出来的值就错了，
+  同一张单据 PDF 反而比拍照的差。
+- PDF，pdf_read="text"：只读文字层（快，只适合确定干净的电子版）；文字层太少或是乱码的页，
+  照样画成图做 OCR。
 
 后面的抽取、对齐、校验只认 OcrPage，不用关心原文件是什么格式。
 """
@@ -17,7 +21,7 @@ import unicodedata
 from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pdfplumber
@@ -25,7 +29,12 @@ import pypdfium2 as pdfium
 from pdfplumber.page import Page
 from PIL import Image, ImageOps
 
+from jacara.core.cjk import plain_cjk
 from jacara.plugins.ocr.base import OcrEngine, OcrLine, OcrPage, Point
+from jacara.plugins.ocr.pdftext import as_lines, form_values, text_words
+
+PdfRead = Literal["image", "text"]
+"""PDF 怎么读文字（ADR 0042）：image 画成图做 OCR、文字层只核对；text 只读文字层。"""
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 
@@ -70,17 +79,57 @@ class UnsupportedFileError(ValueError):
     """不支持的文件类型。"""
 
 
-def load_pages(path: Path, ocr: OcrEngine) -> list[OcrPage]:
+def load_pages(path: Path, ocr: OcrEngine, pdf_read: PdfRead = "image") -> list[OcrPage]:
     """读一个文件，返回每一页的 OcrPage。"""
     suffix = path.suffix.lower()
     if suffix in IMAGE_SUFFIXES:
         return [ocr.recognize(path)]
     if suffix == ".pdf":
-        return _load_pdf(path, ocr)
+        return _load_pdf(path, ocr) if pdf_read == "text" else _image_pages(path, ocr)
     raise UnsupportedFileError(f"不支持的文件类型：{suffix}，支持图片和 PDF")
 
 
+def open_pdf(source: Path | bytes) -> pdfium.PdfDocument:
+    """打开 PDF，并准备好表单：画图时把表单里填的值也画上（ADR 0042）。"""
+    pdf = pdfium.PdfDocument(source)
+    pdf.init_forms()
+    return pdf
+
+
+def _image_pages(path: Path, ocr: OcrEngine) -> list[OcrPage]:
+    """每页画成图做 OCR；文字层、表单字段另外读出来，挂在 OcrPage 上只做核对（ADR 0042）。"""
+    pages: list[OcrPage] = []
+    pdf = open_pdf(path)
+    try:
+        for number in range(len(pdf)):
+            page = pdf[number]
+            bitmap = page.render(scale=PDF_SCALE, may_draw_forms=True)
+            conv = bitmap.get_posconv(page)
+            words, hidden = text_words(page, conv)
+            layer = as_lines(_phrases(words))
+            forms = tuple(form_values(pdf, page, conv))
+            with tempfile.TemporaryDirectory() as folder:
+                image_path = Path(folder) / f"page-{number + 1}.png"
+                bitmap.to_pil().save(image_path)
+                scanned = ocr.recognize(image_path)
+            models = {
+                **scanned.models,
+                "source": "PDF 每页画成图后 OCR，文字层只做核对",
+                "text_layer": f"pdfium {pdfium.PDFIUM_INFO.version}" if layer else "没有",
+            }
+            if hidden:
+                models["note"] = (
+                    f"这一页的文字层里有 {hidden} 个看不见的字"
+                    "（多半是别的软件留下的旧 OCR），没有用"
+                )
+            pages.append(replace(scanned, models=models, text_layer=layer, forms=forms))
+    finally:
+        pdf.close()
+    return pages
+
+
 def _load_pdf(path: Path, ocr: OcrEngine) -> list[OcrPage]:
+    """只读文字层（pdf_read="text"）：太少或是乱码的页才画成图做 OCR。"""
     pages: list[OcrPage] = []
     with pdfplumber.open(path) as pdf:
         for number, page in enumerate(pdf.pages):
@@ -114,7 +163,8 @@ def _text_layer(page: Page) -> OcrPage | None:
             Point(x1 * PDF_SCALE, bottom * PDF_SCALE),
             Point(x0 * PDF_SCALE, bottom * PDF_SCALE),
         )
-        lines.append(OcrLine(text=text, polygon=polygon, confidence=1.0))
+        # 有的 PDF 把汉字记成部首的编码（⽰、⼩、⻔），看着一样、复制出来不一样，先换成平常的字
+        lines.append(OcrLine(text=plain_cjk(text), polygon=polygon, confidence=1.0))
 
     return OcrPage(
         width=round(page.width * PDF_SCALE),
@@ -144,9 +194,14 @@ def _phrases(words: list[dict[str, Any]]) -> list[tuple[str, float, float, float
         if not str(w["text"]).strip():
             continue
         height = float(w["bottom"]) - float(w["top"])
+        middle = (float(w["top"]) + float(w["bottom"])) / 2
         for row in rows:
             last = row[-1]
-            if abs(float(last["top"]) - float(w["top"])) <= max(1.0, 0.4 * height):
+            last_middle = (float(last["top"]) + float(last["bottom"])) / 2
+            same_top = abs(float(last["top"]) - float(w["top"])) <= max(1.0, 0.4 * height)
+            # 字框高矮不一（"一"的框只有一条横线高）：按中线对齐也算同一行
+            same_middle = abs(last_middle - middle) <= max(1.0, 0.25 * height)
+            if same_top or same_middle:
                 row.append(w)
                 break
         else:
@@ -159,7 +214,11 @@ def _phrases(words: list[dict[str, Any]]) -> list[tuple[str, float, float, float
         for w in row:
             if current:
                 prev = current[-1]
-                height = max(float(prev["bottom"]) - float(prev["top"]), 1.0)
+                height = max(
+                    float(prev["bottom"]) - float(prev["top"]),
+                    float(w["bottom"]) - float(w["top"]),
+                    1.0,
+                )
                 wide = float(w["x0"]) - float(prev["x1"]) > PHRASE_GAP * height
                 # "Guest Name: Sanjay"：冒号后面是值，和标签分开，出处框只框值
                 label = str(prev["text"]).rstrip().endswith((":", "："))
@@ -172,8 +231,25 @@ def _phrases(words: list[dict[str, Any]]) -> list[tuple[str, float, float, float
     return phrases
 
 
+def _joined(words: list[dict[str, Any]]) -> str:
+    """词连成一段：两边都是汉字时不加空格（"示例市第" + "一" → "示例市第一"）。"""
+    text = ""
+    for w in words:
+        piece = str(w["text"]).strip()
+        if text and not (_cjk(text[-1]) and _cjk(piece[:1])):
+            text += " "
+        text += piece
+    return text
+
+
+def _cjk(char: str) -> bool:
+    return bool(char) and (
+        "\u2e80" <= char <= "\u9fff" or "\uf900" <= char <= "\ufaff" or "\uff00" <= char <= "\uffef"
+    )
+
+
 def _phrase(words: list[dict[str, Any]]) -> tuple[str, float, float, float, float]:
-    text = " ".join(str(w["text"]).strip() for w in words)
+    text = _joined(words)
     return (
         text,
         min(float(w["x0"]) for w in words),
@@ -185,9 +261,9 @@ def _phrase(words: list[dict[str, Any]]) -> tuple[str, float, float, float, floa
 
 def _render_and_ocr(path: Path, number: int, ocr: OcrEngine) -> OcrPage:
     """把 PDF 的一页渲染成图片，再做 OCR。"""
-    pdf = pdfium.PdfDocument(path)
+    pdf = open_pdf(path)
     try:
-        image = pdf[number].render(scale=PDF_SCALE).to_pil()
+        image = pdf[number].render(scale=PDF_SCALE, may_draw_forms=True).to_pil()
     finally:
         pdf.close()
     with tempfile.TemporaryDirectory() as folder:
@@ -205,9 +281,9 @@ def page_images(path: Path) -> list[np.ndarray]:
     suffix = path.suffix.lower()
     pictures: list[Image.Image] = []
     if suffix == ".pdf":
-        pdf = pdfium.PdfDocument(path)
+        pdf = open_pdf(path)
         try:
-            pictures = [page.render(scale=PDF_SCALE).to_pil() for page in pdf]
+            pictures = [page.render(scale=PDF_SCALE, may_draw_forms=True).to_pil() for page in pdf]
         finally:
             pdf.close()
     elif suffix in IMAGE_SUFFIXES:
@@ -216,21 +292,22 @@ def page_images(path: Path) -> list[np.ndarray]:
     return [np.ascontiguousarray(np.asarray(p.convert("RGB"))[:, :, ::-1]) for p in pictures]
 
 
-def page_png(data: bytes, is_pdf: bool, number: int) -> bytes:
+def page_png(data: bytes, is_pdf: bool, number: int, scale: float = PDF_SCALE) -> bytes:
     """把文件的第 number 页（从 1 开始）画成 PNG，给审核页面显示。
 
     坐标和 OCR 时完全一样，出处框才能画准：
-    - PDF 用同样的 PDF_SCALE 渲染（文字层的坐标也乘了它）；
+    - PDF 用同样的 PDF_SCALE 渲染（文字层的坐标也乘了它），表单也画上；
+      scale 可以更大，局部放大再识别时用（ADR 0042），坐标要乘 scale / PDF_SCALE；
     - 图片先按 EXIF 方向转正：手机照片的像素常常是横着存的，另记一个"要转 90 度"的标记，
       RapidOCR 读图时会先转正再识别，坐标是转正之后的。顺便统一成 PNG：浏览器显示不了 TIFF。
     页码超出范围时抛 IndexError，由调用方先检查。
     """
     if is_pdf:
-        pdf = pdfium.PdfDocument(data)
+        pdf = open_pdf(data)
         try:
             if not 1 <= number <= len(pdf):
                 raise IndexError(number)
-            image = pdf[number - 1].render(scale=PDF_SCALE).to_pil()
+            image = pdf[number - 1].render(scale=scale, may_draw_forms=True).to_pil()  # pyright: ignore[reportArgumentType]
         finally:
             pdf.close()
     else:
