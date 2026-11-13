@@ -12,6 +12,7 @@ from jacara.modules.comments.models import Comment
 from jacara.modules.documents.models import Document, Extraction
 from jacara.modules.exports.models import Export
 from jacara.modules.fields.models import ExtractedValue, ValueRevision
+from jacara.modules.insights.models import ErrorAttribution
 from jacara.modules.ocr_samples.models import (
     DocGroupMember,
     OcrSample,
@@ -29,6 +30,7 @@ __all__ = [
     "Comment",
     "DocGroupMember",
     "Document",
+    "ErrorAttribution",
     "Export",
     "ExtractedValue",
     "Extraction",

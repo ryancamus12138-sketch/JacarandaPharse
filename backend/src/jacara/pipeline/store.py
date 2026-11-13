@@ -65,10 +65,12 @@ def add_extractions(
     run: int = 1,
     template_version_id: uuid.UUID | None = None,
     run_reason: str | None = None,
+    ocr_snapshot: str | None = None,
 ) -> None:
     """把每一页的抽取结果挂到一个已有的文档上。后台任务处理上传的文件时用这个。
 
     抽取结果的归属和文档一样（同一个 user、同一个 team）。run 是第几轮处理（ADR 0030）。
+    ocr_snapshot 是这一轮 OCR 快照存在哪里（ADR 0053），同一轮的几张单据都指向它。
     """
     who = {"user_id": document.user_id, "team_id": document.team_id}
     for report in reports:
@@ -97,6 +99,8 @@ def add_extractions(
             checks=checks_json(report.checks),
             ocr=report_ocr_json(report),
             structure=report.structure.to_json() if report.structure else None,
+            model_input=dict(e.sent) if e.sent else None,
+            ocr_snapshot=ocr_snapshot,
             **who,
         )
         session.add(extraction)

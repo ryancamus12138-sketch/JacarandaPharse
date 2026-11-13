@@ -21,6 +21,8 @@ __all__ = [
     "DocumentOut",
     "DocumentPage",
     "ExtractionOut",
+    "SentOut",
+    "SentText",
     "ValueOut",
 ]
 """ValueOut 搬到了 fields 模块；这里继续导出，原来从这里 import 的代码不用改。"""
@@ -30,6 +32,12 @@ class DeleteIn(BaseModel):
     """一次删除几份文档。"""
 
     ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+
+
+class ReviewTimeIn(BaseModel):
+    """审核页报来的审核用时：这一段时间里人在操作的秒数（审核页每半分钟报一次，离开时再报一次）。"""
+
+    seconds: int = Field(ge=1, le=600)
 
 
 class ReprocessManyIn(BaseModel):
@@ -131,6 +139,31 @@ class DocumentOut(BaseModel):
     """批量导入时选了"跳过重复的文件"，这次没有新建，返回的是之前那份。"""
 
 
+class SentOut(BaseModel):
+    """这次发给模型的是什么（ADR 0053）的摘要。原文太长，不放进详情，要看用 /sent 接口。"""
+
+    blocks: int
+    """发给模型的文字块有几个。"""
+    total_blocks: int
+    """这一页（或几页拼成的单据）一共有几个文字块。"""
+    chars: int
+    """发出去的单据文字有多少字。"""
+    images: int
+    """附了几张原图。"""
+    lessons: int
+    """带了几个以前人改过的例子。"""
+    has_snapshot: bool
+    """这一轮的 OCR 快照存下来了没有（回放要用）。"""
+
+
+class SentText(BaseModel):
+    """发给模型的单据文字原文和文字块编号（ADR 0053）。"""
+
+    blocks: list[int]
+    text: str
+    sha256: str
+
+
 class ExtractionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -166,6 +199,8 @@ class ExtractionOut(BaseModel):
     current_checks: dict[str, Any] | None = None
     """按审核之后的当前值重新检查的结果（删掉的行不算）。审核页面显示这个。"""
     values: list[ValueOut]
+    sent: SentOut | None = None
+    """这次发给模型的是什么（ADR 0053）。这次更新之前处理的是 null。"""
 
 
 class RunOut(BaseModel):

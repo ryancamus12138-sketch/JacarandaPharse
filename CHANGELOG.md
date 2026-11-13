@@ -5,10 +5,19 @@
 
 ## [未发布]
 
-v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）、模板标签（ADR 0037）、v3 第 3 批（ADR 0038）、日期范围字段（ADR 0039）、值和原文写法（ADR 0040）、v3 第 4 批（ADR 0041）、PDF 画成图识别（ADR 0042）、物流和质检起步模板（ADR 0043）、修改统计和导出审核数据（ADR 0044）、从人改过的地方学（ADR 0045）、在网页上换模型（ADR 0046）、在样例上框选建模板（ADR 0047）、模板多语言和按地区管理（ADR 0048）、各国法定单据模板（ADR 0049）、OCR 纠错样本（ADR 0050）、后台流水线（ADR 0051）、样本分组和划分（ADR 0052）。
-升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at、domains、countries、tags；documents 加 auto、vision，extractions 加 classified、vision；documents 加 pdf_read，extracted_values 加 candidates；新表 team_settings、ocr_samples；documents 加 timings；新表 doc_group_members、split_assignments、doc_pair_decisions、ocr_sample_exports，ocr_samples 加 unit_page、revision），再 `cd web && npm run build`。表格结构模型可选，见 README。
+v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）、模板标签（ADR 0037）、v3 第 3 批（ADR 0038）、日期范围字段（ADR 0039）、值和原文写法（ADR 0040）、v3 第 4 批（ADR 0041）、PDF 画成图识别（ADR 0042）、物流和质检起步模板（ADR 0043）、修改统计和导出审核数据（ADR 0044）、从人改过的地方学（ADR 0045）、在网页上换模型（ADR 0046）、在样例上框选建模板（ADR 0047）、模板多语言和按地区管理（ADR 0048）、各国法定单据模板（ADR 0049）、OCR 纠错样本（ADR 0050）、后台流水线（ADR 0051）、样本分组和划分（ADR 0052）、每轮的记录、回放和错误归因（ADR 0053）。
+升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at、domains、countries、tags；documents 加 auto、vision，extractions 加 classified、vision；documents 加 pdf_read，extracted_values 加 candidates；新表 team_settings、ocr_samples；documents 加 timings；新表 doc_group_members、split_assignments、doc_pair_decisions、ocr_sample_exports，ocr_samples 加 unit_page、revision；documents 加 review_seconds，extractions 加 model_input、ocr_snapshot，新表 error_attributions，ocr_samples 加 origin），再 `cd web && npm run build`。表格结构模型可选，见 README。
 
 ### 新增
+
+- 每轮的 OCR 快照（ADR 0053）：每处理完一轮，OCR 认出来的原样存一份（删除文档时一起删），回放、错误归因用它，不用重新认字
+- 记下发给模型的是什么（ADR 0053）：哪几个文字块、多少字、几张图、几个例子和原文。审核页"发给模型 N 个文字块"点开看原文：值不在这里面是 OCR 没认出来，在里面是模型漏了
+- 回放命令 `jacara eval replay --b <模型服务地址>`（ADR 0053）：审核完成的单据用当时的 OCR 快照换一种设置再抽一次，和人审核过的值比：修好了几个、弄坏了几个、新漏了几个、标黄的变化，精确 McNemar 和按业务单据分组的 bootstrap 区间，附版本清单。只读，不改审核数据；结果写到 data/eval/replay/
+- 错误归因（ADR 0053）：统计页"错在哪一步"：OCR 认错了字、OCR 没认出这块、模型取错或漏取、标准化或出处匹配、模板或规则，几处都有问题的、证据不够的照实写。最近的修改里点开看理由和证据，判断得不对可以改判（记审计日志）
+- 从以前的修改补收 OCR 样本（ADR 0053）："OCR 样本"页一个按钮，把开关打开之前点了原文或框了一块的修改裁成小图，进"待复核"：对着小图确认图里的原文、点"通过"后才能导出。手打的不收，不会重复收
+- 审核用时：审核页开着、人在操作的时间（页面在后台、一分钟没动不算），统计页显示平均每份审核用了多久
+- 导出 JSON：文档列表、审核页的导出菜单多了 JSON（每张单据的字段、表格、要人看的地方，格式 `jacarandaparse.export.v1`）
+- 审计日志按人（团队模式）、按日期、按操作筛选，"导出 CSV"把筛出来的导出来（导出也记一笔）
 
 - 文档列表批量重新处理：勾选几份点"重新处理"，弹窗里显示这次用的识别设置（模板、分单据、对照原图读、PDF 怎么读、原因），可以改，几份用同样的设置各跑新的一轮。默认：模板用各自的最新版（自动判断的重新判断），分单据和上次一样，看原图和 PDF 读法按系统设置。选中了正在处理的会先提示取消勾选。处理失败的现在也能勾选（重新处理、删除），导出时自动去掉
 - OCR 样本按单据分组、划分训练集和验证集（ADR 0052）：同一张业务单据（重新处理的几轮、每一页、字节一样的重复文件、确认过的 PDF 和照片）是一组，整组按哈希分进训练或验证（约 80/20）并存表，多次导出始终在同一边；导出 `rec_gt_train.txt`、`rec_gt_val.txt`，清单记组号、划分版本、标签修订号。PDF 和照片按单号、日期、金额、发单方提名，人并排看原图确认后合并；配错可以拆开；导出以后才发现的重复整组隔离，受影响的导出记录记一笔。管理员可以锁定测试集（单独导出、不当"从人改过的地方学"的例子）。导出预览照实写训练、验证各几组几行，验证集太少时提示"只能检查流程"。"OCR 样本"页加了"单据分组""导出记录"两页
@@ -88,6 +97,9 @@ v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页�
 
 ### 修复
 
+- 日期也"读出来再比"：原文里的日期先读成年月日（2018-12-25、25/12/2018、25 Dec 2018、20181225 都认，日月顺序两种都试，两位年份按 20xx 和 19xx 都试），再和值比，不再列举写法
+- 数字显示：整数不再显示成"118.0"（审核页、表格、原图上的标注）
+- RapidOCR 加锁：几个线程同时识别不会互相打乱结果（以前 200 次并发里有 105 次出错）
 - 一位、三位小数的数字（化验单的 78.5、0.9，单价 1.234）找不到出处：数字以前只按两位小数的写法找（78.50），这类值全部标"出处有疑点"，和 PDF 文字层核对时也对不上，文字层、OCR、放大再认三处一样还提示"三处都不一样"。现在不再把值猜成各种写法去搜，而是把原文里的数读出来按数值比（`core/numbers.py`）：几位小数都行，欧洲写法 1.234,56、12,5 也认；文字层和 OCR 一样、只是和值对不上时，提示改成"文字层和 OCR 这里都是……，和现在的值……对不上"
 - 审核页同时取几张局部图（候选旁边的小图）时偶尔报 500（"Failed to load page."）或"这个文件打不开"：PDF 渲染库 pdfium 不能几个线程同时用，现在所有 PDF 渲染排队用一把锁；局部图也不再把整页先画一遍
 - 有的 PDF 把汉字记成部首编码（"示"记成 ⽰、"小"记成 ⼩、"门"记成 ⻔），看着一样、复制出来不一样，模型读成平常的字后和原文对不上，大量字段被当成"原文里对不上"不填。读 PDF 文字层时先换成平常的字

@@ -46,6 +46,8 @@ class Document(Base, OwnedMixin, TimestampMixin):
     progress: Mapped[int | None]
     """处理进度 0～100。不在处理中时为空。"""
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_seconds: Mapped[int] = mapped_column(default=0, server_default="0")
+    """人审核这份花了多少秒（只算审核页开着、人在操作的时间，几次打开加在一起）。"""
     timings: Mapped[dict[str, Any] | None] = mapped_column(
         JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
     )
@@ -158,6 +160,16 @@ class Extraction(Base, OwnedMixin, TimestampMixin):
     )
     """这一页的结构（ADR 0034）：文字块、行、版面区域、表格、标题 → 值，格式见 structure/graph.py。
     审核页"版面结构"显示它，试跑时直接用它。2026-11-14 之前处理的文档没有。"""
+
+    model_input: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"),
+        deferred=True,
+    )
+    """这次发给模型的是什么（ADR 0053）：{"blocks": [文字块编号], "total_blocks", "chars",
+    "sha256", "text"（单据文字原文）, "images", "lessons"}。这次更新之前处理的没有。"""
+    ocr_snapshot: Mapped[str | None] = mapped_column(String(512))
+    """这一轮 OCR 认出来的原样（一样不丢）存在对象存储的哪里（ADR 0053）。
+    同一轮的几张单据指向同一个文件。回放（jacara eval replay）用它，不用重新认字。"""
 
     document: Mapped[Document] = relationship(back_populates="all_extractions")
     template_def: Mapped[TemplateVersion | None] = relationship(lazy="selectin")

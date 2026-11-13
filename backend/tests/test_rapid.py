@@ -34,3 +34,37 @@ def test_full_page_still_detects_after_reading_one_line(tmp_path, monkeypatch):
     page = engine.recognize(image)  # 以前这里报 'TextRecOutput' object has no attribute 'boxes'
     assert page.lines == ()
     assert fake.calls[-1]["use_det"] is True
+
+
+class SlowStickyEngine(StickyEngine):
+    """调用中间停一下，让别的线程有机会插进来改开关。"""
+
+    def __call__(self, image, **flags):
+        import time
+
+        self.flags.update({k: v for k, v in flags.items() if v is not None})
+        time.sleep(0.005)
+        seen = dict(self.flags)  # 停完再看开关：没加锁时可能已经被别的线程改了
+        self.calls.append(seen)
+        if not seen["use_det"]:
+            return SimpleNamespace(txts=("9.99",), scores=(0.98,))
+        return SimpleNamespace(boxes=None, txts=(), scores=())
+
+
+def test_two_people_at_once_do_not_mix_up(tmp_path, monkeypatch):
+    """网页服务里大家共用一个引擎：一个人"整块当一行识别"、另一个人整页识别，同时进行也不串。"""
+    from concurrent.futures import ThreadPoolExecutor
+
+    image = tmp_path / "a.png"
+    Image.new("RGB", (40, 20), "white").save(image)
+    fake = SlowStickyEngine()
+    engine = RapidOcrEngine()
+    monkeypatch.setattr(engine, "_load", lambda: fake)
+
+    def work(k: int):
+        return engine.read_line(image) if k % 2 else engine.recognize(image)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(work, range(40)))
+    assert all(r == ("9.99", 0.98) for r in results[1::2])  # 整块识别都认出了字
+    assert all(getattr(r, "lines", None) == () for r in results[0::2])  # 整页识别都没报错

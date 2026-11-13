@@ -66,6 +66,11 @@ def _session_factory() -> sessionmaker[Session]:
     return sessionmaker(bind=get_engine(), expire_on_commit=False)
 
 
+def get_session_factory() -> sessionmaker[Session]:
+    """会话工厂：要自己决定提交还是回滚时用（例如只读的回放，ADR 0053）。"""
+    return _session_factory()
+
+
 @contextmanager
 def session_scope(factory: sessionmaker[Session] | None = None) -> Iterator[Session]:
     """拿一个数据库会话：with 块正常结束就提交，中途出错就全部回滚。"""

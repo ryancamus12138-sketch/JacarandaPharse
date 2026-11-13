@@ -39,6 +39,16 @@ export const ACTION_LABELS: Record<string, string> = {
   'user:update': '修改用户',
   'user:reset_code': '生成重设码',
   'user:password': '命令行重设密码',
+  'audit:export': '导出审计日志',
+  'ocr_samples:settings': 'OCR 样本：改收集开关',
+  'ocr_samples:update': 'OCR 样本：改原文、分类或撤回',
+  'ocr_samples:export': 'OCR 样本：导出',
+  'ocr_samples:split': 'OCR 样本：改分组的划分',
+  'ocr_samples:pair': 'OCR 样本：确认是不是同一张单据',
+  'ocr_samples:detach': 'OCR 样本：拆开分组',
+  'ocr_samples:backfill': 'OCR 样本：从以前的修改补收',
+  'ocr_samples:verify': 'OCR 样本：复核补收的样本',
+  'attribution:override': '统计：改判错在哪一步',
 }
 
 /** 筛选下拉的选项：按开头筛（后端 ?action=document: 这样）。 */
@@ -49,6 +59,9 @@ export const ACTION_FILTERS = [
   { value: 'value:', label: '字段：修改、确认' },
   { value: 'template:', label: '模板：新建、保存、归档、删除' },
   { value: 'user:', label: '用户管理' },
+  { value: 'ocr_samples:', label: 'OCR 样本' },
+  { value: 'audit:', label: '导出审计日志' },
+  { value: 'attribution:', label: '统计：改判错在哪一步' },
 ]
 
 const ROLE_LABELS: Record<string, string> = { admin: '管理员', member: '使用者' }
@@ -76,6 +89,17 @@ function describeUser(d: Record<string, unknown>, permission: (name: string) => 
  * 把 detail 变成一句人话。没特别处理的就原样列出来。
  * permission：权限名 → 中文（来自 /users/permissions）。
  */
+/** 错误归因的阶段（ADR 0053）。 */
+const STAGE_NAMES: Record<string, string> = {
+  ocr_misread: 'OCR 认错了字',
+  ocr_uncovered: 'OCR 没认出这块',
+  extraction: '模型取错或漏取',
+  matching: '标准化或出处匹配',
+  template: '模板或规则',
+  mixed: '几处都有问题',
+  unknown: '证据不够',
+}
+
 export function describe(log: AuditLog, permission: (name: string) => string): string {
   const d = log.detail
   switch (log.action) {
@@ -97,6 +121,15 @@ export function describe(log: AuditLog, permission: (name: string) => string): s
     case 'auth:login_failed':
     case 'auth:reset_failed':
       return `用户名：${String(d.username)}`
+    case 'attribution:override': {
+      const name = (s: unknown) => (s ? (STAGE_NAMES[String(s)] ?? String(s)) : '')
+      const change = d.after ? `改判成「${name(d.after)}」` : '撤销改判'
+      return `${change}（自动判断：${name(d.auto)}）${d.note ? ` · ${String(d.note)}` : ''}`
+    }
+    case 'ocr_samples:backfill':
+      return `补收了 ${String(d.created)} 条，待复核`
+    case 'audit:export':
+      return `导出了 ${String(d.count)} 条`
     default:
       return Object.entries(d)
         .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`)

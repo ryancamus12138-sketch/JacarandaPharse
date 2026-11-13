@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import uuid
 import zipfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -26,14 +27,20 @@ from jacara.core.storage import ObjectStorage
 from jacara.modules.audit.service import record
 from jacara.modules.documents.models import Document, Extraction
 from jacara.modules.fields.models import ExtractedValue
+from jacara.modules.insights.attribution import ATTRIBUTOR_VERSION, REASONS, STAGES, attribute
 from jacara.modules.insights.kinds import KIND_NAMES, error_kind
+from jacara.modules.insights.models import ErrorAttribution
 from jacara.modules.insights.schemas import (
+    AttributionIn,
+    AttributionOut,
     Correction,
     CorrectionStats,
     FieldStat,
     KindCount,
+    StageCount,
     TemplateStat,
 )
+from jacara.modules.ocr_samples.models import OcrSample
 from jacara.pipeline.current import current_values, label_for, labels_of, template_of
 from jacara.plugins.extractors.base import DISCOVER, split_cell_name
 from jacara.templates import STARTERS, Template
@@ -42,6 +49,32 @@ RECENT = 30
 """统计页列出最近多少次修改。"""
 
 HIDDEN = "（敏感字段，不显示）"
+
+
+@dataclass
+class InsightsError(Exception):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def _stage_fields(a: ErrorAttribution, sensitive: bool) -> dict[str, Any]:
+    return {
+        "attribution_id": a.id,
+        "stage": a.final_stage,
+        "stage_name": STAGES.get(a.final_stage, a.final_stage),
+        "stage_reason": (
+            f"人改判：{a.override_note}"
+            if a.override_stage and a.override_note
+            else "人改判"
+            if a.override_stage
+            else REASONS.get(a.reason_code, a.reason_code)
+        ),
+        "overridden": a.override_stage is not None,
+        "auto_stage": a.stage,
+        "evidence": [] if sensitive else a.evidence_refs,
+    }
 
 
 @dataclass
@@ -187,6 +220,10 @@ class InsightsService:
         ]
         fields.sort(key=lambda f: (-f.edited, -f.rate, f.label))
         recent = sorted(edited, key=lambda r: r.value.revisions[-1].created_at, reverse=True)
+        verdicts = self._attributions(edited)
+        stage_counts = Counter(verdicts[r.value.id].final_stage for r in edited)
+        keys = {r.document.id for r in rows}
+        timed = [d for d in documents if d.review_seconds and (template is None or d.id in keys)]
         return CorrectionStats(
             documents=len(documents),
             fields=len(rows),
@@ -194,7 +231,16 @@ class InsightsService:
             confirmed=len(confirmed),
             silent=len(silent),
             rate=_rate(len(edited), len(rows)),
+            review_seconds=(
+                round(sum(d.review_seconds for d in timed) / len(timed), 1) if timed else None
+            ),
+            timed_documents=len(timed),
             kinds=kind_counts(rows),
+            stages=[
+                StageCount(stage=s, name=STAGES[s], count=stage_counts[s])
+                for s in STAGES
+                if stage_counts[s]
+            ],
             templates=templates,
             by_field=[f for f in fields if f.total > 0],
             recent=[
@@ -210,9 +256,92 @@ class InsightsService:
                     flagged=r.value.needs_review,
                     reason=r.value.revisions[-1].reason,
                     at=r.value.revisions[-1].created_at,
+                    **_stage_fields(verdicts[r.value.id], r.sensitive),
                 )
                 for r in recent[:RECENT]
             ],
+        )
+
+    # ---------- 错误归因（ADR 0053） ----------
+
+    def _attributions(self, edited: list[_Row]) -> dict[uuid.UUID, ErrorAttribution]:
+        """改过的字段错在哪一步：还没判断过的、又改过的、规则版本变了的重新判断（人改判的保留）。"""
+        ids = [r.value.id for r in edited]
+        if not ids:
+            return {}
+        found = {
+            a.value_id: a
+            for a in self.session.scalars(
+                select(ErrorAttribution).where(ErrorAttribution.value_id.in_(ids))
+            )
+        }
+        samples: dict[uuid.UUID, list[OcrSample]] = defaultdict(list)
+        for s in self.session.scalars(
+            select(OcrSample).where(OcrSample.value_id.in_(ids), OcrSample.status == "ready")
+        ):
+            if s.value_id is not None:
+                samples[s.value_id].append(s)
+        now = datetime.now(UTC)
+        for r in edited:
+            revision = r.value.revisions[-1]
+            current = found.get(r.value.id)
+            if (
+                current is not None
+                and current.revision_id == revision.id
+                and current.attributor_version == ATTRIBUTOR_VERSION
+            ):
+                continue
+            mine = [s for s in samples[r.value.id] if s.revision_id == revision.id]
+            verdict = attribute(r.value, r.extraction, mine, template_of(r.extraction))
+            if current is None:
+                current = ErrorAttribution(
+                    value_id=r.value.id,
+                    document_id=r.document.id,
+                    user_id=r.document.user_id,
+                    team_id=r.document.team_id,
+                    override_note="",
+                )
+                self.session.add(current)
+                found[r.value.id] = current
+            current.revision_id = revision.id
+            current.stage = verdict.stage
+            current.reason_code = verdict.reason
+            current.evidence_refs = verdict.evidence
+            current.attributor_version = ATTRIBUTOR_VERSION
+            current.updated_at = now
+        self.session.flush()
+        return found
+
+    def override(self, attribution_id: uuid.UUID, data: AttributionIn) -> AttributionOut:
+        """人改判错在哪一步；stage 为空是撤销改判。改判的以后不会被自动判断覆盖。"""
+        found = self.session.get(ErrorAttribution, attribution_id)
+        if found is None or found.team_id != self.owner.team_id:
+            raise InsightsError("not_found", "找不到这条归因")
+        require(self.owner, "document:review", found.team_id)
+        if data.stage is not None and data.stage not in STAGES:
+            raise InsightsError("invalid", f"阶段只能是：{'、'.join(STAGES)}")
+        before = found.override_stage
+        found.override_stage = data.stage
+        found.override_note = data.note.strip() if data.stage else ""
+        found.override_by = self.owner.user_id if data.stage else None
+        found.overridden_at = datetime.now(UTC) if data.stage else None
+        record(
+            self.session,
+            self.owner,
+            "attribution:override",
+            "document",
+            found.document_id,
+            auto=found.stage,
+            before=before,
+            after=data.stage,
+            note=found.override_note,
+        )
+        return AttributionOut(
+            id=found.id,
+            stage=found.final_stage,
+            auto_stage=found.stage,
+            overridden=found.override_stage is not None,
+            note=found.override_note,
         )
 
     # ---------- 数据导出 ----------

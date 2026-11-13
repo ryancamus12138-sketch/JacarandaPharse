@@ -61,6 +61,8 @@ export function ExportsPage() {
           <Tag color="cyan">CSV</Tag>
         ) : f === 'csv-zip' ? (
           <Tag color="cyan">CSV（zip）</Tag>
+        ) : f === 'json' ? (
+          <Tag color="geekblue">JSON</Tag>
         ) : (
           <Tag color="purple">汇总 Excel</Tag>
         ),

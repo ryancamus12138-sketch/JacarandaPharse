@@ -136,3 +136,48 @@ def test_pipeline_teaches_the_model_and_records_it(receipt_page):
     assert report.extraction.prompt_version.endswith("+lessons1")
     assert "人改成「1.00」（小数点）" in backend.received[-1].content
     assert extractor.lessons == ("", 0)  # 抽完清掉，不带到下一张
+
+
+def test_review_time_is_added_up_and_averaged(client, factory, reviewed):
+    """审核页报来的用时加在一起；统计页显示平均每份几秒。"""
+    for seconds in (30, 45):
+        response = client.post(
+            f"/api/v1/documents/{reviewed}/review-time", json={"seconds": seconds}
+        )
+        assert response.status_code == 204, response.text
+    too_long = client.post(f"/api/v1/documents/{reviewed}/review-time", json={"seconds": 9999})
+    assert too_long.status_code == 422
+    with session_scope(factory) as session:
+        assert session.get_one(Document, reviewed).review_seconds == 75
+    stats = client.get("/api/v1/insights/corrections").json()
+    assert (stats["review_seconds"], stats["timed_documents"]) == (75.0, 1)
+
+
+def test_stats_show_where_errors_came_from_and_allow_override(client, reviewed):
+    """统计页：改过的字段错在哪一步；人可以改判，改判后不会被重新判断覆盖。"""
+    stats = client.get("/api/v1/insights/corrections").json()
+    assert sum(s["count"] for s in stats["stages"]) == stats["edited"] == 2
+    change = next(c for c in stats["recent"] if c["kind_name"] == "小数点")
+    assert change["stage"] and change["stage_reason"] and change["attribution_id"]
+    response = client.patch(
+        f"/api/v1/insights/attributions/{change['attribution_id']}",
+        json={"stage": "ocr_misread", "note": "原图上小数点很淡"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["overridden"] is True
+    again = client.get("/api/v1/insights/corrections").json()
+    after = next(c for c in again["recent"] if c["attribution_id"] == change["attribution_id"])
+    assert (after["stage"], after["overridden"]) == ("ocr_misread", True)
+    assert "原图上小数点很淡" in after["stage_reason"]
+    assert after["auto_stage"] == change["auto_stage"]
+    bad = client.patch(
+        f"/api/v1/insights/attributions/{change['attribution_id']}", json={"stage": "nope"}
+    )
+    assert bad.status_code == 422
+    undo = client.patch(
+        f"/api/v1/insights/attributions/{change['attribution_id']}", json={"stage": None}
+    )
+    assert undo.json()["stage"] == change["auto_stage"]
+    actions = [x["action"] for x in client.get("/api/v1/audit-logs").json()["items"]]
+    assert actions.count("attribution:override") == 2
+    assert client.delete(f"/api/v1/documents/{reviewed}").status_code == 200  # 归因跟着删

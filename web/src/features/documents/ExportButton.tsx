@@ -46,6 +46,7 @@ export function ExportButton({ ids, type, languages = DEFAULT_LANGUAGES, languag
   const title = tooMany ? `一次最多导出 ${MAX_EXPORT} 个` : undefined
 
   const csv = { key: 'csv', label: '导出为 CSV' }
+  const json = { key: 'json', label: '导出为 JSON（给别的程序用）' }
   // 列名用哪种语言：选了就记住，下次导出也用它；点了不导出
   const languageMenu: MenuProps['items'] =
     languages.length > 1
@@ -88,15 +89,15 @@ export function ExportButton({ ids, type, languages = DEFAULT_LANGUAGES, languag
           disabled={disabled}
           placement="bottomRight"
           menu={{
-            items: [csv, ...languageMenu],
-            onClick: ({ key }) => onMenu(key, () => download.mutate('csv')),
+            items: [csv, json, ...languageMenu],
+            onClick: ({ key }) => onMenu(key, () => download.mutate(key === 'json' ? 'json' : 'csv')),
           }}
         >
           <Button
             type={type}
             icon={<DownOutlined />}
             aria-label="更多导出格式"
-            loading={download.isPending && download.variables === 'csv'}
+            loading={download.isPending && download.variables !== 'separate'}
           />
         </Dropdown>
       </Space.Compact>
@@ -120,8 +121,9 @@ export function ExportButton({ ids, type, languages = DEFAULT_LANGUAGES, languag
         disabled={disabled}
         placement="bottomRight"
         menu={{
-          items: [{ key: 'summary', label: '汇总到一个 Excel' }, csv, ...languageMenu],
-          onClick: ({ key }) => onMenu(key, () => download.mutate(key === 'csv' ? 'csv' : 'summary')),
+          items: [{ key: 'summary', label: '汇总到一个 Excel' }, csv, json, ...languageMenu],
+          onClick: ({ key }) =>
+            onMenu(key, () => download.mutate(key === 'csv' || key === 'json' ? key : 'summary')),
         }}
       >
         <Button

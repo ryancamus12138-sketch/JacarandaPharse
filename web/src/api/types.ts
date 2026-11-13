@@ -179,7 +179,7 @@ export interface Dashboard {
 export interface ExportRecord {
   id: string
   filename: string
-  format: 'xlsx' | 'zip' | 'csv' | 'csv-zip'
+  format: 'xlsx' | 'zip' | 'csv' | 'csv-zip' | 'json'
   size_bytes: number
   document_count: number
   documents: { id: string; filename: string }[]
@@ -404,6 +404,25 @@ export interface Extraction {
   /** 按审核之后的当前值重新检查的结果（删掉的行不算）。页面显示这个。 */
   current_checks: Checks | null
   values: FieldValue[]
+  /** 这次发给模型的是什么（ADR 0053）。更新之前处理的是 null。 */
+  sent?: SentSummary | null
+}
+
+/** 发给模型的摘要（ADR 0053）。 */
+export interface SentSummary {
+  blocks: number
+  total_blocks: number
+  chars: number
+  images: number
+  lessons: number
+  has_snapshot: boolean
+}
+
+/** 发给模型的单据文字原文。 */
+export interface SentText {
+  blocks: number[]
+  text: string
+  sha256: string
 }
 
 /** 文档详情：文档本身 + 每一页的抽取结果。 */

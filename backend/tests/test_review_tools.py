@@ -505,3 +505,50 @@ def test_reprocess_many_needs_the_queue(client, factory, queue, document_id):
     with session_scope(factory) as session:
         # 和上传时队列没连上一样：排队中，列表上可以"重试"
         assert session.get_one(Document, document_id).status == "uploaded"
+
+
+# ---- 导出 JSON ----
+
+
+def test_export_json(client, document_id):
+    import json
+
+    total = by_name(client, document_id)["total"]
+    client.post(
+        f"/api/v1/values/{total['id']}/revisions",
+        json={"action": "edit", "value": "9.50", "reason": "测试"},
+    )
+    response = client.get("/api/v1/documents/export.json", params={"ids": [str(document_id)]})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    content = json.loads(response.content.decode("utf-8"))
+    assert content["format"] == "jacarandaparse.export.v1"
+    [document] = content["documents"]
+    assert document["filename"] == "receipt.jpg"
+    [unit] = document["units"]
+    assert unit["pages"] == [1, 1]
+    assert unit["fields"]["total"] == 9.5  # 审核之后的值，数字是数字
+    assert unit["fields"]["date"] is None
+    assert [row["name"] for row in unit["tables"]["items"]] == ["PC", "BAG"]
+    assert unit["tables"]["items"][0]["amount"] == 9.0
+    assert unit["labels"]["total"]  # 字段名
+    assert "total" not in unit["needs_review"]  # 人改过了，不算等人确认
+    assert isinstance(unit["issues"], list)
+    exports = client.get("/api/v1/exports").json()["items"]
+    assert exports[0]["format"] == "json"  # 导出记录里也有
+
+
+def test_sent_text_and_summary(client, factory, storage, receipt_page):
+    """审核页能看到这一轮发给模型的是哪些文字块（ADR 0053）。"""
+    from .test_template_library import process, upload
+
+    document_id = upload(client)
+    process(factory, storage, document_id, receipt_page)
+    [extraction] = client.get(f"/api/v1/documents/{document_id}").json()["extractions"]
+    sent = extraction["sent"]
+    assert sent["blocks"] == sent["total_blocks"] == len(receipt_page.lines)
+    assert sent["has_snapshot"] is True
+    text = client.get(f"/api/v1/documents/{document_id}/extractions/{extraction['id']}/sent").json()
+    assert text["blocks"][0] == 1 and receipt_page.lines[0].text in text["text"]
+    missing = client.get(f"/api/v1/documents/{document_id}/extractions/{uuid.uuid4()}/sent")
+    assert missing.status_code == 404

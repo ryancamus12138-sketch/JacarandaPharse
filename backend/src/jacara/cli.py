@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
     from jacara.core.config import Settings
     from jacara.plugins.exporters import DocumentReport
+    from jacara.plugins.ocr import OcrPage
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -158,6 +159,35 @@ def main(argv: list[str] | None = None) -> int:
         "--learn",
         type=Path,
         help="导出的审核数据里的 train.jsonl：用别的单据人改过的例子（ADR 0045），看能不能少错",
+    )
+
+    p_replay = eval_sub.add_parser(
+        "replay",
+        help="回放：审核完成的单据用当时的 OCR 快照换一种设置再抽，和人审核过的值比（ADR 0053）",
+    )
+    p_replay.add_argument(
+        "--b", required=True, help="要试的一边：模型服务地址，例如 http://127.0.0.1:8080"
+    )
+    p_replay.add_argument(
+        "--a", default="stored", help="对照的一边：stored（当时存下的结果，默认）或模型服务地址"
+    )
+    p_replay.add_argument("--a-label", help="A 边叫什么（写进结果），默认按设置生成")
+    p_replay.add_argument("--b-label", help="B 边叫什么")
+    p_replay.add_argument("--a-learn", action="store_true", help="A 边带上以前人改过的例子")
+    p_replay.add_argument("--b-learn", action="store_true", help="B 边带上以前人改过的例子")
+    p_replay.add_argument("--template", help="只回放用这个模板的（模板 id 或内置模板名）")
+    p_replay.add_argument("--docs", help="只回放这几份文档（id，用逗号分开）")
+    p_replay.add_argument("--limit", type=int, help="最多回放几份，先少量试跑")
+    p_replay.add_argument(
+        "--split", choices=["train", "val", "test_locked"], help="只回放这一边的业务单据"
+    )
+    p_replay.add_argument(
+        "--reread",
+        action="store_true",
+        help="没有 OCR 快照的（这次更新前处理的）重新认字；差别里会混着 OCR 的变化",
+    )
+    p_replay.add_argument(
+        "--out", type=Path, default=Path("data/eval/replay"), help="结果放在哪里（只在本机）"
     )
 
     p_user = sub.add_parser("user", help="管理用户（团队模式）")
@@ -615,6 +645,71 @@ def _eval_pairs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _eval_replay(args: argparse.Namespace) -> int:
+    import uuid
+    from datetime import datetime
+
+    from jacara.core.config import model_api_key
+    from jacara.core.db import get_session_factory
+    from jacara.core.storage import get_storage
+    from jacara.eval.replay import Arm, Options, replay, write_result
+    from jacara.pipeline.run import Pipeline
+    from jacara.plugins.extractors import LlmExtractor
+    from jacara.plugins.model_backends import ModelConfig, create_model_backend
+    from jacara.structure.engines import default_engines
+
+    def arm(name: str, server: str | None, learn: bool, label: str | None) -> Arm:
+        shown = label or ("当时存下的结果" if server is None else server)
+        return Arm(name, shown + ("（带例子）" if learn else ""), server, learn)
+
+    a = arm("A", None if args.a == "stored" else args.a, args.a_learn, args.a_label)
+    b = arm("B", args.b, args.b_learn, args.b_label)
+    if a.stored and a.learn:
+        print("--a-learn 只能用在重新跑的一边（--a 写模型服务地址）")
+        return 1
+    try:
+        docs = [uuid.UUID(x) for x in args.docs.split(",")] if args.docs else None
+    except ValueError:
+        print("--docs 要写文档 id，用逗号分开")
+        return 1
+    structure = default_engines()
+    ocr = None
+    if args.reread:
+        from jacara.plugins.ocr import create_ocr_engine
+
+        ocr = create_ocr_engine()
+
+    def pipeline(side: Arm) -> Pipeline:
+        backend = create_model_backend(
+            ModelConfig(base_url=side.server or "", api_key=model_api_key())
+        )
+        return Pipeline(ocr=ocr or _NoOcr(), extractor=LlmExtractor(backend), structure=structure)
+
+    options = Options(args.template, docs, args.limit, args.split, args.reread)
+    print(f"回放：A {a.label} 对 B {b.label}（只读，不改审核数据）")
+    result = replay(
+        get_session_factory(), get_storage(), (a, b), pipeline, options, lambda m: print("  " + m)
+    )
+    if not result.rows:
+        print("没有能比的字段。")
+        for s in result.skipped[:10]:
+            print(f"  跳过 {s.document_id}：{s.reason}")
+        return 1
+    md = write_result(result, args.out / datetime.now().strftime("%Y%m%d-%H%M%S"))
+    print(md.read_text(encoding="utf-8"))
+    print(f"结果在 {md.parent}")
+    return 0
+
+
+class _NoOcr:
+    """回放用 OCR 快照，不认字；真叫到了说明没有快照又没加 --reread。"""
+
+    name = "none"
+
+    def recognize(self, image: Path) -> OcrPage:
+        raise RuntimeError("回放时没有 OCR 快照：加 --reread 重新认字")
+
+
 def _eval(args: argparse.Namespace) -> int:
     import subprocess
     from datetime import datetime
@@ -623,6 +718,8 @@ def _eval(args: argparse.Namespace) -> int:
 
     if args.eval_command == "pairs":
         return _eval_pairs(args)
+    if args.eval_command == "replay":
+        return _eval_replay(args)
     if args.eval_command == "download":
         try:
             count = download_sroie(args.data)

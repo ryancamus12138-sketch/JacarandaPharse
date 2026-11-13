@@ -1,7 +1,7 @@
 """文字比对对齐器：逐行查找值在原文里的位置。
 
 - 数字：把原文里的数读出来按数值比（core/numbers.py），9.0 写成 9.00、78.5、1,234.50 都认；
-- 日期 2018-12-25 可能写成 25/12/2018。
+- 日期：把原文里像日期的写法读成日期再比（core/dates.py），25/12/2018、25 DEC 18 都认。
 - 先查模型说的那一行，找不到再查全文。
 - 文字字段允许 OCR 小错（相似度够高算 fuzzy）；数字和日期必须完全一致，差一位都不行。
 """
@@ -9,10 +9,10 @@
 from __future__ import annotations
 
 import re
-from datetime import date
 from difflib import SequenceMatcher
 from typing import Protocol
 
+from jacara.core.dates import date_pattern
 from jacara.core.numbers import number_pattern
 from jacara.plugins.aligners.base import AlignedField, Evidence
 from jacara.plugins.extractors.base import ExtractedField, ExtractionResult, split_cell_name
@@ -39,41 +39,6 @@ def _squash(text: str) -> str:
     return re.sub(r"\s+", "", text).lower()
 
 
-def date_variants(value: str) -> list[str]:
-    """一个 YYYY-MM-DD 日期在单据上可能的写法。
-
-    评测发现收据上的写法很多（docs/eval/README.md）：补不补 0（5/3/2018）、两位年份（18/03/18）、
-    月份写英文（28 MAR 18、02/JAN/2017）、不带分隔符（25032018、20180304）。
-    """
-    try:
-        d = date.fromisoformat(value)
-    except ValueError:
-        # 不是 YYYY-MM-DD（模型照抄了原文 August 3 , 2014）：读得出就按日期找，读不出按原样找
-        from jacara.core.textvalue import parse_date
-
-        parsed = parse_date(value)
-        if parsed is None:
-            return [_tidy(value)]
-        d = parsed
-    dd, mm, yyyy = f"{d.day:02d}", f"{d.month:02d}", f"{d.year}"
-    day, month, yy = str(d.day), str(d.month), yyyy[2:]
-    variants = [value]
-    for sep in ("/", "-", "."):
-        variants += [f"{yyyy}{sep}{mm}{sep}{dd}"]
-        for year in (yyyy, yy):
-            variants += [f"{dd}{sep}{mm}{sep}{year}", f"{mm}{sep}{dd}{sep}{year}"]
-            variants += [f"{day}{sep}{month}{sep}{year}", f"{month}{sep}{day}{sep}{year}"]
-    variants += [f"{dd}{mm}{yyyy}", f"{yyyy}{mm}{dd}"]
-    variants += [f"{d.year}年{d.month}月{d.day}日", f"{yyyy}年{mm}月{dd}日"]
-    for name in (d.strftime("%B"), d.strftime("%b")):  # August、Aug
-        variants += [f"{name} {d.day}, {yyyy}", f"{name} {dd}, {yyyy}"]
-        for year in (yyyy, yy):
-            for first in (day, dd):
-                variants += [f"{first} {name} {year}", f"{first}-{name}-{year}"]
-                variants += [f"{first}/{name}/{year}", f"{first}{name}{year}"]
-    return list(dict.fromkeys(variants))
-
-
 _TIME = re.compile(r"^\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*$")
 _AMPM = r"\s*[ap]\.?\s*m\b\.?"
 
@@ -96,12 +61,6 @@ def time_pattern(value: str) -> re.Pattern[str] | None:
     clock24 = rf"(?<!\d)0?{hour}:{minute}{sec}(?![\d:])(?!{_AMPM})"
     clock12 = rf"(?<!\d)0?{h12}:{minute}{sec}\s*{half}\.?\s*m\b\.?"
     return re.compile(rf"{clock24}|{clock12}", re.IGNORECASE)
-
-
-def _exact_pattern(variants: list[str]) -> re.Pattern[str]:
-    """数字和日期的查找规则：前后不能紧挨着别的数字，避免 9.00 匹配到 19.00 或 9.000。"""
-    alternatives = "|".join(re.escape(v) for v in variants)
-    return re.compile(rf"(?<![\d.,])(?:{alternatives})(?![\d]|[.,]\d)", re.IGNORECASE)
 
 
 def _tidy(text: str) -> str:
@@ -162,7 +121,7 @@ class TextMatchAligner:
             strict = number_pattern(field.value, loose=False)
             evidence = self._find_exact(loose, claimed) or self._find_exact(strict, others)
         else:
-            pattern = _exact_pattern(date_variants(str(field.value)))
+            pattern = date_pattern(field.value)
             evidence = self._find_exact(pattern, claimed + others)
 
         if evidence is None:

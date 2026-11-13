@@ -15,6 +15,7 @@ import type {
   PageStructure,
   RegionOut,
   ReprocessReason,
+  SentText,
 } from './types'
 
 export function listDocuments(
@@ -130,6 +131,11 @@ export function getPageCrop(id: string, page: number, box: number[]): Promise<Bl
   return apiBlob(`/documents/${id}/pages/${page}/crop?box=${box.map((v) => v.toFixed(1)).join(',')}`)
 }
 
+/** 这张单据这一轮发给模型的单据文字原文（ADR 0053）。 */
+export function getSentText(id: string, extractionId: string): Promise<SentText> {
+  return api<SentText>(`/documents/${id}/extractions/${extractionId}/sent`)
+}
+
 /** 某一页的 OCR 结果：每个文字块的文字和位置。审核时"从原文选取"用。 */
 export function getPageOcr(id: string, page: number): Promise<PageOcr> {
   return api<PageOcr>(`/documents/${id}/pages/${page}/ocr`)
@@ -162,8 +168,9 @@ export function completeReview(id: string): Promise<DocumentSummary> {
  * - separate：每个文档一个 Excel，打包成 zip，解压后是一个文件夹；
  * - summary：所有文档汇总到一个 Excel，一行一张单据，方便对账。
  * - csv：CSV（UTF-8），内容和汇总 Excel 一样；有明细表时每张表一个 .csv 打包成 zip。
+ * - json：JSON（UTF-8），给别的程序读：文档 → 每张单据 → 字段、表格。
  */
-export type ExportMode = 'separate' | 'summary' | 'csv'
+export type ExportMode = 'separate' | 'summary' | 'csv' | 'json'
 
 /** 导出：一个文档就是一个 Excel；多个文档按 mode 打包成 zip 或汇总成一个 Excel。 */
 /** language：列名用哪种语言（ADR 0048），不写或 zh 是中文；模板没写这种语言的列还是中文。 */
@@ -173,11 +180,11 @@ export function exportDocuments(
   language?: string,
 ): Promise<DownloadedFile> {
   const lang = language && language !== 'zh' ? language : null
-  if (mode === 'csv') {
+  if (mode === 'csv' || mode === 'json') {
     const query = new URLSearchParams()
     for (const id of ids) query.append('ids', id)
     if (lang) query.append('lang', lang)
-    return apiDownload(`/documents/export.csv?${query}`, 'export.csv')
+    return apiDownload(`/documents/export.${mode}?${query}`, `export.${mode}`)
   }
   if (ids.length === 1) {
     const one = lang ? `?${new URLSearchParams({ lang })}` : ''

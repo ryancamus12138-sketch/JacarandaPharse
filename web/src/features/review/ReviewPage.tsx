@@ -65,6 +65,7 @@ import { CommentsButton, SkipButton, SkippedNotice } from './ReviewExtras'
 import { ReprocessButton, RunSwitcher } from './RunControls'
 import { SaveAsTemplate } from './SaveAsTemplate'
 import { useConfirmMany } from './useConfirmMany'
+import { useReviewTimer } from './useReviewTimer'
 import { useRevise } from './useRevise'
 import { useRows } from './useRows'
 import { Tip } from '../../components/Tip'
@@ -226,6 +227,7 @@ function ReviewWorkspace({ id }: { id: string }) {
     staleTime: 60_000,
   })
   const collecting = canEdit && sampleSettings.data?.collect === true
+  useReviewTimer(id, canEdit && document.data?.status === 'done')
   // 第 page 页属于哪一张单据（一张单据可以占好几页，ADR 0036）
   const currentExtraction = coveringExtraction(document.data?.extractions ?? [], page)
   // 字段名的语言（ADR 0048）：模板写了几种语言就能切换，按模板记住选的
@@ -724,7 +726,7 @@ function ReviewWorkspace({ id }: { id: string }) {
       {currentExtraction?.source_notes?.map((note) => (
         <Alert key={note} type="warning" showIcon style={{ marginBottom: 12 }} title={note} />
       ))}
-      <ExtractionNotes extraction={currentExtraction} />
+      <ExtractionNotes extraction={currentExtraction} documentId={id} />
       <PageTabs doc={doc} page={page} onChange={changePage} />
       <Flex
         gap={narrow ? 16 : 24}

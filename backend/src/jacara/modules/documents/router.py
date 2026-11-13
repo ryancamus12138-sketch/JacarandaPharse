@@ -39,6 +39,8 @@ from jacara.modules.documents.schemas import (
     ReprocessIn,
     ReprocessManyIn,
     ReprocessManyOut,
+    ReviewTimeIn,
+    SentText,
     SkipIn,
 )
 from jacara.modules.documents.service import DocumentError, DocumentService, day_start
@@ -258,6 +260,26 @@ def export_documents_csv(
     return attachment(filename, data, "text/csv; charset=utf-8" if kind == "csv" else ZIP)
 
 
+@router.get("/export.json", summary="导出 JSON", response_class=Response)
+def export_documents_json(
+    service: Service,
+    ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
+    lang: Annotated[
+        str | None, Query(max_length=16, description="字段名（labels）用哪种语言；不写用中文")
+    ] = None,
+) -> Response:
+    """导出 JSON（UTF-8）给别的程序读：文档 → 每张单据 → 字段（fields）、表格（tables）、
+    字段名（labels）、还等人确认的（needs_review）。值和 Excel 一样是审核之后的。
+
+    写法：`/api/v1/documents/export.json?ids=第一个id&ids=第二个id`
+    """
+    try:
+        filename, data = service.export_json(ids, lang)
+    except DocumentError as err:
+        raise _http_error(err) from err
+    return attachment(filename, data, "application/json")
+
+
 @router.get("/export.zip", summary="导出多个文档（每个一个 Excel）", response_class=Response)
 def export_documents_zip(
     service: Service,
@@ -367,6 +389,16 @@ def page_structure(
         raise _http_error(err) from err
 
 
+@router.get("/{document_id}/extractions/{extraction_id}/sent", summary="发给模型的文字")
+def sent_text(document_id: uuid.UUID, extraction_id: uuid.UUID, service: Service) -> SentText:
+    """这张单据这一轮发给模型的单据文字原文和文字块编号（ADR 0053）。
+    追查"模型为什么没取到"：值不在这里面，是 OCR 没认出来；在里面，是抽取漏了。"""
+    try:
+        return service.sent_text(document_id, extraction_id)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
 @router.get("/{document_id}/pages/{page}/ocr", summary="某一页的 OCR 结果")
 def page_ocr(document_id: uuid.UUID, page: Annotated[int, Path(ge=1)], service: Service) -> PageOcr:
     """这一页 OCR 认出的每个文字块：文字、在图上的位置、置信度。坐标和页面图片一样。
@@ -453,6 +485,17 @@ def review_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
     """
     try:
         return service.review(document_id)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post(
+    "/{document_id}/review-time", status_code=status.HTTP_204_NO_CONTENT, summary="记审核用时"
+)
+def add_review_time(document_id: uuid.UUID, data: ReviewTimeIn, service: Service) -> None:
+    """审核页报来的：这一段时间人在审核页上操作了几秒（页面在后台、人走开了不算）。"""
+    try:
+        service.add_review_time(document_id, data.seconds)
     except DocumentError as err:
         raise _http_error(err) from err
 

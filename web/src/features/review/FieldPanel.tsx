@@ -12,6 +12,7 @@ import {
   splitCell,
   type TableRow,
   tableLayouts,
+  shownValue,
 } from './fields'
 import { IssueToggle } from './IssueToggle'
 import { ItemsTable } from './ItemsTable'
@@ -258,7 +259,7 @@ function ShownValue({ value: v }: { value: FieldValue }) {
   }
   return (
     <Typography.Text strong style={{ flex: 1, overflowWrap: 'anywhere' }}>
-      {v.current_value ?? (
+      {shownValue(v) ?? (
         <Typography.Text type="secondary">
           {v.origin === 'manual'
             ? '（待填写）'

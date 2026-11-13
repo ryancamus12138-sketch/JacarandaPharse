@@ -422,3 +422,54 @@ def test_clean():
     assert clean("a  b") == "a  b"  # 中间的空格照留
     assert clean("") is None
     assert clean("a\nb") is None
+
+
+# ---- 从以前的修改补收（ADR 0053） ----
+
+
+def test_backfill_collects_old_edits_as_pending(client, factory, document_id):
+    """开关关着的时候审核过的：点了原文、框了一块的补收进"待复核"，手打的不收，不重复收。"""
+    fields = values(client, document_id)
+    old = {"action": "edit", "source_lines": [DATE_LINE]}
+    assert (
+        client.post(f"/api/v1/values/{fields['date']['id']}/revisions", json=old).status_code == 201
+    )
+    box = {"action": "edit", "value": "1.00", "source_box": [405, 765, 450, 795]}
+    assert (
+        client.post(f"/api/v1/values/{fields['change']['id']}/revisions", json=box).status_code
+        == 201
+    )
+    typed = {"action": "edit", "value": "9.5", "reason": "手打"}
+    assert (
+        client.post(f"/api/v1/values/{fields['total']['id']}/revisions", json=typed).status_code
+        == 201
+    )
+    assert samples(client)["total"] == 0  # 开关关着：当时没收
+
+    result = client.post("/api/v1/ocr-samples/backfill").json()
+    assert result["created"] == 2
+    assert any("手打" in s["reason"] for s in result["skipped"])
+    pending = samples(client, status="pending")["items"]
+    assert {s["kind"] for s in pending} == {"line", "box"}
+    assert all(s["origin"] == "backfill" for s in pending)
+    line = next(s for s in pending if s["kind"] == "line")
+    assert line["transcription"] == line["ocr_text"]  # 先按 OCR 读的猜，复核时人改
+    box_sample = next(s for s in pending if s["kind"] == "box")
+    assert box_sample["reviewed_value"] == "1.0"  # 存的是规整过的值；图里的原文复核时人写
+
+    again = client.post("/api/v1/ocr-samples/backfill").json()
+    assert again["created"] == 0  # 同一次修改只收一条
+
+    # 还没复核的不能导出
+    preview = client.get("/api/v1/ocr-samples/export/preview").json()
+    assert any("还没复核" in e["reason"] for e in preview["excluded"])
+
+    # 复核：改成图里真正的原文、通过
+    fixed = client.patch(
+        f"/api/v1/ocr-samples/{line['id']}",
+        json={"transcription": "25/12/2018 8:13:39 PM", "status": "ready"},
+    ).json()
+    assert fixed["status"] == "ready"
+    with session_scope(factory) as session:
+        actions = [a.action for a in session.query(AuditLog).all()]
+    assert "ocr_samples:backfill" in actions and "ocr_samples:verify" in actions

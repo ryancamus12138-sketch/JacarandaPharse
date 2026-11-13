@@ -3,7 +3,8 @@
 import { api, apiBlob, apiDownload, type DownloadedFile } from './client'
 
 export type SampleCategory = 'rec_error' | 'correct' | 'missed' | 'unclear'
-export type SampleStatus = 'ready' | 'failed' | 'withdrawn'
+/** pending：从以前的修改补收的（ADR 0053），人复核了才变成 ready、才能导出。 */
+export type SampleStatus = 'ready' | 'failed' | 'withdrawn' | 'pending'
 export type SourceFormat = 'pdf' | 'image'
 
 export interface SampleSettings {
@@ -37,6 +38,10 @@ export interface OcrSample {
   status: SampleStatus
   /** 裁图失败的原因。 */
   error: string
+  /** review（审核时收集的）或 backfill（从以前的修改补收的）。 */
+  origin?: 'review' | 'backfill'
+  /** 补收的：当时人把字段改成了什么（复核时参考）。 */
+  reviewed_value?: string | null
 }
 
 export interface SampleList {
@@ -189,6 +194,11 @@ export function updateSample(
   change: { transcription?: string; category?: SampleCategory; status?: 'ready' | 'withdrawn' },
 ): Promise<OcrSample> {
   return api<OcrSample>(`/ocr-samples/${id}`, { method: 'PATCH', json: change })
+}
+
+/** 从以前的修改补收样本（ADR 0053）：点了原文或框了一块的，进"待复核"。 */
+export function backfillSamples(): Promise<{ created: number; skipped: { reason: string; count: number }[] }> {
+  return api(`/ocr-samples/backfill`, { method: 'POST' })
 }
 
 export function retrySample(id: string): Promise<OcrSample> {

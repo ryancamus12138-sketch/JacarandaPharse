@@ -2,6 +2,7 @@ import { CheckOutlined, FileTextOutlined, SaveOutlined } from '@ant-design/icons
 import { Button, Checkbox, Flex, Form, Input } from 'antd'
 import { useRef } from 'react'
 import type { FieldValue } from '../../api/types'
+import { shownValue } from './fields'
 import type { Revise } from './useRevise'
 
 const PLACEHOLDER: Record<FieldValue['type'], string> = {
@@ -78,7 +79,7 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
         size="small"
         layout="vertical"
         initialValues={{
-          value: v.current_value ?? '',
+          value: shownValue(v) ?? '',
           // 人工新加的格子本来就是空的，等着填，不算"原文里没有"
           missing: v.current_value === null && v.origin !== 'manual',
           reason: '',

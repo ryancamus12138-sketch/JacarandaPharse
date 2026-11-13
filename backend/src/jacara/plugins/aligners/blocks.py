@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 
+from jacara.core.dates import date_pattern
 from jacara.core.numbers import number_pattern
 from jacara.plugins.aligners.base import AlignedField, Evidence
 from jacara.plugins.aligners.crosscheck import cross_check
@@ -22,11 +23,9 @@ from jacara.plugins.aligners.text_match import (
     TextMatchAligner,
     _best_similarity,
     _clip_to,
-    _exact_pattern,
     _sign_mismatch,
     _squash,
     _tidy,
-    date_variants,
     time_pattern,
 )
 from jacara.plugins.extractors.base import ExtractedField, ExtractionResult
@@ -203,7 +202,7 @@ class BlockAligner:
         if field.type == "number" and isinstance(field.value, float):
             pattern: Finder = number_pattern(field.value, loose=True)
         else:
-            pattern = _exact_pattern(date_variants(str(field.value)))
+            pattern = date_pattern(field.value)
         if not pattern.search(_tidy(text)):
             return None
         picked = [

@@ -142,10 +142,8 @@ def _blocks_of(structure: Any, type_: str, value: str | float) -> tuple[int, ...
     OCR 读错了的值找不到文字块，就不给编号，和模型照着错字回答时一样交给核对。"""
     from jacara.core.cjk import plain_cjk
     from jacara.plugins.aligners.text_match import (
-        _exact_pattern,
         _squash,
         _tidy,
-        date_variants,
     )
 
     if structure is None:
@@ -167,7 +165,9 @@ def _blocks_of(structure: Any, type_: str, value: str | float) -> tuple[int, ...
         whole_date = next(((n,) for n, t in texts if str(parse_date(t)) == str(value)), ())
         if whole_date:
             return whole_date
-        pattern = _exact_pattern(date_variants(str(value)))
+        from jacara.core.dates import date_pattern
+
+        pattern = date_pattern(value)
         return next(((n,) for n, t in texts if pattern.search(_tidy(t))), ())
     wanted = _squash(plain_cjk(str(value)))
     whole = next(((n,) for n, t in texts if wanted and wanted in _squash(t)), ())

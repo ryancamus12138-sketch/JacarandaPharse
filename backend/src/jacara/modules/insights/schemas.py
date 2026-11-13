@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class KindCount(BaseModel):
@@ -57,6 +58,39 @@ class Correction(BaseModel):
     """抽取时标黄了没有。"""
     reason: str
     at: datetime
+    attribution_id: uuid.UUID | None = None
+    stage: str | None = None
+    """错在哪一步（ADR 0053）：人改判过的用人改的。"""
+    stage_name: str = ""
+    stage_reason: str = ""
+    """为什么这么判断（一句话）。"""
+    overridden: bool = False
+    """人改判过。"""
+    auto_stage: str | None = None
+    """自动判断的阶段（改判过的话和 stage 不一样）。"""
+    evidence: list[dict[str, Any]] = []
+    """证据（敏感字段不给）。"""
+
+
+class StageCount(BaseModel):
+    stage: str
+    name: str
+    count: int
+
+
+class AttributionIn(BaseModel):
+    """人改判：stage 是 null 表示撤销改判，用回自动判断的。"""
+
+    stage: str | None
+    note: str = Field(default="", max_length=500)
+
+
+class AttributionOut(BaseModel):
+    id: uuid.UUID
+    stage: str
+    auto_stage: str
+    overridden: bool
+    note: str
 
 
 class CorrectionStats(BaseModel):
@@ -68,7 +102,13 @@ class CorrectionStats(BaseModel):
     silent: int
     rate: float
     """人工修改率 = edited / fields。"""
+    review_seconds: float | None = None
+    """平均每份审核用了几秒（只算记了用时的单据；审核页开着、人在操作的时间）。"""
+    timed_documents: int = 0
+    """记了审核用时的有几份。"""
     kinds: list[KindCount]
+    stages: list[StageCount] = []
+    """改过的字段错在哪一步（ADR 0053）。"""
     templates: list[TemplateStat]
     by_field: list[FieldStat]
     recent: list[Correction]

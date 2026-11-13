@@ -69,6 +69,8 @@ class OcrSample(Base, OwnedMixin, TimestampMixin):
     crop_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
     width: Mapped[int | None]
     height: Mapped[int | None]
+    origin: Mapped[str] = mapped_column(String(12), default="review", server_default="review")
+    """怎么来的：review（审核时收集的）、backfill（从以前的修改补收的，ADR 0053，要人复核）。"""
     status: Mapped[str] = mapped_column(String(12), default="ready")
     """ready（可以导出）、failed（裁图失败，可以重试）、withdrawn（撤回了，不导出）。"""
     error: Mapped[str] = mapped_column(Text, default="")

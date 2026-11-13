@@ -257,3 +257,53 @@ def test_handoff_keeps_everything(receipt_page):
         forms=(FormValue("Amount", "9.00", (1.0, 2.0, 3.0, 4.0), hidden=True),),
     )
     assert load_pages(dump_pages([page, receipt_page])) == [page, receipt_page]
+
+
+# ---- 每一轮的 OCR 快照、发给模型的文字（ADR 0053） ----
+
+
+@pytest.mark.parametrize("split", [False, True])
+def test_each_run_keeps_an_ocr_snapshot(factory, storage, uploaded, receipt_page, split):
+    """一个进程做完、两个工位做完，都留下这一轮的 OCR 快照，读回来和认出来的一模一样。"""
+    from jacara.models import Extraction
+    from jacara.pipeline.snapshots import load_snapshot, snapshot_key
+
+    if split:
+        _, sent, extract = two_stations(factory, storage, uploaded, FakeOcr(receipt_page))
+        assert extract(sent.items[0][1]) == "done"
+    else:
+        assert run(factory, storage, uploaded, FakeOcr(receipt_page)) == "done"
+    key = snapshot_key(uploaded, 1)
+    assert load_snapshot(storage, key) == [receipt_page]
+    with session_scope(factory) as session:
+        [extraction] = session.query(Extraction).all()
+        assert extraction.ocr_snapshot == key
+
+
+def test_what_was_sent_to_the_model_is_recorded(factory, storage, uploaded, receipt_page):
+    from jacara.models import Extraction
+
+    assert run(factory, storage, uploaded, FakeOcr(receipt_page)) == "done"
+    with session_scope(factory) as session:
+        [extraction] = session.query(Extraction).all()
+        sent = extraction.model_input or {}
+    assert sent["blocks"] == list(range(1, len(receipt_page.lines) + 1))
+    assert sent["total_blocks"] == len(receipt_page.lines)
+    assert sent["images"] == 0 and sent["lessons"] == 0
+    assert receipt_page.lines[0].text in sent["text"]
+    assert sent["chars"] == len(sent["text"]) and len(sent["sha256"]) == 64
+
+
+def test_snapshot_failure_does_not_fail_processing(factory, storage, uploaded, receipt_page):
+    """快照存不进去只记日志，处理结果照常保存。"""
+    from jacara.core.storage import StorageError
+
+    put = storage.put
+
+    def refuse(key, data, content_type):
+        if key.startswith("ocr-snapshots/"):
+            raise StorageError("满了")
+        put(key, data, content_type)
+
+    storage.put = refuse
+    assert run(factory, storage, uploaded, FakeOcr(receipt_page)) == "done"

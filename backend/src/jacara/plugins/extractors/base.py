@@ -7,9 +7,9 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from jacara.plugins.ocr.base import OcrPage
 
@@ -96,6 +96,10 @@ class ExtractionResult:
     duration_ms: int
     vision: str | None = None
     """这次抽取给模型看了原图（ADR 0038），写着为什么看；没看图是 None。"""
+    sent: Mapping[str, Any] | None = None
+    """这次发给模型的是什么（ADR 0053）：哪几个文字块（编号）、发了多少字、几张图、
+    几个以前改过的例子、发出去的单据文字原文和它的 sha256。追查"模型为什么没取到"时用：
+    值在不在发出去的文字里，决定是 OCR 的问题还是抽取的问题。"""
 
 
 class Extractor(Protocol):

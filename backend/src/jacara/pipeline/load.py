@@ -49,6 +49,7 @@ def _report(extraction: Extraction, source: str, language: str | None = None) ->
         backend=extraction.backend,
         prompt_version=extraction.prompt_version,
         duration_ms=extraction.duration_ms,
+        vision=extraction.vision,
     )
     aligned = tuple(
         AlignedField(

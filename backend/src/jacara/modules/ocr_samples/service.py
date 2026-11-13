@@ -44,6 +44,7 @@ from jacara.modules.ocr_samples.models import (
     TeamSetting,
 )
 from jacara.modules.ocr_samples.schemas import (
+    BackfillOut,
     Distribution,
     Evidence,
     Excluded,
@@ -221,7 +222,8 @@ def _crop(storage: ObjectStorage, sample: OcrSample, document: Document) -> None
     sample.crop_key = key
     sample.crop_sha256 = sha256(png)
     sample.width, sample.height = image.size
-    sample.status = "ready"
+    # 补收的（ADR 0053）要人复核过才能用
+    sample.status = "pending" if sample.origin == "backfill" else "ready"
     sample.error = ""
 
 
@@ -328,6 +330,20 @@ class OcrSampleService:
         return [r for r in rows if r]
 
     def _out(self, samples: Sequence[OcrSample]) -> list[SampleOut]:
+        from jacara.modules.fields.models import ValueRevision
+
+        backfilled = {s.revision_id for s in samples if s.origin == "backfill" and s.revision_id}
+        reviewed: dict[uuid.UUID, str | None] = (
+            dict(
+                self.session.execute(
+                    select(ValueRevision.id, ValueRevision.new_value).where(
+                        ValueRevision.id.in_(backfilled)
+                    )
+                ).all()
+            )
+            if backfilled
+            else {}
+        )
         ids = {s.document_id for s in samples}
         names: dict[uuid.UUID, str] = (
             dict(
@@ -359,6 +375,8 @@ class OcrSampleService:
                 height=s.height,
                 status=s.status,  # type: ignore[arg-type]
                 error=s.error,
+                origin=s.origin,
+                reviewed_value=reviewed.get(s.revision_id) if s.revision_id else None,
             )
             for s in samples
         ]
@@ -397,17 +415,133 @@ class OcrSampleService:
         if change.category is not None and change.category != sample.category:
             detail["category"] = [sample.category, change.category]
             sample.category = change.category
+        verified = False
         if change.status is not None and change.status != sample.status:
             if sample.status == "failed":
                 raise SampleError("invalid", "裁图失败的样本先重试")
+            verified = sample.status == "pending" and change.status == "ready"
+            if verified and change.category is None:
+                # 复核通过：按人确认的原文重新分类
+                sample.category = category_of(sample.kind, sample.ocr_text, sample.transcription)
+                sample.error_tags = error_tags(sample.ocr_text, sample.transcription)
             detail["status"] = [sample.status, change.status]
             sample.status = change.status
         if detail:
-            record(
-                self.session, self.owner, "ocr_samples:update", "ocr_sample", sample.id, **detail
-            )
+            action = "ocr_samples:verify" if verified else "ocr_samples:update"
+            record(self.session, self.owner, action, "ocr_sample", sample.id, **detail)
         self.session.flush()
         return self._out([sample])[0]
+
+    def backfill(self) -> BackfillOut:
+        """从以前的修改补收样本（ADR 0053）：审核时点了原文或框了一块、改了值的，裁出小图，
+        进"待复核"。人对着小图确认（或改正）图里的原文后才能导出。
+
+        手打的（没点原文、没框）不收：不知道值在图上哪里。同一次修改只收一条（再点一次不会重复）。
+        """
+        require(self.owner, "value:review")
+        from jacara.modules.fields.models import ValueRevision
+
+        team = self.owner.team_id
+        done = set(
+            self.session.scalars(
+                select(OcrSample.revision_id).where(
+                    OcrSample.team_id == team, OcrSample.revision_id.is_not(None)
+                )
+            )
+        )
+        rows = self.session.execute(
+            select(ValueRevision, ExtractedValue)
+            .join(ExtractedValue, ValueRevision.value_id == ExtractedValue.id)
+            .where(ExtractedValue.team_id == team, ValueRevision.action == "edit")
+            .order_by(ValueRevision.created_at)
+        ).all()
+        skipped: Counter[str] = Counter()
+        created = 0
+        for revision, value in rows:
+            if revision.id in done:
+                skipped["已经有样本了"] += 1
+                continue
+            reason = self._backfill_one(revision, value)
+            if reason:
+                skipped[reason] += 1
+            else:
+                created += 1
+                done.add(revision.id)
+        record(self.session, self.owner, "ocr_samples:backfill", None, None, created=created)
+        self.session.flush()
+        return BackfillOut(
+            created=created,
+            skipped=[Excluded(reason=r, count=n) for r, n in skipped.most_common()],
+        )
+
+    def _backfill_one(self, revision: Any, value: ExtractedValue) -> str | None:
+        """补收一条；收不了返回原因。"""
+        evidence = revision.evidence
+        if not evidence or not evidence.get("bbox"):
+            return "手打的值（没点原文、没框），不知道在图上哪里"
+        extraction = value.extraction
+        document = extraction.document
+        if document.storage_key is None or self.storage is None:
+            return "没有原始文件"
+        page = int(evidence.get("page") or extraction.page)
+        ocr = ocr_page_json(extraction.ocr, page, extraction.page) or {}
+        if ocr.get("engine", extraction.source) == "pdf-text":
+            return "这一页的字是 PDF 自带的，不是 OCR 认的"
+        template = template_of(extraction)
+        field = generic_field(value.name)
+        if _sensitive(template, field):
+            return "敏感字段不收"
+        box = [float(v) for v in evidence["bbox"]]
+        lines = list(ocr.get("lines", []))
+        if evidence.get("drawn"):
+            kind, polygon = "box", box_polygon(box)
+            inside = lines_in_box(lines, box)
+            ocr_text = " ".join(str(ln["text"]) for ln in inside) if inside else None
+            guess = clean(str(evidence.get("text") or "")) or clean(revision.new_value or "")
+        else:
+            same = [ln for ln in lines if _same_box(ln.get("box"), box)]
+            if len(same) == 1 and same[0].get("polygon"):
+                kind = "line"
+                polygon = [[float(x), float(y)] for x, y in same[0]["polygon"]]
+                ocr_text = str(same[0]["text"])
+            else:  # 点了好几块：按框收
+                kind, polygon = "box", box_polygon(box)
+                ocr_text = str(evidence.get("text") or "") or None
+            guess = clean(ocr_text or "") or clean(revision.new_value or "")
+        if guess is None:
+            return "没有能当原文的文字"
+        labels = labels_of(extraction)
+        sample = OcrSample(
+            id=uuid.uuid4(),
+            created_at=datetime.now(UTC),
+            document_id=document.id,
+            value_id=value.id,
+            revision_id=revision.id,
+            page=page,
+            unit_page=extraction.page,
+            kind=kind,
+            polygon=polygon,
+            transcription=guess,  # 先猜一个，复核时人改成图里真正的原文
+            ocr_text=ocr_text,
+            category=category_of(kind, ocr_text, guess),
+            error_tags=error_tags(ocr_text, guess),
+            template=_template_title(extraction, template)[:200],
+            field=field[:200],
+            field_label=(labels.get(field) or value.label or value.name)[:200],
+            source_format="pdf" if document.content_type == "application/pdf" else "image",
+            ocr_engine=(extraction.ocr_engine or "")[:128],
+            origin="backfill",
+            status="pending",
+            error="",
+            user_id=self.owner.user_id,
+            team_id=value.team_id,
+        )
+        _crop(self.storage, sample, document)
+        self.session.add(sample)
+        groups.ensure_member(
+            self.session, value.team_id, self.owner.user_id, (document.id, extraction.page)
+        )
+        return None
 
     def retry(self, sample_id: uuid.UUID) -> SampleOut:
         """裁图失败的重新裁一次。"""
@@ -688,6 +822,8 @@ class OcrSampleService:
             split = (splits.get(group) or groups.ensure_split(self.session, team, group)).split
             if sample.status == "withdrawn":
                 excluded["撤回了"] += 1
+            elif sample.status == "pending":
+                excluded["补收的，还没复核"] += 1
             elif sample.status != "ready" or not sample.crop_key or not sample.crop_sha256:
                 excluded["裁图失败，没有图"] += 1
             elif clean(sample.transcription) != sample.transcription:
@@ -993,3 +1129,10 @@ def _dist(d: Distribution, kind: str) -> str:
     if kind == "test":
         return f"{key} {d.test}"
     return f"{key} 训练 {d.train} / 验证 {d.val}"
+
+
+def _same_box(a: Any, b: Sequence[float]) -> bool:
+    """两个框是不是同一个（点一块原文时，出处的框就是那一块的框）。"""
+    if not a or len(a) != 4:
+        return False
+    return all(abs(float(x) - float(y)) <= 1.0 for x, y in zip(a, b, strict=True))

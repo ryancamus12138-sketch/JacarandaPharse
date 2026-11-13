@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable, Sequence
 from typing import Any, cast
@@ -238,6 +239,26 @@ def page_prompt(structure: PageStructure) -> str:
     return f"{text}\n\n{extra}" if extra else text
 
 
+def sent_record(
+    structure: PageStructure, document_text: str, images: int = 0, lessons: int = 0
+) -> dict[str, Any]:
+    """发给模型的是什么（ADR 0053）：版面原样里写进去的文字块编号、单据文字原文和 sha256、
+    几张图、几个例子。存进抽取记录，追查"值在不在发出去的文字里"。"""
+    numbers = sorted(
+        structure.number_of(c) for line in structure.lines for c in structure.blocks[line].children
+    )
+    return {
+        "version": 1,
+        "blocks": numbers,
+        "total_blocks": len(structure.words),
+        "chars": len(document_text),
+        "sha256": hashlib.sha256(document_text.encode("utf-8")).hexdigest(),
+        "text": document_text,
+        "images": images,
+        "lessons": lessons,
+    }
+
+
 def build_messages(
     page: OcrPage,
     fields: Sequence[FieldSpec],
@@ -398,6 +419,7 @@ class LlmExtractor:
         schema = build_schema(fields, tables)
         lessons, count = self.lessons
         result = self._ask(build_messages(page, fields, tables, structure, images, lessons), schema)
+        sent = sent_record(structure, page_prompt(structure), len(images), count)
         try:
             data = json.loads(result.text)
         except json.JSONDecodeError as err:
@@ -442,6 +464,7 @@ class LlmExtractor:
             prompt_version=(VISION_PROMPT_VERSION if images else PROMPT_VERSION)
             + (f"+lessons{count}" if count else ""),
             duration_ms=result.duration_ms,
+            sent=sent,
         )
 
     def discover(self, page: OcrPage, structure: PageStructure | None = None) -> ExtractionResult:
@@ -522,6 +545,7 @@ def _discover(self: LlmExtractor, page: OcrPage, structure: PageStructure) -> Ex
         backend=result.backend,
         prompt_version=DISCOVER_PROMPT_VERSION,
         duration_ms=result.duration_ms,
+        sent=sent_record(structure, messages[1].content),
     )
 
 

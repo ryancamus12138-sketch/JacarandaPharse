@@ -53,6 +53,8 @@ from jacara.modules.documents.schemas import (
     ReprocessManyOut,
     RunOut,
     SameFile,
+    SentOut,
+    SentText,
     SkipIn,
     StructureCell,
     StructurePair,
@@ -313,6 +315,14 @@ class DocumentService:
             raise DocumentError("queue", "任务队列暂时不可用，请稍后再试")
         return DocumentOut.model_validate(document)
 
+    def add_review_time(self, document_id: uuid.UUID, seconds: int) -> None:
+        """审核用时加上 seconds 秒（审核页报来的，只算页面开着、人在操作的时间）。"""
+        document = self._find(document_id)
+        require(self.owner, "document:review", document.team_id)
+        if document.status not in ("done", "reviewed"):
+            raise DocumentError("conflict", f"文档状态是 {document.status}，不在审核")
+        document.review_seconds = (document.review_seconds or 0) + seconds
+
     def reprocess_many(self, data: ReprocessManyIn) -> ReprocessManyOut:
         """勾选的几份一起重新处理（各跑新的一轮），每份用同样的设置（网页上默认：模板用各自的最新版，
         看不看原图、PDF 怎么读按系统设置，分单据和上次一样）。正在处理、还在排队的跳过。
@@ -353,7 +363,7 @@ class DocumentService:
     def adopt_previous(self, document_id: uuid.UUID) -> AdoptOut:
         """采纳上次的确认：重新处理之后，把能沿用的上一轮审核一次用上（见 suggestions）。"""
         document = self._find(document_id)
-        require(self.owner, "value:review", document.team_id)
+        require(self.owner, "document:review", document.team_id)
         if document.status not in ("done", "reviewed"):
             raise DocumentError("conflict", f"文档状态是 {document.status}，处理完成后才能审核")
         fields = FieldService(self.session, self.owner)
@@ -390,6 +400,14 @@ class DocumentService:
         )
         return [k for k in keys if k]
 
+    def _snapshots(self, document_id: uuid.UUID) -> list[str]:
+        keys = self.session.scalars(
+            select(Extraction.ocr_snapshot)
+            .where(Extraction.document_id == document_id, Extraction.ocr_snapshot.is_not(None))
+            .distinct()
+        )
+        return [k for k in keys if k]
+
     def delete(self, ids: list[uuid.UUID]) -> DeleteOut:
         """删除文档：原始文件、每一轮的结果、审核记录、备注都删掉，不能恢复。审计日志记下删了什么。
 
@@ -418,6 +436,7 @@ class DocumentService:
             if document.storage_key:
                 keys.append(document.storage_key)
             keys += self._sample_crops(document.id)  # OCR 样本的小图（ADR 0050）一起删
+            keys += self._snapshots(document.id)  # 每一轮的 OCR 快照（ADR 0053）一起删
             self.repo.delete(document)
             deleted += 1
         # 先提交，再删原始文件：数据库没删成的话，文件还在
@@ -531,6 +550,22 @@ class DocumentService:
                 "viewing_run": viewing,
                 "suggestions": hints,
             }
+        )
+
+    def sent_text(self, document_id: uuid.UUID, extraction_id: uuid.UUID) -> SentText:
+        """某一张单据某一轮发给模型的单据文字原文（ADR 0053）。"""
+        document = self._find(document_id)
+        require(self.owner, "document:read", document.team_id)
+        extraction = next((e for e in document.all_extractions if e.id == extraction_id), None)
+        if extraction is None:
+            raise DocumentError("not_found", "找不到这次抽取")
+        data = extraction.model_input
+        if not data:
+            raise DocumentError("not_found", "这次抽取没有记下发给模型的文字（更新之前处理的）")
+        return SentText(
+            blocks=[int(n) for n in data.get("blocks", [])],
+            text=str(data.get("text", "")),
+            sha256=str(data.get("sha256", "")),
         )
 
     def page_ocr(self, document_id: uuid.UUID, page: int) -> PageOcr:
@@ -669,6 +704,37 @@ class DocumentService:
             name, data, kind = f"{stem}-csv.zip", out.getvalue(), "zip"
         self._record_export(documents, "csv" if kind == "csv" else "csv-zip", name, data)
         return name, data, kind
+
+    def export_json(
+        self, document_ids: list[uuid.UUID], language: str | None = None
+    ) -> tuple[str, bytes]:
+        """导出 JSON：给别的程序读。内容和 Excel 一样，按文档 → 单据 → 字段、表格嵌套。"""
+        from jacara.plugins.exporters.json_export import to_json
+
+        documents = self._exportable(document_ids)
+        content = to_json(
+            [
+                (
+                    {
+                        "id": str(d.id),
+                        "filename": d.filename,
+                        "status": d.status,
+                        "page_count": d.page_count,
+                        "reviewed_at": d.reviewed_at.isoformat() if d.reviewed_at else None,
+                    },
+                    load_reports(d, language),
+                )
+                for d in documents
+            ],
+            datetime.now().astimezone(),
+        )
+        if len(documents) == 1:
+            stem = PurePath(documents[0].filename).stem
+        else:
+            stem = f"jacara-{date.today():%Y%m%d}-{len(documents)}份"
+        name = f"{stem}.json"
+        self._record_export(documents, "json", name, content)
+        return name, content
 
     def _excel(self, documents: list[Document], language: str | None = None) -> tuple[bytes, str]:
         """导出成 Excel：模板有原表样式（从 Excel 建的模板）就填回原表，否则用标准格式。
@@ -833,7 +899,7 @@ class DocumentService:
     def ocr_region(self, document_id: uuid.UUID, page: int, box: list[float]) -> RegionOut:
         """把页面上的一块区域裁下来重新 OCR。要能看文档，也要能改字段（不然认出来也没用）。"""
         document = self._find(document_id)
-        require(self.owner, "value:review", document.team_id)
+        require(self.owner, "document:review", document.team_id)
         if self.ocr is None:
             raise DocumentError("unavailable", "OCR 引擎没有准备好")
         image = self.page_image(document_id, page)
@@ -847,7 +913,7 @@ class DocumentService:
         """让模型看页面上的一小块（ADR 0038）：手写、印章、被笔迹盖住的字，OCR 认不出时用。
         只返回读出来的，不保存；人确认后再用"审核字段"保存。"""
         document = self._find(document_id)
-        require(self.owner, "value:review", document.team_id)
+        require(self.owner, "document:review", document.team_id)
         check = getattr(self.model, "sees_images", None)
         if self.model is None or not callable(check) or not check():
             raise DocumentError(
@@ -1137,7 +1203,22 @@ def _with_states(
             "label_sets": others,
             "template_title": _template_title(extraction),
             "source_notes": notes,
+            "sent": _sent(extraction),
         }
+    )
+
+
+def _sent(extraction: Extraction) -> SentOut | None:
+    data = extraction.model_input
+    if not data:
+        return None
+    return SentOut(
+        blocks=len(data.get("blocks", [])),
+        total_blocks=int(data.get("total_blocks", 0)),
+        chars=int(data.get("chars", 0)),
+        images=int(data.get("images", 0)),
+        lessons=int(data.get("lessons", 0)),
+        has_snapshot=extraction.ocr_snapshot is not None,
     )
 
 

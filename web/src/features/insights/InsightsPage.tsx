@@ -27,6 +27,7 @@ import { type Correction, type FieldStat, type KindCount, type TemplateStat, dow
 import { useAuth } from '../../auth/useAuth'
 import { saveFile } from '../../utils/download'
 import { formatTime } from '../../utils/format'
+import { StageCell, StageSummary } from './Attribution'
 
 const RANGES = [
   { value: 0, label: '全部' },
@@ -154,6 +155,11 @@ export function InsightsPage() {
     },
     { title: '哪种错', dataIndex: 'kind_name', width: 130, render: (n: string) => <Tag>{n}</Tag> },
     {
+      title: '错在哪一步',
+      width: 170,
+      render: (_, c) => <StageCell c={c} canEdit={can('document:review')} />,
+    },
+    {
       title: '标黄了',
       dataIndex: 'flagged',
       width: 80,
@@ -189,18 +195,18 @@ export function InsightsPage() {
         data && (
           <>
             <Row gutter={[16, 16]}>
-              <Col xs={12} md={6}>
+              <Col flex="1 1 180px">
                 <Card><Statistic title="审核完成的单据" value={data.documents} /></Card>
               </Col>
-              <Col xs={12} md={6}>
+              <Col flex="1 1 180px">
                 <Card><Statistic title="字段" value={data.fields} suffix={<Typography.Text type="secondary" style={{ fontSize: 14 }}>确认 {data.confirmed}</Typography.Text>} /></Card>
               </Col>
-              <Col xs={12} md={6}>
+              <Col flex="1 1 180px">
                 <Card>
                   <Statistic title="人工修改率" value={(data.rate * 100).toFixed(1)} suffix={`%（${data.edited} 个）`} />
                 </Card>
               </Col>
-              <Col xs={12} md={6}>
+              <Col flex="1 1 180px">
                 <Card>
                   <Tooltip title="人改了，但抽取时没有标黄：系统没发现的错。越少越好">
                     <Statistic
@@ -211,9 +217,32 @@ export function InsightsPage() {
                   </Tooltip>
                 </Card>
               </Col>
+              <Col flex="1 1 180px">
+                <Card>
+                  <Tooltip
+                    title={
+                      data.timed_documents
+                        ? `${data.timed_documents} 份记了用时。只算审核页开着、人在操作的时间，页面在后台或一分钟没动不算`
+                        : '这次更新以后审核的单据才有用时'
+                    }
+                  >
+                    <Statistic title="平均审核用时" value={reviewTime(data.review_seconds)} />
+                  </Tooltip>
+                </Card>
+              </Col>
             </Row>
             <Card title="常见错误" size="small">
               <Kinds kinds={data.kinds} />
+            </Card>
+            <Card
+              title={
+                <Tooltip title="按证据判断：OCR 样本、这一轮发给模型的文字、审核时点的原文或框。证据不够的不下结论。下面最近的修改里可以点开看理由、改判">
+                  <span>错在哪一步</span>
+                </Tooltip>
+              }
+              size="small"
+            >
+              <StageSummary stages={data.stages ?? []} />
             </Card>
             <Card title="按模板" size="small">
               <Table rowKey="template" size="small" pagination={false} columns={templateColumns} dataSource={data.templates} />
@@ -235,4 +264,12 @@ export function InsightsPage() {
       )}
     </Flex>
   )
+}
+
+/** 审核用时写成"1 分 25 秒"；没有记录的显示"—"。 */
+function reviewTime(seconds: number | null): string {
+  if (seconds == null) return '—'
+  const total = Math.round(seconds)
+  if (total < 60) return `${total} 秒`
+  return `${Math.floor(total / 60)} 分 ${total % 60} 秒`
 }

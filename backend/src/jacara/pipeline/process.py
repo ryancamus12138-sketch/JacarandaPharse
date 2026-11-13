@@ -37,6 +37,7 @@ from jacara.pipeline.handoff import dump_pages
 from jacara.pipeline.handoff import load_pages as load_handoff
 from jacara.pipeline.learn import Lesson, from_database
 from jacara.pipeline.run import Pipeline, TemplateChoice
+from jacara.pipeline.snapshots import save_snapshot
 from jacara.pipeline.store import add_extractions, page_count
 from jacara.pipeline.vision import VisionMode
 from jacara.plugins.exporters import DocumentReport
@@ -156,6 +157,7 @@ def _save(
     extra: dict[str, object],
     timings: dict[str, object],
     factory: sessionmaker[Session] | None,
+    snapshot: str | None = None,
 ) -> None:
     _report(document_id, "保存结果", 98, factory)
     with session_scope(factory) as session:
@@ -167,6 +169,7 @@ def _save(
             run=run,
             template_version_id=cast(uuid.UUID | None, extra["template_version_id"]),
             run_reason=cast(str | None, extra["run_reason"]),
+            ocr_snapshot=snapshot,
         )
         document.page_count = page_count(reports)
         document.current_run = run  # 新一轮成功了才换过去；失败时旧结果照常能看
@@ -216,7 +219,8 @@ def process_document(
             reports, run, extra = _extract(document_id, job, path, pages, pipeline, factory)
             extract_ms = _ms(started)
         timings = {"read_ms": read_ms, "wait_ms": 0, "extract_ms": extract_ms, "split": False}
-        _save(document_id, reports, run, extra, timings, factory)
+        snapshot = save_snapshot(storage, document_id, run, pages)
+        _save(document_id, reports, run, extra, timings, factory, snapshot)
         return "done"
     except Exception as err:
         _fail(document_id, err, factory)
@@ -227,7 +231,7 @@ def process_document(
 
 
 def handoff_key(document_id: uuid.UUID, attempt: str) -> str:
-    """OCR 工位认好的字放在对象存储的哪里（模型工位做完就删）。"""
+    """OCR 工位认好的字放在对象存储的哪里（模型工位做完就删；留下来的是这一轮的 OCR 快照）。"""
     return f"pipeline/{document_id}/{attempt}.json"
 
 
@@ -302,7 +306,8 @@ def extract_document(
             "extract_ms": extract_ms,
             "split": True,
         }
-        _save(document_id, reports, run, extra, done, factory)
+        snapshot = save_snapshot(storage, document_id, run, pages)
+        _save(document_id, reports, run, extra, done, factory, snapshot)
         return "done"
     except Exception as err:
         _fail(document_id, err, factory)

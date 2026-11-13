@@ -82,6 +82,18 @@ export const LEVEL_COLORS: Record<Level, string> = {
   green: '#52c41a',
 }
 
+/**
+ * 显示用的值：数字存的是 118.0 这种写法（读成数再存），整数去掉多余的 .0，显示成 118；
+ * 其他照原样。只影响显示，存的值和导出（Excel 是数字、CSV 本来就不带 .0）不变。
+ */
+export function shownValue(v: Pick<FieldValue, 'type' | 'current_value'>): string | null {
+  const value = v.current_value
+  if (value !== null && v.type === 'number' && /^-?\d+\.0+$/.test(value)) {
+    return value.replace(/\.0+$/, '')
+  }
+  return value
+}
+
 /** 字段的颜色。后端算好的（证据 × 校验 × 有没有人审核过）；老接口没有时按"等不等人确认"。 */
 export function levelOf(v: FieldValue): Level {
   if (v.level) {

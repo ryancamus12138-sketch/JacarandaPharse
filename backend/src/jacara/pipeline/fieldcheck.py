@@ -22,16 +22,15 @@ from itertools import pairwise
 
 from jacara.core.cjk import plain_cjk
 from jacara.core.daterange import parse_date_range
+from jacara.core.dates import date_pattern
 from jacara.core.numbers import number_pattern
 from jacara.core.textvalue import parse_date, parse_number
 from jacara.plugins.aligners.base import AlignedField, Candidate
 from jacara.plugins.aligners.crosscheck import cross_check
 from jacara.plugins.aligners.text_match import (
     _best_similarity,
-    _exact_pattern,
     _squash,
     _tidy,
-    date_variants,
 )
 from jacara.plugins.extractors.base import ExtractedField
 from jacara.plugins.ocr.base import FormValue, OcrLine, OcrPage
@@ -168,7 +167,7 @@ def supports(
             return False
         return number_pattern(number, loose=True).search(_tidy(text)) is not None
     if type_ == "date":
-        if _exact_pattern(date_variants(str(value))).search(_tidy(text)):
+        if date_pattern(value).search(_tidy(text)):
             return True
         return cross_check("date", value, text, day_first).verdict == "ok"
     if type_ == "date_range":

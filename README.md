@@ -117,7 +117,10 @@ uv run jacara templates                         # 列出所有模板
 | GET | `/api/v1/documents/{id}/pages/{n}/image` | 第 n 页的图片（PNG），出处框的坐标就是这张图上的像素 |
 | POST | `/api/v1/documents/{id}/process` | 重新处理（失败后重试） |
 | POST | `/api/v1/documents/{id}/review` | 完成审核（所有标黄的字段都处理过之后） |
-| POST | `/api/v1/documents/reprocess` | 勾选的几份按默认设置一起重新处理（`{"ids": [...]}`） |
+| POST | `/api/v1/documents/reprocess` | 勾选的几份用同样的设置一起重新处理（`{"ids": [...]}`，可以带模板、分单据、看原图、PDF 读法） |
+| GET | `/api/v1/documents/export.json?ids=…` | 多个文档导出成一个 JSON（`jacarandaparse.export.v1`） |
+| POST | `/api/v1/documents/{id}/review-time` | 审核页报审核用时（秒） |
+| GET | `/api/v1/documents/{id}/extractions/{eid}/sent` | 这一轮发给模型的单据文字原文和文字块编号（ADR 0053） |
 | POST | `/api/v1/values/{id}/revisions` | 审核一个字段：修改（edit）或确认（confirm） |
 | GET | `/api/v1/values/{id}/revisions` | 一个字段的修改历史 |
 | GET | `/api/v1/documents/{id}/export.xlsx` | 导出一个文档的 Excel（审核之后的值） |
@@ -128,7 +131,9 @@ uv run jacara templates                         # 列出所有模板
 | PATCH | `/api/v1/users/{id}` | 改权限、停用（管理员） |
 | POST | `/api/v1/users/{id}/reset-code` | 给忘了密码的人生成一次性重设码（管理员；15 分钟有效，只能用一次） |
 | GET | `/api/v1/users/permissions` | 可以开通的权限 |
-| GET | `/api/v1/audit-logs` | 审计日志：谁、什么时候、做了什么（管理员） |
+| GET | `/api/v1/audit-logs` | 审计日志：谁、什么时候、做了什么（管理员；按 `action`、`user_id`、`date_from`、`date_to` 筛，`/audit-logs/export` 导出） |
+| GET | `/api/v1/insights/corrections` | 统计：人工修改率、哪种错、错在哪一步、平均审核用时 |
+| PATCH | `/api/v1/insights/attributions/{id}` | 改判错在哪一步（`{"stage": "ocr_misread", "note": "…"}`，`null` 撤销） |
 | GET | `/api/v1/templates` | 所有模板：字段、中文名、类型、规则 |
 | GET | `/api/v1/templates/{name}` | 一个模板 |
 | GET / PUT | `/api/v1/ocr-samples/settings` | 自动收集 OCR 纠错样本的开关（改要管理员） |
@@ -136,6 +141,7 @@ uv run jacara templates                         # 列出所有模板
 | GET | `/api/v1/ocr-samples/export` | OCR 样本导出成 ZIP（PaddleOCR 识别训练格式，按单据分好训练集和验证集；`kind=test` 导出锁定测试集），`/export/preview` 先看会导出几条 |
 | GET | `/api/v1/ocr-samples/groups` | 单据分组：每组有哪几张单据、分在哪边（`PUT /groups/{id}/split` 管理员改） |
 | GET / POST | `/api/v1/ocr-samples/pairs` | 可能是同一张单据的（PDF 和照片），确认是不是同一张 |
+| POST | `/api/v1/ocr-samples/backfill` | 从以前的修改补收样本，进"待复核"（`PATCH /ocr-samples/{id}` 改成 `ready` 是复核通过） |
 
 给别人用时，可以在 `.env` 里写 `JACARA_API_DOCS=false` 关掉 `/docs`。
 
@@ -172,6 +178,16 @@ uv run jacara eval sroie --limit 20       # 要先启动大模型
 uv run jacara eval pairs                                   # 标准答案当回答，不用模型，只量 OCR 和核对
 uv run jacara eval pairs --server http://127.0.0.1:8080    # 真的用模型抽，要先启动大模型
 ```
+
+回放（ADR 0053）：审核完成的单据用当时的 OCR 快照换一种设置再抽，和人审核过的值比。只读，不改审核数据：
+
+```bash
+uv run jacara eval replay --b http://127.0.0.1:8080 --limit 5            # 先少量试跑：A 是当时存下的结果
+uv run jacara eval replay --b http://127.0.0.1:8080 --b-learn            # B 带上以前改过的例子
+uv run jacara eval replay --b http://127.0.0.1:8080 --split test_locked  # 只用锁定测试集
+```
+
+结果在 `data/eval/replay/<时间>/summary.md`。更新之前处理的单据没有快照，默认跳过，加 `--reread` 重新认字。
 
 ### 检查与测试
 

@@ -27,6 +27,7 @@ CONTENT_TYPES = {
     "zip": "application/zip",
     "csv": "text/csv; charset=utf-8",
     "csv-zip": "application/zip",
+    "json": "application/json",
 }
 
 

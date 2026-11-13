@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 Category = Literal["rec_error", "correct", "missed", "unclear"]
 Split = Literal["train", "val", "test_locked", "quarantined"]
 ExportKind = Literal["train_val", "test"]
-Status = Literal["ready", "failed", "withdrawn"]
+Status = Literal["ready", "failed", "withdrawn", "pending"]
+"""pending：从以前的修改补收的（ADR 0053），人复核了才变成 ready、才能导出。"""
 SourceFormat = Literal["pdf", "image"]
 
 
@@ -46,6 +47,17 @@ class SampleOut(BaseModel):
     height: int | None
     status: Status
     error: str
+    origin: str = "review"
+    """review（审核时收集的）或 backfill（从以前的修改补收的）。"""
+    reviewed_value: str | None = None
+    """补收的：当时人把字段改成了什么（复核时参考，不一定就是图里的原文）。"""
+
+
+class BackfillOut(BaseModel):
+    """从以前的修改补收样本的结果。"""
+
+    created: int
+    skipped: list[Excluded]
 
 
 class SampleList(BaseModel):
@@ -59,7 +71,8 @@ class SampleList(BaseModel):
 
 
 class SampleIn(BaseModel):
-    """样本页改一条：图中原文、分类、撤回（withdrawn）或恢复（ready）。不改的不传。"""
+    """样本页改一条：图中原文、分类、撤回（withdrawn）或恢复（ready）。不改的不传。
+    待复核（pending）的改成 ready 就是复核通过。"""
 
     transcription: str | None = Field(default=None, max_length=500)
     category: Category | None = None

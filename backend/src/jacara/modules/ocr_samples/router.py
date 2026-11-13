@@ -14,6 +14,7 @@ from jacara.core.owner import Owner
 from jacara.core.storage import ObjectStorage
 from jacara.modules.documents.router import attachment
 from jacara.modules.ocr_samples.schemas import (
+    BackfillOut,
     Category,
     ExportKind,
     ExportPreview,
@@ -171,6 +172,16 @@ def find_units(
 ) -> list[UnitOut]:
     """手动配对时用：文件名里有 q 的、处理完的单据。"""
     return service.units(q)
+
+
+@router.post("/backfill", summary="从以前的修改补收样本")
+def backfill(service: Service) -> BackfillOut:
+    """以前审核时点了原文或框了一块、改了值的，裁出小图进"待复核"（ADR 0053）。
+    人确认图里的原文以后才能导出。同一次修改只收一条，再点不会重复。"""
+    try:
+        return service.backfill()
+    except SampleError as err:
+        raise _http_error(err) from err
 
 
 @router.get("/{sample_id}/image", summary="样本的小图", response_class=Response)

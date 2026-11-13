@@ -1,4 +1,4 @@
-import { DownloadOutlined, ReloadOutlined, RollbackOutlined, UndoOutlined } from '@ant-design/icons'
+import { CheckOutlined, DownloadOutlined, HistoryOutlined, ReloadOutlined, RollbackOutlined, UndoOutlined } from '@ant-design/icons'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Alert,
@@ -40,6 +40,7 @@ import {
   getSampleSettings,
   listSamples,
   previewExport,
+  backfillSamples,
   retrySample,
   sampleTemplates,
   setSampleSettings,
@@ -390,6 +391,20 @@ export function OcrSamplesPage() {
     },
     onError: (err) => void message.error(errorText(err)),
   })
+  const backfill = useMutation({
+    mutationFn: backfillSamples,
+    onSuccess: (r) => {
+      refresh()
+      void queryClient.invalidateQueries({ queryKey: ['ocr-sample-templates'] })
+      if (r.created > 0) {
+        void message.success(`补收了 ${r.created} 条，在"待复核"里：对着小图确认图里的原文`)
+        reset(() => setStatus('pending'))
+      } else {
+        void message.info(r.skipped.length ? `没有能补收的（${r.skipped.map((s) => `${s.reason} ${s.count}`).join('；')}）` : '没有能补收的')
+      }
+    },
+    onError: (err) => void message.error(errorText(err)),
+  })
   const data = list.data
   const counts = data?.categories ?? {}
   const all = ORDER.reduce((sum, c) => sum + (counts[c] ?? 0), 0)
@@ -419,6 +434,12 @@ export function OcrSamplesPage() {
       title: <Tooltip title="图上原样的文字，训练用的标签">图中原文</Tooltip>,
       dataIndex: 'transcription',
       render: (text: string, s) => (
+        <Flex vertical gap={2}>
+        {s.status === 'pending' && (
+          <Typography.Text type="warning" style={{ fontSize: 12 }}>
+            补收的，先猜的{s.reviewed_value ? `；当时字段改成了 ${s.reviewed_value}` : ''}。对着小图写出图里的原文
+          </Typography.Text>
+        )}
         <Typography.Text
           style={MONO}
           editable={
@@ -434,6 +455,7 @@ export function OcrSamplesPage() {
         >
           {text}
         </Typography.Text>
+        </Flex>
       ),
     },
     {
@@ -496,7 +518,23 @@ export function OcrSamplesPage() {
       key: 'actions',
       width: 96,
       render: (_, s) =>
-        !canReview ? null : s.status === 'failed' ? (
+        !canReview ? null : s.status === 'pending' ? (
+          <Flex vertical gap={4}>
+            <Tooltip title="图中原文对了就通过（不对先点原文旁边的笔改），通过后才能导出">
+              <Button size="small" type="primary" icon={<CheckOutlined />} onClick={() => update.mutate({ id: s.id, change: { status: 'ready' } })}>
+                通过
+              </Button>
+            </Tooltip>
+            <Button
+              size="small"
+              type="text"
+              icon={<RollbackOutlined />}
+              onClick={() => update.mutate({ id: s.id, change: { status: 'withdrawn' } })}
+            >
+              不要
+            </Button>
+          </Flex>
+        ) : s.status === 'failed' ? (
           <Button size="small" icon={<ReloadOutlined />} loading={retry.isPending} onClick={() => retry.mutate(s.id)}>
             重试
           </Button>
@@ -525,11 +563,20 @@ export function OcrSamplesPage() {
         <Typography.Title level={4} style={{ margin: 0 }}>
           OCR 样本
         </Typography.Title>
-        {can('document:export') && (
-          <Button type="primary" icon={<DownloadOutlined />} disabled={all === 0} onClick={() => setExporting(true)}>
-            导出 ZIP
-          </Button>
-        )}
+        <Flex gap={8} wrap>
+          {canReview && (
+            <Tooltip title="开关打开之前审核过的：点了原文或框了一块、改了值的，裁出小图进待复核。手打的不收，同一次修改不会重复收">
+              <Button icon={<HistoryOutlined />} loading={backfill.isPending} onClick={() => backfill.mutate()}>
+                从以前的修改补收
+              </Button>
+            </Tooltip>
+          )}
+          {can('document:export') && (
+            <Button type="primary" icon={<DownloadOutlined />} disabled={all === 0} onClick={() => setExporting(true)}>
+              导出 ZIP
+            </Button>
+          )}
+        </Flex>
       </Flex>
       <CollectSwitch />
       <Tabs
@@ -560,12 +607,13 @@ export function OcrSamplesPage() {
                 />
                 <Flex gap={8} wrap>
                   <Select
-                    style={{ width: 130 }}
+                    style={{ width: 140 }}
                     value={status}
                     onChange={(v) => reset(() => setStatus(v))}
                     options={[
                       { value: '', label: '全部状态' },
                       { value: 'ready', label: `可以导出 ${data?.statuses.ready ?? 0}` },
+                      { value: 'pending', label: `待复核 ${data?.statuses.pending ?? 0}` },
                       { value: 'failed', label: `裁图失败 ${data?.statuses.failed ?? 0}` },
                       { value: 'withdrawn', label: `撤回了 ${data?.statuses.withdrawn ?? 0}` },
                     ]}

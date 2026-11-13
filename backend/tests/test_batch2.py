@@ -223,7 +223,9 @@ def test_delete_documents_one_and_many(client, factory, storage, receipt_page):
     ids = [upload_file(client, data=d)["id"] for d in (b"1", b"2", b"3")]
     process(factory, storage, ids[0], receipt_page)
     client.post(f"/api/v1/documents/{ids[0]}/comments", json={"body": "看一下"})
-    assert len(storage.files) == 3
+    # 三个原始文件 + 处理过的那份的 OCR 快照（ADR 0053）
+    assert len(storage.files) == 4
+    assert any(k.startswith(f"ocr-snapshots/{ids[0]}/") for k in storage.files)
 
     one = client.delete(f"/api/v1/documents/{ids[0]}")
     assert one.status_code == 200 and one.json() == {"deleted": 1, "skipped": []}
@@ -233,7 +235,7 @@ def test_delete_documents_one_and_many(client, factory, storage, receipt_page):
         assert session.query(ExtractedValue).count() == 0
         assert session.query(Comment).count() == 0
         session.get_one(Document, uuid.UUID(ids[1])).status = "processing"
-    assert len(storage.files) == 2
+    assert len(storage.files) == 2  # 快照跟着删了
 
     many = client.post("/api/v1/documents/delete", json={"ids": ids[1:]}).json()
     assert many["deleted"] == 1 and "正在处理" in many["skipped"][0]
