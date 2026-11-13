@@ -37,6 +37,8 @@ from jacara.modules.documents.schemas import (
     RegionIn,
     RegionOut,
     ReprocessIn,
+    ReprocessManyIn,
+    ReprocessManyOut,
     SkipIn,
 )
 from jacara.modules.documents.service import DocumentError, DocumentService, day_start
@@ -190,6 +192,17 @@ def delete_documents(data: DeleteIn, service: Service) -> DeleteOut:
     """勾选的几份一起删。正在处理的跳过，skipped 里说明。"""
     try:
         return service.delete(data.ids)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/reprocess", status_code=status.HTTP_202_ACCEPTED, summary="一次重新处理几份")
+def reprocess_documents(data: ReprocessManyIn, service: Service) -> ReprocessManyOut:
+    """勾选的几份用同样的设置一起重新处理（模板、分单据、看原图、PDF 怎么读、原因）。
+    不写的设置：模板用各自的最新版，分单据和上次一样，看原图和 PDF 读法按系统设置。
+    正在处理、还在排队的跳过，skipped 里说明。"""
+    try:
+        return service.reprocess_many(data)
     except DocumentError as err:
         raise _http_error(err) from err
 

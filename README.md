@@ -117,6 +117,7 @@ uv run jacara templates                         # 列出所有模板
 | GET | `/api/v1/documents/{id}/pages/{n}/image` | 第 n 页的图片（PNG），出处框的坐标就是这张图上的像素 |
 | POST | `/api/v1/documents/{id}/process` | 重新处理（失败后重试） |
 | POST | `/api/v1/documents/{id}/review` | 完成审核（所有标黄的字段都处理过之后） |
+| POST | `/api/v1/documents/reprocess` | 勾选的几份按默认设置一起重新处理（`{"ids": [...]}`） |
 | POST | `/api/v1/values/{id}/revisions` | 审核一个字段：修改（edit）或确认（confirm） |
 | GET | `/api/v1/values/{id}/revisions` | 一个字段的修改历史 |
 | GET | `/api/v1/documents/{id}/export.xlsx` | 导出一个文档的 Excel（审核之后的值） |

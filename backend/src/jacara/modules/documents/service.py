@@ -49,6 +49,8 @@ from jacara.modules.documents.schemas import (
     RegionDescription,
     RegionOut,
     ReprocessIn,
+    ReprocessManyIn,
+    ReprocessManyOut,
     RunOut,
     SameFile,
     SkipIn,
@@ -310,6 +312,43 @@ class DocumentService:
         if not self._enqueue(document):
             raise DocumentError("queue", "任务队列暂时不可用，请稍后再试")
         return DocumentOut.model_validate(document)
+
+    def reprocess_many(self, data: ReprocessManyIn) -> ReprocessManyOut:
+        """勾选的几份一起重新处理（各跑新的一轮），每份用同样的设置（网页上默认：模板用各自的最新版，
+        看不看原图、PDF 怎么读按系统设置，分单据和上次一样）。正在处理、还在排队的跳过。
+        任务队列连不上时马上停下、报错：已经改成"排队中"的那份和上传时队列没连上一样，
+        列表上可以"重试"。
+        """
+        if data.reason == "other" and not data.note.strip():
+            raise DocumentError("invalid", '原因选了"其他"，请写一句说明')
+        ids = data.ids
+        choice = ReprocessIn(
+            template=data.template,
+            reason=data.reason,
+            note=data.note,
+            split=data.split,
+            vision=data.vision,
+            pdf_read=data.pdf_read,
+        )
+        queued = 0
+        skipped: list[str] = []
+        busy = {"uploaded": "正在排队", "processing": "正在处理"}
+        for document_id in dict.fromkeys(ids):
+            document = self.repo.get(document_id, self.owner.team_id)
+            if document is not None and document.status in busy:
+                skipped.append(f"{document.filename}：{busy[document.status]}")
+                continue
+            try:
+                self.reprocess(document_id, choice)
+            except DocumentError as err:
+                if err.code == "queue":
+                    raise
+                document = self.session.get(Document, document_id)
+                name = document.filename if document is not None else str(document_id)
+                skipped.append(f"{name}：{err.message}")
+                continue
+            queued += 1
+        return ReprocessManyOut(queued=queued, skipped=skipped)
 
     def adopt_previous(self, document_id: uuid.UUID) -> AdoptOut:
         """采纳上次的确认：重新处理之后，把能沿用的上一轮审核一次用上（见 suggestions）。"""

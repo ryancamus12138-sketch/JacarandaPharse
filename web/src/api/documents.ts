@@ -237,6 +237,27 @@ export function getPageStructure(id: string, page: number, run?: number): Promis
 }
 
 /** 删除文档（一份或几份）：原始文件、处理结果、审核记录、备注都删掉，不能恢复。正在处理的跳过。 */
+/** 批量重新处理的设置。null：每份和上次一样；template 不写：各自用现在这个模板的最新版。 */
+export interface BatchReprocess {
+  template?: string
+  split: 'auto' | 'one' | 'pages' | null
+  vision: 'default' | 'always' | 'off' | null
+  pdf_read: 'default' | 'image' | 'text' | null
+  reason: ReprocessReason
+  note: string
+}
+
+/** 勾选的几份用同样的设置一起重新处理。skipped：没处理的（正在处理、还在排队……）。 */
+export function reprocessDocuments(
+  ids: string[],
+  settings: BatchReprocess,
+): Promise<{ queued: number; skipped: string[] }> {
+  return api<{ queued: number; skipped: string[] }>('/documents/reprocess', {
+    method: 'POST',
+    json: { ids, ...settings },
+  })
+}
+
 export function deleteDocuments(ids: string[]): Promise<{ deleted: number; skipped: string[] }> {
   return api<{ deleted: number; skipped: string[] }>('/documents/delete', {
     method: 'POST',

@@ -13,6 +13,14 @@ import {
 } from '../../api/types'
 import { formatTime } from '../../utils/format'
 import { templateOptions } from '../templates/uploadChoice'
+import {
+  PDF_READ_CHOICES,
+  type PdfRead,
+  SAME,
+  SPLITS,
+  VISION_CHOICES,
+  type Vision,
+} from './reprocessChoices'
 
 /** 看第几轮的结果。只有一轮时不显示。 */
 export function RunSwitcher({
@@ -39,7 +47,6 @@ export function RunSwitcher({
   )
 }
 
-const SAME = '__same__'
 
 /** 重新处理：换模板（或同一个模板的最新版）跑新的一轮，要写原因。旧结果留着可以查看。 */
 interface Choice {
@@ -52,28 +59,7 @@ interface Choice {
   ranges?: string
 }
 
-const SPLITS = [
-  { value: 'auto', label: '自动判断' },
-  { value: 'one', label: '整个文件是一张单据' },
-  { value: 'pages', label: '每页是一张单据' },
-  { value: 'ranges', label: '自己写页码' },
-]
 
-type Vision = 'default' | 'always' | 'off'
-
-const VISION_CHOICES: { value: Vision; label: string }[] = [
-  { value: 'default', label: '系统决定（推荐）' },
-  { value: 'always', label: '每页都对照原图' },
-  { value: 'off', label: '只看文字（最快）' },
-]
-
-type PdfRead = 'default' | 'image' | 'text'
-
-const PDF_READ_CHOICES: { value: PdfRead; label: string }[] = [
-  { value: 'default', label: '系统决定（推荐）' },
-  { value: 'image', label: '画成图识别' },
-  { value: 'text', label: '只读 PDF 自带的文字（最快）' },
-]
 
 /** 现在的分法 → 表单里的选项。 */
 function splitChoice(split: string | undefined): { split: string; ranges?: string } {

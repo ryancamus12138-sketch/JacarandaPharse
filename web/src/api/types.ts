@@ -434,6 +434,7 @@ export type ReprocessReason =
   | 'wrong_template'
   | 'bad_result'
   | 'model_changed'
+  | 'batch'
   | 'other'
 
 export const REPROCESS_REASONS: Record<ReprocessReason, string> = {
@@ -441,6 +442,7 @@ export const REPROCESS_REASONS: Record<ReprocessReason, string> = {
   wrong_template: '选错了模板',
   bad_result: '结果不好，再跑一次',
   model_changed: '换了模型或 OCR',
+  batch: '批量重新处理',
   other: '其他',
 }
 

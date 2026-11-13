@@ -32,6 +32,32 @@ class DeleteIn(BaseModel):
     ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
 
 
+class ReprocessManyIn(BaseModel):
+    """勾选的几份一起重新处理，每份用同样的设置。不写的项：和每份上次一样。"""
+
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+    template: str | None = None
+    """我的模板的 id、discover 或 auto。
+    不写：每份用自己现在这个模板的最新版（自动判断的再判断一次）。"""
+    split: Literal["auto", "one", "pages"] | None = None
+    """一个文件里几张单据。不写：每份和上次一样（几份一起改时不能写页码）。"""
+    vision: Literal["always", "off", "default"] | None = "default"
+    """看不看原图。default 按系统设置；不写（null）：和上次一样。"""
+    pdf_read: Literal["image", "text", "default"] | None = "default"
+    """PDF 怎么读（只对 PDF 有效）。default 按系统设置；不写（null）：和上次一样。"""
+    reason: Literal[
+        "template_changed", "wrong_template", "bad_result", "model_changed", "batch", "other"
+    ] = "batch"
+    note: str = Field(default="", max_length=500)
+
+
+class ReprocessManyOut(BaseModel):
+    queued: int
+    """放进队列了几份。"""
+    skipped: list[str] = []
+    """没处理的（正在处理、还在排队、没有原文件），每份一句话：文件名 + 原因。"""
+
+
 class DeleteOut(BaseModel):
     deleted: int
     skipped: list[str] = []
@@ -171,6 +197,7 @@ REPROCESS_REASONS: dict[str, str] = {
     "wrong_template": "选错了模板",
     "bad_result": "结果不好，再跑一次",
     "model_changed": "换了模型或 OCR",
+    "batch": "批量重新处理",
     "other": "其他",
 }
 """重新处理的原因（审计和历史里显示中文）。"""
@@ -182,7 +209,9 @@ class ReprocessIn(BaseModel):
     template: str | None = None
     """我的模板的 id、discover 或 auto（自动判断，ADR 0038）。不写：用现在这个模板的最新版
     （自动判断的再自动判断一次）。"""
-    reason: Literal["template_changed", "wrong_template", "bad_result", "model_changed", "other"]
+    reason: Literal[
+        "template_changed", "wrong_template", "bad_result", "model_changed", "batch", "other"
+    ]
     note: str = Field(default="", max_length=500)
     """补充说明。原因选"其他"时必须写。"""
     split: str | None = Field(default=None, max_length=200)
