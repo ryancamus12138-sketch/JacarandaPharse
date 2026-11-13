@@ -20,7 +20,7 @@ import numpy as np
 from jacara.pipeline.classify import AutoChoice, Chooser, classify, head_text
 from jacara.pipeline.compute import compute
 from jacara.pipeline.fieldcheck import Zoomer, check_fields, rule_hints
-from jacara.pipeline.learn import Lesson, note_for, pick
+from jacara.pipeline.learn import Lesson, curate, note_for, pick
 from jacara.pipeline.pages import stack_images, stack_pages, stacked_engines
 from jacara.pipeline.ranges import range_settings
 from jacara.pipeline.segment import Judge, segments
@@ -68,6 +68,8 @@ class Pipeline:
     """有冲突、可能漏读时局部放大再识别（ADR 0042）。"""
     lessons: Callable[[str], Sequence[Lesson]] | None = None
     """从人改过的地方学（ADR 0045）：模板名 → 以前人工改过的例子。不给就不用。"""
+    learn_mode: str = "recent"
+    """怎么挑例子：recent（最近改得多的，ADR 0045）或 curated（整理过的，ADR 0055）。"""
 
     def read(self, path: Path, pdf_read: PdfRead | None = None) -> list[OcrPage]:
         """读文件：图片走 OCR；PDF 默认画成图走 OCR，文字层只核对（ADR 0042）。"""
@@ -117,7 +119,7 @@ class Pipeline:
             if isinstance(template, AutoChoice):
                 raise TypeError("自动判断要用 extract_pages")
             tpl = template if isinstance(template, Template) else load_template(template)
-            taught = self._teach(tpl.name)
+            taught = self._teach(tpl, page)
             try:
                 if images:
                     result = self.extractor.extract(
@@ -129,6 +131,7 @@ class Pipeline:
             finally:
                 if taught:
                     self.extractor.lessons = ("", 0)  # type: ignore[attr-defined]
+                    self.extractor.lessons_mode = "recent"  # type: ignore[attr-defined]
             if tpl.manual_fields:
                 # 人工填的字段不交给模型，先放一个空值，审核时填（ADR 0031）
                 empty = tuple(ExtractedField(f.name, f.type, None) for f in tpl.manual_fields)
@@ -182,14 +185,21 @@ class Pipeline:
             ranges=range_settings(tpl),
         )
 
-    def _teach(self, template: str) -> bool:
-        """把以前人工改过的例子交给抽取器（ADR 0045）。交了返回 True，抽完要清掉。"""
+    def _teach(self, template: Template, page: OcrPage) -> bool:
+        """把以前人工改过的例子交给抽取器（ADR 0045、0055）。交了返回 True，抽完要清掉。"""
         if self.lessons is None or not hasattr(self.extractor, "lessons"):
             return False
-        chosen = pick(self.lessons(template))
+        found = self.lessons(template.name)
+        if self.learn_mode == "curated":
+            text = "\n".join(line.text for line in page.lines)
+            chosen = curate(found, text, template)
+        else:
+            chosen = pick(found)
         if not chosen:
             return False
         self.extractor.lessons = (note_for(chosen), len(chosen))  # type: ignore[attr-defined]
+        if self.learn_mode == "curated":
+            self.extractor.lessons_mode = "curated"  # type: ignore[attr-defined]
         return True
 
     def extract_pages(

@@ -5,11 +5,22 @@
 
 ## [未发布]
 
-v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）、模板标签（ADR 0037）、v3 第 3 批（ADR 0038）、日期范围字段（ADR 0039）、值和原文写法（ADR 0040）、v3 第 4 批（ADR 0041）、PDF 画成图识别（ADR 0042）、物流和质检起步模板（ADR 0043）、修改统计和导出审核数据（ADR 0044）、从人改过的地方学（ADR 0045）、在网页上换模型（ADR 0046）、在样例上框选建模板（ADR 0047）、模板多语言和按地区管理（ADR 0048）、各国法定单据模板（ADR 0049）、OCR 纠错样本（ADR 0050）、后台流水线（ADR 0051）、样本分组和划分（ADR 0052）、每轮的记录、回放和错误归因（ADR 0053）。
+v4 要做的见《JacarandaParse 功能全景与进度》第四节：评测数字重跑、断网验证、敏感字段打码、表格明细的回放和评测、API 密钥、权重离线导入、离线安装包、局域网部署、登录失败锁定等。
+
+## [3.0.0] - 2026-11-13
+
+第三个大版本：更省事、更准，并且能从审核里学。一个文件里的几张单据、批量导入、自动判断模板、看原图读、
+PDF 画成图识别、按文字块理解页面、数字和日期读出来再比；40 个起步模板（22 个国家和地区）、模板多语言；
+统计页和错误归因、从人改过的地方学、OCR 纠错样本和训练数据、回放命令；后台流水线、备份和恢复。
+
+v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）、模板标签（ADR 0037）、v3 第 3 批（ADR 0038）、日期范围字段（ADR 0039）、值和原文写法（ADR 0040）、v3 第 4 批（ADR 0041）、PDF 画成图识别（ADR 0042）、物流和质检起步模板（ADR 0043）、修改统计和导出审核数据（ADR 0044）、从人改过的地方学（ADR 0045）、在网页上换模型（ADR 0046）、在样例上框选建模板（ADR 0047）、模板多语言和按地区管理（ADR 0048）、各国法定单据模板（ADR 0049）、OCR 纠错样本（ADR 0050）、后台流水线（ADR 0051）、样本分组和划分（ADR 0052）、每轮的记录、回放和错误归因（ADR 0053）、备份和恢复（ADR 0054）、整理过的例子、单据系列和认对的行（ADR 0055）。
 升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at、domains、countries、tags；documents 加 auto、vision，extractions 加 classified、vision；documents 加 pdf_read，extracted_values 加 candidates；新表 team_settings、ocr_samples；documents 加 timings；新表 doc_group_members、split_assignments、doc_pair_decisions、ocr_sample_exports，ocr_samples 加 unit_page、revision；documents 加 review_seconds，extractions 加 model_input、ocr_snapshot，新表 error_attributions，ocr_samples 加 origin），再 `cd web && npm run build`。表格结构模型可选，见 README。
 
 ### 新增
 
+- 整理过的例子（ADR 0055，B2 + B3）：`JACARA_LEARN_MODE=curated` 时，给模型的例子只用错在模型这一步的修改（OCR 认错、没认出的不给），同一字段同一种错合成一条并注明出现几次，模板改过的旧例子不用，同一个发单方（按税号或名称认，审核完成满 3 份）的例子优先。默认还是原来的挑法；回放加 `--a-learn recent --b-learn curated` 先比再换
+- 收认对的行（ADR 0055，A3）："OCR 样本"页"收认对的行"：人没改过、出处正好一整块且只有这个值的，收成认对的行进待复核；待复核的可以"通过这一页"。导出包多了真实语料（corpus/），README 写了 PaddleOCR 建议的 5000 行门槛和配比，导出预览显示还差多少
+- 备份和恢复（ADR 0054）：`jacara backup` 把数据库每张表和对象存储里每个文件打进一个包（先 `jacara stop`，包里每个文件带 sha256，放在 backups/，不进 Git）；`jacara restore` 只往空环境恢复，先核对整个包再动手；`jacara restore-drill` 另起一套空的数据库和存储实际恢复一次，逐样打开原始文件、审核记录、模板、OCR 样本、快照、导出文件，做完删掉演练环境
 - 每轮的 OCR 快照（ADR 0053）：每处理完一轮，OCR 认出来的原样存一份（删除文档时一起删），回放、错误归因用它，不用重新认字
 - 记下发给模型的是什么（ADR 0053）：哪几个文字块、多少字、几张图、几个例子和原文。审核页"发给模型 N 个文字块"点开看原文：值不在这里面是 OCR 没认出来，在里面是模型漏了
 - 回放命令 `jacara eval replay --b <模型服务地址>`（ADR 0053）：审核完成的单据用当时的 OCR 快照换一种设置再抽一次，和人审核过的值比：修好了几个、弄坏了几个、新漏了几个、标黄的变化，精确 McNemar 和按业务单据分组的 bootstrap 区间，附版本清单。只读，不改审核数据；结果写到 data/eval/replay/
@@ -119,6 +130,17 @@ v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页�
 - 提示词升到 extract-v6（键值对发现 discover-v3）：按文字块回答（`blocks`），不再给行号；以前的评测数字是 v4 的，要重新跑评测才能比较
 - 有文字层的 PDF 按词之间的空隙分块，冒号结尾的标签和后面的值分开：出处框只框住值本身，不再从店名横跨到同一行的日期
 - 起步模板"酒店账单"第 2 版：酒店名称照抄完整写法，晚数、房号写明 Rooms 一栏是房间数，补常见英文别名
+
+### 已知限制
+
+- 评测数字还是 11-11 的（SROIE 626 张，提示词 extract-v3，准确率 90.6%）；之后提示词、找出处、PDF 读法都改过，要重跑
+- 模板库、Excel 回填、各国模板只用样例和测试跑过，没有用一批真实单据评测
+- 整理过的例子（`JACARA_LEARN_MODE=curated`）默认关，要先用回放在锁定测试集上比过
+- 回放只比单个字段，表格明细还不比；这一版之前处理的单据没有 OCR 快照，重新处理后才能回放
+- 备份恢复在测试里完整跑通，还要在真实环境里 `jacara restore-drill` 演练一次
+- "完全离线"还没做断网抓包验证；没有离线安装包、局域网部署、登录失败锁定；敏感字段只能标记、不导出，还不能打码
+
+数据库版本：Alembic `b6f1c3d8e2a5`。
 
 ## [2.0.0] - 2026-11-12
 

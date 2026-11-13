@@ -184,10 +184,21 @@ uv run jacara eval pairs --server http://127.0.0.1:8080    # 真的用模型抽�
 ```bash
 uv run jacara eval replay --b http://127.0.0.1:8080 --limit 5            # 先少量试跑：A 是当时存下的结果
 uv run jacara eval replay --b http://127.0.0.1:8080 --b-learn            # B 带上以前改过的例子
+uv run jacara eval replay --a http://127.0.0.1:8080 --a-learn recent --b http://127.0.0.1:8080 --b-learn curated --split test_locked  # 两种挑例子的办法比一比（ADR 0055）
 uv run jacara eval replay --b http://127.0.0.1:8080 --split test_locked  # 只用锁定测试集
 ```
 
 结果在 `data/eval/replay/<时间>/summary.md`。更新之前处理的单据没有快照，默认跳过，加 `--reread` 重新认字。
+
+### 备份和恢复
+
+```bash
+jacara stop
+uv run jacara backup                                   # 打进 backups/jacara-<时间>.tar
+uv run jacara restore-drill backups/jacara-<时间>.tar  # 另起一套空环境实际恢复一次、逐样打开（要 Docker）
+```
+
+真要恢复时，先准备一套空的数据库和存储，再 `uv run jacara restore <包>`（只往空环境恢复）。备份包里是你的业务数据，不要放进仓库。
 
 ### 检查与测试
 

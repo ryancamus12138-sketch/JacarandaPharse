@@ -356,6 +356,8 @@ class LlmExtractor:
         """抽取时模型每写一段就告诉它一共写了多少字（处理进度用）。不设就不流式。"""
         self.lessons: tuple[str, int] = ("", 0)
         """以前人工改过的例子（ADR 0045）：（提示词里的那一段, 几条）。流水线抽取前设、抽完清掉。"""
+        self.lessons_mode = "recent"
+        """例子是怎么挑的（ADR 0055）：curated 时提示词版本记成 +curatedN。"""
 
     def _ask(self, messages: list[ChatMessage], schema: dict[str, object]) -> ChatResult:
         """问模型。要报进度、模型服务又能边写边传时，用流式；否则一次拿回来。"""
@@ -462,7 +464,11 @@ class LlmExtractor:
             model=result.model,
             backend=result.backend,
             prompt_version=(VISION_PROMPT_VERSION if images else PROMPT_VERSION)
-            + (f"+lessons{count}" if count else ""),
+            + (
+                f"+{'curated' if self.lessons_mode == 'curated' else 'lessons'}{count}"
+                if count
+                else ""
+            ),
             duration_ms=result.duration_ms,
             sent=sent,
         )

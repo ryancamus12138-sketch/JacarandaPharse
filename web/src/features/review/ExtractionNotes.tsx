@@ -21,7 +21,7 @@ export function ExtractionNotes({
   const classified = extraction?.classified
   const vision = extraction?.vision
   // 从人改过的地方学（ADR 0045）：提示词版本记成 extract-v8+lessons3
-  const lessons = Number(/\+lessons(\d+)/.exec(extraction?.prompt_version ?? '')?.[1] ?? 0)
+  const lessons = Number(/\+(?:lessons|curated)(\d+)/.exec(extraction?.prompt_version ?? '')?.[1] ?? 0)
   const sent = extraction?.sent
   if (!classified && !vision && !lessons && !sent) return null
   return (

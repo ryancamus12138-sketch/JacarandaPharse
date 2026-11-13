@@ -27,6 +27,7 @@ from jacara.modules.ocr_samples import groups
 from jacara.modules.ocr_samples.crop import (
     CATEGORIES,
     TAGS,
+    _loose,
     box_polygon,
     category_of,
     clean,
@@ -62,6 +63,7 @@ from jacara.modules.ocr_samples.schemas import (
     SampleSettings,
     SplitCount,
     UnitOut,
+    VerifyOut,
 )
 from jacara.pipeline.current import labels_of, template_of
 from jacara.pipeline.pages import ocr_page_json
@@ -222,8 +224,8 @@ def _crop(storage: ObjectStorage, sample: OcrSample, document: Document) -> None
     sample.crop_key = key
     sample.crop_sha256 = sha256(png)
     sample.width, sample.height = image.size
-    # 补收的（ADR 0053）要人复核过才能用
-    sample.status = "pending" if sample.origin == "backfill" else "ready"
+    # 补收的（ADR 0053）、自动收的认对的行（ADR 0055）要人复核过才能用
+    sample.status = "pending" if sample.origin in ("backfill", "confirmed") else "ready"
     sample.error = ""
 
 
@@ -473,6 +475,125 @@ class OcrSampleService:
             created=created,
             skipped=[Excluded(reason=r, count=n) for r, n in skipped.most_common()],
         )
+
+    def collect_confirmed(self) -> BackfillOut:
+        """收"认对的行"（ADR 0055，A3）：审核完成的单据里，人没改过的值，出处正好是一整块原文、
+        这一块只有这个值（不带标签等别的字）——OCR 当时读对了。裁成小图进"待复核"，人过目才能导出。
+
+        PaddleOCR 微调建议至少 5000 行，只有错例不够，而且只学错例会把认得好的字"忘掉"。
+        """
+        require(self.owner, "value:review")
+        from sqlalchemy.orm import selectinload
+
+        team = self.owner.team_id
+        done = set(
+            self.session.scalars(
+                select(OcrSample.value_id).where(
+                    OcrSample.team_id == team, OcrSample.origin == "confirmed"
+                )
+            )
+        )
+        documents = self.session.scalars(
+            select(Document)
+            .where(Document.team_id == team, Document.status == "reviewed")
+            .options(selectinload(Document.extractions).selectinload(Extraction.values))
+        ).all()
+        skipped: Counter[str] = Counter()
+        created = 0
+        for document in documents:
+            for extraction in document.extractions:
+                for value in extraction.values:
+                    if value.id in done:
+                        skipped["已经收过了"] += 1
+                        continue
+                    reason = self._confirmed_one(document, extraction, value)
+                    if reason:
+                        skipped[reason] += 1
+                    else:
+                        created += 1
+        record(self.session, self.owner, "ocr_samples:confirmed", None, None, created=created)
+        self.session.flush()
+        return BackfillOut(
+            created=created,
+            skipped=[Excluded(reason=r, count=n) for r, n in skipped.most_common()],
+        )
+
+    def _confirmed_one(
+        self, document: Document, extraction: Extraction, value: ExtractedValue
+    ) -> str | None:
+        if value.deleted or value.origin != "model" or value.value is None:
+            return "没有值"
+        if (value.current_value or "").strip() != value.value.strip():
+            return "人改过（这是错例，用补收）"
+        if document.storage_key is None or self.storage is None:
+            return "没有原始文件"
+        evidence = value.evidence or {}
+        if not evidence.get("bbox"):
+            return "没有出处"
+        page = int(evidence.get("page") or extraction.page)
+        ocr = ocr_page_json(extraction.ocr, page, extraction.page) or {}
+        if ocr.get("engine", extraction.source) == "pdf-text":
+            return "这一页的字是 PDF 自带的，不是 OCR 认的"
+        template = template_of(extraction)
+        field = generic_field(value.name)
+        if _sensitive(template, field):
+            return "敏感字段不收"
+        box = [float(v) for v in evidence["bbox"]]
+        same = [ln for ln in ocr.get("lines", []) if _same_box(ln.get("box"), box)]
+        if len(same) != 1 or not same[0].get("polygon"):
+            return "出处不是正好一整块原文"
+        text = clean(str(same[0]["text"]))
+        if text is None or not only_value(value.type, value.value, text):
+            return "这一块里除了值还有别的字"
+        labels = labels_of(extraction)
+        sample = OcrSample(
+            id=uuid.uuid4(),
+            created_at=datetime.now(UTC),
+            document_id=document.id,
+            value_id=value.id,
+            revision_id=None,
+            page=page,
+            unit_page=extraction.page,
+            kind="line",
+            polygon=[[float(x), float(y)] for x, y in same[0]["polygon"]],
+            transcription=text,
+            ocr_text=text,
+            category="correct",
+            error_tags=[],
+            template=_template_title(extraction, template)[:200],
+            field=field[:200],
+            field_label=(labels.get(field) or value.label or value.name)[:200],
+            source_format="pdf" if document.content_type == "application/pdf" else "image",
+            ocr_engine=(extraction.ocr_engine or "")[:128],
+            origin="confirmed",
+            status="pending",
+            error="",
+            user_id=self.owner.user_id,
+            team_id=value.team_id,
+        )
+        _crop(self.storage, sample, document)
+        self.session.add(sample)
+        groups.ensure_member(
+            self.session, value.team_id, self.owner.user_id, (document.id, extraction.page)
+        )
+        return None
+
+    def verify_many(self, ids: Sequence[uuid.UUID]) -> VerifyOut:
+        """一次复核通过几条待复核的（人在样本页看过这一页的小图）。不是待复核的跳过。"""
+        require(self.owner, "value:review")
+        verified = 0
+        for sample_id in dict.fromkeys(ids):
+            sample = self.session.get(OcrSample, sample_id)
+            if sample is None or sample.team_id != self.owner.team_id or sample.status != "pending":
+                continue
+            sample.category = category_of(sample.kind, sample.ocr_text, sample.transcription)
+            sample.error_tags = error_tags(sample.ocr_text, sample.transcription)
+            sample.status = "ready"
+            verified += 1
+        if verified:
+            record(self.session, self.owner, "ocr_samples:verify", None, None, count=verified)
+        self.session.flush()
+        return VerifyOut(verified=verified)
 
     def _backfill_one(self, revision: Any, value: ExtractedValue) -> str | None:
         """补收一条；收不了返回原因。"""
@@ -896,6 +1017,7 @@ class OcrSampleService:
         return ExportPreview(
             kind=kind,  # type: ignore[arg-type]
             included=len(kept),
+            paddle_minimum=PADDLE_MINIMUM,
             categories=dict(Counter(s.category for s, _, _ in kept)),
             excluded=[Excluded(reason=r, count=n) for r, n in excluded.most_common()],
             split_version=groups.split_version(self.session, self.owner.team_id),
@@ -979,6 +1101,14 @@ class OcrSampleService:
                 everything = lists.get("train", []) + lists.get("val", [])
                 archive.writestr("rec_gt.txt", "".join(everything).encode("utf-8"))
             archive.writestr("manifest.jsonl", "".join(manifest).encode("utf-8"))
+            texts, hard = corpus([s for s, _, _ in exported])
+            archive.writestr(
+                "corpus/real_text.txt", "".join(f"{t}\n" for t in texts).encode("utf-8")
+            )
+            archive.writestr(
+                "corpus/hard_chars.txt",
+                "".join(f"{c}\t{n}\n" for c, n in hard.most_common()).encode("utf-8"),
+            )
             summary = self._summary(exported, kind)
             archive.writestr(
                 "README.md",
@@ -1120,8 +1250,39 @@ def _readme(
         "",
         '反复看验证集的结果来调训练，验证集会慢慢"被调过"；正式验收用锁定测试集，或者新进的单据。',
         "",
+        "## 数量和配比（PaddleOCR 微调文档的建议）",
+        "",
+        f"- 不改字典时，识别数据建议至少 {PADDLE_MINIMUM} 行；这次 {len(samples)} 行"
+        + ("，还不够，先攒或按下面合成补。" if len(samples) < PADDLE_MINIMUM else "。"),
+        "- 这些场景数据和通用的真实数据（例如 LSVT、RCTW、MTWI）每轮大约 1:1 混着训练，"
+        "用 `Train.dataset.ratio_list` 调（例如场景 1.0、通用 0.1），免得只认得这一种单据。",
+        "- 某些字老认错时，用 TextRenderer 这类工具合成补充：语料用 `corpus/real_text.txt`（图上原样的文字），"
+        "重点合成 `corpus/hard_chars.txt` 里的字；原有数据和合成数据的比例 10:1 到 5:1，学习率调小。",
+        "- 训练出来的模型先用回放（jacara eval replay）和锁定测试集比过，再换上去。",
+        "",
     ]
     return "\n".join(lines)
+
+
+PADDLE_MINIMUM = 5000
+"""PaddleOCR 微调识别模型（不改字典）建议的最少行数。"""
+
+
+def corpus(samples: Sequence[OcrSample]) -> tuple[list[str], Counter[str]]:
+    """合成数据用的真实语料（ADR 0055，A3）：图上原样的文字（去重），和认错字的样本里认错的字
+    （按次数）。给 TextRenderer 这类工具按真实场景合成，系统里不做合成和训练。"""
+    from difflib import SequenceMatcher
+
+    texts = sorted({s.transcription for s in samples if s.transcription})
+    hard: Counter[str] = Counter()
+    for s in samples:
+        if s.category != "rec_error" or not s.ocr_text:
+            continue
+        matcher = SequenceMatcher(None, s.ocr_text, s.transcription, autojunk=False)
+        for op, _, _, j1, j2 in matcher.get_opcodes():
+            if op in ("replace", "insert"):
+                hard.update(ch for ch in s.transcription[j1:j2] if not ch.isspace())
+    return texts, hard
 
 
 def _dist(d: Distribution, kind: str) -> str:
@@ -1129,6 +1290,21 @@ def _dist(d: Distribution, kind: str) -> str:
     if kind == "test":
         return f"{key} {d.test}"
     return f"{key} 训练 {d.train} / 验证 {d.val}"
+
+
+def only_value(type_: str, value: str, text: str) -> bool:
+    """这一块原文是不是只有这个值：数字只多货币符号（最多 3 个字），日期只有数字和分隔符，
+    文字和值一模一样（不计空白、大小写、全角半角）。"""
+    import re
+
+    from jacara.pipeline.fieldcheck import supports
+
+    if type_ == "number":
+        rest = re.sub(r"[\d\s.,'\-+()]", "", text)
+        return len(rest) <= 3 and supports("number", value, text)
+    if type_ == "date":
+        return bool(re.fullmatch(r"[\d\s/\-.年月日:]+", text)) and supports("date", value, text)
+    return _loose(text) == _loose(value)
 
 
 def _same_box(a: Any, b: Sequence[float]) -> bool:

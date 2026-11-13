@@ -309,6 +309,8 @@ def test_export_preview_and_zip(client, factory, document_id):
         "rec_gt.txt",
         "manifest.jsonl",
         "README.md",
+        "corpus/real_text.txt",
+        "corpus/hard_chars.txt",
     }
     assert archive.read(f"rec_gt_{part}.txt") == archive.read("rec_gt.txt")
     labels = archive.read("rec_gt.txt").decode("utf-8")
@@ -473,3 +475,53 @@ def test_backfill_collects_old_edits_as_pending(client, factory, document_id):
     with session_scope(factory) as session:
         actions = [a.action for a in session.query(AuditLog).all()]
     assert "ocr_samples:backfill" in actions and "ocr_samples:verify" in actions
+
+
+# ---- 认对的行、批量复核、合成用的语料（ADR 0055，A3） ----
+
+
+def test_confirmed_lines_are_collected_for_review(client, factory, document_id):
+    """审核完成、人没改过、出处正好一整块且只有这个值：收成认对的行，待复核；人过目才能导出。"""
+    from jacara.modules.ocr_samples.service import only_value
+
+    assert only_value("number", "9.0", "9.00") and only_value("number", "9.0", "RM 9.00")
+    assert not only_value("number", "9.0", "Total : 9.00")
+    assert only_value("date", "2018-12-25", "25/12/2018")
+    assert not only_value("string", "SHOP", "SHOP SDN BHD")
+
+    with session_scope(factory) as session:
+        session.get_one(Document, document_id).status = "reviewed"
+    result = client.post("/api/v1/ocr-samples/confirmed-lines").json()
+    pending = samples(client, status="pending")["items"]
+    assert result["created"] == len(pending) >= 2
+    assert {s["origin"] for s in pending} == {"confirmed"}
+    assert all(s["category"] == "correct" and s["transcription"] == s["ocr_text"] for s in pending)
+    assert client.post("/api/v1/ocr-samples/confirmed-lines").json()["created"] == 0  # 不重复收
+
+    preview = client.get("/api/v1/ocr-samples/export/preview").json()
+    assert preview["included"] == 0 and preview["paddle_minimum"] == 5000
+
+    ids = [s["id"] for s in pending]
+    assert client.post("/api/v1/ocr-samples/verify", json={"ids": ids}).json() == {
+        "verified": len(ids)
+    }
+    assert client.post("/api/v1/ocr-samples/verify", json={"ids": ids}).json()["verified"] == 0
+    response = client.get("/api/v1/ocr-samples/export")
+    assert response.status_code == 200, response.text
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        texts = archive.read("corpus/real_text.txt").decode("utf-8").splitlines()
+        readme = archive.read("README.md").decode("utf-8")
+    assert "9.00" in texts
+    assert "至少 5000 行" in readme and "10:1 到 5:1" in readme
+
+
+def test_hard_characters_come_from_misread_samples():
+    from types import SimpleNamespace
+
+    from jacara.modules.ocr_samples.service import corpus
+
+    wrong = SimpleNamespace(category="rec_error", ocr_text="100", transcription="1.00")
+    right = SimpleNamespace(category="correct", ocr_text="9.00", transcription="9.00")
+    texts, hard = corpus([wrong, right])  # type: ignore[list-item]
+    assert texts == ["1.00", "9.00"]
+    assert hard == {".": 1}

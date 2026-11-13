@@ -55,8 +55,9 @@ class Arm:
     name: str
     label: str
     server: str | None = None
-    learn: bool = False
-    """抽取时带上以前人改过的例子（ADR 0045）。锁定测试集的单据本来就不当例子。"""
+    learn: str | None = None
+    """抽取时带上以前人改过的例子：recent（ADR 0045）或 curated（整理过的，ADR 0055）；
+    None 不带。锁定测试集的单据本来就不当例子。"""
 
     @property
     def stored(self) -> bool:
@@ -568,6 +569,7 @@ def replay(
                     continue
                 pipeline = built[arm.name]
                 pipeline.lessons = _lessons(factory, doc) if arm.learn else None
+                pipeline.learn_mode = arm.learn or "recent"
                 try:
                     reports = pipeline.run(
                         path,

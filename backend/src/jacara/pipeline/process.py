@@ -131,8 +131,11 @@ def _extract(
         run = next_run(session, document)
         reason = document.run_reason
     # 这一次处理用的例子；处理完换回原来的（同一个流水线还要处理别的文档）
+    from jacara.core.config import get_settings
+
     before = pipeline.lessons
     pipeline.lessons = _lessons_for(pipeline, factory, job.team_id, document_id)
+    pipeline.learn_mode = get_settings().jacara_learn_mode
     try:
         reports = pipeline.run(
             path,

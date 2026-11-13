@@ -41,6 +41,8 @@ import {
   listSamples,
   previewExport,
   backfillSamples,
+  collectConfirmed,
+  verifySamples,
   retrySample,
   sampleTemplates,
   setSampleSettings,
@@ -277,6 +279,14 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
                   }
                 />
               )}
+              {data.paddle_minimum && kind === 'train_val' && data.included < data.paddle_minimum && (
+                <Alert
+                  type="info"
+                  showIcon
+                  title={`PaddleOCR 微调建议至少 ${data.paddle_minimum} 行，现在 ${data.included} 行，还差 ${data.paddle_minimum - data.included} 行`}
+                  description="可以先导出看流程；正式训练前多攒一些（审核时收集、补收、收认对的行），或按 README 用真实语料合成补充。"
+                />
+              )}
               <Alert
                 type={data.included > 0 ? 'info' : 'warning'}
                 showIcon
@@ -405,8 +415,30 @@ export function OcrSamplesPage() {
     },
     onError: (err) => void message.error(errorText(err)),
   })
+  const confirmed = useMutation({
+    mutationFn: collectConfirmed,
+    onSuccess: (r) => {
+      refresh()
+      if (r.created > 0) {
+        void message.success(`收了 ${r.created} 条认对的行，在"待复核"里：看过小图再通过`)
+        reset(() => setStatus('pending'))
+      } else {
+        void message.info('没有新的认对的行可收')
+      }
+    },
+    onError: (err) => void message.error(errorText(err)),
+  })
+  const verifyPage = useMutation({
+    mutationFn: verifySamples,
+    onSuccess: (r) => {
+      refresh()
+      void message.success(`通过了 ${r.verified} 条`)
+    },
+    onError: (err) => void message.error(errorText(err)),
+  })
   const data = list.data
   const counts = data?.categories ?? {}
+  const pendingHere = (data?.items ?? []).filter((s) => s.status === 'pending')
   const all = ORDER.reduce((sum, c) => sum + (counts[c] ?? 0), 0)
   const filtered = Boolean(category || status || format || template)
   const reset = (apply: () => void) => {
@@ -437,7 +469,9 @@ export function OcrSamplesPage() {
         <Flex vertical gap={2}>
         {s.status === 'pending' && (
           <Typography.Text type="warning" style={{ fontSize: 12 }}>
-            补收的，先猜的{s.reviewed_value ? `；当时字段改成了 ${s.reviewed_value}` : ''}。对着小图写出图里的原文
+            {s.origin === 'confirmed'
+              ? '自动收的认对的行：小图里的字和下面一样就通过，不一样先改'
+              : `补收的，先猜的${s.reviewed_value ? `；当时字段改成了 ${s.reviewed_value}` : ''}。对着小图写出图里的原文`}
           </Typography.Text>
         )}
         <Typography.Text
@@ -565,6 +599,13 @@ export function OcrSamplesPage() {
         </Typography.Title>
         <Flex gap={8} wrap>
           {canReview && (
+            <Tooltip title="审核完成的单据里，人没改过、出处正好一整块且只有这个值的：OCR 读对了。训练要有认对的行，只学错例会把认得好的字忘掉">
+              <Button icon={<CheckOutlined />} loading={confirmed.isPending} onClick={() => confirmed.mutate()}>
+                收认对的行
+              </Button>
+            </Tooltip>
+          )}
+          {canReview && (
             <Tooltip title="开关打开之前审核过的：点了原文或框了一块、改了值的，裁出小图进待复核。手打的不收，同一次修改不会重复收">
               <Button icon={<HistoryOutlined />} loading={backfill.isPending} onClick={() => backfill.mutate()}>
                 从以前的修改补收
@@ -638,6 +679,19 @@ export function OcrSamplesPage() {
                   />
                 </Flex>
               </Flex>
+              {canReview && status === 'pending' && pendingHere.length > 0 && (
+                <Flex justify="space-between" align="center" gap={8} wrap>
+                  <Typography.Text type="secondary">逐张看过这一页的小图和"图中原文"，都对就一起通过；有不对的先改或点"不要"。</Typography.Text>
+                  <Button
+                    type="primary"
+                    icon={<CheckOutlined />}
+                    loading={verifyPage.isPending}
+                    onClick={() => verifyPage.mutate(pendingHere.map((s) => s.id))}
+                  >
+                    通过这一页（{pendingHere.length} 条）
+                  </Button>
+                </Flex>
+              )}
               {list.isError && <Alert type="error" showIcon title="样本读不出来" description={errorText(list.error)} />}
               <Table
                 rowKey="id"

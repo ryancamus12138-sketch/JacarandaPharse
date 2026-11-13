@@ -16,10 +16,15 @@ logging.basicConfig(format="%(message)s", level=logging.WARNING)
 logging.getLogger("alembic").setLevel(logging.INFO)
 
 
+def _url() -> str:
+    """连哪个数据库：命令行恢复演练（jacara restore-drill）会传另一个地址，平时用 .env 里的。"""
+    return context.config.attributes.get("url") or get_settings().database_url
+
+
 def run_migrations_offline() -> None:
     """只生成 SQL、不连数据库（uv run alembic upgrade head --sql）。"""
     context.configure(
-        url=get_settings().database_url,
+        url=_url(),
         target_metadata=target_metadata,
         literal_binds=True,
     )
@@ -29,7 +34,7 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """连上数据库，真正执行迁移。"""
-    engine = create_engine(get_settings().database_url, poolclass=pool.NullPool)
+    engine = create_engine(_url(), poolclass=pool.NullPool)
     with engine.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():

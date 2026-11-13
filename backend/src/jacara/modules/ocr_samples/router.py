@@ -33,6 +33,8 @@ from jacara.modules.ocr_samples.schemas import (
     SplitIn,
     Status,
     UnitOut,
+    VerifyIn,
+    VerifyOut,
 )
 from jacara.modules.ocr_samples.service import OcrSampleService, SampleError
 
@@ -182,6 +184,22 @@ def backfill(service: Service) -> BackfillOut:
         return service.backfill()
     except SampleError as err:
         raise _http_error(err) from err
+
+
+@router.post("/confirmed-lines", summary="收认对的行")
+def confirmed_lines(service: Service) -> BackfillOut:
+    """审核完成的单据里人没改过、出处正好一整块、这一块只有这个值的：OCR 读对了，
+    裁成小图进"待复核"（ADR 0055）。同一个字段只收一次。"""
+    try:
+        return service.collect_confirmed()
+    except SampleError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/verify", summary="一次复核通过几条")
+def verify_samples(data: VerifyIn, service: Service) -> VerifyOut:
+    """样本页"通过这一页"：人看过这一页的小图，待复核的一起变成可以导出。"""
+    return service.verify_many(data.ids)
 
 
 @router.get("/{sample_id}/image", summary="样本的小图", response_class=Response)

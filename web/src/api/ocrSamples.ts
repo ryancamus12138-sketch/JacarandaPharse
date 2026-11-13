@@ -39,7 +39,7 @@ export interface OcrSample {
   /** 裁图失败的原因。 */
   error: string
   /** review（审核时收集的）或 backfill（从以前的修改补收的）。 */
-  origin?: 'review' | 'backfill'
+  origin?: 'review' | 'backfill' | 'confirmed'
   /** 补收的：当时人把字段改成了什么（复核时参考）。 */
   reviewed_value?: string | null
 }
@@ -87,6 +87,8 @@ export interface ExportPreview {
   /** 验证集里每种分类来自几组。 */
   val_category_groups: Partial<Record<SampleCategory, number>>
   distributions: { by: 'template' | 'category' | 'source_format'; key: string; train: number; val: number; test: number }[]
+  /** PaddleOCR 微调识别模型建议至少多少行（ADR 0055）。 */
+  paddle_minimum?: number
 }
 
 export interface GroupMember {
@@ -194,6 +196,16 @@ export function updateSample(
   change: { transcription?: string; category?: SampleCategory; status?: 'ready' | 'withdrawn' },
 ): Promise<OcrSample> {
   return api<OcrSample>(`/ocr-samples/${id}`, { method: 'PATCH', json: change })
+}
+
+/** 收认对的行（ADR 0055）：人没改过、出处只有这个值的一整块，进"待复核"。 */
+export function collectConfirmed(): Promise<{ created: number; skipped: { reason: string; count: number }[] }> {
+  return api(`/ocr-samples/confirmed-lines`, { method: 'POST' })
+}
+
+/** 一次复核通过几条待复核的。 */
+export function verifySamples(ids: string[]): Promise<{ verified: number }> {
+  return api(`/ocr-samples/verify`, { method: 'POST', json: { ids } })
 }
 
 /** 从以前的修改补收样本（ADR 0053）：点了原文或框了一块的，进"待复核"。 */

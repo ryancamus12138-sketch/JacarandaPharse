@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     jacara_ocr_dict: Path | None = None
     jacara_learn: bool = True
     """抽取时把同一个模板以前人工改过的例子告诉模型（ADR 0045）。"""
+    jacara_learn_mode: Literal["recent", "curated"] = "recent"
+    """怎么挑例子：recent 最近改得多的（ADR 0045）；curated 整理过的：只用错在模型的、合并重复、
+    去掉过期的、同一个发单方优先（ADR 0055）。先用 jacara eval replay 比过再换。"""
     jacara_ocr_max_side: int = 4000
     """整页 OCR 前，图的长边最多多少像素（ADR 0042）。"""
     jacara_layout: bool = True

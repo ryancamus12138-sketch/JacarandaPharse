@@ -48,9 +48,19 @@ class SampleOut(BaseModel):
     status: Status
     error: str
     origin: str = "review"
-    """review（审核时收集的）或 backfill（从以前的修改补收的）。"""
+    """review（审核时收集的）、backfill（从以前的修改补收的）、confirmed（自动收的认对的行）。"""
     reviewed_value: str | None = None
     """补收的：当时人把字段改成了什么（复核时参考，不一定就是图里的原文）。"""
+
+
+class VerifyIn(BaseModel):
+    """一次复核通过几条待复核的（样本页"通过这一页"）。"""
+
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=200)
+
+
+class VerifyOut(BaseModel):
+    verified: int
 
 
 class BackfillOut(BaseModel):
@@ -124,6 +134,8 @@ class ExportPreview(BaseModel):
     val_category_groups: dict[str, int] = {}
     """验证集里每种分类来自几组（200 行来自 3 张发票，证据还是只有 3 组）。"""
     distributions: list[Distribution] = []
+    paddle_minimum: int = 5000
+    """PaddleOCR 微调识别模型建议至少多少行（ADR 0055）。"""
 
 
 class GroupMemberOut(BaseModel):

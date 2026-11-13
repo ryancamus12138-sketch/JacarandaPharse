@@ -82,6 +82,30 @@ class S3Storage:
         except (BotoCoreError, ClientError) as err:
             raise StorageError(f"删除文件失败：{err}") from err
 
+    def keys(self) -> list[str]:
+        """存储桶里全部文件的路径（备份用，ADR 0054）。桶还没建就是空的。"""
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        try:
+            existing = [b["Name"] for b in self._client.list_buckets().get("Buckets", [])]
+            if self.bucket not in existing:
+                return []
+            found: list[str] = []
+            for page in self._client.get_paginator("list_objects_v2").paginate(Bucket=self.bucket):
+                found += [item["Key"] for item in page.get("Contents", [])]
+            return found
+        except (BotoCoreError, ClientError) as err:
+            raise StorageError(f"列出文件失败：{err}") from err
+
+    def content_type(self, key: str) -> str:
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        try:
+            head = self._client.head_object(Bucket=self.bucket, Key=key)
+            return str(head.get("ContentType") or "application/octet-stream")
+        except (BotoCoreError, ClientError) as err:
+            raise StorageError(f"读取文件信息失败：{err}") from err
+
 
 @lru_cache
 def get_storage() -> ObjectStorage:

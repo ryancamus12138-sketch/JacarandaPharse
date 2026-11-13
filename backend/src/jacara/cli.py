@@ -125,6 +125,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_start.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     sub.add_parser("stop", help="停掉 jacara start 启动的全部（模型、后台任务、Web 服务）")
+    p_backup = sub.add_parser(
+        "backup", help="备份：数据库和对象存储里的文件打进一个包（先 jacara stop）"
+    )
+    p_backup.add_argument("--out", type=Path, default=Path("backups"), help="放到哪里")
+    p_restore = sub.add_parser("restore", help="把备份包恢复到空的数据库和存储里，再逐样核对")
+    p_restore.add_argument("archive", type=Path, help="备份包（.tar）")
+    p_drill = sub.add_parser(
+        "restore-drill", help="恢复演练：另起一套空环境，恢复进去、逐样打开，做完删掉（要 Docker）"
+    )
+    p_drill.add_argument("archive", type=Path, help="备份包（.tar）")
+    p_drill.add_argument("--keep", action="store_true", help="演练完留着那套环境，方便自己看")
     sub.add_parser(
         "backfill-ocr",
         help="给更新前处理的文档补上 OCR 结果，不用重新上传（不改抽取结果和审核记录）",
@@ -173,8 +184,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_replay.add_argument("--a-label", help="A 边叫什么（写进结果），默认按设置生成")
     p_replay.add_argument("--b-label", help="B 边叫什么")
-    p_replay.add_argument("--a-learn", action="store_true", help="A 边带上以前人改过的例子")
-    p_replay.add_argument("--b-learn", action="store_true", help="B 边带上以前人改过的例子")
+    learn_help = (
+        "带上以前人改过的例子：recent（默认，最近改得多的）或 curated（整理过的，ADR 0055）"
+    )
+    p_replay.add_argument(
+        "--a-learn",
+        nargs="?",
+        const="recent",
+        choices=["recent", "curated"],
+        help="A 边" + learn_help,
+    )
+    p_replay.add_argument(
+        "--b-learn",
+        nargs="?",
+        const="recent",
+        choices=["recent", "curated"],
+        help="B 边" + learn_help,
+    )
     p_replay.add_argument("--template", help="只回放用这个模板的（模板 id 或内置模板名）")
     p_replay.add_argument("--docs", help="只回放这几份文档（id，用逗号分开）")
     p_replay.add_argument("--limit", type=int, help="最多回放几份，先少量试跑")
@@ -221,6 +247,8 @@ def main(argv: list[str] | None = None) -> int:
         return _watch(args)
     if args.command == "start":
         return _start(args)
+    if args.command in ("backup", "restore", "restore-drill"):
+        return _backup_commands(args)
     if args.command == "stop":
         return _stop_running()
     if args.command == "backfill-ocr":
@@ -658,9 +686,9 @@ def _eval_replay(args: argparse.Namespace) -> int:
     from jacara.plugins.model_backends import ModelConfig, create_model_backend
     from jacara.structure.engines import default_engines
 
-    def arm(name: str, server: str | None, learn: bool, label: str | None) -> Arm:
+    def arm(name: str, server: str | None, learn: str | None, label: str | None) -> Arm:
         shown = label or ("当时存下的结果" if server is None else server)
-        return Arm(name, shown + ("（带例子）" if learn else ""), server, learn)
+        return Arm(name, shown + (f"（带例子：{learn}）" if learn else ""), server, learn)
 
     a = arm("A", None if args.a == "stored" else args.a, args.a_learn, args.a_label)
     b = arm("B", args.b, args.b_learn, args.b_label)
@@ -1078,6 +1106,32 @@ def _new_model_key() -> str:
 def _interrupt(signum: int, frame: object) -> None:
     """把 SIGTERM 当成 Ctrl + C。"""
     raise KeyboardInterrupt
+
+
+def _running() -> bool:
+    """jacara start 是不是正在运行。"""
+    import json
+
+    try:
+        run = json.loads(RUN_FILE.read_text(encoding="utf-8"))
+        return _alive(int(run["main"]))
+    except (FileNotFoundError, ValueError, KeyError, TypeError):
+        return False
+
+
+def _backup_commands(args: argparse.Namespace) -> int:
+    from jacara.core.config import get_settings
+    from jacara.ops import commands
+
+    if args.command == "restore-drill":
+        return commands.run_drill(args.archive, args.keep)
+    settings = get_settings()
+    if args.command == "restore":
+        return commands.run_restore(args.archive, settings, _running())
+    from jacara.core.db import get_engine
+    from jacara.core.storage import S3Storage
+
+    return commands.run_backup(get_engine(), S3Storage(settings), args.out, __version__, _running())
 
 
 def _stop_running() -> int:

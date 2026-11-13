@@ -47,7 +47,8 @@ export const ACTION_LABELS: Record<string, string> = {
   'ocr_samples:pair': 'OCR 样本：确认是不是同一张单据',
   'ocr_samples:detach': 'OCR 样本：拆开分组',
   'ocr_samples:backfill': 'OCR 样本：从以前的修改补收',
-  'ocr_samples:verify': 'OCR 样本：复核补收的样本',
+  'ocr_samples:verify': 'OCR 样本：复核通过',
+  'ocr_samples:confirmed': 'OCR 样本：收认对的行',
   'attribution:override': '统计：改判错在哪一步',
 }
 
