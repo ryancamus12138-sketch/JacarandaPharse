@@ -5,16 +5,28 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from jacara.plugins.aligners.base import AlignedField
 from jacara.plugins.extractors.base import ExtractionResult
 from jacara.plugins.ocr.base import OcrPage
 from jacara.plugins.validators.base import ValidationResult
+
+
+@dataclass(frozen=True)
+class RangeSetting:
+    """日期范围字段导出成什么样（ADR 0039）。"""
+
+    export: str = "normalized"
+    """normalized 统一格式、original 原文、columns 拆成开始和结束两列。"""
+    separator: str = " ~ "
+    day_first: bool | None = None
+    """数字日期是不是 日/月（按模板的国家）。"""
 
 
 @dataclass(frozen=True)
@@ -50,7 +62,17 @@ class DocumentReport:
     processed_at: datetime
 
     page: int = 1
-    """第几页，从 1 开始。"""
+    """这张单据从第几页开始，从 1 开始。"""
+
+    last_page: int | None = None
+    """这张单据到第几页结束（ADR 0036）。只占一页是 None。"""
+
+    pages: tuple[OcrPage, ...] = ()
+    """几页拼成的单据：每一页自己的 OCR 结果（存的时候一页一页存）。
+    只占一页时是空的，用 ocr_page。"""
+
+    page_starts: tuple[float, ...] = ()
+    """几页拼成的单据：每一页在拼成的长页上从多高开始，存出处时换回每一页自己的坐标。"""
 
     text_source: str = "ocr"
     """这一页的文字怎么来的：ocr（OCR 识别）或 pdf-text（PDF 文字层）。"""
@@ -81,6 +103,20 @@ class DocumentReport:
 
     hidden: frozenset[str] = frozenset()
     """模板里设成"不导出"的字段、表（items）和表的列（items.tax），导出时整列不写。"""
+
+    ranges: Mapping[str, RangeSetting] = field(default_factory=dict)
+    """日期范围字段（ADR 0039）：字段 ID（表格的列写成 items.period）→ 导出设置。"""
+
+    template_version_id: uuid.UUID | None = None
+    """自动判断选中的"我的模板"版本（ADR 0038）。上传时直接选了模板的是 None（用文档上的）。"""
+    classified: Mapping[str, Any] | None = None
+    """自动判断的经过（ADR 0038）：选了哪个、为什么、候选有哪些。没有自动判断是 None。"""
+
+    @property
+    def pages_label(self) -> str:
+        """ "第 3 页"或"第 3–4 页"。"""
+        last = self.last_page or self.page
+        return f"第 {self.page} 页" if last == self.page else f"第 {self.page}–{last} 页"
 
 
 class Exporter(Protocol):

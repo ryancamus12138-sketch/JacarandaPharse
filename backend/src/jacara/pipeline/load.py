@@ -11,6 +11,7 @@ from contextlib import suppress
 from typing import Any, cast
 
 from jacara.models import Document, ExtractedValue, Extraction
+from jacara.pipeline.ranges import range_settings
 from jacara.plugins.aligners.base import AlignedField, AlignStatus, Evidence
 from jacara.plugins.exporters.base import DocumentReport, Review
 from jacara.plugins.extractors.base import ExtractedField, ExtractionResult, FieldType
@@ -19,20 +20,23 @@ from jacara.plugins.validators.base import Issue, ValidationResult
 from jacara.templates import Template
 
 
-def load_reports(document: Document) -> list[DocumentReport]:
-    """一个文档的每一页 → 一份 DocumentReport。要先把抽取、字段、审核记录都查出来。"""
-    pages = len(document.extractions)
+def load_reports(document: Document, language: str | None = None) -> list[DocumentReport]:
+    """一个文档的每张单据 → 一份 DocumentReport。要先把抽取、字段、审核记录都查出来。
+    language：导出时字段名（列名）用哪种语言（ADR 0048），不写是中文。"""
+    from jacara.pipeline.current import page_range
+
+    several = len(document.extractions) > 1
     return [
-        _report(extraction, _source(document.filename, extraction.page, pages))
+        _report(
+            extraction,
+            f"{document.filename} {page_range(extraction)}" if several else document.filename,
+            language,
+        )
         for extraction in document.extractions
     ]
 
 
-def _source(filename: str, page: int, pages: int) -> str:
-    return f"{filename} 第 {page} 页" if pages > 1 else filename
-
-
-def _report(extraction: Extraction, source: str) -> DocumentReport:
+def _report(extraction: Extraction, source: str, language: str | None = None) -> DocumentReport:
     """当前的结果：删掉的行不导出，表格按显示顺序编号，规则按审核之后的值重新检查。"""
     from jacara.pipeline.current import current_checks, current_values, labels_of, template_of
 
@@ -45,6 +49,7 @@ def _report(extraction: Extraction, source: str) -> DocumentReport:
         backend=extraction.backend,
         prompt_version=extraction.prompt_version,
         duration_ms=extraction.duration_ms,
+        vision=extraction.vision,
     )
     aligned = tuple(
         AlignedField(
@@ -75,12 +80,14 @@ def _report(extraction: Extraction, source: str) -> DocumentReport:
         ocr_engine=extraction.ocr_engine,
         processed_at=extraction.created_at,
         page=extraction.page,
+        last_page=extraction.last_page,
         text_source=extraction.source,
         template=extraction.template,
         template_version=extraction.template_version,
         reviews=reviews,
-        labels=labels_of(extraction),
+        labels=labels_of(extraction, language),
         hidden=_hidden(template_of(extraction)),
+        ranges=range_settings(template_of(extraction)),
     )
 
 
@@ -105,7 +112,15 @@ def _field(value: ExtractedValue, name: str) -> ExtractedField:
     if value.type == "number" and raw is not None:
         with suppress(ValueError):  # 转不成数字就保持原样（规则校验会标出来）
             raw = float(raw)
-    return ExtractedField(name, cast(FieldType, value.type), raw, value.row_no, value.label)
+    quote = (value.evidence or {}).get("quote")
+    return ExtractedField(
+        name,
+        cast(FieldType, value.type),
+        raw,
+        value.row_no,
+        value.label,
+        text=quote if isinstance(quote, str) else None,
+    )
 
 
 def _evidence(data: dict[str, Any] | None) -> Evidence | None:

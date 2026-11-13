@@ -23,6 +23,22 @@ class ModelInfo(BaseModel):
     """模型服务现在加载的模型（问模型服务得到的；连不上就是空）。"""
     context: int | None
     """上下文长度（token）。"""
+    vision_file: str | None = None
+    """jacara start 会一起加载的视觉模型文件（mmproj，ADR 0038）；没有是 null。"""
+    sees_images: bool = False
+    """模型服务现在能不能看图（加载了视觉模型）。"""
+    vision_mode: str = "auto"
+    """什么时候看原图：auto、always、off（JACARA_VISION）。"""
+
+
+class VisionInfo(BaseModel):
+    """模型能不能看图（ADR 0038）。"""
+
+    sees_images: bool
+    mode: str
+    """什么时候看原图：auto、always、off（JACARA_VISION）。"""
+    file: str | None
+    """视觉模型文件（mmproj）；没有是 null。"""
 
 
 class OcrInfo(BaseModel):
@@ -65,6 +81,8 @@ class SystemInfo(BaseModel):
     model: ModelInfo
     ocr: OcrInfo
     structure: StructureInfo | None = None
+    watch_dir: str | None = None
+    """监视文件夹（ADR 0036）：放进去的文件自动导入；没设是 null。"""
     templates: list[TemplateInfo]
     data: DataInfo
     services: list[ServiceCheck]

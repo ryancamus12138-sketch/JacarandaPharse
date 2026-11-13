@@ -424,3 +424,131 @@ def test_confirm_many_skips_deleted_rows(client, document_id):
 def test_confirm_many_unknown_id(client, document_id):
     response = client.post("/api/v1/values/confirm", json={"ids": [str(uuid.uuid4())]})
     assert response.status_code == 404
+
+
+# ---- 一次重新处理几份 ----
+
+
+def test_reprocess_many_with_default_settings(
+    client, factory, queue, storage, receipt_page, tmp_path
+):
+    from jacara.models import Document
+
+    ids = []
+    for n in range(3):
+        fields = (F("total", "number", 9.0, 6),)
+        result = ExtractionResult(fields, "{}", "test-model", "fake", "extract-v4", 5)
+        report = DocumentReport(
+            source="r.jpg",
+            extraction=result,
+            aligned=TextMatchAligner().align(receipt_page, result),
+            checks=RuleValidator().validate(fields),
+            ocr_engine="rapidocr test",
+            processed_at=datetime(2026, 11, 13),
+            ocr_page=receipt_page,
+        )
+        path = tmp_path / f"r{n}.jpg"
+        path.write_bytes(f"{n}".encode())
+        with session_scope(factory) as session:
+            document = save_document(session, path, [report])
+            document.storage_key = f"documents/r{n}"
+            document.vision = "always"  # 上次手动选了"每张都看原图"
+            ids.append(document.id)
+    with session_scope(factory) as session:
+        session.get_one(Document, ids[2]).status = "processing"
+    response = client.post("/api/v1/documents/reprocess", json={"ids": [str(i) for i in ids]})
+    assert response.status_code == 202
+    body = response.json()
+    assert body["queued"] == 2
+    assert body["skipped"] == ["r2.jpg：正在处理"]
+    assert queue.sent == ids[:2]
+    with session_scope(factory) as session:
+        for document_id in ids[:2]:
+            document = session.get_one(Document, document_id)
+            assert document.status == "uploaded"
+            assert document.vision is None  # 回到系统设置
+            assert document.run_reason == "批量重新处理"
+
+
+def test_reprocess_many_with_chosen_settings(client, factory, queue, document_id):
+    from jacara.models import Document
+
+    with session_scope(factory) as session:
+        session.get_one(Document, document_id).storage_key = "documents/x"
+    body = {
+        "ids": [str(document_id)],
+        "template": "discover",
+        "split": "pages",
+        "vision": "off",
+        "pdf_read": None,  # 和上次一样
+        "reason": "wrong_template",
+    }
+    assert client.post("/api/v1/documents/reprocess", json=body).status_code == 202
+    with session_scope(factory) as session:
+        document = session.get_one(Document, document_id)
+        assert (document.discover, document.split, document.vision) == (True, "pages", "off")
+        assert document.run_reason == "选错了模板"
+    other = {"ids": [str(document_id)], "reason": "other"}
+    assert client.post("/api/v1/documents/reprocess", json=other).status_code == 422
+    ranges = {"ids": [str(document_id)], "split": "1-2"}
+    assert client.post("/api/v1/documents/reprocess", json=ranges).status_code == 422
+
+
+def test_reprocess_many_needs_the_queue(client, factory, queue, document_id):
+    from jacara.models import Document
+
+    with session_scope(factory) as session:
+        session.get_one(Document, document_id).storage_key = "documents/x"
+    queue.down = True
+    response = client.post("/api/v1/documents/reprocess", json={"ids": [str(document_id)]})
+    assert response.status_code == 503
+    with session_scope(factory) as session:
+        # 和上传时队列没连上一样：排队中，列表上可以"重试"
+        assert session.get_one(Document, document_id).status == "uploaded"
+
+
+# ---- 导出 JSON ----
+
+
+def test_export_json(client, document_id):
+    import json
+
+    total = by_name(client, document_id)["total"]
+    client.post(
+        f"/api/v1/values/{total['id']}/revisions",
+        json={"action": "edit", "value": "9.50", "reason": "测试"},
+    )
+    response = client.get("/api/v1/documents/export.json", params={"ids": [str(document_id)]})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    content = json.loads(response.content.decode("utf-8"))
+    assert content["format"] == "jacarandaparse.export.v1"
+    [document] = content["documents"]
+    assert document["filename"] == "receipt.jpg"
+    [unit] = document["units"]
+    assert unit["pages"] == [1, 1]
+    assert unit["fields"]["total"] == 9.5  # 审核之后的值，数字是数字
+    assert unit["fields"]["date"] is None
+    assert [row["name"] for row in unit["tables"]["items"]] == ["PC", "BAG"]
+    assert unit["tables"]["items"][0]["amount"] == 9.0
+    assert unit["labels"]["total"]  # 字段名
+    assert "total" not in unit["needs_review"]  # 人改过了，不算等人确认
+    assert isinstance(unit["issues"], list)
+    exports = client.get("/api/v1/exports").json()["items"]
+    assert exports[0]["format"] == "json"  # 导出记录里也有
+
+
+def test_sent_text_and_summary(client, factory, storage, receipt_page):
+    """审核页能看到这一轮发给模型的是哪些文字块（ADR 0053）。"""
+    from .test_template_library import process, upload
+
+    document_id = upload(client)
+    process(factory, storage, document_id, receipt_page)
+    [extraction] = client.get(f"/api/v1/documents/{document_id}").json()["extractions"]
+    sent = extraction["sent"]
+    assert sent["blocks"] == sent["total_blocks"] == len(receipt_page.lines)
+    assert sent["has_snapshot"] is True
+    text = client.get(f"/api/v1/documents/{document_id}/extractions/{extraction['id']}/sent").json()
+    assert text["blocks"][0] == 1 and receipt_page.lines[0].text in text["text"]
+    missing = client.get(f"/api/v1/documents/{document_id}/extractions/{uuid.uuid4()}/sent")
+    assert missing.status_code == 404

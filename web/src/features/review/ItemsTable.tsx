@@ -21,7 +21,7 @@ import {
   Typography,
 } from 'antd'
 import { type CSSProperties, useState } from 'react'
-import { boxColor, columnLabel, type TableLayout, type TableRow, tableLabel } from './fields'
+import { boxColor, columnLabel, shownValue, type TableLayout, type TableRow, tableLabel } from './fields'
 
 /** 行号格子里"上面加一行""下面加一行"的小按钮。 */
 const insertButton: CSSProperties = {
@@ -246,7 +246,7 @@ export function ItemsTable({
                                     : '#fff',
                         }}
                       >
-                        {v.current_value ?? <span style={{ color: '#bbb' }}>—</span>}
+                        {shownValue(v) ?? <span style={{ color: '#bbb' }}>—</span>}
                         {(comments[v.name] ?? 0) > 0 && (
                           <MessageOutlined
                             aria-label="有备注"

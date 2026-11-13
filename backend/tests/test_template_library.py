@@ -256,8 +256,11 @@ def mine(client):
 def test_template_list_versions_and_archive(client, mine):
     listed = client.get("/api/v1/templates").json()
     assert listed[0]["id"] == mine and listed[0]["title"] == "我的收据"
-    assert any(t["kind"] == "builtin" and t["name"] == "receipt" for t in listed)
-    assert len(client.get("/api/v1/templates/starters").json()) == 9
+    # 内置模板网页上不列；要的话 ?builtin=true
+    assert all(t["kind"] == "mine" for t in listed)
+    everything = client.get("/api/v1/templates?builtin=true").json()
+    assert any(t["kind"] == "builtin" and t["name"] == "receipt" for t in everything)
+    assert len(client.get("/api/v1/templates/starters").json()) == len(STARTERS)
 
     one = client.get(f"/api/v1/templates/{mine}").json()
     assert [v["version"] for v in one["versions"]] == [2, 1]
@@ -489,43 +492,99 @@ def test_delete_unused_template(client):
     assert client.get(f"/api/v1/templates/{created['id']}").status_code == 404
 
 
-def test_used_template_cannot_be_deleted(client, factory, storage, receipt_page, mine):
+def test_used_template_is_hidden_not_removed(client, factory, storage, receipt_page, mine):
+    """用过的模板也能删：从列表、上传里去掉，用过它的文档照常显示。"""
     document_id = upload(client, mine)
-    response = client.delete(f"/api/v1/templates/{mine}")
-    assert response.status_code == 409
-    assert "归档" in response.json()["detail"]
     process(factory, storage, document_id, receipt_page)
-    assert client.delete(f"/api/v1/templates/{mine}").status_code == 409
+    assert client.delete(f"/api/v1/templates/{mine}").status_code == 204
+    assert mine not in {t["id"] for t in client.get("/api/v1/templates").json()}
+    assert client.get(f"/api/v1/templates/{mine}").status_code == 404
+    refused = client.post(
+        "/api/v1/documents", files={"file": ("r.jpg", b"y", "image/jpeg")}, data={"template": mine}
+    )
+    assert refused.status_code in (404, 422)
+    body = detail(client, document_id)
+    assert body["extractions"][0]["template_title"] == "我的收据"
+    assert values(body)["total"]["label"] == "合计"
+    redo = client.post(f"/api/v1/documents/{document_id}/reprocess", json={"reason": "bad_result"})
+    assert redo.status_code == 422 and "已经删除" in redo.json()["detail"]
 
 
 def test_generic_starters_have_no_regional_rules():
-    """通用模板只用通用规则；中国、澳洲的模板只用通用规则和本地区的规则（ADR 0035）。"""
+    """起步模板库：通用模板只用通用规则；国家模板只用通用规则和本国的规则（ADR 0037）。"""
     from jacara.plugins.validators import REGIONS
 
-    regions = {name: load_starter(name).region for name in STARTERS}
-    assert regions["receipt_shopping"] == regions["receipt_restaurant"] == ""
-    assert regions["receipt_general"] == regions["intl_invoice"] == regions["hotel_folio"] == ""
-    assert regions["au_tax_invoice"] == "au"
+    countries = {name: load_starter(name).countries for name in STARTERS}
+    assert countries["receipt_shopping"] == countries["receipt_restaurant"] == ()
     assert (
-        regions["cn_einvoice"] == regions["cn_rail_ticket"] == regions["cn_air_itinerary"] == "cn"
+        countries["receipt_general"] == countries["intl_invoice"] == countries["hotel_folio"] == ()
     )
+    assert countries["au_tax_invoice"] == ("AU",)
+    assert countries["cn_einvoice"] == countries["cn_rail_ticket"] == ("CN",)
+    assert countries["cn_air_itinerary"] == ("CN",)
+    assert load_starter("cn_air_itinerary").domains == ("交通", "发票")
     for name in STARTERS:
         template = load_starter(name)
-        assert template.region_problem() is None, name
+        assert template.foreign_rules() == [], name
         used = {REGIONS.get(r.id, "") for r in template.rules}
-        assert used <= {"", template.region}, name
-        if not template.region:
+        assert used <= {"", *template.countries}, name
+        if not template.countries:
             text = template.description + "".join(f.description for f in template.fields)
             assert "ATO" not in text and "澳元" not in text, name
     au = {r.id for r in load_starter("au_tax_invoice").rules}
     assert {"seller_abn", "au_buyer_1000", "au_tax_invoice_title"} <= au
 
 
-def test_generic_template_cannot_use_regional_rules(client, mine):
+def test_my_templates_rules_follow_fields_and_countries(client, mine):
+    """我的模板的规则跟着字段和国家走（ADR 0048）；标签可以随便改，只改标签不出新版本。"""
     body = client.get(f"/api/v1/templates/{mine}").json()
-    response = client.put(
+    assert body["domains"] == ["收据"] and body["countries"] == [] and body["tags"] == []
+    saved = client.put(
         f"/api/v1/templates/{mine}",
-        json={"title": "x", "fields": body["fields"], "rules": ["ato_evidence"]},
+        json={
+            "title": body["title"],
+            "fields": body["fields"],
+            "tables": body["tables"],
+            "rules": ["ato_evidence"],
+            "domains": ["收据", "餐饮"],
+            "countries": ["au", "NZ"],
+        },
     )
-    assert response.status_code == 422
-    assert "通用模板，不能用别的地区的规则" in response.json()["detail"]
+    assert saved.status_code == 200, saved.text
+    version = saved.json()["version"]
+    assert saved.json()["countries"] == ["AU", "NZ"] and saved.json()["category"] == "收据"
+
+    labelled = client.patch(
+        f"/api/v1/templates/{mine}/labels", json={"tags": ["2026-10 出差", "财务部"]}
+    ).json()
+    assert labelled["tags"] == ["2026-10 出差", "财务部"]
+    assert labelled["countries"] == ["AU", "NZ"] and labelled["version"] == version
+    bad = client.patch(f"/api/v1/templates/{mine}/labels", json={"countries": ["China"]})
+    assert bad.status_code == 422 and "两个字母" in bad.json()["detail"]
+
+    # 只改名字和标签：不出新版本
+    again = client.put(
+        f"/api/v1/templates/{mine}",
+        json={
+            **{k: saved.json()[k] for k in ("fields", "tables")},
+            "title": "新名字",
+            "rules": ["ato_evidence"],
+            "domains": ["收据"],
+            "countries": ["AU"],
+        },
+    ).json()
+    assert (
+        again["version"] == version and again["title"] == "新名字" and again["countries"] == ["AU"]
+    )
+
+    # 去掉澳洲：澳洲的规则跟着去掉（规则变了，出新版本）
+    general = client.put(
+        f"/api/v1/templates/{mine}",
+        json={
+            **{k: saved.json()[k] for k in ("fields", "tables")},
+            "title": "新名字",
+            "rules": ["ato_evidence"],
+            "countries": [],
+        },
+    ).json()
+    assert general["countries"] == [] and general["rules"] == []

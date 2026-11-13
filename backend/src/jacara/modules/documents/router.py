@@ -15,26 +15,37 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Path, Query, Upload
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from jacara.core.deps import get_ocr, get_owner, get_queue, get_session, get_storage
+from jacara.core.deps import get_model, get_ocr, get_owner, get_queue, get_session, get_storage
 from jacara.core.owner import Owner
 from jacara.core.queue import TaskQueue
 from jacara.core.storage import ObjectStorage
 from jacara.modules.documents.repository import DocumentFilter
 from jacara.modules.documents.schemas import (
     Dashboard,
+    DeleteIn,
+    DeleteOut,
     DocumentDetail,
     DocumentNeighbors,
     DocumentOut,
     DocumentPage,
+    FolderOut,
+    LookIn,
+    LookOut,
     PageOcr,
     PageStructureOut,
+    RegionDescription,
     RegionIn,
     RegionOut,
     ReprocessIn,
+    ReprocessManyIn,
+    ReprocessManyOut,
+    ReviewTimeIn,
+    SentText,
     SkipIn,
 )
 from jacara.modules.documents.service import DocumentError, DocumentService, day_start
 from jacara.modules.fields.schemas import AdoptOut
+from jacara.plugins.model_backends import ModelBackend
 from jacara.plugins.ocr.base import OcrEngine
 
 router = APIRouter(prefix="/documents", tags=["文档"])
@@ -64,8 +75,9 @@ def get_service(
     queue: Annotated[TaskQueue, Depends(get_queue)],
     owner: Annotated[Owner, Depends(get_owner)],
     ocr: Annotated[OcrEngine, Depends(get_ocr)],
+    model: Annotated[ModelBackend, Depends(get_model)],
 ) -> DocumentService:
-    return DocumentService(session, storage, queue, owner, ocr)
+    return DocumentService(session, storage, queue, owner, ocr, model)
 
 
 Service = Annotated[DocumentService, Depends(get_service)]
@@ -93,15 +105,30 @@ def upload_document(
     file: UploadFile,
     service: Service,
     template: Annotated[str | None, Form()] = None,
+    folder: Annotated[str | None, Form(max_length=1000)] = None,
+    split: Annotated[str, Form(max_length=200)] = "auto",
+    skip_duplicate: Annotated[bool, Form()] = False,
 ) -> DocumentOut:
     """上传一张图片或一个 PDF。文件存进对象存储，文档信息存进数据库，放进后台队列等待处理。
 
     template：我的模板的 id，或者 discover（不用模板，抽出所有键值对）。不写：用上一次用的。
     马上返回，状态为 uploaded。之后用"文档详情"查看状态，变成 done 就有抽取结果了。
+
+    批量导入（ADR 0036）：folder 是文件所在的文件夹（列表按它筛选）；split 是文件里有几张单据
+    （auto 自动判断、one 整个文件一张、pages 每页一张，或"1-2, 3, 4-6"）；
+    skip_duplicate=true 时，同一个文件之前传过就不新建，返回之前那份（duplicate_skipped=true）。
     """
     data = file.file.read()
     try:
-        return service.upload(file.filename or "", file.content_type or "", data, template)
+        return service.upload(
+            file.filename or "",
+            file.content_type or "",
+            data,
+            template,
+            folder=folder,
+            split=split,
+            skip_duplicate=skip_duplicate,
+        )
     except DocumentError as err:
         raise _http_error(err) from err
 
@@ -128,6 +155,9 @@ def list_documents(
     skipped: Annotated[
         bool | None, Query(description="true 只看跳过的，false 不看跳过的，不填都看")
     ] = None,
+    folder: Annotated[
+        str | None, Query(max_length=255, description="批量导入的文件夹（含下面的子文件夹）")
+    ] = None,
 ) -> DocumentPage:
     """按上传时间倒序。limit 是每页几条，offset 是跳过几条（翻页用）。
 
@@ -145,8 +175,44 @@ def list_documents(
         value_search=value_q,
         field=field or None,
         skipped=skipped,
+        folder=folder or None,
     )
     return service.page(limit, offset, filters)
+
+
+@router.delete("/{document_id}", summary="删除一份文档")
+def delete_document(document_id: uuid.UUID, service: Service) -> DeleteOut:
+    """原始文件、处理结果、审核记录、备注都删掉，不能恢复。正在处理的不删。"""
+    try:
+        return service.delete([document_id])
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/delete", summary="一次删除几份文档")
+def delete_documents(data: DeleteIn, service: Service) -> DeleteOut:
+    """勾选的几份一起删。正在处理的跳过，skipped 里说明。"""
+    try:
+        return service.delete(data.ids)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/reprocess", status_code=status.HTTP_202_ACCEPTED, summary="一次重新处理几份")
+def reprocess_documents(data: ReprocessManyIn, service: Service) -> ReprocessManyOut:
+    """勾选的几份用同样的设置一起重新处理（模板、分单据、看原图、PDF 怎么读、原因）。
+    不写的设置：模板用各自的最新版，分单据和上次一样，看原图和 PDF 读法按系统设置。
+    正在处理、还在排队的跳过，skipped 里说明。"""
+    try:
+        return service.reprocess_many(data)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.get("/folders", summary="批量导入的文件夹")
+def list_folders(service: Service) -> list[FolderOut]:
+    """批量导入时的文件夹和每个文件夹里有几份文档（列表按文件夹筛选用）。"""
+    return service.folders()
 
 
 @dashboard_router.get("", summary="工作台")
@@ -159,29 +225,75 @@ def dashboard(service: Service) -> Dashboard:
 def export_documents(
     service: Service,
     ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
+    lang: Annotated[
+        str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
+    ] = None,
 ) -> Response:
     """把多个文档导出到一个 Excel：汇总表一行一张单据，方便对账。
 
     写法：`/api/v1/documents/export.xlsx?ids=第一个id&ids=第二个id`
     """
     try:
-        filename, data = service.export(ids)
+        filename, data = service.export(ids, lang)
     except DocumentError as err:
         raise _http_error(err) from err
     return attachment(filename, data, XLSX)
+
+
+@router.get("/export.csv", summary="导出 CSV", response_class=Response)
+def export_documents_csv(
+    service: Service,
+    ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
+    lang: Annotated[
+        str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
+    ] = None,
+) -> Response:
+    """导出 CSV（UTF-8），内容和汇总 Excel 一样：一行一张单据。
+
+    只有汇总一张表时是一个 .csv；有明细表、键值对时每张表一个 .csv，打包成 zip。
+    写法：`/api/v1/documents/export.csv?ids=第一个id&ids=第二个id`
+    """
+    try:
+        filename, data, kind = service.export_csv(ids, lang)
+    except DocumentError as err:
+        raise _http_error(err) from err
+    return attachment(filename, data, "text/csv; charset=utf-8" if kind == "csv" else ZIP)
+
+
+@router.get("/export.json", summary="导出 JSON", response_class=Response)
+def export_documents_json(
+    service: Service,
+    ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
+    lang: Annotated[
+        str | None, Query(max_length=16, description="字段名（labels）用哪种语言；不写用中文")
+    ] = None,
+) -> Response:
+    """导出 JSON（UTF-8）给别的程序读：文档 → 每张单据 → 字段（fields）、表格（tables）、
+    字段名（labels）、还等人确认的（needs_review）。值和 Excel 一样是审核之后的。
+
+    写法：`/api/v1/documents/export.json?ids=第一个id&ids=第二个id`
+    """
+    try:
+        filename, data = service.export_json(ids, lang)
+    except DocumentError as err:
+        raise _http_error(err) from err
+    return attachment(filename, data, "application/json")
 
 
 @router.get("/export.zip", summary="导出多个文档（每个一个 Excel）", response_class=Response)
 def export_documents_zip(
     service: Service,
     ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
+    lang: Annotated[
+        str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
+    ] = None,
 ) -> Response:
     """每个文档单独一个 Excel，打包成一个 zip 下载，解压后就是一个文件夹。
 
     写法：`/api/v1/documents/export.zip?ids=第一个id&ids=第二个id`
     """
     try:
-        filename, data = service.export_zip(ids)
+        filename, data = service.export_zip(ids, lang)
     except DocumentError as err:
         raise _http_error(err) from err
     return attachment(filename, data, ZIP)
@@ -240,6 +352,26 @@ def page_image(
     )
 
 
+@router.get(
+    "/{document_id}/pages/{page}/crop", summary="某一页上一块区域的放大图", response_class=Response
+)
+def page_crop(
+    document_id: uuid.UUID,
+    page: Annotated[int, Path(ge=1)],
+    service: Service,
+    box: Annotated[str, Query(pattern=r"^-?[\d.]+(,-?[\d.]+){3}$")],
+) -> Response:
+    """box="x0,y0,x1,y1"（和页面图片一样的坐标）这一块放大后的 PNG（ADR 0042）。
+    审核页在候选值旁边显示，看清是哪个字。"""
+    try:
+        data = service.page_crop(document_id, page, [float(v) for v in box.split(",")])
+    except DocumentError as err:
+        raise _http_error(err) from err
+    return Response(
+        content=data, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"}
+    )
+
+
 @router.get("/{document_id}/pages/{page}/structure", summary="某一页的结构")
 def page_structure(
     document_id: uuid.UUID,
@@ -253,6 +385,16 @@ def page_structure(
     """
     try:
         return service.page_structure(document_id, page, run)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.get("/{document_id}/extractions/{extraction_id}/sent", summary="发给模型的文字")
+def sent_text(document_id: uuid.UUID, extraction_id: uuid.UUID, service: Service) -> SentText:
+    """这张单据这一轮发给模型的单据文字原文和文字块编号（ADR 0053）。
+    追查"模型为什么没取到"：值不在这里面，是 OCR 没认出来；在里面，是抽取漏了。"""
+    try:
+        return service.sent_text(document_id, extraction_id)
     except DocumentError as err:
         raise _http_error(err) from err
 
@@ -287,11 +429,49 @@ def ocr_region(
         raise _http_error(err) from err
 
 
+@router.post("/{document_id}/pages/{page}/describe-region", summary="框选建模板：框里是什么")
+def describe_region(
+    document_id: uuid.UUID,
+    page: Annotated[int, Path(ge=1)],
+    region: RegionIn,
+    service: Service,
+) -> RegionDescription:
+    """框选建模板（ADR 0047）：框里的值、旁边的标签、在页面哪里、像什么类型。只看不存。"""
+    try:
+        return service.describe_region(document_id, page, region.box)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/{document_id}/pages/{page}/look-region", summary="让模型看一块区域")
+def look_region(
+    document_id: uuid.UUID,
+    page: Annotated[int, Path(ge=1)],
+    data: LookIn,
+    service: Service,
+) -> LookOut:
+    """把这一页上的一块区域裁下来交给视觉模型（ADR 0038），读出文字和要填的字段的值。
+
+    手写、印章、被笔迹盖住的字 OCR 认不出时用。只返回结果，不保存；确认后用"审核字段"保存。
+    模型服务没加载视觉模型时返回 503。
+    """
+    try:
+        return service.look_region(document_id, page, data)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
 @router.get("/{document_id}/export.xlsx", summary="导出 Excel", response_class=Response)
-def export_document(document_id: uuid.UUID, service: Service) -> Response:
+def export_document(
+    document_id: uuid.UUID,
+    service: Service,
+    lang: Annotated[
+        str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
+    ] = None,
+) -> Response:
     """把一个文档导出成 Excel。格子里是审核之后的值，改过的标蓝，批注里有原值和原因。"""
     try:
-        filename, data = service.export([document_id])
+        filename, data = service.export([document_id], lang)
     except DocumentError as err:
         raise _http_error(err) from err
     return attachment(filename, data, XLSX)
@@ -305,6 +485,17 @@ def review_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
     """
     try:
         return service.review(document_id)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post(
+    "/{document_id}/review-time", status_code=status.HTTP_204_NO_CONTENT, summary="记审核用时"
+)
+def add_review_time(document_id: uuid.UUID, data: ReviewTimeIn, service: Service) -> None:
+    """审核页报来的：这一段时间人在审核页上操作了几秒（页面在后台、人走开了不算）。"""
+    try:
+        service.add_review_time(document_id, data.seconds)
     except DocumentError as err:
         raise _http_error(err) from err
 

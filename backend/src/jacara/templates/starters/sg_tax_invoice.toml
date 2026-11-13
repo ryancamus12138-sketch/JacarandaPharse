@@ -1,0 +1,147 @@
+# 起步模板：Singapore GST tax invoice / simplified tax invoice / receipt。
+# 依据：GST (General) Regulations reg 11 与 IRAS「Invoicing customers」：full tax invoice 要写 Tax Invoice、供应商名称地址和
+#   GST 登记号、开具日期和唯一编号、客户名称地址、描述、GST 税率、不含税合计、GST 金额、含税合计；
+#   含税不超过 S$1,000 可开 simplified tax invoice（写明 Price payable includes GST）。GST 税率 2024-01-01 起 9%（2023 年 8%）。
+# 场景：GST 登记的企业向 GST 登记客户开具，客户凭此抵扣进项税；报销时核对 GST。
+# 来源：IRAS「Invoicing customers」（iras.gov.sg）。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "sg_tax_invoice"
+version = 1
+title = "新加坡 GST 税务发票"
+titles = { en = "GST Tax Invoice (Singapore)" }
+countries = ["SG"]
+domains = ["发票"]
+description = "新加坡的 GST tax invoice：Tax Invoice 字样、供应商名称地址和 GST 登记号、发票号、日期、客户、描述、GST 税率和金额、含税合计。GST 登记号格式不对、GST 不等于不含税 × 当时税率（2024 年起 9%）、超过 S$1,000 没有客户名称地址会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "sg_gst_no", "sg_gst_rate", "sg_full_over_1000"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+names = { en = "Document Title" }
+type = "string"
+description = "单据最上面的标题，照抄"
+
+[[fields]]
+name = "invoice_no"
+label = "发票号码"
+names = { en = "Invoice No." }
+type = "string"
+required = true
+unique = true
+description = "照抄，不要改格式"
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue" }
+type = "date"
+required = true
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller" }
+type = "string"
+required = true
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address" }
+type = "string"
+
+[[fields]]
+name = "seller_tax_id"
+label = "GST 登记号"
+names = { en = "GST Reg No." }
+type = "string"
+aliases = ["GST Reg No", "GST Registration No", "UEN"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer" }
+type = "string"
+
+[[fields]]
+name = "buyer_address"
+label = "买方地址"
+names = { en = "Buyer Address" }
+type = "string"
+
+[[fields]]
+name = "currency"
+label = "币种"
+names = { en = "Currency" }
+type = "string"
+
+[[fields]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate" }
+type = "string"
+description = "照抄，如 10%；有几个税率就留空，看明细"
+
+[[fields]]
+name = "net_total"
+label = "不含税合计"
+names = { en = "Total excl. Tax" }
+type = "number"
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax" }
+type = "number"
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+names = { en = "Total incl. Tax" }
+type = "number"
+required = true
+
+[[fields]]
+name = "gst_statement"
+label = "含 GST 声明"
+names = { en = "GST-inclusive Statement" }
+type = "string"
+description = "简易税票上的 Price payable includes GST 这类话，照抄"
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description" }
+type = "string"
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity" }
+type = "number"
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price" }
+type = "number"
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+
+[[tables.columns]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate" }
+type = "string"

@@ -1,0 +1,193 @@
+# 起步模板：Việt Nam hóa đơn điện tử（hóa đơn GTGT）。
+# 依据：Nghị định 123/2020/NĐ-CP Điều 10（nội dung hóa đơn）sửa đổi bởi Nghị định 70/2025/NĐ-CP（hiệu lực 01/6/2025：
+#   người mua có thể ghi số định danh cá nhân；ăn uống phải ghi món；vận tải ghi biển số）；Thông tư 78/2021 ký hiệu hóa đơn；
+#   thuế suất GTGT 0/5/10%；giảm còn 8% theo Nghị quyết 204/2025/QH15 từ 01/7/2025 đến 31/12/2026。
+# 场景：越南境内所有销售都要开电子发票，有税务机关代码（mã CQT）；买方凭此抵扣进项、报销。
+# 来源：hcc.nghean.gov.vn「Nghị định số 70/2025/NĐ-CP」；DFDL「Extension of the reduced 8% VAT rate to 31 December 2026」。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "vn_einvoice"
+version = 1
+title = "越南电子发票（增值税发票）"
+titles = { en = "VAT e-Invoice (Vietnam)", vi = "Hóa đơn giá trị gia tăng" }
+countries = ["VN"]
+domains = ["发票"]
+description = "越南的增值税电子发票：模板号（ký hiệu mẫu số）、发票符号、发票号、税务机关代码、开具日期，卖方和买方的名称地址税号（MST），商品、单位、数量、单价、金额，税率、增值税额、合计。MST 位数不对、税率不是 0/5/8/10%、2027 年后还用 8% 会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "vn_seller_mst", "vn_buyer_mst", "vn_rates", "vn_reduced_8"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+names = { en = "Document Title", vi = "Tên hóa đơn" }
+type = "string"
+description = "单据最上面的标题，照抄"
+aliases = ["Tên hóa đơn"]
+
+[[fields]]
+name = "form_no"
+label = "模板号"
+names = { en = "Form No.", vi = "Ký hiệu mẫu số" }
+type = "string"
+description = "ký hiệu mẫu số，一位数字（1 = 增值税发票）"
+aliases = ["Ký hiệu mẫu số"]
+
+[[fields]]
+name = "serial"
+label = "发票符号"
+names = { en = "Invoice Symbol", vi = "Ký hiệu" }
+type = "string"
+description = "ký hiệu hóa đơn，如 C25TAA，照抄"
+aliases = ["Ký hiệu"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票号码"
+names = { en = "Invoice No.", vi = "Số hóa đơn" }
+type = "string"
+required = true
+unique = true
+description = "照抄，不要改格式"
+aliases = ["Số hóa đơn"]
+
+[[fields]]
+name = "tax_authority_code"
+label = "税务机关代码"
+names = { en = "Tax Authority Code", vi = "Mã của cơ quan thuế" }
+type = "string"
+unique = true
+description = "mã của cơ quan thuế，照抄"
+aliases = ["Mã của cơ quan thuế"]
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue", vi = "Ngày lập" }
+type = "date"
+required = true
+aliases = ["Ngày lập"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller", vi = "Đơn vị bán hàng" }
+type = "string"
+required = true
+aliases = ["Đơn vị bán hàng"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "卖方税号"
+names = { en = "Seller Tax ID", vi = "Mã số thuế người bán" }
+type = "string"
+description = "照抄，带上字母和分隔符"
+aliases = ["Mã số thuế người bán"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address", vi = "Địa chỉ người bán" }
+type = "string"
+aliases = ["Địa chỉ người bán"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer", vi = "Tên đơn vị mua" }
+type = "string"
+aliases = ["Tên đơn vị mua"]
+
+[[fields]]
+name = "buyer_tax_id"
+label = "买方税号"
+names = { en = "Buyer Tax ID", vi = "Mã số thuế người mua" }
+type = "string"
+description = "照抄；没有就留空"
+aliases = ["Mã số thuế người mua"]
+
+[[fields]]
+name = "buyer_id"
+label = "买方个人识别号"
+names = { en = "Buyer Personal ID", vi = "Số định danh cá nhân" }
+type = "string"
+sensitive = true
+description = "số định danh cá nhân（NĐ 70/2025），没有留空"
+aliases = ["Số định danh cá nhân"]
+
+[[fields]]
+name = "buyer_address"
+label = "买方地址"
+names = { en = "Buyer Address", vi = "Địa chỉ người mua" }
+type = "string"
+aliases = ["Địa chỉ người mua"]
+
+[[fields]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate", vi = "Thuế suất GTGT" }
+type = "string"
+description = "照抄，如 10%；有几个税率就留空，看明细"
+aliases = ["Thuế suất GTGT"]
+
+[[fields]]
+name = "net_total"
+label = "不含税合计"
+names = { en = "Total excl. Tax", vi = "Cộng tiền hàng" }
+type = "number"
+aliases = ["Cộng tiền hàng"]
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax", vi = "Tiền thuế GTGT" }
+type = "number"
+aliases = ["Tiền thuế GTGT"]
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+names = { en = "Total incl. Tax", vi = "Tổng tiền thanh toán" }
+type = "number"
+required = true
+aliases = ["Tổng tiền thanh toán"]
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items", vi = "Hàng hóa, dịch vụ" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description", vi = "Tên hàng hóa, dịch vụ" }
+type = "string"
+aliases = ["Tên hàng hóa, dịch vụ"]
+
+[[tables.columns]]
+name = "unit"
+label = "单位"
+names = { en = "Unit", vi = "Đơn vị tính" }
+type = "string"
+aliases = ["Đơn vị tính"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity", vi = "Số lượng" }
+type = "number"
+aliases = ["Số lượng"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price", vi = "Đơn giá" }
+type = "number"
+aliases = ["Đơn giá"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount", vi = "Thành tiền" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+aliases = ["Thành tiền"]

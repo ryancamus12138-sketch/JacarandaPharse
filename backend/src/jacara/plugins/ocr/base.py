@@ -46,6 +46,12 @@ class OcrConfig:
     min_confidence: float = 0.5
     """置信度低于这个值的识别结果直接丢掉。"""
 
+    max_side: int = 4000
+    """整页识别前，图的长边超过这么多像素才缩小（ADR 0042）。
+
+    RapidOCR 默认是 2000：216 DPI 的 A4（2526 像素高）会先被压回 2000，小字更难认。
+    在 Mac 上实测放宽到 4000 每页只多 0.1～0.2 秒。"""
+
     extra: dict[str, object] = field(default_factory=dict)
     """各引擎特有的高级参数，原样传给引擎。用来预留，不影响其他插件。"""
 
@@ -79,6 +85,18 @@ class OcrLine:
 
 
 @dataclass(frozen=True)
+class FormValue:
+    """PDF 表单里一个字段存的值（ADR 0042）。box 是控件在渲染图上的框 (x0, y0, x1, y1)。
+
+    存的值不一定画在页面上：hidden 是字段设了"隐藏"，页面上看不见。"""
+
+    name: str
+    value: str
+    box: tuple[float, float, float, float]
+    hidden: bool = False
+
+
+@dataclass(frozen=True)
 class OcrPage:
     """一页图片的识别结果，以及"它是怎么来的"。
 
@@ -91,6 +109,11 @@ class OcrPage:
     engine: str
     models: dict[str, str]
     duration_ms: int
+    text_layer: tuple[OcrLine, ...] = ()
+    """PDF 自带的文字（ADR 0042）：只拿来和 OCR 核对，不当作原文。坐标和 lines 一样。
+    图片、扫描件没有；看不见的字（多半是别的软件留下的旧 OCR）不算。"""
+    forms: tuple[FormValue, ...] = ()
+    """PDF 表单字段存的值（ADR 0042）。"""
 
     @property
     def text(self) -> str:

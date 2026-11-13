@@ -41,6 +41,18 @@ uv run jacara doctor         # 检查 .env、网页和各项服务
 没有这个文件时，表格的格子按文字位置划分。版面模型随 rapid-layout 一起安装，不用另外下载。
 系统信息页能看到两个模型有没有用上。
 
+视觉模型（可选，ADR 0038）：照片、扫描件上有手写、印章、模糊的地方，OCR 会认错或漏掉，
+有了视觉模型就能让大模型看着原图读。在浏览器里下载
+<https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/mmproj-F16.gguf>
+（约 918 MB，Apache-2.0，和 Qwen3.5-9B 配套），放进 `models/`，重新 `jacara start` 就会一起加载。
+默认只在 OCR 不可靠时看图（`.env` 的 `JACARA_VISION`），审核页"重新处理"里也可以选"每张都看"。
+系统信息页能看到模型能不能看图。
+
+批量导入（ADR 0036）：文档页可以一次拖进几百个文件，或者“选择整个文件夹”，列表按文件夹筛选。
+要自动导入一个文件夹，在 `.env` 里写 `JACARA_WATCH_DIR=文件夹路径`，`jacara start` 会一起启动；
+放进去的图片和 PDF 自动导入，不动、不删原文件，内容一样的只导入一次。
+也可以单独运行 `uv run jacara watch 文件夹路径`。
+
 ## 日常使用：一个命令
 
 ```bash
@@ -53,10 +65,11 @@ uv run jacara start
 
 `jacara start` 一起启动大模型、后台任务（worker）和 Web 服务，网页由 Web 服务直接提供。
 
-- 模型文件：`models/` 里只有一个 `.gguf` 时自动用它；有好几个时用 `--model` 或 `.env` 的 `JACARA_MODEL` 指定。
+- 模型文件：`models/` 里只有一个 `.gguf` 时自动用它（名字带 mmproj 的视觉模型不算）；有好几个时用 `--model` 或 `.env` 的 `JACARA_MODEL` 指定。
 - 已经在运行了再执行一次：不会报错，直接打开浏览器。要重启就先 `jacara stop`。
 - 8080 上已经有模型服务（例如另开的 `jacara serve`）：直接用它，不再启动一个。
 - 启动前会检查 `.env` 里的密钥不能还是 `change-me`。
+- 后台任务默认分两个工位（ADR 0051）：OCR 工位认字、模型工位抽取，模型在抽第 1 份时 OCR 已经在认第 2 份。`.env` 写 `JACARA_PIPELINE=false` 改回一个进程。工作台"每页用时"下面显示每份认字和模型各用了几秒。
 
 ## 开发：四个终端
 
@@ -64,7 +77,7 @@ uv run jacara start
 
 ```bash
 uv run jacara serve --model models/<模型文件>.gguf  # 1. 本地大模型
-uv run jacara worker                               # 2. 后台任务：处理上传的文件
+uv run jacara worker                               # 2. 后台任务：处理上传的文件（--stage read / extract 只做一个工位）
 uv run jacara api --reload                         # 3. Web API，改了后端代码自动重启
 cd web && npm run dev                              # 4. 网页开发服务器
 ```
@@ -104,6 +117,10 @@ uv run jacara templates                         # 列出所有模板
 | GET | `/api/v1/documents/{id}/pages/{n}/image` | 第 n 页的图片（PNG），出处框的坐标就是这张图上的像素 |
 | POST | `/api/v1/documents/{id}/process` | 重新处理（失败后重试） |
 | POST | `/api/v1/documents/{id}/review` | 完成审核（所有标黄的字段都处理过之后） |
+| POST | `/api/v1/documents/reprocess` | 勾选的几份用同样的设置一起重新处理（`{"ids": [...]}`，可以带模板、分单据、看原图、PDF 读法） |
+| GET | `/api/v1/documents/export.json?ids=…` | 多个文档导出成一个 JSON（`jacarandaparse.export.v1`） |
+| POST | `/api/v1/documents/{id}/review-time` | 审核页报审核用时（秒） |
+| GET | `/api/v1/documents/{id}/extractions/{eid}/sent` | 这一轮发给模型的单据文字原文和文字块编号（ADR 0053） |
 | POST | `/api/v1/values/{id}/revisions` | 审核一个字段：修改（edit）或确认（confirm） |
 | GET | `/api/v1/values/{id}/revisions` | 一个字段的修改历史 |
 | GET | `/api/v1/documents/{id}/export.xlsx` | 导出一个文档的 Excel（审核之后的值） |
@@ -114,9 +131,17 @@ uv run jacara templates                         # 列出所有模板
 | PATCH | `/api/v1/users/{id}` | 改权限、停用（管理员） |
 | POST | `/api/v1/users/{id}/reset-code` | 给忘了密码的人生成一次性重设码（管理员；15 分钟有效，只能用一次） |
 | GET | `/api/v1/users/permissions` | 可以开通的权限 |
-| GET | `/api/v1/audit-logs` | 审计日志：谁、什么时候、做了什么（管理员） |
+| GET | `/api/v1/audit-logs` | 审计日志：谁、什么时候、做了什么（管理员；按 `action`、`user_id`、`date_from`、`date_to` 筛，`/audit-logs/export` 导出） |
+| GET | `/api/v1/insights/corrections` | 统计：人工修改率、哪种错、错在哪一步、平均审核用时 |
+| PATCH | `/api/v1/insights/attributions/{id}` | 改判错在哪一步（`{"stage": "ocr_misread", "note": "…"}`，`null` 撤销） |
 | GET | `/api/v1/templates` | 所有模板：字段、中文名、类型、规则 |
 | GET | `/api/v1/templates/{name}` | 一个模板 |
+| GET / PUT | `/api/v1/ocr-samples/settings` | 自动收集 OCR 纠错样本的开关（改要管理员） |
+| GET | `/api/v1/ocr-samples` | OCR 样本列表（按分类、状态、来源筛选） |
+| GET | `/api/v1/ocr-samples/export` | OCR 样本导出成 ZIP（PaddleOCR 识别训练格式，按单据分好训练集和验证集；`kind=test` 导出锁定测试集），`/export/preview` 先看会导出几条 |
+| GET | `/api/v1/ocr-samples/groups` | 单据分组：每组有哪几张单据、分在哪边（`PUT /groups/{id}/split` 管理员改） |
+| GET / POST | `/api/v1/ocr-samples/pairs` | 可能是同一张单据的（PDF 和照片），确认是不是同一张 |
+| POST | `/api/v1/ocr-samples/backfill` | 从以前的修改补收样本，进"待复核"（`PATCH /ocr-samples/{id}` 改成 `ready` 是复核通过） |
 
 给别人用时，可以在 `.env` 里写 `JACARA_API_DOCS=false` 关掉 `/docs`。
 
@@ -146,6 +171,34 @@ uv run jacara eval sroie --limit 20       # 要先启动大模型
 ```
 
 指标的意思和历次结果见 [docs/eval/README.md](docs/eval/README.md)。
+
+同一张单据的照片和 PDF 成对比较（ADR 0042）：清单写在 `data/eval/pairs.toml`（格式见 `backend/src/jacara/eval/pairs.py`，data/ 不进 Git）：
+
+```bash
+uv run jacara eval pairs                                   # 标准答案当回答，不用模型，只量 OCR 和核对
+uv run jacara eval pairs --server http://127.0.0.1:8080    # 真的用模型抽，要先启动大模型
+```
+
+回放（ADR 0053）：审核完成的单据用当时的 OCR 快照换一种设置再抽，和人审核过的值比。只读，不改审核数据：
+
+```bash
+uv run jacara eval replay --b http://127.0.0.1:8080 --limit 5            # 先少量试跑：A 是当时存下的结果
+uv run jacara eval replay --b http://127.0.0.1:8080 --b-learn            # B 带上以前改过的例子
+uv run jacara eval replay --a http://127.0.0.1:8080 --a-learn recent --b http://127.0.0.1:8080 --b-learn curated --split test_locked  # 两种挑例子的办法比一比（ADR 0055）
+uv run jacara eval replay --b http://127.0.0.1:8080 --split test_locked  # 只用锁定测试集
+```
+
+结果在 `data/eval/replay/<时间>/summary.md`。更新之前处理的单据没有快照，默认跳过，加 `--reread` 重新认字。
+
+### 备份和恢复
+
+```bash
+jacara stop
+uv run jacara backup                                   # 打进 backups/jacara-<时间>.tar
+uv run jacara restore-drill backups/jacara-<时间>.tar  # 另起一套空环境实际恢复一次、逐样打开（要 Docker）
+```
+
+真要恢复时，先准备一套空的数据库和存储，再 `uv run jacara restore <包>`（只往空环境恢复）。备份包里是你的业务数据，不要放进仓库。
 
 ### 检查与测试
 

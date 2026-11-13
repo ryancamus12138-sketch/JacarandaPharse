@@ -1,0 +1,131 @@
+# 起步模板：美国临床实验室检验报告。美国联邦层面没有统一的发票格式法律，所以美国只做有联邦法规的检验报告。
+# 依据：42 CFR 493.1291(c)：报告要有 (1) 病人姓名和识别号（或唯一识别号）(2) 做检验的实验室名称和地址 (3) 报告日期
+#   (4) 检验项目 (5) 标本来源（适用时）(6) 结果及单位或解释 (7) 不合格标本的状态和处置；(d) 参考区间要提供给开单人。
+#   CLIA 证书号：2 位 + D + 7 位。
+# 场景：医院、独立实验室出具；病人、保险理赔、复诊时核对结果。
+# 来源：Cornell LII 42 CFR § 493.1291。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "us_lab_report"
+version = 1
+title = "美国临床检验报告（CLIA）"
+titles = { en = "Clinical Laboratory Test Report (US, CLIA)" }
+countries = ["US"]
+domains = ["医疗", "检验报告"]
+description = "美国 CLIA 规定的检验报告：病人姓名和识别号、实验室名称地址和 CLIA 号、报告日期、采集时间、标本来源和状态、开单医生，每一项检验的结果、单位、参考区间、高低提示。CLIA 号格式不对、超出参考区间却没标高低会提醒。"
+rules = ["lab_flag", "us_clia_no"]
+
+[[fields]]
+name = "patient_name"
+label = "病人姓名"
+names = { en = "Patient Name" }
+type = "string"
+required = true
+sensitive = true
+
+[[fields]]
+name = "patient_id"
+label = "病人识别号"
+names = { en = "Patient ID" }
+type = "string"
+sensitive = true
+aliases = ["MRN", "DOB", "Patient ID"]
+
+[[fields]]
+name = "lab_name"
+label = "实验室名称"
+names = { en = "Laboratory" }
+type = "string"
+required = true
+
+[[fields]]
+name = "lab_address"
+label = "实验室地址"
+names = { en = "Laboratory Address" }
+type = "string"
+required = true
+
+[[fields]]
+name = "clia_no"
+label = "CLIA 号"
+names = { en = "CLIA No." }
+type = "string"
+aliases = ["CLIA #", "CLIA ID"]
+
+[[fields]]
+name = "ordering_provider"
+label = "开单医生"
+names = { en = "Ordering Provider" }
+type = "string"
+
+[[fields]]
+name = "accession_no"
+label = "标本编号"
+names = { en = "Accession No." }
+type = "string"
+unique = true
+
+[[fields]]
+name = "specimen_source"
+label = "标本来源"
+names = { en = "Specimen Source" }
+type = "string"
+
+[[fields]]
+name = "specimen_condition"
+label = "标本状态"
+names = { en = "Specimen Condition" }
+type = "string"
+description = "不合格标本的状态和处置，照抄"
+
+[[fields]]
+name = "collected_at"
+label = "采集时间"
+names = { en = "Collected" }
+type = "string"
+
+[[fields]]
+name = "reported_at"
+label = "报告日期"
+names = { en = "Report Date" }
+type = "date"
+required = true
+
+[[tables]]
+name = "results"
+label = "检验结果"
+names = { en = "Results" }
+required = true
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "name"
+label = "检验项目"
+names = { en = "Test" }
+type = "string"
+
+[[tables.columns]]
+name = "result"
+label = "结果"
+names = { en = "Result" }
+type = "string"
+description = "照抄"
+
+[[tables.columns]]
+name = "unit"
+label = "单位"
+names = { en = "Units" }
+type = "string"
+
+[[tables.columns]]
+name = "reference"
+label = "参考区间"
+names = { en = "Reference Interval" }
+type = "string"
+
+[[tables.columns]]
+name = "flag"
+label = "提示"
+names = { en = "Flag" }
+type = "string"
+description = "H、L、A 这类照抄"

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.models import AuditLog
-from jacara.modules.audit.repository import AuditRepository
+from jacara.modules.audit.repository import AuditFilter, AuditRepository
 from jacara.modules.audit.schemas import AuditOut, AuditPage
 
 
@@ -40,12 +40,35 @@ def record(
     )
 
 
+EXPORT_LIMIT = 50_000
+"""一次最多导出多少条审计日志。"""
+
+
 class AuditService:
     def __init__(self, session: Session, owner: Owner) -> None:
         self.repo = AuditRepository(session)
         self.owner = owner
 
-    def page(self, limit: int, offset: int, action: str | None = None) -> AuditPage:
+    def page(self, limit: int, offset: int, found: AuditFilter | None = None) -> AuditPage:
         require(self.owner, "audit:read")
-        logs, total = self.repo.page(self.owner.team_id, limit, offset, action)
+        logs, total = self.repo.page(self.owner.team_id, limit, offset, found)
+        return AuditPage(items=[AuditOut.model_validate(log) for log in logs], total=total)
+
+    def export(self, found: AuditFilter) -> AuditPage:
+        """导出：按筛选条件取出全部（最多 EXPORT_LIMIT 条）。
+        导出本身也记一条（审计日志离开系统）。"""
+        require(self.owner, "audit:read")
+        logs, total = self.repo.page(self.owner.team_id, EXPORT_LIMIT, 0, found)
+        record(
+            self.repo.session,
+            self.owner,
+            "audit:export",
+            None,
+            None,
+            count=len(logs),
+            filter_action=found.action,
+            user=str(found.user_id) if found.user_id else None,
+            since=found.since.isoformat() if found.since else None,
+            until=found.until.isoformat() if found.until else None,
+        )
         return AuditPage(items=[AuditOut.model_validate(log) for log in logs], total=total)

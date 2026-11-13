@@ -4,16 +4,19 @@
 # 规则和字段说明只写通用规定，不放任何真实单据的内容。
 
 name = "cn_rail_ticket"
-version = 2
+version = 4
 title = "铁路电子客票"
-region = "cn"
-category = "交通"
+titles = { en = "Railway e-Ticket (China)" }
+domains = ["交通", "发票"]
+countries = ["CN"]
 description = "电子发票（铁路电子客票）。票面要素按国家税务总局 财政部 中国国家铁路集团公告 2024 年第 8 号。"
 rules = ["issue_date_exists", "issue_date_not_future", "travel_date_exists", "total_positive", "cn_invoice_no", "fare_tax_balance"]
 
 [[fields]]
 name = "invoice_no"
 label = "发票号码"
+names = { en = "Invoice No." }
+unique = true
 type = "string"
 required = true
 description = "左上角“发票号码:”后面的 20 位数字"
@@ -22,6 +25,7 @@ aliases = ["发票号码"]
 [[fields]]
 name = "issue_date"
 label = "开票日期"
+names = { en = "Date of Issue" }
 type = "date"
 required = true
 description = "右上角“开票日期:”后面的日期。可能比乘车日期晚"
@@ -30,6 +34,7 @@ aliases = ["开票日期"]
 [[fields]]
 name = "origin"
 label = "出发站"
+names = { en = "From" }
 type = "string"
 required = true
 description = "车次左边的大字站名，只填中文站名，不要后面的小字“站”和下面的拼音"
@@ -37,6 +42,7 @@ description = "车次左边的大字站名，只填中文站名，不要后面�
 [[fields]]
 name = "train_no"
 label = "车次"
+names = { en = "Train No." }
 type = "string"
 required = true
 description = "两个站名中间、箭头上方的车次，如 G1234、D2003、K850"
@@ -44,6 +50,7 @@ description = "两个站名中间、箭头上方的车次，如 G1234、D2003、
 [[fields]]
 name = "destination"
 label = "到达站"
+names = { en = "To" }
 type = "string"
 required = true
 description = "车次右边的大字站名，只填中文站名，不要后面的小字“站”和下面的拼音"
@@ -51,6 +58,7 @@ description = "车次右边的大字站名，只填中文站名，不要后面�
 [[fields]]
 name = "travel_date"
 label = "乘车日期"
+names = { en = "Travel Date" }
 type = "date"
 required = true
 description = "站名下面一行的日期（后面跟着开车时间）"
@@ -58,30 +66,35 @@ description = "站名下面一行的日期（后面跟着开车时间）"
 [[fields]]
 name = "departure_time"
 label = "开车时间"
+names = { en = "Departure Time" }
 type = "string"
 description = "乘车日期后面的时间，只填时分如 13:16，不要后面的“开”字"
 
 [[fields]]
 name = "seat_no"
 label = "车厢座位"
+names = { en = "Car / Seat" }
 type = "string"
 description = "车厢和座位号，原样照抄，如 03车06C号；无座时照抄“无座”"
 
 [[fields]]
 name = "seat_class"
 label = "席别"
+names = { en = "Class" }
 type = "string"
 description = "座位等级，原样照抄，如 二等座、一等座、新空调 硬座、硬卧"
 
 [[fields]]
 name = "ticket_type"
 label = "票种"
+names = { en = "Ticket Type" }
 type = "string"
 description = "票价那一行中间的一个字：全（全价）、孩（儿童）、学（学生）、残（残疾军人）等，原样照抄；没有就留空"
 
 [[fields]]
 name = "total"
 label = "票价"
+names = { en = "Fare" }
 type = "number"
 required = true
 description = "“票价:”后面 ¥ 之后的金额（含税）"
@@ -90,6 +103,7 @@ aliases = ["票价"]
 [[fields]]
 name = "amount_total"
 label = "金额（不含税）"
+names = { en = "Amount excl. Tax" }
 type = "number"
 description = "票价下面“金额:”后面的金额。开给个人的票上一般没有这一行，那就留空"
 aliases = ["金额"]
@@ -97,6 +111,7 @@ aliases = ["金额"]
 [[fields]]
 name = "tax_rate"
 label = "税率"
+names = { en = "Tax Rate" }
 type = "string"
 description = "“税率:”后面的值，如 9%；没有就留空"
 aliases = ["税率"]
@@ -104,6 +119,7 @@ aliases = ["税率"]
 [[fields]]
 name = "tax_total"
 label = "税额"
+names = { en = "Tax" }
 type = "number"
 description = "“税额:”后面 ¥ 之后的金额；没有就留空"
 aliases = ["税额"]
@@ -111,6 +127,7 @@ aliases = ["税额"]
 [[fields]]
 name = "passenger_id"
 label = "身份证件号码"
+names = { en = "ID Document No." }
 type = "string"
 description = "旅客的身份证件号码，常有一段被 * 遮住，原样照抄"
 sensitive = true
@@ -118,12 +135,14 @@ sensitive = true
 [[fields]]
 name = "passenger"
 label = "旅客姓名"
+names = { en = "Passenger Name" }
 type = "string"
 description = "证件号码右边的姓名，可能有字被遮住，原样照抄"
 
 [[fields]]
 name = "ticket_no"
 label = "电子客票号"
+names = { en = "E-ticket No." }
 type = "string"
 description = "“电子客票号:”后面的一串字母和数字"
 aliases = ["电子客票号"]
@@ -131,6 +150,7 @@ aliases = ["电子客票号"]
 [[fields]]
 name = "buyer_name"
 label = "购买方名称"
+names = { en = "Buyer Name" }
 type = "string"
 description = "下方“购买方名称:”后面的名称；个人购票写的是“个人”"
 aliases = ["购买方名称"]
@@ -138,6 +158,7 @@ aliases = ["购买方名称"]
 [[fields]]
 name = "buyer_tax_id"
 label = "购买方税号"
+names = { en = "Buyer Tax ID" }
 type = "string"
 description = "“统一社会信用代码:”后面的代码；个人购票这里是空的"
 aliases = ["统一社会信用代码"]

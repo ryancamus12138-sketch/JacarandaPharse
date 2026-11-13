@@ -1,5 +1,5 @@
 import { CloseOutlined, DeleteOutlined, MessageOutlined, ScanOutlined } from '@ant-design/icons'
-import { Alert, Button, Flex, Segmented, Tag, Tooltip, Typography } from 'antd'
+import { Button, Flex, Segmented, Tag, Tooltip, Typography } from 'antd'
 import { useEffect, useRef } from 'react'
 import type { Extraction, FieldValue, Level } from '../../api/types'
 import {
@@ -12,8 +12,11 @@ import {
   splitCell,
   type TableRow,
   tableLayouts,
+  shownValue,
 } from './fields'
+import { IssueToggle } from './IssueToggle'
 import { ItemsTable } from './ItemsTable'
+import { Candidates } from './Candidates'
 import { ReviewForm } from './ReviewForm'
 import { RevisionHistory } from './RevisionHistory'
 import type { Revise } from './useRevise'
@@ -87,16 +90,7 @@ export function FieldPanel({
 
   return (
     <Flex vertical gap={12} ref={box}>
-      {checks.issues.map((issue, i) => (
-        <Alert
-          // 同一条规则可能报好几次（商品明细每一行单独检查）
-          key={`${issue.rule}:${i}`}
-          type={issue.severity === 'error' ? 'error' : 'warning'}
-          showIcon
-          title={issue.title}
-          description={issue.message}
-        />
-      ))}
+      <IssueToggle checks={checks} />
       <Flex justify="space-between" align="center" gap={8} wrap>
         <Typography.Text type="secondary">
           {plain.length} 个字段
@@ -201,6 +195,11 @@ function StatusTags({ value: v, full = false }: { value: FieldValue; full?: bool
           <Tag color="cyan">按公式算</Tag>
         </Tooltip>
       )}
+      {v.status === 'seen' && !v.reviewed && (
+        <Tooltip title="OCR 认错了或没认出来（手写、印章、模糊），这个值是模型看着原图读的，请对着原图核对">
+          <Tag color="orange">看原图读的</Tag>
+        </Tooltip>
+      )}
       {evidence}
       {check}
       {v.pending_review && <Tag color="gold">待确认</Tag>}
@@ -232,9 +231,35 @@ const TINT: Record<Level, string> = {
 }
 
 function ShownValue({ value: v }: { value: FieldValue }) {
+  if (v.type === 'date_range' && v.current_value && v.range) {
+    // 日期范围（ADR 0039、0040）：上面开始 ~ 结束，下面天数和原文的写法
+    const r = v.range
+    const quote = (v.current_evidence ?? v.evidence)?.quote
+    const main = r.start && r.end ? `${r.start} ~ ${r.end}` : v.current_value
+    const extra = [r.days ? `${r.days} 天` : null, quote && quote !== main ? `原文：${quote}` : null]
+      .filter(Boolean)
+      .join(' · ')
+    return (
+      <Flex vertical style={{ flex: 1, minWidth: 0 }}>
+        <Typography.Text strong style={{ overflowWrap: 'anywhere' }}>
+          {main}
+        </Typography.Text>
+        {extra && (
+          <Typography.Text type="secondary" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>
+            {extra}
+          </Typography.Text>
+        )}
+        {r.problem && (
+          <Typography.Text type="warning" style={{ fontSize: 12 }}>
+            {r.problem}
+          </Typography.Text>
+        )}
+      </Flex>
+    )
+  }
   return (
     <Typography.Text strong style={{ flex: 1, overflowWrap: 'anywhere' }}>
-      {v.current_value ?? (
+      {shownValue(v) ?? (
         <Typography.Text type="secondary">
           {v.origin === 'manual'
             ? '（待填写）'
@@ -348,7 +373,10 @@ export function FieldDetail({
   onClear,
   onAdjustBox,
   onClose,
+  documentId,
 }: {
+  /** 文档 ID：候选值旁边的局部图要用。 */
+  documentId: string
   value: FieldValue
   label: string
   canEdit: boolean
@@ -415,6 +443,13 @@ export function FieldDetail({
           {ev ? '调整框 / 重新识别' : '在原图上框出来'}
         </Button>
       )}
+      <Candidates
+        documentId={documentId}
+        value={v}
+        revise={revise}
+        canEdit={canEdit && !v.deleted}
+        onDone={onReviewed}
+      />
       {/* key 带上当前值：改完之后表单用新值重新开始 */}
       {canEdit && !v.deleted && (
         <ReviewForm key={`${v.id}:${v.current_value}`} value={v} revise={revise} onDone={onReviewed} />

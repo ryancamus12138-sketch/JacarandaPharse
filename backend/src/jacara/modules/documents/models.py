@@ -46,6 +46,13 @@ class Document(Base, OwnedMixin, TimestampMixin):
     progress: Mapped[int | None]
     """处理进度 0～100。不在处理中时为空。"""
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_seconds: Mapped[int] = mapped_column(default=0, server_default="0")
+    """人审核这份花了多少秒（只算审核页开着、人在操作的时间，几次打开加在一起）。"""
+    timings: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
+    )
+    """最近一次处理各步用了多久（ADR 0051）：认字 read_ms、排队等模型 wait_ms、模型这边 extract_ms，
+    split 是不是分了两个工位。处理中还记着交接用的 attempt。"""
     """处理完（成功或失败）的时间。工作台"今天处理了几份"用。"""
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     """点"完成审核"的时间。"""
@@ -62,6 +69,19 @@ class Document(Base, OwnedMixin, TimestampMixin):
     """下一次处理用哪个模板版本。空：用内置的收据模板（v2 之前上传的文档）。"""
     discover: Mapped[bool] = mapped_column(default=False, server_default="false")
     """下一次处理不用模板，抽出单据上所有的键值对（"用样例建模板"的第一步）。"""
+    auto: Mapped[bool] = mapped_column(default=False, server_default="false")
+    """下一次处理自动判断用哪个模板（ADR 0038）：每张单据从我的模板里挑最合适的。"""
+    vision: Mapped[str | None] = mapped_column(String(8))
+    """下一次处理看不看原图（ADR 0038）：always 每张都看、off 不看；空的按 JACARA_VISION。"""
+    pdf_read: Mapped[str | None] = mapped_column(String(8))
+    """下一次处理时 PDF 怎么读（ADR 0042）：image 画成图做 OCR、text 只读文字层；
+    空的按 JACARA_PDF_READ。"""
+    folder: Mapped[str | None] = mapped_column(String(255), index=True)
+    """批量导入时文件所在的文件夹（相对路径，如"2026-10 出差/酒店"）。
+    列表按它分组、筛选（ADR 0036）。"""
+    split: Mapped[str] = mapped_column(String(200), default="auto", server_default="auto")
+    """一个文件里有几张单据（ADR 0036）：auto 自动判断、one 整个文件是一张、pages 每页一张，
+    或者自己写的页码范围（"1-2, 3, 4-6"）。下一次处理按它分。"""
     current_run: Mapped[int] = mapped_column(default=1, server_default="1")
     """现在用的是第几轮处理的结果。"""
     run_reason: Mapped[str | None] = mapped_column(Text)
@@ -88,7 +108,10 @@ class Extraction(Base, OwnedMixin, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"), index=True)
     page: Mapped[int]
-    """第几页，从 1 开始。"""
+    """这张单据从第几页开始，从 1 开始。"""
+    last_page: Mapped[int | None]
+    """这张单据到第几页结束（ADR 0036）：一张单据占好几页时才有，只占一页是空的。
+    一个文件可以有好几张单据，每张一条 extractions。"""
 
     # 来源（项目规则 4）
     source: Mapped[str] = mapped_column(String(32))
@@ -110,6 +133,13 @@ class Extraction(Base, OwnedMixin, TimestampMixin):
         ForeignKey("template_versions.id")
     )
     """用的"我的模板"的哪个版本。内置模板和键值对发现时为空，按 template 名字找。"""
+    classified: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
+    )
+    """自动判断用哪个模板的经过（ADR 0038）：{"picked", "reason", "by", "candidates"}。
+    上传时直接选了模板的是空的。"""
+    vision: Mapped[str | None] = mapped_column(Text)
+    """这张单据给模型看了原图的原因（ADR 0038）；没看图是空的。"""
 
     raw_output: Mapped[str] = mapped_column(Text)
     """模型的原始回答，原样保存（项目规则 2）。"""
@@ -130,6 +160,16 @@ class Extraction(Base, OwnedMixin, TimestampMixin):
     )
     """这一页的结构（ADR 0034）：文字块、行、版面区域、表格、标题 → 值，格式见 structure/graph.py。
     审核页"版面结构"显示它，试跑时直接用它。2026-11-14 之前处理的文档没有。"""
+
+    model_input: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"),
+        deferred=True,
+    )
+    """这次发给模型的是什么（ADR 0053）：{"blocks": [文字块编号], "total_blocks", "chars",
+    "sha256", "text"（单据文字原文）, "images", "lessons"}。这次更新之前处理的没有。"""
+    ocr_snapshot: Mapped[str | None] = mapped_column(String(512))
+    """这一轮 OCR 认出来的原样（一样不丢）存在对象存储的哪里（ADR 0053）。
+    同一轮的几张单据指向同一个文件。回放（jacara eval replay）用它，不用重新认字。"""
 
     document: Mapped[Document] = relationship(back_populates="all_extractions")
     template_def: Mapped[TemplateVersion | None] = relationship(lazy="selectin")

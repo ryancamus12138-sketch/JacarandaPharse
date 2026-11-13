@@ -2,8 +2,9 @@
 
 import pytest
 
+from jacara.core.dates import date_pattern
+from jacara.core.numbers import number_pattern
 from jacara.plugins.aligners import TextMatchAligner
-from jacara.plugins.aligners.text_match import _exact_pattern, date_variants, number_variants
 from jacara.plugins.extractors import ExtractedField, ExtractionResult
 
 
@@ -12,16 +13,9 @@ def align(page, *fields):
     return {a.field.name: a for a in TextMatchAligner().align(page, result)}
 
 
-def test_number_variants():
-    assert number_variants(1234.5, loose=False) == ["1234.50", "1,234.50"]
-    assert "9" in number_variants(9.0, loose=True)
-    assert "9" not in number_variants(9.0, loose=False)
-
-
-def test_date_variants_include_common_spellings():
-    variants = date_variants("2014-08-03")
-    for expected in ("03/08/2014", "August 3, 2014", "3 Aug 2014", "2014年8月3日"):
-        assert expected in variants
+def test_common_date_spellings_are_found():
+    for text in ("03/08/2014", "August 3, 2014", "3 Aug 2014", "2014年8月3日"):
+        assert date_pattern("2014-08-03").search(text), text
 
 
 @pytest.mark.parametrize(
@@ -37,14 +31,14 @@ def test_date_variants_include_common_spellings():
 )
 def test_more_date_spellings_found_by_eval(iso, text):
     """评测里抽对了却找不到出处的日期写法（docs/eval/README.md 全量基线）。"""
-    assert _exact_pattern(date_variants(iso)).search(text)
+    assert date_pattern(iso).search(text)
 
 
 def test_two_digit_year_is_found_but_not_inside_a_longer_date():
     """评测发现：收据上常写两位年份（18/03/18）。但 12-01-19 不能匹配到 12-01-1995 的前半截。"""
-    pattern = _exact_pattern(date_variants("2018-03-18"))
+    pattern = date_pattern("2018-03-18")
     assert pattern.search("DATE: 18/03/18 10:21")
-    assert not _exact_pattern(date_variants("2019-01-12")).search("12-01-1995")
+    assert not date_pattern("2019-01-12").search("12-01-1995")
 
 
 @pytest.mark.parametrize(
@@ -57,7 +51,7 @@ def test_two_digit_year_is_found_but_not_inside_a_longer_date():
     ],
 )
 def test_number_pattern_boundaries(text, found):
-    pattern = _exact_pattern(number_variants(9.0, loose=False))
+    pattern = number_pattern(9.0, loose=False)
     assert bool(pattern.search(text)) is found
 
 

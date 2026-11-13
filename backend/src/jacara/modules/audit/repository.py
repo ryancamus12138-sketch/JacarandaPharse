@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from jacara.models import AuditLog
+
+
+@dataclass(frozen=True)
+class AuditFilter:
+    action: str | None = None
+    """按开头筛，例如 "auth:" 只看登录相关。"""
+    user_id: uuid.UUID | None = None
+    """只看这个人做的。"""
+    since: datetime | None = None
+    until: datetime | None = None
+    """时间范围：since ≤ 时间 < until（UTC）。"""
 
 
 class AuditRepository:
@@ -18,12 +31,19 @@ class AuditRepository:
         self.session.add(log)
 
     def page(
-        self, team_id: uuid.UUID, limit: int, offset: int, action: str | None = None
+        self, team_id: uuid.UUID, limit: int, offset: int, found: AuditFilter | None = None
     ) -> tuple[list[AuditLog], int]:
-        """一个团队的审计日志，最新的在前。action 可以按开头筛选，例如 "auth:" 只看登录相关。"""
-        where = [AuditLog.team_id == team_id]
-        if action:
-            where.append(AuditLog.action.startswith(action))
+        """一个团队的审计日志，最新的在前。"""
+        found = found or AuditFilter()
+        where: list[ColumnElement[bool]] = [AuditLog.team_id == team_id]
+        if found.action:
+            where.append(AuditLog.action.startswith(found.action))
+        if found.user_id:
+            where.append(AuditLog.user_id == found.user_id)
+        if found.since:
+            where.append(AuditLog.created_at >= found.since)
+        if found.until:
+            where.append(AuditLog.created_at < found.until)
         query = (
             select(AuditLog)
             .where(*where)

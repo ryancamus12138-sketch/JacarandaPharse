@@ -17,9 +17,11 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path, PurePath
 from typing import Any, cast
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from jacara.core.config import get_settings
+from jacara.core.daterange import parse_date_range
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.queue import QueueError, TaskQueue
@@ -32,17 +34,27 @@ from jacara.modules.documents.schemas import (
     REPROCESS_REASONS,
     Dashboard,
     DashboardCounts,
+    DeleteOut,
     DocumentDetail,
     DocumentNeighbors,
     DocumentOut,
     DocumentPage,
     ExtractionOut,
+    FolderOut,
+    LookIn,
+    LookOut,
     OcrLineOut,
     PageOcr,
     PageStructureOut,
+    RegionDescription,
     RegionOut,
     ReprocessIn,
+    ReprocessManyIn,
+    ReprocessManyOut,
     RunOut,
+    SameFile,
+    SentOut,
+    SentText,
     SkipIn,
     StructureCell,
     StructurePair,
@@ -50,9 +62,9 @@ from jacara.modules.documents.schemas import (
     StructureTable,
 )
 from jacara.modules.exports.service import save_export
-from jacara.modules.fields.schemas import AdoptOut, SuggestionOut
+from jacara.modules.fields.schemas import AdoptOut, RangeOut, SuggestionOut
 from jacara.modules.fields.service import FieldService
-from jacara.modules.templates.service import TemplateFailure, TemplateService
+from jacara.modules.templates.service import Pick, TemplateFailure, TemplateService
 from jacara.pipeline.current import (
     current_checks_json,
     evidence_text,
@@ -67,10 +79,16 @@ from jacara.pipeline.current import (
 )
 from jacara.pipeline.entities import entity_conflicts
 from jacara.pipeline.load import load_reports
-from jacara.pipeline.region import read_region
+from jacara.pipeline.pages import covering, ocr_page_json, page_slice, pages_json
+from jacara.pipeline.region import read_region, region_png
+from jacara.pipeline.segment import SplitError, normalize_split
 from jacara.plugins.exporters import create_exporter
+from jacara.plugins.exporters.csv_files import workbook_to_csv
 from jacara.plugins.exporters.excel import cell_value
+from jacara.plugins.extractors import ExtractionError
 from jacara.plugins.extractors.base import DISCOVER, split_cell_name
+from jacara.plugins.extractors.llm import look_at
+from jacara.plugins.model_backends import ModelBackend, ModelBackendError
 from jacara.plugins.ocr.base import OcrEngine
 from jacara.plugins.ocr.loader import page_png
 from jacara.templates import Template
@@ -130,6 +148,7 @@ class DocumentService:
         queue: TaskQueue,
         owner: Owner,
         ocr: OcrEngine | None = None,
+        model: ModelBackend | None = None,
     ) -> None:
         self.session = session
         self.repo = DocumentRepository(session)
@@ -137,17 +156,36 @@ class DocumentService:
         self.queue = queue
         self.ocr = ocr
         """只有"重新识别这块"用到。"""
+        self.model = model
+        """只有"让模型看这块"用到（ADR 0038）。"""
         self.owner = owner
 
     def upload(
-        self, filename: str, content_type: str, data: bytes, template: str | None = None
+        self,
+        filename: str,
+        content_type: str,
+        data: bytes,
+        template: str | None = None,
+        *,
+        folder: str | None = None,
+        split: str = "auto",
+        skip_duplicate: bool = False,
     ) -> DocumentOut:
-        """template：我的模板的 id，或者 discover（抽出所有键值对）。不写就用上一次用的。"""
+        """template：我的模板的 id，或者 discover（抽出所有键值对）。不写就用上一次用的。
+
+        folder：批量导入时文件所在的文件夹；split：文件里有几张单据（ADR 0036）；
+        skip_duplicate：同一个文件之前传过就不再新建，返回之前那份。
+        """
         require(self.owner, "document:create")
+        split = check_split(split)
+        sha256 = hashlib.sha256(data).hexdigest()
+        if skip_duplicate:
+            earlier = self.repo.first_with_hash(self.owner.team_id, sha256)
+            if earlier is not None:
+                out = self._with_counts([earlier])[0]
+                return out.model_copy(update={"duplicate_skipped": True})
         try:
-            version_id, discover = TemplateService(self.owner, self.session).pick_for_upload(
-                template
-            )
+            pick = TemplateService(self.owner, self.session).pick_for_upload(template)
         except TemplateFailure as err:
             raise DocumentError(err.code, err.message) from err
         if content_type not in ALLOWED_TYPES:
@@ -174,13 +212,16 @@ class DocumentService:
                 id=document_id,
                 filename=safe_name,
                 content_type=content_type,
-                sha256=hashlib.sha256(data).hexdigest(),
+                sha256=sha256,
+                folder=clean_folder(folder),
+                split=split,
                 size_bytes=len(data),
                 page_count=_count_pages(content_type, data),
                 storage_key=key,
                 status="uploaded",
-                template_version_id=version_id,
-                discover=discover,
+                template_version_id=pick.version_id,
+                discover=pick.discover,
+                auto=pick.auto,
                 user_id=self.owner.user_id,
                 team_id=self.owner.team_id,
             )
@@ -192,10 +233,11 @@ class DocumentService:
             "document",
             document.id,
             filename=safe_name,
-            template="discover" if discover else str(version_id or "receipt"),
+            template=pick.audit,
+            **({"folder": document.folder} if document.folder else {}),
         )
         self._enqueue(document)
-        return DocumentOut.model_validate(document)
+        return self._with_counts([document])[0]
 
     def process(self, document_id: uuid.UUID) -> DocumentOut:
         """重新放进队列：处理失败后重试，或者上传时队列没连上。"""
@@ -230,19 +272,28 @@ class DocumentService:
         templates = TemplateService(self.owner, self.session)
         try:
             if data.template is not None:
-                version_id, discover = templates.pick_for_upload(data.template)
+                pick = templates.pick_for_upload(data.template)
+            elif document.auto:
+                pick = Pick(None, auto=True)  # 重新自动判断：模板改了、加了新模板都会用上
             elif document.template_version_id is not None:
                 # 同一个模板的最新版（"模板改了"最常见）
                 current = self.session.get_one(TemplateVersion, document.template_version_id)
-                version_id, discover = templates.latest_version_id(current.template_id), False
+                pick = Pick(templates.latest_version_id(current.template_id))
             else:
-                version_id, discover = None, document.discover
+                pick = Pick(None, discover=document.discover)
         except TemplateFailure as err:
             raise DocumentError(err.code, err.message) from err
 
+        if data.split is not None:
+            document.split = check_split(data.split)
         label = REPROCESS_REASONS[data.reason]
-        document.template_version_id = version_id
-        document.discover = discover
+        document.template_version_id = pick.version_id
+        document.discover = pick.discover
+        document.auto = pick.auto
+        if data.vision is not None:
+            document.vision = None if data.vision == "default" else data.vision
+        if data.pdf_read is not None:
+            document.pdf_read = None if data.pdf_read == "default" else data.pdf_read
         document.run_reason = f"{label}：{note}" if note else label
         document.status = "uploaded"
         document.error = None
@@ -256,16 +307,63 @@ class DocumentService:
             document.id,
             reason=data.reason,
             note=note,
-            template="discover" if discover else str(version_id or "receipt"),
+            template=pick.audit,
+            **({"vision": data.vision} if data.vision is not None else {}),
+            **({"pdf_read": data.pdf_read} if data.pdf_read is not None else {}),
         )
         if not self._enqueue(document):
             raise DocumentError("queue", "任务队列暂时不可用，请稍后再试")
         return DocumentOut.model_validate(document)
 
+    def add_review_time(self, document_id: uuid.UUID, seconds: int) -> None:
+        """审核用时加上 seconds 秒（审核页报来的，只算页面开着、人在操作的时间）。"""
+        document = self._find(document_id)
+        require(self.owner, "document:review", document.team_id)
+        if document.status not in ("done", "reviewed"):
+            raise DocumentError("conflict", f"文档状态是 {document.status}，不在审核")
+        document.review_seconds = (document.review_seconds or 0) + seconds
+
+    def reprocess_many(self, data: ReprocessManyIn) -> ReprocessManyOut:
+        """勾选的几份一起重新处理（各跑新的一轮），每份用同样的设置（网页上默认：模板用各自的最新版，
+        看不看原图、PDF 怎么读按系统设置，分单据和上次一样）。正在处理、还在排队的跳过。
+        任务队列连不上时马上停下、报错：已经改成"排队中"的那份和上传时队列没连上一样，
+        列表上可以"重试"。
+        """
+        if data.reason == "other" and not data.note.strip():
+            raise DocumentError("invalid", '原因选了"其他"，请写一句说明')
+        ids = data.ids
+        choice = ReprocessIn(
+            template=data.template,
+            reason=data.reason,
+            note=data.note,
+            split=data.split,
+            vision=data.vision,
+            pdf_read=data.pdf_read,
+        )
+        queued = 0
+        skipped: list[str] = []
+        busy = {"uploaded": "正在排队", "processing": "正在处理"}
+        for document_id in dict.fromkeys(ids):
+            document = self.repo.get(document_id, self.owner.team_id)
+            if document is not None and document.status in busy:
+                skipped.append(f"{document.filename}：{busy[document.status]}")
+                continue
+            try:
+                self.reprocess(document_id, choice)
+            except DocumentError as err:
+                if err.code == "queue":
+                    raise
+                document = self.session.get(Document, document_id)
+                name = document.filename if document is not None else str(document_id)
+                skipped.append(f"{name}：{err.message}")
+                continue
+            queued += 1
+        return ReprocessManyOut(queued=queued, skipped=skipped)
+
     def adopt_previous(self, document_id: uuid.UUID) -> AdoptOut:
         """采纳上次的确认：重新处理之后，把能沿用的上一轮审核一次用上（见 suggestions）。"""
         document = self._find(document_id)
-        require(self.owner, "value:review", document.team_id)
+        require(self.owner, "document:review", document.team_id)
         if document.status not in ("done", "reviewed"):
             raise DocumentError("conflict", f"文档状态是 {document.status}，处理完成后才能审核")
         fields = FieldService(self.session, self.owner)
@@ -292,6 +390,68 @@ class DocumentService:
             )
         return AdoptOut(confirmed=confirmed, edited=edited)
 
+    def _sample_crops(self, document_id: uuid.UUID) -> list[str]:
+        from jacara.models import OcrSample
+
+        keys = self.session.scalars(
+            select(OcrSample.crop_key).where(
+                OcrSample.document_id == document_id, OcrSample.crop_key.is_not(None)
+            )
+        )
+        return [k for k in keys if k]
+
+    def _snapshots(self, document_id: uuid.UUID) -> list[str]:
+        keys = self.session.scalars(
+            select(Extraction.ocr_snapshot)
+            .where(Extraction.document_id == document_id, Extraction.ocr_snapshot.is_not(None))
+            .distinct()
+        )
+        return [k for k in keys if k]
+
+    def delete(self, ids: list[uuid.UUID]) -> DeleteOut:
+        """删除文档：原始文件、每一轮的结果、审核记录、备注都删掉，不能恢复。审计日志记下删了什么。
+
+        正在处理的不删（worker 正在用它），等处理完再删。导出记录里的文件不受影响。
+        """
+        documents = [self._find(i) for i in dict.fromkeys(ids)]
+        for document in documents:
+            require(self.owner, "document:delete", document.team_id)
+        keys: list[str] = []
+        skipped: list[str] = []
+        deleted = 0
+        for document in documents:
+            if document.status == "processing":
+                skipped.append(f"{document.filename}：正在处理，等处理完再删")
+                continue
+            record(
+                self.session,
+                self.owner,
+                "document:delete",
+                "document",
+                document.id,
+                filename=document.filename,
+                pages=document.page_count,
+                status=document.status,
+            )
+            if document.storage_key:
+                keys.append(document.storage_key)
+            keys += self._sample_crops(document.id)  # OCR 样本的小图（ADR 0050）一起删
+            keys += self._snapshots(document.id)  # 每一轮的 OCR 快照（ADR 0053）一起删
+            self.repo.delete(document)
+            deleted += 1
+        # 先提交，再删原始文件：数据库没删成的话，文件还在
+        self.session.commit()
+        for key in keys:
+            try:
+                self.storage.delete(key)
+            except StorageError:
+                log.warning("删除文档后，文件 %s 没能从对象存储删掉", key)
+        return DeleteOut(deleted=deleted, skipped=skipped)
+
+    def folders(self) -> list[FolderOut]:
+        require(self.owner, "document:read")
+        return [FolderOut(folder=f, count=c) for f, c in self.repo.folders(self.owner.team_id)]
+
     def page(self, limit: int, offset: int, filters: DocumentFilter | None = None) -> DocumentPage:
         require(self.owner, "document:read")
         documents, total = self.repo.page(self.owner.team_id, limit, offset, filters)
@@ -302,9 +462,17 @@ class DocumentService:
         ids = [d.id for d in documents]
         counts = self.repo.review_counts(ids)
         comments = CommentRepository(self.session).open_counts(ids)
+        same = self.repo.same_files(self.owner.team_id, documents)
         return [
             DocumentOut.model_validate(d).model_copy(
-                update={"review_count": counts.get(d.id, 0), "open_comments": comments.get(d.id, 0)}
+                update={
+                    "review_count": counts.get(d.id, 0),
+                    "open_comments": comments.get(d.id, 0),
+                    "same_file": [
+                        SameFile.model_validate(o, from_attributes=True)
+                        for o in same.get(d.id, [])[:3]
+                    ],
+                }
             )
             for d in documents
         ]
@@ -335,6 +503,7 @@ class DocumentService:
             processed_today=self.repo.processed_since(team, today),
             reviewed_today=self.repo.reviewed_since(team, today),
             average_page_seconds=None if average is None else round(average / 1000, 1),
+            stage_seconds=self.repo.stage_seconds(team, today - timedelta(days=7)),
         )
         to_review = [
             DocumentOut.model_validate(d).model_copy(update={"review_count": n})
@@ -383,16 +552,33 @@ class DocumentService:
             }
         )
 
+    def sent_text(self, document_id: uuid.UUID, extraction_id: uuid.UUID) -> SentText:
+        """某一张单据某一轮发给模型的单据文字原文（ADR 0053）。"""
+        document = self._find(document_id)
+        require(self.owner, "document:read", document.team_id)
+        extraction = next((e for e in document.all_extractions if e.id == extraction_id), None)
+        if extraction is None:
+            raise DocumentError("not_found", "找不到这次抽取")
+        data = extraction.model_input
+        if not data:
+            raise DocumentError("not_found", "这次抽取没有记下发给模型的文字（更新之前处理的）")
+        return SentText(
+            blocks=[int(n) for n in data.get("blocks", [])],
+            text=str(data.get("text", "")),
+            sha256=str(data.get("sha256", "")),
+        )
+
     def page_ocr(self, document_id: uuid.UUID, page: int) -> PageOcr:
         """第 page 页的 OCR 结果：每个文字块的文字和位置。审核页面"从原文选取"用。"""
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
-        extraction = next((e for e in document.extractions if e.page == page), None)
+        extraction = covering(document.extractions, page)
         if extraction is None:
             raise DocumentError("not_found", f"第 {page} 页没有抽取结果")
-        lines = (extraction.ocr or {}).get("lines", [])
+        ocr = ocr_page_json(extraction.ocr, page, extraction.page)
+        lines = (ocr or {}).get("lines", [])
         return PageOcr(
-            available=extraction.ocr is not None,
+            available=ocr is not None,
             lines=[OcrLineOut(index=i, **line) for i, line in enumerate(lines)],
         )
 
@@ -403,12 +589,10 @@ class DocumentService:
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
         wanted = run or document.current_run
-        extraction = next(
-            (e for e in document.all_extractions if e.page == page and e.run == wanted), None
-        )
+        extraction = covering((e for e in document.all_extractions if e.run == wanted), page)
         if extraction is None:
             raise DocumentError("not_found", f"第 {page} 页没有抽取结果")
-        return structure_view(extraction.structure)
+        return structure_view(extraction.structure, page, extraction.page)
 
     def review(self, document_id: uuid.UUID) -> DocumentOut:
         """完成审核：所有需要确认的字段都处理过了，文档状态 done → reviewed。"""
@@ -455,13 +639,15 @@ class DocumentService:
             record(self.session, self.owner, "document:unskip", "document", document.id)
         return self._with_counts([document])[0]
 
-    def export(self, document_ids: list[uuid.UUID]) -> tuple[str, bytes]:
+    def export(
+        self, document_ids: list[uuid.UUID], language: str | None = None
+    ) -> tuple[str, bytes]:
         """把一个或多个文档导出成一个 Excel（汇总表一行一张单据），返回（文件名，文件内容）。
 
         格子里是审核之后的值（current_value）；改过的标蓝，批注里写原值和原因。
         """
         documents = self._exportable(document_ids)
-        data, layout = self._excel(documents)
+        data, layout = self._excel(documents, language)
         if len(documents) == 1:
             name = f"{PurePath(documents[0].filename).stem}.xlsx"
         elif layout:
@@ -472,7 +658,9 @@ class DocumentService:
         self._record_export(documents, "xlsx", name, data)
         return name, data
 
-    def export_zip(self, document_ids: list[uuid.UUID]) -> tuple[str, bytes]:
+    def export_zip(
+        self, document_ids: list[uuid.UUID], language: str | None = None
+    ) -> tuple[str, bytes]:
         """每个文档单独一个 Excel，打包成一个 zip。
 
         浏览器一次只能下载一个文件，没法直接下载文件夹，所以打包；解压后就是一个文件夹。
@@ -485,13 +673,70 @@ class DocumentService:
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
             for document in documents:
                 name = _unique(f"{PurePath(document.filename).stem}.xlsx", used)
-                archive.writestr(name, self._excel([document])[0])
+                archive.writestr(name, self._excel([document], language)[0])
         name = f"jacara-{date.today():%Y%m%d}-{len(documents)}份.zip"
         data = out.getvalue()
         self._record_export(documents, "zip", name, data)
         return name, data
 
-    def _excel(self, documents: list[Document]) -> tuple[bytes, str]:
+    def export_csv(
+        self, document_ids: list[uuid.UUID], language: str | None = None
+    ) -> tuple[str, bytes, str]:
+        """导出 CSV：内容和标准格式的 Excel 一样（汇总一行一张单据，明细表、键值对各一张）。
+
+        只有汇总一张表时下载一个 .csv；还有明细表、键值对时，每张表一个 .csv 打包成 zip。
+        返回（文件名，内容，格式 csv 或 zip）。
+        """
+        documents = self._exportable(document_ids)
+        files = workbook_to_csv(_workbook(documents, language))
+        if len(documents) == 1:
+            stem = PurePath(documents[0].filename).stem
+        else:
+            stem = f"jacara-{date.today():%Y%m%d}-{len(documents)}份"
+        if len(files) == 1:
+            name, data, kind = f"{stem}.csv", files[0][1], "csv"
+        else:
+            out = io.BytesIO()
+            used: set[str] = set()
+            with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+                for title, content in files:
+                    archive.writestr(_unique(f"{title}.csv", used), content)
+            name, data, kind = f"{stem}-csv.zip", out.getvalue(), "zip"
+        self._record_export(documents, "csv" if kind == "csv" else "csv-zip", name, data)
+        return name, data, kind
+
+    def export_json(
+        self, document_ids: list[uuid.UUID], language: str | None = None
+    ) -> tuple[str, bytes]:
+        """导出 JSON：给别的程序读。内容和 Excel 一样，按文档 → 单据 → 字段、表格嵌套。"""
+        from jacara.plugins.exporters.json_export import to_json
+
+        documents = self._exportable(document_ids)
+        content = to_json(
+            [
+                (
+                    {
+                        "id": str(d.id),
+                        "filename": d.filename,
+                        "status": d.status,
+                        "page_count": d.page_count,
+                        "reviewed_at": d.reviewed_at.isoformat() if d.reviewed_at else None,
+                    },
+                    load_reports(d, language),
+                )
+                for d in documents
+            ],
+            datetime.now().astimezone(),
+        )
+        if len(documents) == 1:
+            stem = PurePath(documents[0].filename).stem
+        else:
+            stem = f"jacara-{date.today():%Y%m%d}-{len(documents)}份"
+        name = f"{stem}.json"
+        self._record_export(documents, "json", name, content)
+        return name, content
+
+    def _excel(self, documents: list[Document], language: str | None = None) -> tuple[bytes, str]:
         """导出成 Excel：模板有原表样式（从 Excel 建的模板）就填回原表，否则用标准格式。
 
         返回（文件内容，原表的文件名；标准格式时为空）。原表在对象存储里取不到时退回标准格式。
@@ -506,7 +751,7 @@ class DocumentService:
                 rows = _doc_rows(documents, template)
                 title = f"{date.today():%Y-%m-%d} 导出"
                 return fill_workbook(template, original, rows, title), template.workbook.filename
-        return _workbook(documents), ""
+        return _workbook(documents, language), ""
 
     def _exportable(self, document_ids: list[uuid.UUID]) -> list[Document]:
         """导出前的检查（两种导出都一样）：有权限、数量对、都找得到、都处理完了。按用户选的顺序返回。"""
@@ -557,6 +802,14 @@ class DocumentService:
 
     def page_image(self, document_id: uuid.UUID, page: int) -> bytes:
         """第 page 页（从 1 开始）的 PNG 图片。坐标和抽取时一样，审核页面在上面画出处框。"""
+        document, data = self._page_file(document_id, page)
+        try:
+            return page_png(data, document.content_type == "application/pdf", page)
+        except Exception as err:
+            raise DocumentError("unreadable", "这个文件打不开，可能已损坏") from err
+
+    def _page_file(self, document_id: uuid.UUID, page: int) -> tuple[Document, bytes]:
+        """检查权限、页码，取回原文件（还没画成图）。"""
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
         if document.storage_key is None:
@@ -566,18 +819,87 @@ class DocumentService:
                 "not_found", f"这个文档只有 {document.page_count} 页，没有第 {page} 页"
             )
         try:
-            data = self.storage.get(document.storage_key)
+            return document, self.storage.get(document.storage_key)
         except StorageError as err:
             raise DocumentError("storage", "对象存储暂时不可用，请稍后再试") from err
+
+    def describe_region(
+        self, document_id: uuid.UUID, page: int, box: list[float]
+    ) -> RegionDescription:
+        """框选建模板（ADR 0047）：框里的值（先用存下的 OCR，没有再局部重新识别）、旁边的标签、
+        在页面哪里、像什么类型。"""
+        from jacara.modules.templates.boxes import (
+            field_id,
+            guess_type,
+            hint,
+            lines_in,
+            pair_for,
+            position,
+        )
+
+        document = self._find(document_id)
+        require(self.owner, "template:manage", document.team_id)
+        extraction = covering(document.extractions, page)
+        ocr = ocr_page_json(extraction.ocr, page, extraction.page) if extraction else None
+        lines = (ocr or {}).get("lines", [])
+        inside = lines_in(lines, box)
+        text = " ".join(str(ln["text"]) for ln in inside)
+        confidence = min((float(ln["confidence"]) for ln in inside), default=None)
+        if not text and self.ocr is not None:
+            try:
+                text, confidence = read_region(self.page_image(document_id, page), box, self.ocr)
+            except ValueError as err:
+                raise DocumentError("invalid", str(err)) from err
+        # 标签只用版面分析配好的"标题 → 值"（处理单据时就算好了），对不上就留空，不猜
+        structure = (
+            structure_view(extraction.structure, page, extraction.page) if extraction else None
+        )
+        pair = pair_for(structure.pairs, box) if structure else None
+        label = pair.key if pair else None
+        side = SIDES.get(pair.rule) if pair else None
+        where = position(
+            box, float((ocr or {}).get("width") or 1), float((ocr or {}).get("height") or 1)
+        )
+        return RegionDescription(
+            text=text,
+            confidence=confidence,
+            label=label,
+            side=side,
+            type=guess_type(text),  # type: ignore[arg-type]
+            position=where,
+            name=field_id(label or "", set(), 1) if label else "",
+            description=hint(where, label, side),
+        )
+
+    def page_crop(self, document_id: uuid.UUID, page: int, box: list[float]) -> bytes:
+        """这一页上 box（和页面图片一样的坐标）这一块放大后的 PNG（ADR 0042）：审核页在候选旁边
+        显示局部图。PDF 按局部放大再识别时的倍数重新画，图片用原图。"""
+        from jacara.pipeline.region import crop_region
+        from jacara.pipeline.zoom import ZOOM_SCALE
+        from jacara.plugins.ocr.loader import PDF_SCALE
+
+        document, data = self._page_file(document_id, page)  # 检查权限、页码，取回原文件
+        is_pdf = document.content_type == "application/pdf"
         try:
-            return page_png(data, document.content_type == "application/pdf", page)
+            image = (
+                page_png(data, is_pdf, page, scale=ZOOM_SCALE)
+                if is_pdf
+                else page_png(data, False, 1)
+            )
+            factor = ZOOM_SCALE / PDF_SCALE if is_pdf else 1.0
+            crop = crop_region(image, [v * factor for v in box])
+        except ValueError as err:
+            raise DocumentError("invalid", str(err)) from err
         except Exception as err:
             raise DocumentError("unreadable", "这个文件打不开，可能已损坏") from err
+        out = io.BytesIO()
+        crop.save(out, format="PNG")
+        return out.getvalue()
 
     def ocr_region(self, document_id: uuid.UUID, page: int, box: list[float]) -> RegionOut:
         """把页面上的一块区域裁下来重新 OCR。要能看文档，也要能改字段（不然认出来也没用）。"""
         document = self._find(document_id)
-        require(self.owner, "value:review", document.team_id)
+        require(self.owner, "document:review", document.team_id)
         if self.ocr is None:
             raise DocumentError("unavailable", "OCR 引擎没有准备好")
         image = self.page_image(document_id, page)
@@ -586,6 +908,28 @@ class DocumentService:
         except ValueError as err:
             raise DocumentError("invalid", str(err)) from err
         return RegionOut(text=text, confidence=confidence)
+
+    def look_region(self, document_id: uuid.UUID, page: int, data: LookIn) -> LookOut:
+        """让模型看页面上的一小块（ADR 0038）：手写、印章、被笔迹盖住的字，OCR 认不出时用。
+        只返回读出来的，不保存；人确认后再用"审核字段"保存。"""
+        document = self._find(document_id)
+        require(self.owner, "document:review", document.team_id)
+        check = getattr(self.model, "sees_images", None)
+        if self.model is None or not callable(check) or not check():
+            raise DocumentError(
+                "unavailable",
+                "模型现在不能看图：把视觉模型 mmproj-F16.gguf 放进 models/，重新 jacara start",
+            )
+        image = self.page_image(document_id, page)
+        try:
+            picture = region_png(image, data.box)
+        except ValueError as err:
+            raise DocumentError("invalid", str(err)) from err
+        try:
+            text, value, model = look_at(self.model, picture, data.label, data.type)
+        except (ModelBackendError, ExtractionError) as err:
+            raise DocumentError("unavailable", str(err)) from err
+        return LookOut(text=text, value=value, model=model)
 
     def _enqueue(self, document: Document) -> bool:
         """先提交，再放进队列。
@@ -609,10 +953,28 @@ class DocumentService:
         return document
 
 
-def structure_view(data: dict[str, Any] | None) -> PageStructureOut:
-    """存下来的结构 → 画在原图上用的样子：合并的格子画成一个，空格子不画。"""
+SIDES = {
+    "inline": "后面",
+    "colon": "右边",
+    "label_left": "右边",
+    "row_label": "这一行右边",
+    "colon_below": "下面",
+    "header_above": "下面",
+    "two_column_table": "右边",
+}
+"""版面分析的配对规则 → 值在标签的哪边（框选建模板写说明用）。"""
+
+
+def structure_view(data: dict[str, Any] | None, page: int = 1, first: int = 1) -> PageStructureOut:
+    """存下来的结构 → 画在原图上用的样子：合并的格子画成一个，空格子不画。
+
+    几页拼成的单据（ADR 0036）：只取第 page 页上的部分，坐标换回这一页自己的。
+    """
     if not data:
         return PageStructureOut(available=False)
+    part = page_slice(data, page, first)
+    if part is not None:
+        data = _one_page(data, *part)
     blocks = {b["id"]: b for b in data.get("blocks", [])}
     regions = [
         StructureRegion(kind=blocks[a]["attrs"].get("kind", ""), box=blocks[a]["box"])
@@ -684,6 +1046,55 @@ def structure_view(data: dict[str, Any] | None) -> PageStructureOut:
     )
 
 
+def _one_page(data: dict[str, Any], top: float, bottom: float) -> dict[str, Any]:
+    """几页拼成的结构里，中心落在 [top, bottom) 这一段的块，坐标往上挪 top。
+    跨页的表格：只留这一页上的格子，表格的框缩到这些格子。"""
+
+    def inside(box: list[float]) -> bool:
+        return top <= (box[1] + box[3]) / 2 < bottom
+
+    def moved(box: list[float]) -> list[float]:
+        return [box[0], box[1] - top, box[2], box[3] - top]
+
+    blocks: list[dict[str, Any]] = []
+    kept: set[str] = set()
+    for b in data.get("blocks", []):
+        if b["type"] == "TABLE":
+            continue
+        if inside(b["box"]):
+            blocks.append({**b, "box": moved(b["box"])})
+            kept.add(b["id"])
+    tables: list[str] = []
+    for b in data.get("blocks", []):
+        if b["type"] != "TABLE":
+            continue
+        children = [c for c in b["children"] if c in kept]
+        if not children:
+            continue
+        boxes = [next(x["box"] for x in blocks if x["id"] == c) for c in children]
+        box = [
+            min(x[0] for x in boxes),
+            min(x[1] for x in boxes),
+            max(x[2] for x in boxes),
+            max(x[3] for x in boxes),
+        ]
+        attrs = {**b["attrs"], "merged": [m for m in b["attrs"].get("merged", []) if m in kept]}
+        blocks.append({**b, "box": box, "children": children, "attrs": attrs})
+        tables.append(b["id"])
+    keys = [
+        k
+        for k in data.get("keys", [])
+        if k in kept and next(b for b in blocks if b["id"] == k)["attrs"].get("value") in kept
+    ]
+    return {
+        **data,
+        "blocks": blocks,
+        "layouts": [a for a in data.get("layouts", []) if a in kept],
+        "tables": tables,
+        "keys": keys,
+    }
+
+
 def _clear_skip(document: Document) -> None:
     document.skipped_at = None
     document.skip_reason = None
@@ -707,6 +1118,20 @@ def _runs(document: Document) -> list[RunOut]:
         )
         for run, e in sorted(firsts.items(), reverse=True)
     ]
+
+
+def range_out(value: str | None, day_first: bool | None) -> RangeOut | None:
+    """日期范围拆开（ADR 0039）：审核页显示"2014-07-01 ~ 2014-07-31（31 天）"。"""
+    if not value:
+        return None
+    parsed = parse_date_range(value, day_first)
+    found = parsed.range
+    return RangeOut(
+        start=found.start.isoformat() if found and found.start else None,
+        end=found.end.isoformat() if found and found.end else None,
+        days=found.days if found else None,
+        problem=parsed.problem,
+    )
 
 
 def _template_title(extraction: Extraction) -> str:
@@ -737,13 +1162,24 @@ def _with_states(
     # 更新前处理的文档，出处里没存文字，要用这一页的 OCR 结果找（只在需要时才读）
     needs_ocr = any(wants_source(v) and "text" not in (v.evidence or {}) for v in extraction.values)
     lines = (extraction.ocr or {}).get("lines") if needs_ocr else None
+    shape = template if template is not None else template_of(extraction)
+    day_first = shape.day_first if shape is not None else None
+    # 字段名的别的语言（ADR 0048）：第一个是默认的中文
+    languages = list(shape.languages) if shape is not None else []
+    others = {lang: labels_of(extraction, lang) for lang in languages[1:]}
     values = [
         v.model_copy(
             update={
+                "range": range_out(v.current_value, day_first) if v.type == "date_range" else None,
                 "check_state": states[v.id][0],
                 "level": states[v.id][1],
                 "source_value": source_value(by_id[v.id], evidence_text(by_id[v.id], lines)),
                 "label": label_for(labels, v.name),
+                "names": {
+                    lang: found
+                    for lang, names in others.items()
+                    if (found := label_for(names, v.name)) is not None
+                },
                 "suggestion": (
                     SuggestionOut(action=hints[v.id][0], value=hints[v.id][1], run=hints[v.id][2])
                     if v.id in hints
@@ -753,13 +1189,36 @@ def _with_states(
         )
         for v in out.values
     ]
+    notes = [
+        f"第 {page} 页：{data['note']}"
+        for page, data in pages_json(extraction.ocr, extraction.page)
+        if data.get("note")
+    ]
     return out.model_copy(
         update={
             "current_checks": checks,
             "values": values,
             "labels": labels,
+            "languages": languages if len(languages) > 1 else [],
+            "label_sets": others,
             "template_title": _template_title(extraction),
+            "source_notes": notes,
+            "sent": _sent(extraction),
         }
+    )
+
+
+def _sent(extraction: Extraction) -> SentOut | None:
+    data = extraction.model_input
+    if not data:
+        return None
+    return SentOut(
+        blocks=len(data.get("blocks", [])),
+        total_blocks=int(data.get("total_blocks", 0)),
+        chars=int(data.get("chars", 0)),
+        images=int(data.get("images", 0)),
+        lessons=int(data.get("lessons", 0)),
+        has_snapshot=extraction.ocr_snapshot is not None,
     )
 
 
@@ -816,9 +1275,9 @@ def _doc_rows(documents: list[Document], template: Template) -> list[DocRow]:
     return rows
 
 
-def _workbook(documents: list[Document]) -> bytes:
-    """几个文档写进一个 Excel，返回文件内容。"""
-    reports = [report for d in documents for report in load_reports(d)]
+def _workbook(documents: list[Document], language: str | None = None) -> bytes:
+    """几个文档写进一个 Excel，返回文件内容。language：列名用哪种语言（ADR 0048）。"""
+    reports = [report for d in documents for report in load_reports(d, language)]
     exporter = create_exporter("excel")
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / f"export{exporter.suffix}"
@@ -835,3 +1294,20 @@ def _unique(name: str, used: set[str]) -> str:
         candidate = f"{stem} ({n}){suffix}"
     used.add(candidate)
     return candidate
+
+
+def clean_folder(folder: str | None) -> str | None:
+    """批量导入的文件夹：统一用 / 分隔，去掉开头结尾的 / 和 . 、..，最长 255 个字。空的是 None。"""
+    if not folder:
+        return None
+    parts = [p.strip() for p in folder.replace("\\", "/").split("/")]
+    parts = [p for p in parts if p and p not in (".", "..")]
+    return "/".join(parts)[:255] or None
+
+
+def check_split(split: str | None) -> str:
+    """检查"一个文件里有几张单据"的写法（ADR 0036），写错了说清楚。"""
+    try:
+        return normalize_split(split)
+    except SplitError as err:
+        raise DocumentError("invalid", str(err)) from err

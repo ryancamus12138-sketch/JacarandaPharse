@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -15,10 +15,12 @@ from jacara.core.storage import ObjectStorage
 from jacara.modules.documents.router import XLSX, attachment
 from jacara.modules.templates.schemas import (
     ArchiveIn,
+    BoxesIn,
     ExcelAnalysisOut,
     ExcelBuildIn,
     FormulaCheckIn,
     FormulaCheckOut,
+    LabelsIn,
     RuleInfo,
     SampleIn,
     SampleOut,
@@ -65,9 +67,12 @@ def _error(err: TemplateFailure) -> HTTPException:
 
 
 @router.get("", summary="所有模板")
-def list_templates(service: Service) -> list[TemplateOut]:
-    """我的模板（kind=mine，没归档的在前）+ 内置模板（kind=builtin，评测和命令行用）。"""
-    return service.list()
+def list_templates(
+    service: Service,
+    builtin: Annotated[bool, Query(description="也列出内置模板（评测和命令行用）")] = False,
+) -> list[TemplateOut]:
+    """我的模板（kind=mine，没归档的在前）。`?builtin=true` 再加上内置模板（kind=builtin）。"""
+    return service.list(builtin)
 
 
 @router.get("/starters", summary="起步模板库")
@@ -104,6 +109,15 @@ def create_from_sample(data: SampleIn, service: Service) -> SampleOut:
     except TemplateFailure as err:
         raise _error(err) from err
     return SampleOut(template=template, document_id=document_id)
+
+
+@router.post("/from-boxes", status_code=status.HTTP_201_CREATED, summary="在样例上框选建模板")
+def create_from_boxes(data: BoxesIn, service: Service) -> TemplateOut:
+    """在样例上框好的字段 → 新模板（ADR 0047）。"""
+    try:
+        return service.from_boxes(data)
+    except TemplateFailure as err:
+        raise _error(err) from err
 
 
 @router.post("/import", status_code=status.HTTP_201_CREATED, summary="导入模板")
@@ -162,7 +176,7 @@ def build_from_excel(upload_id: uuid.UUID, data: ExcelBuildIn, service: Service)
 
 @router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT, summary="删除模板")
 def delete_template(template_id: uuid.UUID, service: Service) -> None:
-    """有文档用过的模板不能删（会返回 409），只能归档。"""
+    """归档的、用过的都能删。用过的不真的删：从列表、上传里去掉，那些文档照常显示。"""
     try:
         service.delete(template_id)
     except TemplateFailure as err:
@@ -199,6 +213,15 @@ def save_template(template_id: uuid.UUID, data: TemplateIn, service: Service) ->
 def archive_template(template_id: uuid.UUID, data: ArchiveIn, service: Service) -> TemplateOut:
     try:
         return service.archive(template_id, data.archived)
+    except TemplateFailure as err:
+        raise _error(err) from err
+
+
+@router.patch("/{template_id}/labels", summary="改标签")
+def set_labels(template_id: uuid.UUID, data: LabelsIn, service: Service) -> TemplateOut:
+    """只改功能领域、国家和地区、自定义标签，不出新版本（ADR 0037）。"""
+    try:
+        return service.labels(template_id, data)
     except TemplateFailure as err:
         raise _error(err) from err
 

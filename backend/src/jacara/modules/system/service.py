@@ -25,6 +25,7 @@ from jacara.modules.system.schemas import (
     StructureInfo,
     SystemInfo,
     TemplateInfo,
+    VisionInfo,
 )
 from jacara.plugins.ocr.base import OcrConfig
 from jacara.templates import load_template, template_names
@@ -51,6 +52,9 @@ class SystemService:
                 else None,
                 table=table.name if (table := self.settings.table_model()) else None,
             ),
+            watch_dir=str(self.settings.jacara_watch_dir)
+            if self.settings.jacara_watch_dir
+            else None,
             templates=[
                 TemplateInfo(name=t.name, title=t.title, version=t.version)
                 for t in (load_template(n) for n in template_names())
@@ -73,6 +77,11 @@ class SystemService:
             file=found.name if found else None,
             loaded=str(path).replace("\\", "/").rsplit("/", 1)[-1] if path else None,
             context=int(context) if context else None,
+            vision_file=mmproj.name if (mmproj := self.settings.find_mmproj()) else None,
+            sees_images=bool(
+                isinstance(modalities := props.get("modalities"), dict) and modalities.get("vision")
+            ),
+            vision_mode=self.settings.jacara_vision,
         )
 
     def _data(self, team: uuid.UUID) -> DataInfo:
@@ -97,10 +106,26 @@ class SystemService:
         )
 
 
+def vision_info(settings: Settings) -> VisionInfo:
+    """模型能不能看图（ADR 0038）：审核页决定显不显示"让模型看这块"。只问一次模型服务，很快。"""
+    props = model_props(settings.model_server)
+    modalities = props.get("modalities")
+    mmproj = settings.find_mmproj()
+    return VisionInfo(
+        sees_images=bool(isinstance(modalities, dict) and modalities.get("vision")),
+        mode=settings.jacara_vision,
+        file=mmproj.name if mmproj else None,
+    )
+
+
 def model_props(server: str) -> dict[str, Any]:
     """问模型服务（llama-server 的 /props）现在加载的是哪个模型、上下文多长。连不上返回空。"""
+    from jacara.core.config import model_api_key
+
+    key = model_api_key()
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
     try:
-        response = httpx.get(f"{server}/props", timeout=PROPS_TIMEOUT_S)
+        response = httpx.get(f"{server}/props", headers=headers, timeout=PROPS_TIMEOUT_S)
         data = response.json() if response.status_code == 200 else {}
     except (httpx.HTTPError, ValueError):
         return {}

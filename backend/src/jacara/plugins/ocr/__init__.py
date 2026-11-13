@@ -8,7 +8,15 @@
 
 from collections.abc import Callable
 
-from jacara.plugins.ocr.base import Device, OcrConfig, OcrEngine, OcrLine, OcrPage, Point
+from jacara.plugins.ocr.base import (
+    Device,
+    FormValue,
+    OcrConfig,
+    OcrEngine,
+    OcrLine,
+    OcrPage,
+    Point,
+)
 from jacara.plugins.ocr.rapid import RapidOcrEngine
 
 _ENGINES: dict[str, Callable[[OcrConfig], OcrEngine]] = {
@@ -23,7 +31,17 @@ def available_engines() -> list[str]:
 
 def create_ocr_engine(config: OcrConfig | None = None) -> OcrEngine:
     """按配置创建 OCR 引擎。名字没登记过就报错，并列出可用的名字。"""
-    config = config or OcrConfig()
+    if config is None:
+        from jacara.core.config import get_settings
+
+        settings = get_settings()
+        own = settings.ocr_models()  # 自己的 OCR 模型（ADR 0046）
+        config = OcrConfig(
+            max_side=settings.jacara_ocr_max_side,
+            det_model=own.get("det"),
+            rec_model=own.get("rec"),
+            rec_dict=own.get("dict"),
+        )
     factory = _ENGINES.get(config.engine)
     if factory is None:
         raise ValueError(f"未知的 OCR 引擎：{config.engine}，可用的有：{available_engines()}")
@@ -32,6 +50,7 @@ def create_ocr_engine(config: OcrConfig | None = None) -> OcrEngine:
 
 __all__ = [
     "Device",
+    "FormValue",
     "OcrConfig",
     "OcrEngine",
     "OcrLine",

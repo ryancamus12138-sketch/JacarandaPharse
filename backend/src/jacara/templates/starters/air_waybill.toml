@@ -1,0 +1,234 @@
+# 起步模板：航空运单（Air Waybill，AWB）。
+# 字段按 IATA 第 600a 号决议规定的航空运单格式的栏目设计：运单号（3 位航空公司代码 + 8 位序号）、
+# 托运人、收货人、出票代理、始发站和目的站、航班、供运输和海关用的声明价值、件数、毛重、运价等级、
+# 计费重量、费率、运费、其他费用、预付和到付合计、签发日期和地点。分运单（HAWB）也能用。
+# 只写字段和通用要求，不放任何真实运单的内容。
+
+name = "air_waybill"
+version = 2
+title = "航空运单（AWB）"
+titles = { en = "Air Waybill (AWB)", ar = "بوليصة الشحن الجوي (AWB)", de = "Luftfrachtbrief (AWB)", es = "Guía aérea (AWB)", fr = "Lettre de transport aérien (LTA)", hi = "हवाई मार्ग बिल (AWB)", id = "Surat muatan udara (AWB)", it = "Lettera di vettura aerea (AWB)", ja = "航空運送状（AWB）", ko = "항공화물운송장(AWB)", ms = "Bil muatan udara (AWB)", nl = "Luchtvrachtbrief (AWB)", pl = "Lotniczy list przewozowy (AWB)", th = "ใบตราส่งสินค้าทางอากาศ (AWB)", vi = "Vận đơn hàng không (AWB)", "zh-Hant" = "航空提單（AWB）" }
+domains = ["物流", "外贸单证"]
+description = "航空货运的主运单、分运单：运单号、航空公司、托运人、收货人、代理、始发和目的机场、航班日期、声明价值、件数、毛重、计费重量，每一行运价（等级、费率、运费、品名），以及其他费用和预付、到付合计。运单号校验位不对、件数和重量加起来对不上、计费重量 × 费率和运费对不上会提醒。"
+rules = ["awb_no", "awb_pieces", "awb_weight", "awb_rate_line"]
+
+[[fields]]
+name = "awb_no"
+label = "运单号"
+names = { en = "Air Waybill No.", ar = "رقم البوليصة الجوية", de = "Luftfrachtbriefnummer", es = "N.º de guía aérea", fr = "N° de LTA", hi = "AWB संख्या", id = "Nomor AWB", it = "N. lettera di vettura aerea", ja = "航空運送状番号", ko = "항공화물운송장 번호", ms = "No. AWB", nl = "Luchtvrachtbriefnummer", pl = "Numer AWB", th = "เลขที่ AWB", vi = "Số vận đơn hàng không", "zh-Hant" = "航空提單號碼" }
+type = "string"
+required = true
+unique = true
+description = "照抄，如 176-12345675（3 位航空公司代码、横线、8 位序号）；分运单号照抄"
+aliases = ["主运单号", "分运单号", "AWB No", "Air Waybill No", "MAWB", "HAWB", "HAWB No"]
+
+[[fields]]
+name = "airline"
+label = "航空公司"
+names = { en = "Issuing Carrier", ar = "الناقل المُصدِر", de = "Ausstellender Luftfrachtführer", es = "Transportista emisor", fr = "Transporteur émetteur", hi = "जारीकर्ता वाहक", id = "Maskapai penerbit", it = "Vettore emittente", ja = "発行航空会社", ko = "발행 항공사", ms = "Syarikat penerbangan pengeluar", nl = "Uitgevende luchtvaartmaatschappij", pl = "Przewoźnik wystawiający", th = "สายการบินผู้ออก", vi = "Hãng phát hành", "zh-Hant" = "承運航空公司" }
+type = "string"
+description = "出运单的航空公司（Issued by），照抄"
+aliases = ["承运人", "Issued by", "Carrier", "Airline"]
+
+[[fields]]
+name = "shipper"
+label = "托运人"
+names = { en = "Shipper", ar = "الشاحن", de = "Versender", es = "Embarcador", fr = "Expéditeur", hi = "प्रेषक", id = "Pengirim", it = "Spedizioniere", ja = "荷送人", ko = "송하인", ms = "Pengirim", nl = "Verzender", pl = "Nadawca", th = "ผู้ส่งสินค้า", vi = "Người gửi hàng", "zh-Hant" = "出貨人" }
+type = "string"
+required = true
+description = "Shipper's Name and Address 一栏的公司名称（地址不用写）"
+aliases = ["发货人", "Shipper", "Shipper's Name"]
+
+[[fields]]
+name = "consignee"
+label = "收货人"
+names = { en = "Consignee", ar = "المرسل إليه", de = "Empfänger", es = "Consignatario", fr = "Destinataire", hi = "प्रेषिती", id = "Penerima", it = "Destinatario", ja = "荷受人", ko = "수하인", ms = "Penerima", nl = "Ontvanger", pl = "Odbiorca", th = "ผู้รับสินค้า", vi = "Người nhận hàng", "zh-Hant" = "收貨人" }
+type = "string"
+required = true
+aliases = ["收货人", "Consignee", "Consignee's Name"]
+
+[[fields]]
+name = "agent"
+label = "出票代理"
+names = { en = "Issuing Carrier's Agent", ar = "وكيل الناقل", de = "Agent", es = "Agente del transportista", fr = "Agent du transporteur", hi = "वाहक का एजेंट", id = "Agen", it = "Agente del vettore", ja = "発行代理店", ko = "발행 대리점", ms = "Ejen", nl = "Agent", pl = "Agent przewoźnika", th = "ตัวแทน", vi = "Đại lý", "zh-Hant" = "代理人" }
+type = "string"
+description = "Issuing Carrier's Agent 一栏的名称，照抄"
+aliases = ["代理人", "Agent", "Issuing Carrier's Agent"]
+
+[[fields]]
+name = "airport_of_departure"
+label = "始发站"
+names = { en = "Airport of Departure", ar = "مطار المغادرة", de = "Abflughafen", es = "Aeropuerto de salida", fr = "Aéroport de départ", hi = "प्रस्थान हवाई अड्डा", id = "Bandara keberangkatan", it = "Aeroporto di partenza", ja = "出発空港", ko = "출발공항", ms = "Lapangan terbang berlepas", nl = "Luchthaven van vertrek", pl = "Lotnisko wylotu", th = "ท่าอากาศยานต้นทาง", vi = "Sân bay đi", "zh-Hant" = "起運機場" }
+type = "string"
+required = true
+description = "照抄，机场名称或三字代码（PVG、HKG）"
+aliases = ["始发站", "始发机场", "Airport of Departure", "Origin"]
+
+[[fields]]
+name = "airport_of_destination"
+label = "目的站"
+names = { en = "Airport of Destination", ar = "مطار الوصول", de = "Bestimmungsflughafen", es = "Aeropuerto de destino", fr = "Aéroport de destination", hi = "गंतव्य हवाई अड्डा", id = "Bandara tujuan", it = "Aeroporto di destinazione", ja = "到着空港", ko = "도착공항", ms = "Lapangan terbang destinasi", nl = "Luchthaven van bestemming", pl = "Lotnisko przeznaczenia", th = "ท่าอากาศยานปลายทาง", vi = "Sân bay đến", "zh-Hant" = "目的機場" }
+type = "string"
+required = true
+aliases = ["目的站", "目的机场", "Airport of Destination", "Destination"]
+
+[[fields]]
+name = "flight"
+label = "航班 / 日期"
+names = { en = "Flight / Date", ar = "الرحلة / التاريخ", de = "Flug / Datum", es = "Vuelo / fecha", fr = "Vol / date", hi = "उड़ान / तिथि", id = "Penerbangan / tanggal", it = "Volo / data", ja = "便名／日付", ko = "편명/일자", ms = "Penerbangan / tarikh", nl = "Vlucht / datum", pl = "Lot / data", th = "เที่ยวบิน / วันที่", vi = "Chuyến bay / ngày", "zh-Hant" = "航班／日期" }
+type = "string"
+description = "Flight/Date 一栏照抄，如 CZ3101/15"
+aliases = ["航班", "Flight/Date", "Flight", "Requested Flight"]
+
+[[fields]]
+name = "currency"
+label = "币种"
+names = { en = "Currency", ar = "العملة", de = "Währung", es = "Moneda", fr = "Devise", hi = "मुद्रा", id = "Mata uang", it = "Valuta", ja = "通貨", ko = "통화", ms = "Mata wang", nl = "Valuta", pl = "Waluta", th = "สกุลเงิน", vi = "Loại tiền", "zh-Hant" = "幣別" }
+type = "string"
+aliases = ["币种", "Currency"]
+
+[[fields]]
+name = "declared_value_carriage"
+label = "供运输用声明价值"
+names = { en = "Declared Value for Carriage", ar = "القيمة المصرح بها للنقل", de = "Wertangabe für den Transport", es = "Valor declarado para el transporte", fr = "Valeur déclarée pour le transport", hi = "परिवहन हेतु घोषित मूल्य", id = "Nilai yang dinyatakan untuk pengangkutan", it = "Valore dichiarato per il trasporto", ja = "運送申告価額", ko = "운송신고가격", ms = "Nilai diisytihar untuk pengangkutan", nl = "Aangegeven waarde voor vervoer", pl = "Wartość deklarowana do przewozu", th = "มูลค่าที่สำแดงเพื่อการขนส่ง", vi = "Giá trị khai báo vận chuyển", "zh-Hant" = "運送申報價值" }
+type = "string"
+description = "Declared Value for Carriage 照抄（常写 NVD）"
+aliases = ["Declared Value for Carriage"]
+
+[[fields]]
+name = "declared_value_customs"
+label = "供海关用声明价值"
+names = { en = "Declared Value for Customs", ar = "القيمة المصرح بها للجمارك", de = "Wertangabe für den Zoll", es = "Valor declarado para aduanas", fr = "Valeur déclarée pour la douane", hi = "सीमा शुल्क हेतु घोषित मूल्य", id = "Nilai yang dinyatakan untuk pabean", it = "Valore dichiarato per la dogana", ja = "税関申告価額", ko = "세관신고가격", ms = "Nilai diisytihar untuk kastam", nl = "Aangegeven waarde voor douane", pl = "Wartość deklarowana dla celników", th = "มูลค่าที่สำแดงต่อศุลกากร", vi = "Giá trị khai báo hải quan", "zh-Hant" = "海關申報價值" }
+type = "string"
+description = "Declared Value for Customs 照抄（常写 NCV）"
+aliases = ["Declared Value for Customs"]
+
+[[fields]]
+name = "handling_information"
+label = "操作信息"
+names = { en = "Handling Information", ar = "معلومات المناولة", de = "Behandlungshinweise", es = "Información de manipulación", fr = "Informations de manutention", hi = "हैंडलिंग जानकारी", id = "Informasi penanganan", it = "Istruzioni di movimentazione", ja = "取扱情報", ko = "취급정보", ms = "Maklumat pengendalian", nl = "Behandelingsinstructies", pl = "Informacje o obsłudze", th = "ข้อมูลการจัดการ", vi = "Thông tin xử lý", "zh-Hant" = "處理事項" }
+type = "string"
+aliases = ["储运注意事项", "Handling Information"]
+
+[[fields]]
+name = "total_pieces"
+label = "总件数"
+names = { en = "Total No. of Pieces", ar = "إجمالي القطع", de = "Stückzahl gesamt", es = "Total de piezas", fr = "Nombre total de pièces", hi = "कुल नग", id = "Total koli", it = "Colli totali", ja = "総個数", ko = "총 개수", ms = "Jumlah keping", nl = "Totaal aantal stuks", pl = "Łączna liczba sztuk", th = "จำนวนชิ้นรวม", vi = "Tổng số kiện", "zh-Hant" = "總件數" }
+type = "number"
+aliases = ["件数", "No. of Pieces", "Pieces", "RCP"]
+
+[[fields]]
+name = "total_gross_weight"
+label = "总毛重"
+names = { en = "Total Gross Weight", ar = "إجمالي الوزن القائم", de = "Bruttogewicht gesamt", es = "Peso bruto total", fr = "Poids brut total", hi = "कुल सकल वजन", id = "Total berat kotor", it = "Peso lordo totale", ja = "総総重量", ko = "총 총중량", ms = "Jumlah berat kasar", nl = "Totaal brutogewicht", pl = "Łączna masa brutto", th = "น้ำหนักรวมทั้งหมด", vi = "Tổng trọng lượng cả bì", "zh-Hant" = "總毛重" }
+type = "number"
+description = "公斤，只要数字"
+aliases = ["毛重", "Gross Weight", "Total Gross Weight"]
+
+[[fields]]
+name = "weight_charge"
+label = "航空运费"
+names = { en = "Weight Charge", ar = "أجرة الوزن", de = "Gewichtsfracht", es = "Flete por peso", fr = "Fret au poids", hi = "वजन भाड़ा", id = "Biaya berat", it = "Nolo a peso", ja = "重量運賃", ko = "중량운임", ms = "Caj berat", nl = "Gewichtsvracht", pl = "Fracht od wagi", th = "ค่าระวางตามน้ำหนัก", vi = "Cước theo trọng lượng", "zh-Hant" = "重量運費" }
+type = "number"
+description = "Weight Charge（预付或到付那一格有数的），只要数字"
+aliases = ["航空运费", "Weight Charge"]
+
+[[fields]]
+name = "other_charges_agent"
+label = "代理人收取的其他费用"
+names = { en = "Total Other Charges Due Agent", ar = "رسوم أخرى مستحقة للوكيل", de = "Sonstige Kosten Agent", es = "Otros cargos del agente", fr = "Autres frais dus à l'agent", hi = "एजेंट को देय अन्य शुल्क", id = "Biaya lain untuk agen", it = "Altre spese dovute all'agente", ja = "代理店収受その他料金", ko = "대리점 기타요금 합계", ms = "Caj lain kepada ejen", nl = "Overige kosten agent", pl = "Inne opłaty agenta", th = "ค่าใช้จ่ายอื่นของตัวแทน", vi = "Phí khác của đại lý", "zh-Hant" = "代理人其他費用合計" }
+type = "number"
+aliases = ["Total Other Charges Due Agent", "Other Charges Due Agent"]
+
+[[fields]]
+name = "other_charges_carrier"
+label = "承运人收取的其他费用"
+names = { en = "Total Other Charges Due Carrier", ar = "رسوم أخرى مستحقة للناقل", de = "Sonstige Kosten Frachtführer", es = "Otros cargos del transportista", fr = "Autres frais dus au transporteur", hi = "वाहक को देय अन्य शुल्क", id = "Biaya lain untuk pengangkut", it = "Altre spese dovute al vettore", ja = "航空会社収受その他料金", ko = "항공사 기타요금 합계", ms = "Caj lain kepada pengangkut", nl = "Overige kosten vervoerder", pl = "Inne opłaty przewoźnika", th = "ค่าใช้จ่ายอื่นของผู้ขนส่ง", vi = "Phí khác của hãng", "zh-Hant" = "承運人其他費用合計" }
+type = "number"
+aliases = ["Total Other Charges Due Carrier", "Other Charges Due Carrier"]
+
+[[fields]]
+name = "total_prepaid"
+label = "预付合计"
+names = { en = "Total Prepaid", ar = "إجمالي المدفوع مقدماً", de = "Summe Prepaid", es = "Total prepagado", fr = "Total port payé", hi = "कुल अग्रिम भुगतान", id = "Total prabayar", it = "Totale prepagato", ja = "前払合計", ko = "선불 합계", ms = "Jumlah prabayar", nl = "Totaal vooruitbetaald", pl = "Razem opłacone z góry", th = "รวมชำระล่วงหน้า", vi = "Tổng trả trước", "zh-Hant" = "預付合計" }
+type = "number"
+aliases = ["预付总额", "Total Prepaid"]
+
+[[fields]]
+name = "total_collect"
+label = "到付合计"
+names = { en = "Total Collect", ar = "إجمالي المدفوع عند الوصول", de = "Summe Collect", es = "Total a cobrar", fr = "Total port dû", hi = "कुल देय", id = "Total bayar di tujuan", it = "Totale assegnato", ja = "着払合計", ko = "착불 합계", ms = "Jumlah bayar semasa terima", nl = "Totaal onder rembours", pl = "Razem płatne przy odbiorze", th = "รวมเก็บปลายทาง", vi = "Tổng trả sau", "zh-Hant" = "到付合計" }
+type = "number"
+aliases = ["到付总额", "Total Collect"]
+
+[[fields]]
+name = "issue_date"
+label = "签发日期"
+names = { en = "Executed on (Date)", ar = "تاريخ الإصدار", de = "Ausgestellt am", es = "Emitida el", fr = "Établie le", hi = "जारी करने की तिथि", id = "Diterbitkan tanggal", it = "Emessa il", ja = "発行日", ko = "발행일", ms = "Dikeluarkan pada", nl = "Uitgegeven op", pl = "Wystawiono dnia", th = "ออกเมื่อวันที่", vi = "Ngày phát hành", "zh-Hant" = "簽發日期" }
+type = "date"
+aliases = ["填开日期", "Executed on", "Date", "Issue Date"]
+
+[[fields]]
+name = "issue_place"
+label = "签发地点"
+names = { en = "Executed at (Place)", ar = "مكان الإصدار", de = "Ausgestellt in", es = "Emitida en", fr = "Établie à", hi = "जारी करने का स्थान", id = "Diterbitkan di", it = "Emessa a", ja = "発行地", ko = "발행지", ms = "Dikeluarkan di", nl = "Uitgegeven te", pl = "Wystawiono w", th = "ออกที่", vi = "Nơi phát hành", "zh-Hant" = "簽發地點" }
+type = "string"
+aliases = ["填开地点", "at (place)", "Place"]
+
+[[tables]]
+name = "rates"
+label = "运价"
+names = { en = "Rates", ar = "الأسعار", de = "Tarife", es = "Tarifas", fr = "Tarifs", hi = "दरें", id = "Tarif", it = "Tariffe", ja = "運賃明細", ko = "운임내역", ms = "Kadar", nl = "Tarieven", pl = "Stawki", th = "อัตราค่าระวาง", vi = "Biểu cước", "zh-Hant" = "運價" }
+required = true
+description = "运价栏每一行（No. of Pieces、Gross Weight、Rate Class、Chargeable Weight、Rate/Charge、Total、Nature and Quantity of Goods）。合计行不算"
+
+[[tables.columns]]
+name = "pieces"
+label = "件数"
+names = { en = "No. of Pieces", ar = "عدد القطع", de = "Stückzahl", es = "N.º de piezas", fr = "Nombre de pièces", hi = "नग संख्या", id = "Jumlah koli", it = "N. colli", ja = "個数", ko = "개수", ms = "Bilangan keping", nl = "Aantal stuks", pl = "Liczba sztuk", th = "จำนวนชิ้น", vi = "Số kiện", "zh-Hant" = "件數" }
+type = "number"
+aliases = ["件数", "No. of Pieces", "RCP"]
+
+[[tables.columns]]
+name = "gross_weight"
+label = "毛重"
+names = { en = "Gross Weight", ar = "الوزن القائم", de = "Bruttogewicht", es = "Peso bruto", fr = "Poids brut", hi = "सकल वजन", id = "Berat kotor", it = "Peso lordo", ja = "総重量", ko = "총중량", ms = "Berat kasar", nl = "Brutogewicht", pl = "Masa brutto", th = "น้ำหนักรวม", vi = "Trọng lượng cả bì", "zh-Hant" = "毛重" }
+type = "number"
+aliases = ["毛重", "Gross Weight"]
+
+[[tables.columns]]
+name = "rate_class"
+label = "运价等级"
+names = { en = "Rate Class", ar = "فئة السعر", de = "Ratenklasse", es = "Clase de tarifa", fr = "Classe tarifaire", hi = "दर वर्ग", id = "Kelas tarif", it = "Classe tariffaria", ja = "運賃種別", ko = "운임등급", ms = "Kelas kadar", nl = "Tariefklasse", pl = "Klasa stawki", th = "ประเภทอัตรา", vi = "Hạng cước", "zh-Hant" = "運價等級" }
+type = "string"
+description = "照抄：M（最低运费）、N、Q、C、R、S"
+aliases = ["运价等级", "Rate Class"]
+
+[[tables.columns]]
+name = "chargeable_weight"
+label = "计费重量"
+names = { en = "Chargeable Weight", ar = "الوزن الخاضع للأجرة", de = "Frachtpflichtiges Gewicht", es = "Peso tasable", fr = "Poids taxable", hi = "प्रभार्य वजन", id = "Berat terhitung", it = "Peso tassabile", ja = "賃率適用重量", ko = "운임적용중량", ms = "Berat boleh caj", nl = "Belastbaar gewicht", pl = "Waga płatna", th = "น้ำหนักคิดค่าระวาง", vi = "Trọng lượng tính cước", "zh-Hant" = "計費重量" }
+type = "number"
+aliases = ["计费重量", "Chargeable Weight"]
+
+[[tables.columns]]
+name = "rate"
+label = "费率"
+names = { en = "Rate / Charge", ar = "السعر / الأجرة", de = "Rate / Fracht", es = "Tarifa / flete", fr = "Tarif / fret", hi = "दर / भाड़ा", id = "Tarif / biaya", it = "Tariffa / nolo", ja = "賃率／料金", ko = "요율/요금", ms = "Kadar / caj", nl = "Tarief / vracht", pl = "Stawka / fracht", th = "อัตรา / ค่าระวาง", vi = "Đơn giá / cước", "zh-Hant" = "費率／運費" }
+type = "number"
+aliases = ["费率", "Rate/Charge", "Rate"]
+
+[[tables.columns]]
+name = "total"
+label = "运费"
+names = { en = "Total", ar = "الإجمالي", de = "Summe", es = "Total", fr = "Total", hi = "कुल", id = "Total", it = "Totale", ja = "合計", ko = "합계", ms = "Jumlah", nl = "Totaal", pl = "Suma", th = "รวม", vi = "Tổng cộng", "zh-Hant" = "總額" }
+type = "number"
+aliases = ["运费", "Total"]
+
+[[tables.columns]]
+name = "goods"
+label = "货物品名和数量"
+names = { en = "Nature and Quantity of Goods", ar = "طبيعة البضاعة وكميتها", de = "Art und Menge der Waren", es = "Naturaleza y cantidad de la mercancía", fr = "Nature et quantité des marchandises", hi = "माल की प्रकृति और मात्रा", id = "Jenis dan jumlah barang", it = "Natura e quantità della merce", ja = "貨物の品名及び数量", ko = "화물의 품명 및 수량", ms = "Jenis dan kuantiti barang", nl = "Aard en hoeveelheid goederen", pl = "Rodzaj i ilość towaru", th = "ชนิดและปริมาณสินค้า", vi = "Tính chất và số lượng hàng", "zh-Hant" = "貨物品名及數量" }
+type = "string"
+description = "Nature and Quantity of Goods 照抄（含尺寸、体积）"
+aliases = ["货物品名", "Nature and Quantity of Goods"]

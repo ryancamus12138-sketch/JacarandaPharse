@@ -18,7 +18,11 @@ PROCESS_DOCUMENT = "jacara.process_document"
 """任务名字。API 按名字发送，worker 按名字认领。"""
 
 QUEUE = "pipeline"
-"""队列名字。以后 OCR、大模型、导出可以分成不同的队列，各开各的 worker。"""
+"""队列名字：上传的文档在这里排队。分工位时（ADR 0051）由 OCR 工位领。"""
+
+EXTRACT_DOCUMENT = "jacara.extract_document"
+EXTRACT_QUEUE = "extract"
+"""流水线的第二站（ADR 0051）：OCR 工位认好字，把"抽取这个文档"放进这个队列，模型工位领。"""
 
 
 class QueueError(Exception):
@@ -57,6 +61,15 @@ class CeleryQueue:
 
     def __init__(self, app: Celery | None = None) -> None:
         self.app = app or get_celery()
+
+    def enqueue_extract(self, document_id: uuid.UUID, attempt: str) -> None:
+        """OCR 工位认好字以后，交给模型工位（ADR 0051）。"""
+        try:
+            self.app.send_task(
+                EXTRACT_DOCUMENT, args=[str(document_id), attempt], queue=EXTRACT_QUEUE, retry=False
+            )
+        except Exception as err:
+            raise QueueError("任务队列（Valkey）连不上") from err
 
     def enqueue_document(self, document_id: uuid.UUID) -> None:
         try:

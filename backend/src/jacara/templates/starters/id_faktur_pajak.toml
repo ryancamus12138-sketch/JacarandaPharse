@@ -1,0 +1,149 @@
+# 起步模板：Indonesia Faktur Pajak（e-Faktur / Coretax）。
+# 依据：UU PPN Pasal 13 ayat (5)；PER-11/PJ/2025 Pasal 33：nama, alamat, NPWP penjual；identitas pembeli（NPWP / NIK / paspor）；
+#   jenis barang/jasa, harga jual, potongan harga；PPN；PPnBM；kode, nomor seri dan tanggal faktur。
+#   PMK 131/2024：tarif PPN 12%，barang/jasa non-mewah memakai DPP nilai lain 11/12 × harga jual（efektif 11%）。
+# 场景：印尼 PKP（增值税登记企业）开具，买方凭此抵扣 Pajak Masukan。
+# 来源：DDTCNews「Apa itu faktur pajak tidak lengkap」、「Penjelasan DJP soal hitung PPN dengan DPP 11/12」。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "id_faktur_pajak"
+version = 1
+title = "印尼增值税发票（Faktur Pajak）"
+titles = { en = "VAT Invoice (Indonesia)", id = "Faktur Pajak" }
+countries = ["ID"]
+domains = ["发票"]
+description = "印尼的 Faktur Pajak：编号（16/17 位）、日期，卖方名称地址 NPWP，买方名称地址 NPWP 或 NIK，商品、Harga Jual、折扣、DPP、PPN、PPnBM。NPWP 位数不对、PPN 不等于 12% × DPP、DPP 不是 Harga Jual 或其 11/12 会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "id_seller_npwp", "id_faktur_no", "id_ppn", "item_line"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票编号"
+names = { en = "Tax Invoice No.", id = "Kode dan Nomor Seri Faktur Pajak" }
+type = "string"
+required = true
+unique = true
+description = "照抄，不要改格式"
+aliases = ["Kode dan Nomor Seri Faktur Pajak"]
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue", id = "Tanggal" }
+type = "date"
+required = true
+aliases = ["Tanggal"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller", id = "Nama Pengusaha Kena Pajak" }
+type = "string"
+required = true
+aliases = ["Nama Pengusaha Kena Pajak"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address", id = "Alamat" }
+type = "string"
+aliases = ["Alamat"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "卖方 NPWP"
+names = { en = "Seller NPWP", id = "NPWP" }
+type = "string"
+aliases = ["NPWP"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer", id = "Nama Pembeli" }
+type = "string"
+aliases = ["Nama Pembeli"]
+
+[[fields]]
+name = "buyer_address"
+label = "买方地址"
+names = { en = "Buyer Address", id = "Alamat Pembeli" }
+type = "string"
+aliases = ["Alamat Pembeli"]
+
+[[fields]]
+name = "buyer_tax_id"
+label = "买方 NPWP / NIK"
+names = { en = "Buyer NPWP / NIK", id = "NPWP / NIK Pembeli" }
+type = "string"
+sensitive = true
+aliases = ["NPWP / NIK Pembeli"]
+
+[[fields]]
+name = "net_total"
+label = "销售价合计"
+names = { en = "Selling Price", id = "Harga Jual / Penggantian" }
+type = "number"
+description = "Harga Jual / Penggantian 合计"
+aliases = ["Harga Jual / Penggantian"]
+
+[[fields]]
+name = "discount"
+label = "折扣"
+names = { en = "Discount", id = "Potongan Harga" }
+type = "number"
+aliases = ["Potongan Harga"]
+
+[[fields]]
+name = "dpp"
+label = "计税基础（DPP）"
+names = { en = "Tax Base (DPP)", id = "Dasar Pengenaan Pajak" }
+type = "number"
+aliases = ["DPP", "Dasar Pengenaan Pajak", "DPP Nilai Lain"]
+
+[[fields]]
+name = "ppn"
+label = "增值税（PPN）"
+names = { en = "VAT (PPN)", id = "Jumlah PPN" }
+type = "number"
+aliases = ["PPN", "Jumlah PPN"]
+
+[[fields]]
+name = "ppnbm"
+label = "奢侈品销售税（PPnBM）"
+names = { en = "Luxury Tax (PPnBM)", id = "Jumlah PPnBM" }
+type = "number"
+aliases = ["PPnBM", "Jumlah PPnBM"]
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items", id = "Barang / Jasa" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description", id = "Nama Barang / Jasa" }
+type = "string"
+aliases = ["Nama Barang / Jasa"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity", id = "Jumlah" }
+type = "number"
+aliases = ["Jumlah"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price", id = "Harga Satuan" }
+type = "number"
+aliases = ["Harga Satuan"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount", id = "Harga Jual" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+aliases = ["Harga Jual"]

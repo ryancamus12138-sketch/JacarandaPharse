@@ -23,6 +23,7 @@ from openpyxl.styles import PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from jacara.core.daterange import DateRange, parse_date_range
 from jacara.templates import Template
 from jacara.templates.extras import WorkbookSheet, normalize
 
@@ -159,9 +160,26 @@ def _value(
         found = reference.find(wanted)
         return found.get(column) if found else None
     table, _, col = ref.partition(".")
+    ranges = template.ranges()
+    if table in ranges and col in ("start", "end", "days"):
+        # 日期范围的开始、结束、天数（ADR 0039）：公司表格里分两格写
+        found = _range(doc.values.get(table), template)
+        if found is None:
+            return None
+        return found.days if col == "days" else getattr(found, col)
     if col:
         return item.get(col) if item is not None and sheet.table == table else None
+    if ref in ranges and ranges[ref].range_export == "normalized":
+        found = _range(doc.values.get(ref), template)
+        if found is not None and found.start and found.end:
+            return found.text(ranges[ref].range_separator)
     return doc.values.get(ref)
+
+
+def _range(raw: Any, template: Template) -> DateRange | None:
+    if raw in (None, ""):
+        return None
+    return parse_date_range(str(raw), template.day_first).range
 
 
 def _naive(moment: datetime | None) -> datetime | None:

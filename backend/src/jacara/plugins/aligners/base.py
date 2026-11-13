@@ -12,12 +12,14 @@ from typing import Literal, Protocol
 from jacara.plugins.extractors.base import ExtractedField, ExtractionResult
 from jacara.plugins.ocr.base import OcrLine, OcrPage
 
-AlignStatus = Literal["matched", "fuzzy", "not_found", "empty", "rejected", "computed"]
+AlignStatus = Literal["matched", "fuzzy", "not_found", "empty", "rejected", "computed", "seen"]
 """matched：原文里找到了一样的值。fuzzy：只找到相似的值。
 not_found：原文里找不到，可能是模型编的。empty：模型说原文里没有这个字段。
 rejected：模型给了值，但它说用到的文字块里没有、原文别处也找不到，按 LMDX 的做法丢掉（ADR 0034）；
 存的值是空的，模型给的值另外记下，人核对后可以一键采用。
-computed：不是从原文找的，是按模板的公式由别的字段算出来的（ADR 0035），没有出处框。"""
+computed：不是从原文找的，是按模板的公式由别的字段算出来的（ADR 0035），没有出处框。
+seen：模型看着原图读出来的（ADR 0038），OCR 认错了或漏了，文字里对不上。值留着、标黄要人核对；
+模型说了是哪几块（OCR 认错的）就框那几块，没说就没有出处框。"""
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,34 @@ class Evidence:
         )
 
 
+CandidateSource = Literal["ocr", "text_layer", "zoom", "form"]
+"""候选值从哪来（ADR 0042）：整页 OCR、PDF 文字层、局部放大再识别、PDF 表单字段。"""
+
+LayerCheck = Literal["none", "absent", "agree", "ambiguous", "conflict"]
+"""和 PDF 文字层核对的结果（ADR 0042）：none 没有文字层（图片、扫描件）；absent 出处那里文字层
+没有字（多半是图片、印章）；agree 文字层也写着这个值（只作记录，不额外加分）；
+ambiguous 对不上（附近有好几行字）；conflict 文字层写的不一样。"""
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """一个字段的另一个可能的值（ADR 0042）。只给人看、给人选，不会自己替换掉值。
+
+    box 是在（拼起来的）页面上的位置，和 OCR 的坐标一样。"""
+
+    source: CandidateSource
+    text: str
+    box: tuple[float, float, float, float] | None = None
+    confidence: float | None = None
+    value: str | None = None
+    """按字段类型整理过的值（数字、日期），点"采用"时填进去；整理不出来就是 None，用 text。"""
+    note: str = ""
+    dpi: int | None = None
+    """局部放大再识别用的分辨率。"""
+    rule_ok: bool | None = None
+    """换成这个值以后，和这个字段有关的规则是不是都通过（只是提示，不自动采用）。"""
+
+
 @dataclass(frozen=True)
 class AlignedField:
     """对齐之后的字段：原来的抽取结果 + 核对状态 + 出处 + 是否需要人工确认 + 原因。"""
@@ -56,6 +86,10 @@ class AlignedField:
     needs_review: bool
     note: str = ""
     """给人看的说明，例如"原文里找不到"。审核页面直接显示。"""
+    candidates: tuple[Candidate, ...] = ()
+    """各个来源读出来的不同的值（ADR 0042）：有冲突、漏读时才有，所有不同的都留着。"""
+    layer: LayerCheck | None = None
+    """和 PDF 文字层核对的结果（ADR 0042）。没核对过是 None。"""
 
 
 class Aligner(Protocol):

@@ -15,9 +15,11 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
 from jacara.plugins.validators import ALL_RULES
+from jacara.plugins.validators.base import Rule
+from jacara.plugins.validators.rules import REGIONS
 
 FORMAT = "jacarandaparse-template"
-TYPES = {"string": "文字", "number": "数字", "date": "日期"}
+TYPES = {"string": "文字", "number": "数字", "date": "日期", "date_range": "日期范围"}
 TYPES_BACK = {v: k for k, v in TYPES.items()} | {k: k for k in TYPES}
 FIELD_HEADERS = [
     "中文名",
@@ -53,6 +55,24 @@ def is_standard(data: bytes) -> bool:
 # ---------- 模板 → Excel ----------
 
 
+def usable_rule(rule: Rule, template: dict[str, Any]) -> bool:
+    """这条内置规则这个模板用得上：要的字段（表格的列）都有；某国的规则只给选了这个国家的模板。"""
+    country = REGIONS.get(rule.id)
+    if country and country not in (template.get("countries") or []):
+        return False
+    fields = {f["name"] for f in template.get("fields", [])}
+    columns = {t["name"]: {c["name"] for c in t["columns"]} for t in template.get("tables", [])}
+    if rule.per_row:
+        return all(n in columns.get(rule.per_row, set()) for n in (*rule.needs, *rule.requires))
+    for need in (*rule.needs, *rule.requires):
+        table, _, column = need.partition(".*.")
+        if column and column not in columns.get(table, set()):
+            return False
+        if not column and need not in fields:
+            return False
+    return True
+
+
 def to_excel(template: dict[str, Any]) -> bytes:
     """template：TemplateFile 的字典（title、fields、tables、rules、entities、references……）。"""
     book = Workbook()
@@ -64,6 +84,9 @@ def to_excel(template: dict[str, Any]) -> bytes:
         ("格式版本", 1),
         ("模板名", template["title"]),
         ("类型", template.get("category", "")),
+        ("功能领域", "、".join(template.get("domains") or [])),
+        ("国家和地区", "、".join(template.get("countries") or []) or "通用"),
+        ("自定义标签", "、".join(template.get("tags") or [])),
         ("说明", template.get("description", "")),
         ("导出时的版本", template.get("version", 1)),
         (
@@ -99,7 +122,10 @@ def to_excel(template: dict[str, Any]) -> bytes:
     rules_ws = book.create_sheet("规则")
     _setup(rules_ws, ["编号", "名称", "级别", "用"], [22, 46, 8, 6])
     chosen = set(template.get("rules", []))
-    for rule in ALL_RULES:
+    # 只列这个模板选了的规则（化验单不会列出发票、收据、机票的规则）。
+    # 想加别的规则，在下面空行里写规则编号、"用"填"是"，导入时会检查
+    listed = [r for r in ALL_RULES if r.id in chosen]
+    for rule in listed:
         rules_ws.append(
             [
                 rule.id,
@@ -108,7 +134,7 @@ def to_excel(template: dict[str, Any]) -> bytes:
                 _yes(rule.id in chosen),
             ]
         )
-    _yes_no(rules_ws, "D", len(ALL_RULES) + 1)
+    _yes_no(rules_ws, "D", max(len(listed), 30) + 1)  # 留几行空的，导入时可以自己加
 
     entities_ws = book.create_sheet("对象")
     _setup(entities_ws, ["对象ID", "中文名", "编号字段", "包含的字段"], [14, 14, 16, 50])
@@ -175,7 +201,7 @@ def _choices(ws: Worksheet, rows: int, offset: int) -> None:
     """类型、是/否 列加下拉框，填的人不容易写错。offset：前面有几列（表格表多 5 列）。"""
     from openpyxl.utils import get_column_letter
 
-    kinds = DataValidation(type="list", formula1='"文字,数字,日期"', allow_blank=True)
+    kinds = DataValidation(type="list", formula1='"文字,数字,日期,日期范围"', allow_blank=True)
     ws.add_data_validation(kinds)
     kinds.add(f"{get_column_letter(offset + 3)}2:{get_column_letter(offset + 3)}{rows}")
     for col in (4, 5, 6, 7):
@@ -259,10 +285,19 @@ def from_excel(data: bytes) -> dict[str, Any]:
                 ],
             }
         )
+    countries_text = _str(info.get("国家和地区"))
     return {
         "format": FORMAT,
         "title": title,
         "category": _str(info.get("类型")),
+        # 新导出的才有这三行；旧的 Excel 没有：领域用"类型"，国家按选的规则认
+        **({"domains": _list(info.get("功能领域"))} if "功能领域" in info else {}),
+        **(
+            {"countries": [] if countries_text in ("", "通用") else _list(countries_text)}
+            if "国家和地区" in info
+            else {}
+        ),
+        **({"tags": _list(info.get("自定义标签"))} if "自定义标签" in info else {}),
         "description": _str(info.get("说明")),
         "version": int(info.get("导出时的版本") or 1),
         "fields": fields,
@@ -302,7 +337,7 @@ def _field(row: dict[str, Any], where: str, n: int, default_id: str) -> dict[str
         raise StandardError(f"{where}第 {n} 行：没有写中文名")
     kind = TYPES_BACK.get(_str(row.get("类型")) or "文字")
     if kind is None:
-        raise StandardError(f"{where}第 {n} 行：类型只能填 文字、数字、日期")
+        raise StandardError(f"{where}第 {n} 行：类型只能填 文字、数字、日期、日期范围")
     sensitive = _bool(row.get("敏感"), False, where, n)
     return {
         "name": _str(row.get("字段ID")) or default_id,

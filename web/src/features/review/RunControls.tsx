@@ -4,6 +4,7 @@ import { App, Button, Form, Input, Modal, Radio, Select, Tooltip } from 'antd'
 import { useState } from 'react'
 import { ApiError } from '../../api/client'
 import { reprocessDocument } from '../../api/documents'
+import { getVision } from '../../api/system'
 import { listTemplates } from '../../api/templates'
 import {
   type DocumentDetail,
@@ -12,6 +13,14 @@ import {
 } from '../../api/types'
 import { formatTime } from '../../utils/format'
 import { templateOptions } from '../templates/uploadChoice'
+import {
+  PDF_READ_CHOICES,
+  type PdfRead,
+  SAME,
+  SPLITS,
+  VISION_CHOICES,
+  type Vision,
+} from './reprocessChoices'
 
 /** 看第几轮的结果。只有一轮时不显示。 */
 export function RunSwitcher({
@@ -38,24 +47,50 @@ export function RunSwitcher({
   )
 }
 
-const SAME = '__same__'
 
 /** 重新处理：换模板（或同一个模板的最新版）跑新的一轮，要写原因。旧结果留着可以查看。 */
+interface Choice {
+  template: string
+  vision: Vision
+  pdfRead: PdfRead
+  reason: ReprocessReason
+  note: string
+  split: string
+  ranges?: string
+}
+
+
+
+/** 现在的分法 → 表单里的选项。 */
+function splitChoice(split: string | undefined): { split: string; ranges?: string } {
+  if (!split || ['auto', 'one', 'pages'].includes(split)) return { split: split || 'auto' }
+  return { split: 'ranges', ranges: split }
+}
+
 export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
-  const [form] = Form.useForm<{ template: string; reason: ReprocessReason; note: string }>()
+  const [form] = Form.useForm<Choice>()
   const templates = useQuery({ queryKey: ['templates'], queryFn: listTemplates, enabled: open })
   const reason = Form.useWatch('reason', form)
+  const split = Form.useWatch('split', form)
   const busy = doc.status === 'uploaded' || doc.status === 'processing'
+  const vision = useQuery({ queryKey: ['vision'], queryFn: getVision, enabled: open, staleTime: 60_000 })
+  const sees = vision.data?.sees_images ?? false
+  const currentVision: Vision = doc.vision === 'always' || doc.vision === 'off' ? doc.vision : 'default'
+  const currentPdfRead: PdfRead = doc.pdf_read === 'image' || doc.pdf_read === 'text' ? doc.pdf_read : 'default'
+  const isPdf = doc.content_type === 'application/pdf'
 
   const reprocess = useMutation({
-    mutationFn: (v: { template: string; reason: ReprocessReason; note: string }) =>
+    mutationFn: (v: Choice) =>
       reprocessDocument(doc.id, {
         template: v.template === SAME ? undefined : v.template,
         reason: v.reason,
         note: v.note ?? '',
+        split: v.split === 'ranges' ? (v.ranges ?? '') : v.split,
+        vision: v.vision === currentVision ? undefined : v.vision,
+        pdf_read: !isPdf || v.pdfRead === currentPdfRead ? undefined : v.pdfRead,
       }),
     onSuccess: () => {
       setOpen(false)
@@ -87,7 +122,14 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ template: SAME, reason: 'template_changed', note: '' }}
+          initialValues={{
+            template: SAME,
+            vision: currentVision,
+            pdfRead: currentPdfRead,
+            reason: 'template_changed',
+            note: '',
+            ...splitChoice(doc.split),
+          }}
           onFinish={(v) => reprocess.mutate(v)}
           preserve={false}
         >
@@ -98,12 +140,62 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
                 {
                   label: '不换',
                   title: 'same',
-                  options: [{ value: SAME, label: '现在这个模板的最新版' }],
+                  options: [
+                    {
+                      value: SAME,
+                      label: doc.auto ? '再自动判断一次' : '现在这个模板的最新版',
+                    },
+                  ],
                 },
                 ...templateOptions(templates.data ?? []),
               ]}
             />
           </Form.Item>
+          {doc.page_count > 1 && (
+            <Form.Item
+              name="split"
+              label="这个文件里有几张单据"
+              extra="分错了（两张发票当成一张，或者一张两页的账单拆成两张）就在这里改。"
+            >
+              <Select options={SPLITS} />
+            </Form.Item>
+          )}
+          {doc.page_count > 1 && split === 'ranges' && (
+            <Form.Item
+              name="ranges"
+              label={`页码（共 ${doc.page_count} 页）`}
+              extra="每张单据占哪几页，用逗号分开，例如 1-2, 3, 4-6。没写到的页按自动判断接在后面。"
+              rules={[{ required: true, message: '写一下每张单据占哪几页' }]}
+            >
+              <Input placeholder="1-2, 3, 4-6" />
+            </Form.Item>
+          )}
+          <Form.Item
+            name="vision"
+            label="对照原图读"
+            extra={
+              sees
+                ? '模型平时只看 OCR 认出的文字。对照原图（整页的照片）读，手写、印章、模糊、被笔迹盖住的字更准，但慢一些。“系统决定”：照片不清楚时才对照。'
+                : vision.isSuccess
+                  ? '还没有视觉模型，模型只能看文字。把 mmproj-F16.gguf 放进 models/，重新 jacara start 后可以选（见系统信息）。'
+                  : undefined
+            }
+          >
+            <Radio.Group
+              optionType="button"
+              disabled={!sees}
+              options={VISION_CHOICES}
+            />
+          </Form.Item>
+          {isPdf && (
+            <Form.Item
+              name="pdfRead"
+              label="PDF 怎么读"
+              extra="画成图识别：和照片走同一条路，PDF 自带的文字只拿来核对（有的 PDF 自带的文字是错的，比如把“示”存成部首“⽰”、把 0 存成 8）。只读自带的文字：快，只适合确定干净的电子版。"
+            >
+              <Radio.Group optionType="button" options={PDF_READ_CHOICES} />
+            </Form.Item>
+          )}
           <Form.Item name="reason" label="为什么" rules={[{ required: true }]}>
             <Radio.Group
               options={Object.entries(REPROCESS_REASONS).map(([value, label]) => ({ value, label }))}

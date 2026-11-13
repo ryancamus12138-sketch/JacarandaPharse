@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import suppress
+from dataclasses import replace
 from typing import Any, Literal, cast
 
 from jacara.core.textvalue import signed_number
@@ -26,13 +27,19 @@ from jacara.templates import Template, TemplateError, from_definition, load_temp
 def template_from_version(version: TemplateVersion) -> Template:
     """我的模板的一个版本 → Template。名字用模板的 id（存进 extractions.template）。"""
     record = version.template
-    return from_definition(
+    template = from_definition(
         version.definition,
         str(record.id),
         version.version,
         record.title,
         record.category,
         record.description,
+    )
+    # 标签记在模板上、不进版本（ADR 0037）；自动判断要用现在的领域和国家（ADR 0038）
+    return replace(
+        template,
+        domains=tuple(record.domains or template.domains),
+        countries=tuple(record.countries) if record.domains else template.countries,
     )
 
 
@@ -53,13 +60,14 @@ def template_of(extraction: Extraction) -> Template | None:
         return None
 
 
-def labels_of(extraction: Extraction) -> dict[str, str]:
-    """字段 ID → 中文名（审核页面、导出用）。表格的格子按"表名.列名"找。
+def labels_of(extraction: Extraction, language: str | None = None) -> dict[str, str]:
+    """字段 ID → 显示名（审核页面、导出用）。表格的格子按"表名.列名"找。
 
+    默认中文；指定语言（ADR 0048）就用模板里那种语言的名字，没写的还是中文。
     键值对发现的字段用单据上的原名。模板里没有的字段（模板文件找不到了）不在里面。
     """
     template = template_of(extraction)
-    labels = template.labels() if template else {}
+    labels = template.labels(language) if template else {}
     labels.update({v.name: v.label for v in extraction.values if v.label})
     return labels
 
@@ -118,7 +126,112 @@ def current_checks(extraction: Extraction) -> ValidationResult:
         ExtractedField(name, cast(FieldType, v.type), typed_value(v.type, v.current_value))
         for v, name in current_values(extraction)
     ]
-    return template.validator().validate(fields)
+    result = template.validator().validate(fields)
+    if not any(f.unique for f in template.fields):
+        return result
+    duplicates = duplicate_issues(extraction, template)
+    return ValidationResult(
+        result.issues + tuple(duplicates),
+        result.passed + (() if duplicates else (DUPLICATE,)),
+        result.skipped,
+    )
+
+
+DUPLICATE = "duplicate"
+"""重复检查的编号（ADR 0036）：模板里标了"不能重复"的字段，别的单据里有一样的值。"""
+
+
+def _same(text: str | None) -> str:
+    """比较用：去掉空格、不分大小写（"INV 001" 和 "inv001" 算一样）。"""
+    return "".join((text or "").split()).upper()
+
+
+def duplicate_issues(extraction: Extraction, template: Template) -> list[Issue]:
+    """可能重复报销（ADR 0036）：标了"不能重复"的字段（发票号码、账单号），
+    同一个团队里别的单据（别的文档，或者同一个文件里的别的单据）现在的值一样，就提醒。
+
+    两边都有总额、而且总额不一样的不算（不同商家可能用到同样的编号）。删掉的行、旧的几轮不算。
+    """
+    from sqlalchemy import or_, select
+    from sqlalchemy.orm import object_session
+
+    from jacara.models import Document, ValueRevision
+
+    session = object_session(extraction)
+    if session is None:
+        return []
+    mine = {v.name: v for v in extraction.values if not v.deleted}
+    total = mine["total"].current_value if "total" in mine else None
+    issues: list[Issue] = []
+    for field in (f for f in template.fields if f.unique):
+        value = mine.get(field.name)
+        if value is None or not (value.current_value or "").strip():
+            continue
+        wanted = value.current_value
+        candidates = session.scalars(
+            select(ExtractedValue)
+            .join(Extraction, ExtractedValue.extraction_id == Extraction.id)
+            .join(Document, Extraction.document_id == Document.id)
+            .where(
+                ExtractedValue.name == field.name,
+                Extraction.run == Document.current_run,
+                Extraction.id != extraction.id,
+                Document.team_id == extraction.team_id,
+                or_(
+                    ExtractedValue.value == wanted,
+                    ExtractedValue.id.in_(
+                        select(ValueRevision.value_id).where(ValueRevision.new_value == wanted)
+                    ),
+                ),
+            )
+        ).all()
+        hits: list[str] = []
+        for other in candidates:
+            if other.deleted or _same(other.current_value) != _same(wanted):
+                continue
+            other_total = next(
+                (v.current_value for v in other.extraction.values if v.name == "total"), None
+            )
+            if total and other_total and _differs(total, other_total):
+                continue
+            hits.append(_where(other.extraction, extraction))
+        if hits:
+            label = field.label
+            shown = "；".join(hits[:3]) + (f" 等 {len(hits)} 处" if len(hits) > 3 else "")
+            issues.append(
+                Issue(
+                    DUPLICATE,
+                    "可能重复报销",
+                    f"{label}「{wanted}」和{shown}一样，请确认是不是同一张单据传了两次",
+                    (field.name,),
+                    "warning",
+                )
+            )
+    return issues
+
+
+def _differs(a: str, b: str) -> bool:
+    try:
+        return abs(float(a) - float(b)) >= 0.005
+    except ValueError:
+        return _same(a) != _same(b)
+
+
+def _where(other: Extraction, mine: Extraction) -> str:
+    """别的单据在哪里：同一个文件写"这个文件的第 n 页"，别的文件写文件名和上传日期。"""
+    pages = page_range(other)
+    if other.document_id == mine.document_id:
+        return f"这个文件的{pages}"
+    day = other.document.created_at.strftime("%Y-%m-%d")
+    return f"《{other.document.filename}》{pages}（{day} 上传）"
+
+
+def page_range(extraction: Extraction) -> str:
+    """单据占哪几页："第 3 页""第 3–4 页"。"""
+    last = getattr(extraction, "last_page", None) or extraction.page
+    return (
+        f"第 {extraction.page} 页" if last == extraction.page else f"第 {extraction.page}–{last} 页"
+    )
 
 
 def current_checks_json(extraction: Extraction) -> dict[str, object]:

@@ -89,9 +89,15 @@ class _Builder:
 
 
 def analyze_page(
-    page: OcrPage, image: np.ndarray | None = None, engines: StructureEngines = NO_MODELS
+    page: OcrPage,
+    image: np.ndarray | None = None,
+    engines: StructureEngines = NO_MODELS,
+    page_starts: tuple[float, ...] = (),
 ) -> PageStructure:
-    """分析一页的结构。image 是这一页的图（坐标和 OCR 一样）；没有图就不用模型，只按规则。"""
+    """分析一页的结构。image 是这一页的图（坐标和 OCR 一样）；没有图就不用模型，只按规则。
+
+    page_starts：几页拼成的一张单据（ADR 0036），每一页从多高开始；记在结构里，给模型看时分页。
+    """
     rows = group_rows(page)
     b = _Builder(page, rows, {}, [], [], [], {})
     index_of = {id(ln): i for i, ln in enumerate(page.lines)}
@@ -183,6 +189,7 @@ def analyze_page(
         keys=tuple(keys),
         ocr_lines=tuple(b.ocr_lines),
         sources=sources,
+        page_starts=page_starts if len(page_starts) > 1 else (),
     )
 
 
@@ -487,6 +494,33 @@ def _key_values(b: _Builder, in_table: set[str], tables: list[str]) -> list[str]
             if _label_like(b.blocks[left].text) and _DIGIT.search(b.blocks[right].text):
                 take(_Pair((left,), (right,), "label_left", 0.6))
 
+    # ⑥ 没认出表格的表格行：最左边是行名，同一条水平线上右边还有两块以上，最右边是金额
+    # （"Room Charges   Rs 1939 x 1 Night x 1 Room   Rs 1939"）。按位置看是不是同一条线，
+    # 不按行号：行名和金额有时被分在两个版面区域里，行号不一样
+    for w in free:
+        text = b.blocks[w].text.strip()
+        if (
+            w in used_key
+            or text.endswith((":", "："))
+            or _DIGIT.search(text)
+            or not _label_like(text)
+        ):
+            continue
+        _, y0, x1, y1 = b.blocks[w].box
+        middle, height = (y0 + y1) / 2, max(1.0, y1 - y0)
+        same_line = sorted(
+            (
+                v
+                for v in free
+                if v != w
+                and b.blocks[v].box[0] > x1
+                and abs((b.blocks[v].box[1] + b.blocks[v].box[3]) / 2 - middle) <= 0.4 * height
+            ),
+            key=lambda v: b.blocks[v].box[0],
+        )
+        if len(same_line) >= 2 and _AMOUNT.fullmatch(b.blocks[same_line[-1]].text.strip()):
+            take(_Pair((w,), (same_line[-1],), "row_label", 0.5))
+
     keys: list[str] = []
     for i, pair in enumerate(pairs, start=1):
         kid, vid = f"k{i}", f"v{i}"
@@ -522,6 +556,12 @@ def _key_values(b: _Builder, in_table: set[str], tables: list[str]) -> list[str]
     return keys
 
 
+_AMOUNT = re.compile(
+    r"(?:[A-Za-z]{2,3}\.?\s+)?[-+(]?\s*[$€£¥₹]?\s*\d+(?:[,\s]\d{3})*(?:\.\d+)?\)?\s*[A-Za-z%]{0,4}"
+)
+"""整块就是一个金额或数（Rs 1939、$4.11、9.00、10 kg）：表格行最右边的值。"""
+
+
 def _part(b: _Builder, ids: tuple[str, ...], span: tuple[int, int] | None) -> str:
     text = b.text(ids)
     return text[span[0] : span[1]].strip(" :：") if span else text
@@ -543,6 +583,20 @@ def _column_of(b: _Builder, word: str, heads: list[str], h: float) -> str | None
             if best is None or d < best[0]:
                 best = (d, head)
     return None if best is None else best[1]
+
+
+def _has_own_label(b: _Builder, word: str, free: list[str]) -> bool:
+    """这一块左边同一行有自己的标签（"Cashier :  MANIS"）：它是另一个值，不是上一个值折行。"""
+    row = b.blocks[word].attrs["row"]
+    x0 = b.blocks[word].box[0]
+    for w in free:
+        block = b.blocks[w]
+        if w == word or block.attrs["row"] != row or block.box[2] > x0:
+            continue
+        text = block.text.strip()
+        if text.endswith((":", "：")) or _label_like(text):
+            return True
+    return False
 
 
 def _just_below(b: _Builder, word: str, free: list[str]) -> str | None:
@@ -574,6 +628,7 @@ def _continued_below(b: _Builder, word: str, free: list[str]) -> list[str]:
             and _WORDY.search(b.blocks[w].text)
             and not _INLINE.match(b.blocks[w].text.strip())
             and not b.blocks[w].text.strip().endswith((":", "："))
+            and not _has_own_label(b, w, free)
         ]
         if not nxt:
             break

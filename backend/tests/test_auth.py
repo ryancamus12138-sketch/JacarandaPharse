@@ -4,7 +4,7 @@
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -219,7 +219,7 @@ def test_list_grantable_permissions(client, as_user):
     permissions = client.get("/api/v1/users/permissions", headers=headers).json()
     assert {"name": "document:create", "label": "上传文件"} in permissions
     assert {"name": "template:manage", "label": "管理模板"} in permissions
-    assert len(permissions) == 5
+    assert len(permissions) == 6
 
 
 def test_password_too_short(client, as_user):
@@ -371,6 +371,40 @@ def test_only_admin_reads_audit_log(client, as_user):
     page = client.get("/api/v1/audit-logs", headers=admin, params={"action": "auth:"}).json()
     assert {item["action"] for item in page["items"]} == {"auth:login"}
     assert page["total"] == 2  # boss 和 vic 各登录一次
+
+
+def test_audit_log_by_person_and_date(client, factory, as_user):
+    admin = as_user("boss", role="admin")
+    as_user("vic")
+    vic_id = next(
+        u["id"] for u in client.get("/api/v1/users", headers=admin).json() if u["username"] == "vic"
+    )
+    page = client.get("/api/v1/audit-logs", headers=admin, params={"user_id": vic_id}).json()
+    assert page["total"] == 1 and page["items"][0]["action"] == "auth:login"
+    with session_scope(factory) as session:  # 把 vic 的登录挪到上个月
+        log = session.scalars(select(AuditLog).where(AuditLog.user_id == uuid.UUID(vic_id))).one()
+        log.created_at = datetime.now(UTC) - timedelta(days=40)
+    today = date.today().isoformat()
+    recent = client.get("/api/v1/audit-logs", headers=admin, params={"date_from": today}).json()
+    assert vic_id not in {i["user_id"] for i in recent["items"]}
+    old = client.get(
+        "/api/v1/audit-logs",
+        headers=admin,
+        params={"date_to": (date.today() - timedelta(days=30)).isoformat()},
+    ).json()
+    assert [i["user_id"] for i in old["items"]] == [vic_id]
+
+
+def test_audit_log_export_is_recorded(client, factory, as_user):
+    admin = as_user("boss", role="admin")
+    member = as_user("vic")
+    assert client.get("/api/v1/audit-logs/export", headers=member).status_code == 403
+    exported = client.get("/api/v1/audit-logs/export", headers=admin, params={"action": "auth:"})
+    assert exported.status_code == 200
+    assert exported.json()["total"] == 2
+    with session_scope(factory) as session:
+        log = session.scalars(select(AuditLog).where(AuditLog.action == "audit:export")).one()
+        assert log.detail["count"] == 2 and log.detail["filter_action"] == "auth:"
 
 
 # ---------- 个人模式 ----------

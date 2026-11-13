@@ -73,7 +73,24 @@ def same(field_type: str, predicted: str | float | None, gold: str) -> bool:
     if field_type == "date":
         expected = _parse_date(gold)
         return expected is not None and expected == _parse_date(str(predicted))
+    clock = _clock(str(predicted)), _clock(gold)
+    if clock[0] is not None and clock[1] is not None:
+        return clock[0] == clock[1]  # 8:13:39 PM 和 20:13:39 是同一个时间
     return _letters(str(predicted)) == _letters(gold)
+
+
+_TIME = re.compile(r"^\s*(\d{1,2})[:：](\d{2})(?:[:：](\d{2}))?\s*([AaPp]\.?[Mm]\.?)?\s*$")
+
+
+def _clock(text: str) -> tuple[int, int, int] | None:
+    """时间 → (时, 分, 秒)，12 小时制换成 24 小时制。不是时间返回 None。"""
+    m = _TIME.match(text)
+    if m is None:
+        return None
+    hour = int(m[1])
+    if m[4]:
+        hour = hour % 12 + (12 if m[4][0] in "Pp" else 0)
+    return hour, int(m[2]), int(m[3] or 0)
 
 
 def close_enough(field_type: str, predicted: str | float | None, gold: str) -> bool:

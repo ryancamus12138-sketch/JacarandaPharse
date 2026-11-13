@@ -12,6 +12,15 @@ from jacara.modules.comments.models import Comment
 from jacara.modules.documents.models import Document, Extraction
 from jacara.modules.exports.models import Export
 from jacara.modules.fields.models import ExtractedValue, ValueRevision
+from jacara.modules.insights.models import ErrorAttribution
+from jacara.modules.ocr_samples.models import (
+    DocGroupMember,
+    OcrSample,
+    OcrSampleExport,
+    PairDecision,
+    SplitAssignment,
+    TeamSetting,
+)
 from jacara.modules.templates.models import TemplateRecord, TemplateVersion
 
 __all__ = [
@@ -19,13 +28,20 @@ __all__ = [
     "AuthSession",
     "Base",
     "Comment",
+    "DocGroupMember",
     "Document",
+    "ErrorAttribution",
     "Export",
     "ExtractedValue",
     "Extraction",
+    "OcrSample",
+    "OcrSampleExport",
+    "PairDecision",
     "PasswordResetCode",
     "Profile",
+    "SplitAssignment",
     "Team",
+    "TeamSetting",
     "TemplateRecord",
     "TemplateVersion",
     "User",

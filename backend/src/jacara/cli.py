@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
     from jacara.core.config import Settings
     from jacara.plugins.exporters import DocumentReport
+    from jacara.plugins.ocr import OcrPage
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -58,6 +59,11 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("--model", type=Path, required=True, help="模型文件（.gguf）")
     p_serve.add_argument("--port", type=int, default=8080, help="端口，默认 8080")
     p_serve.add_argument("--context", type=int, default=32768, help="上下文长度，默认 32768")
+    p_serve.add_argument(
+        "--mmproj",
+        type=Path,
+        help="视觉模型文件（mmproj-*.gguf），给了模型就能看原图。不写就用 models/ 里的",
+    )
 
     p_ext = sub.add_parser("extract", help="识别图片或 PDF 并抽取字段（要先运行 jacara serve）")
     p_ext.add_argument("image", type=Path, help="图片或 PDF 路径")
@@ -69,6 +75,12 @@ def main(argv: list[str] | None = None) -> int:
         help="用哪个模板：receipt 常用 5 个字段（默认），receipt_full 收据上全部 15 个字段",
     )
     p_ext.add_argument("--excel", type=Path, help="同时把结果导出成 Excel，例如 results/收据.xlsx")
+    p_ext.add_argument(
+        "--split",
+        default="auto",
+        help="文件里有几张单据：auto 自动判断（默认）、one 整个文件一张、pages 每页一张，"
+        "或 1-2,3,4-6",
+    )
     p_ext.add_argument("--save", action="store_true", help="同时把结果存进数据库")
 
     sub.add_parser("templates", help="列出所有模板（backend/src/jacara/templates/*.toml）")
@@ -79,7 +91,27 @@ def main(argv: list[str] | None = None) -> int:
     p_api.add_argument("--port", type=int, default=8000, help="端口，默认 8000")
     p_api.add_argument("--reload", action="store_true", help="改了代码自动重启（开发用）")
 
-    sub.add_parser("worker", help="启动后台任务：处理通过 API 上传的文件（要先运行 jacara serve）")
+    p_worker = sub.add_parser(
+        "worker", help="启动后台任务：处理通过 API 上传的文件（要先运行 jacara serve）"
+    )
+    p_worker.add_argument(
+        "--stage",
+        choices=["all", "read", "extract"],
+        default="all",
+        help="做哪一段（ADR 0051）：all 从头做到尾（默认）；read 只认字；extract 只调模型抽取",
+    )
+
+    p_watch = sub.add_parser(
+        "watch", help="监视一个文件夹，放进去的图片和 PDF 自动导入（Ctrl + C 停止）"
+    )
+    p_watch.add_argument(
+        "folder", type=Path, nargs="?", help="要监视的文件夹；不写就用 .env 里的 JACARA_WATCH_DIR"
+    )
+    p_watch.add_argument("--template", help="用哪个模板（我的模板的 id）；不写就用上一次用的")
+    p_watch.add_argument(
+        "--split", default="auto", help="文件里有几张单据：auto（默认）、one、pages 或 1-2,3"
+    )
+    p_watch.add_argument("--user", help="团队模式：导入的文件算谁传的（用户名）")
 
     p_start = sub.add_parser("start", help="一起启动模型、后台任务和 Web 服务（日常使用）")
     p_start.add_argument("--port", type=int, default=8000, help="Web 服务的端口，默认 8000")
@@ -93,6 +125,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_start.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     sub.add_parser("stop", help="停掉 jacara start 启动的全部（模型、后台任务、Web 服务）")
+    p_backup = sub.add_parser(
+        "backup", help="备份：数据库和对象存储里的文件打进一个包（先 jacara stop）"
+    )
+    p_backup.add_argument("--out", type=Path, default=Path("backups"), help="放到哪里")
+    p_restore = sub.add_parser("restore", help="把备份包恢复到空的数据库和存储里，再逐样核对")
+    p_restore.add_argument("archive", type=Path, help="备份包（.tar）")
+    p_drill = sub.add_parser(
+        "restore-drill", help="恢复演练：另起一套空环境，恢复进去、逐样打开，做完删掉（要 Docker）"
+    )
+    p_drill.add_argument("archive", type=Path, help="备份包（.tar）")
+    p_drill.add_argument("--keep", action="store_true", help="演练完留着那套环境，方便自己看")
     sub.add_parser(
         "backfill-ocr",
         help="给更新前处理的文档补上 OCR 结果，不用重新上传（不改抽取结果和审核记录）",
@@ -107,6 +150,71 @@ def main(argv: list[str] | None = None) -> int:
     p_sroie.add_argument("--limit", type=int, help="只评前 N 张，先少量试跑")
     p_sroie.add_argument("--out", type=Path, default=Path("results/eval"), help="结果放在哪里")
     p_sroie.add_argument("--server", default="http://127.0.0.1:8080", help="模型服务地址")
+    p_pairs = eval_sub.add_parser(
+        "pairs", help="成对测评：同一张单据的照片和 PDF，比较几种读法（ADR 0042）"
+    )
+    p_pairs.add_argument(
+        "--manifest", type=Path, default=Path("data/eval/pairs.toml"), help="成对样本清单"
+    )
+    p_pairs.add_argument(
+        "--server", help="模型服务地址；不写就把标准答案当回答（oracle，只量 OCR 和核对）"
+    )
+    p_pairs.add_argument("--out", type=Path, default=Path("data/eval/results"), help="结果放在哪里")
+    p_pairs.add_argument("--docs", help="只跑这几份文档（id，用逗号分开）")
+    p_pairs.add_argument("--arms", help="只跑这几种读法（例如 AB），默认 A～E 全跑")
+    p_pairs.add_argument(
+        "--part", type=Path, help="分批跑：这一批的结果存到这个文件，最后用 --merge 合并"
+    )
+    p_pairs.add_argument("--merge", type=Path, help="合并这个文件夹里分批跑的结果，出总表")
+    p_pairs.add_argument(
+        "--learn",
+        type=Path,
+        help="导出的审核数据里的 train.jsonl：用别的单据人改过的例子（ADR 0045），看能不能少错",
+    )
+
+    p_replay = eval_sub.add_parser(
+        "replay",
+        help="回放：审核完成的单据用当时的 OCR 快照换一种设置再抽，和人审核过的值比（ADR 0053）",
+    )
+    p_replay.add_argument(
+        "--b", required=True, help="要试的一边：模型服务地址，例如 http://127.0.0.1:8080"
+    )
+    p_replay.add_argument(
+        "--a", default="stored", help="对照的一边：stored（当时存下的结果，默认）或模型服务地址"
+    )
+    p_replay.add_argument("--a-label", help="A 边叫什么（写进结果），默认按设置生成")
+    p_replay.add_argument("--b-label", help="B 边叫什么")
+    learn_help = (
+        "带上以前人改过的例子：recent（默认，最近改得多的）或 curated（整理过的，ADR 0055）"
+    )
+    p_replay.add_argument(
+        "--a-learn",
+        nargs="?",
+        const="recent",
+        choices=["recent", "curated"],
+        help="A 边" + learn_help,
+    )
+    p_replay.add_argument(
+        "--b-learn",
+        nargs="?",
+        const="recent",
+        choices=["recent", "curated"],
+        help="B 边" + learn_help,
+    )
+    p_replay.add_argument("--template", help="只回放用这个模板的（模板 id 或内置模板名）")
+    p_replay.add_argument("--docs", help="只回放这几份文档（id，用逗号分开）")
+    p_replay.add_argument("--limit", type=int, help="最多回放几份，先少量试跑")
+    p_replay.add_argument(
+        "--split", choices=["train", "val", "test_locked"], help="只回放这一边的业务单据"
+    )
+    p_replay.add_argument(
+        "--reread",
+        action="store_true",
+        help="没有 OCR 快照的（这次更新前处理的）重新认字；差别里会混着 OCR 的变化",
+    )
+    p_replay.add_argument(
+        "--out", type=Path, default=Path("data/eval/replay"), help="结果放在哪里（只在本机）"
+    )
 
     p_user = sub.add_parser("user", help="管理用户（团队模式）")
     user_sub = p_user.add_subparsers(dest="user_command", required=True)
@@ -134,9 +242,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "api":
         return _api(args)
     if args.command == "worker":
-        return _worker()
+        return _worker(args.stage)
+    if args.command == "watch":
+        return _watch(args)
     if args.command == "start":
         return _start(args)
+    if args.command in ("backup", "restore", "restore-drill"):
+        return _backup_commands(args)
     if args.command == "stop":
         return _stop_running()
     if args.command == "backfill-ocr":
@@ -205,11 +317,18 @@ def _serve(args: argparse.Namespace) -> int:
         print(f"找不到模型文件：{model}")
         return 1
 
+    from jacara.core.config import get_settings
     from jacara.plugins.model_backends.server import run_server
 
+    mmproj: Path | None = args.mmproj or get_settings().find_mmproj()
+    if mmproj is not None and not mmproj.is_file():
+        print(f"找不到视觉模型文件：{mmproj}")
+        return 1
     print(f"启动模型服务：{model.name} → http://127.0.0.1:{args.port}（Ctrl + C 停止）")
+    if mmproj is not None:
+        print(f"视觉模型：{mmproj.name}（模型能看原图）")
     try:
-        return run_server(model, port=args.port, context=args.context)
+        return run_server(model, port=args.port, context=args.context, mmproj=mmproj)
     except FileNotFoundError as err:
         print(err)
         return 1
@@ -251,20 +370,47 @@ def _extract(args: argparse.Namespace) -> int:
         return 1
     images = page_images(path) if pipeline.needs_images() else [None] * len(pages)
 
+    from jacara.pipeline.pages import stack_images, stack_pages, stacked_engines
+    from jacara.pipeline.segment import SplitError, normalize_split, segments
+
+    try:
+        judge = getattr(pipeline.extractor, "continues", None)
+        parts = segments(pages, normalize_split(args.split), judge)
+    except SplitError as err:
+        print(err)
+        return 1
+    except (ModelBackendError, ExtractionError) as err:
+        print(err)
+        return 1
     reports = []
-    for number, page in enumerate(pages, start=1):
+    for n, (first, last) in enumerate(parts, start=1):
         if len(pages) > 1:
-            print(f"\n===== 第 {number} / {len(pages)} 页 =====")
-        how = page.models.get("source", "OCR 识别")
-        print(f"读取：{how} · {len(page.lines)} 块文字 · 用时 {page.duration_ms} 毫秒")
-        structure = analyze_page(page, images[number - 1], pipeline.structure)
+            where = f"第 {first} 页" if first == last else f"第 {first}–{last} 页"
+            print(f"\n===== 第 {n} / {len(parts)} 张单据（{where}）=====")
+        for page in pages[first - 1 : last]:
+            how = page.models.get("note") or page.models.get("source", "OCR 识别")
+            print(f"读取：{how} · {len(page.lines)} 块文字 · 用时 {page.duration_ms} 毫秒")
         if args.show_prompt:
-            for message in build_messages(page, template.specs, template.table_specs, structure):
+            stacked = stack_pages(pages[first - 1 : last])
+            structure = analyze_page(
+                stacked.page,
+                stack_images(images[first - 1 : last], stacked),
+                stacked_engines(pipeline.structure, stacked),
+                page_starts=stacked.starts if last > first else (),
+            )
+            messages = build_messages(stacked.page, template.specs, template.table_specs, structure)
+            for message in messages:
                 print(f"\n----- {message.role} -----\n{message.content}")
             print("-----\n")
-        source = page_label(path.name, number, len(pages))
+        source = page_label(path.name, first, last, len(pages))
         try:
-            report = pipeline.extract_page(page, source, number, template.name, structure=structure)
+            report = pipeline.extract_pages(
+                pages[first - 1 : last],
+                list(images[first - 1 : last]),
+                source,
+                first,
+                template.name,
+            )
         except (ModelBackendError, ExtractionError) as err:
             print(err)
             return 1
@@ -458,12 +604,150 @@ def _user(args: argparse.Namespace) -> int:
     return 0
 
 
+def _eval_pairs(args: argparse.Namespace) -> int:
+    import tempfile
+    from datetime import datetime
+
+    from jacara.eval.pairs import (
+        OracleExtractor,
+        load_manifest,
+        pipeline_factory,
+        run_pairs,
+        summary,
+        write_summary,
+    )
+    from jacara.pipeline.learn import from_dataset
+    from jacara.plugins.ocr import create_ocr_engine
+    from jacara.structure.engines import default_engines
+
+    if not args.manifest.exists():
+        print(f"找不到清单：{args.manifest}（格式见 backend/src/jacara/eval/pairs.py）")
+        return 1
+    docs = load_manifest(args.manifest)
+    mode = "llm" if args.server else "oracle"
+    if args.merge:
+        from jacara.eval.pairs import merge_parts
+
+        parts = sorted(args.merge.glob("part-*.json"))
+        result = summary(merge_parts(parts), docs, mode)
+        md = write_summary(result, args.merge)
+        print(md.read_text(encoding="utf-8"))
+        return 0
+    if args.docs:
+        wanted = set(args.docs.split(","))
+        docs = [d for d in docs if d.id in wanted]
+    oracle: OracleExtractor | None = None
+    if args.server:
+        from jacara.core.config import model_api_key
+        from jacara.plugins.extractors import LlmExtractor
+        from jacara.plugins.model_backends import ModelConfig, create_model_backend
+
+        backend = create_model_backend(ModelConfig(base_url=args.server, api_key=model_api_key()))
+        extractor: object = LlmExtractor(backend)
+    else:
+        oracle = OracleExtractor()
+        extractor = oracle
+    make = pipeline_factory(create_ocr_engine(), extractor, default_engines())
+    print(f"成对测评 {len(docs)} 份文档（{'模型' if args.server else '标准答案当回答'}）")
+    with tempfile.TemporaryDirectory() as scratch:
+        results = run_pairs(
+            docs,
+            make,
+            oracle,
+            Path(scratch),
+            lambda m: print("  " + m),
+            list(args.arms or "ABCDE"),
+            from_dataset(args.learn) if args.learn else None,
+        )
+    if args.part:
+        from jacara.eval.pairs import save_part
+
+        args.part.parent.mkdir(parents=True, exist_ok=True)
+        save_part(results, args.part)
+        print(f"这一批的结果在 {args.part}")
+        return 0
+    result = summary(results, docs, mode)
+    md = write_summary(result, args.out / datetime.now().strftime("%Y%m%d-%H%M%S"))
+    print(md.read_text(encoding="utf-8"))
+    print(f"结果在 {md.parent}")
+    return 0
+
+
+def _eval_replay(args: argparse.Namespace) -> int:
+    import uuid
+    from datetime import datetime
+
+    from jacara.core.config import model_api_key
+    from jacara.core.db import get_session_factory
+    from jacara.core.storage import get_storage
+    from jacara.eval.replay import Arm, Options, replay, write_result
+    from jacara.pipeline.run import Pipeline
+    from jacara.plugins.extractors import LlmExtractor
+    from jacara.plugins.model_backends import ModelConfig, create_model_backend
+    from jacara.structure.engines import default_engines
+
+    def arm(name: str, server: str | None, learn: str | None, label: str | None) -> Arm:
+        shown = label or ("当时存下的结果" if server is None else server)
+        return Arm(name, shown + (f"（带例子：{learn}）" if learn else ""), server, learn)
+
+    a = arm("A", None if args.a == "stored" else args.a, args.a_learn, args.a_label)
+    b = arm("B", args.b, args.b_learn, args.b_label)
+    if a.stored and a.learn:
+        print("--a-learn 只能用在重新跑的一边（--a 写模型服务地址）")
+        return 1
+    try:
+        docs = [uuid.UUID(x) for x in args.docs.split(",")] if args.docs else None
+    except ValueError:
+        print("--docs 要写文档 id，用逗号分开")
+        return 1
+    structure = default_engines()
+    ocr = None
+    if args.reread:
+        from jacara.plugins.ocr import create_ocr_engine
+
+        ocr = create_ocr_engine()
+
+    def pipeline(side: Arm) -> Pipeline:
+        backend = create_model_backend(
+            ModelConfig(base_url=side.server or "", api_key=model_api_key())
+        )
+        return Pipeline(ocr=ocr or _NoOcr(), extractor=LlmExtractor(backend), structure=structure)
+
+    options = Options(args.template, docs, args.limit, args.split, args.reread)
+    print(f"回放：A {a.label} 对 B {b.label}（只读，不改审核数据）")
+    result = replay(
+        get_session_factory(), get_storage(), (a, b), pipeline, options, lambda m: print("  " + m)
+    )
+    if not result.rows:
+        print("没有能比的字段。")
+        for s in result.skipped[:10]:
+            print(f"  跳过 {s.document_id}：{s.reason}")
+        return 1
+    md = write_result(result, args.out / datetime.now().strftime("%Y%m%d-%H%M%S"))
+    print(md.read_text(encoding="utf-8"))
+    print(f"结果在 {md.parent}")
+    return 0
+
+
+class _NoOcr:
+    """回放用 OCR 快照，不认字；真叫到了说明没有快照又没加 --reread。"""
+
+    name = "none"
+
+    def recognize(self, image: Path) -> OcrPage:
+        raise RuntimeError("回放时没有 OCR 快照：加 --reread 重新认字")
+
+
 def _eval(args: argparse.Namespace) -> int:
     import subprocess
     from datetime import datetime
 
     from jacara.eval.sroie import download_sroie, load_sroie
 
+    if args.eval_command == "pairs":
+        return _eval_pairs(args)
+    if args.eval_command == "replay":
+        return _eval_replay(args)
     if args.eval_command == "download":
         try:
             count = download_sroie(args.data)
@@ -578,11 +862,69 @@ def _backfill_ocr() -> int:
     return 0 if not failed else 1
 
 
-def _worker() -> int:
+def _worker(stage: str = "all") -> int:
     from jacara.worker import run_worker
 
-    print("后台任务已启动，等待上传的文件（Ctrl + C 停止）")
-    run_worker()
+    names = {"all": "后台任务", "read": "后台任务（OCR 工位）", "extract": "后台任务（模型工位）"}
+    print(f"{names[stage]}已启动，等待上传的文件（Ctrl + C 停止）")
+    run_worker(stage)  # type: ignore[arg-type]
+    return 0
+
+
+def _watch(args: argparse.Namespace) -> int:
+    """监视文件夹：放进去的图片和 PDF 自动导入（ADR 0036）。不动、不删原文件。"""
+    from sqlalchemy import select
+
+    from jacara.core.config import get_settings
+    from jacara.core.db import session_scope
+    from jacara.core.owner import PERSONAL_OWNER
+    from jacara.core.queue import CeleryQueue
+    from jacara.core.storage import get_storage
+    from jacara.models import User
+    from jacara.modules.auth.service import owner_of
+    from jacara.pipeline.segment import SplitError, normalize_split
+    from jacara.pipeline.watch import Watcher
+
+    settings = get_settings()
+    folder = args.folder or settings.jacara_watch_dir
+    if folder is None:
+        print("要监视哪个文件夹？写在命令后面，或者在 .env 里写 JACARA_WATCH_DIR=文件夹路径")
+        return 1
+    folder = folder.expanduser().resolve()
+    if not folder.is_dir():
+        print(f"找不到文件夹：{folder}")
+        return 1
+    try:
+        split = normalize_split(args.split)
+    except SplitError as err:
+        print(err)
+        return 1
+    owner = PERSONAL_OWNER
+    if settings.jacara_mode == "team":
+        username = args.user or settings.jacara_watch_user
+        if not username:
+            print("团队模式要写导入的文件算谁传的：--user 用户名，或 .env 里的 JACARA_WATCH_USER")
+            return 1
+        with session_scope() as session:
+            user = session.scalar(select(User).where(User.username == username.lower()))
+            if user is None or not user.is_active:
+                print(f"没有叫 {username} 的用户（或者已经停用）")
+                return 1
+            owner = owner_of(user)
+    watcher = Watcher(
+        folder,
+        None,
+        get_storage(),
+        CeleryQueue(),
+        owner,
+        template=args.template or settings.jacara_watch_template,
+        split=split,
+    )
+    print(f"监视文件夹：{folder}（放进去的图片和 PDF 会自动导入，不动原文件；Ctrl + C 停止）")
+    from contextlib import suppress
+
+    with suppress(KeyboardInterrupt):
+        watcher.run()
     return 0
 
 
@@ -684,7 +1026,8 @@ def _start(args: argparse.Namespace) -> int:
         from jacara.plugins.model_backends.server import server_command, server_env
 
         try:
-            command = server_command(model, port=MODEL_PORT)
+            mmproj = settings.find_mmproj()
+            command = server_command(model, port=MODEL_PORT, mmproj=mmproj)
         except FileNotFoundError as err:
             print(err)
             return 1
@@ -696,7 +1039,21 @@ def _start(args: argparse.Namespace) -> int:
         # 直接启动 llama-server，不经过 jacara serve：停止时 terminate 发给它本人，不会漏掉。
         children.append(subprocess.Popen(command, env=env))  # noqa: S603
         print(f"启动模型服务：{model.name} → http://127.0.0.1:{MODEL_PORT}")
-    children.append(subprocess.Popen([sys.executable, "-m", "jacara.cli", "worker"]))
+        if mmproj is not None:
+            print(f"视觉模型：{mmproj.name}（照片、扫描件 OCR 不可靠时让模型看原图）")
+    worker = [sys.executable, "-m", "jacara.cli", "worker"]
+    if settings.jacara_pipeline:
+        # 流水线（ADR 0051）：OCR 工位和模型工位各一个进程，同时干活。
+        # 上次中断的先在这里统一标成失败：等两个工位各自起来再做，会误伤另一个已经开始干的活
+        _reset_interrupted()
+        children.append(subprocess.Popen([*worker, "--stage", "read"]))  # noqa: S603
+        children.append(subprocess.Popen([*worker, "--stage", "extract"]))  # noqa: S603
+    else:
+        children.append(subprocess.Popen(worker))  # noqa: S603
+    if settings.jacara_watch_dir is not None:
+        # 监视文件夹（ADR 0036）：.env 里写了 JACARA_WATCH_DIR 才启动
+        children.append(subprocess.Popen([sys.executable, "-m", "jacara.cli", "watch"]))
+        print(f"监视文件夹：{settings.jacara_watch_dir}")
 
     # 记下自己和子进程的进程号：jacara stop 先请这里停，万一这里已经没了，也能把子进程收拾掉
     RUN_FILE.parent.mkdir(exist_ok=True)
@@ -720,6 +1077,18 @@ def _start(args: argparse.Namespace) -> int:
     return 0
 
 
+def _reset_interrupted() -> None:
+    from jacara.pipeline.process import reset_interrupted
+
+    try:
+        count = reset_interrupted()
+    except Exception as err:  # 数据库还没起来：worker 处理时自然会报，这里不挡启动
+        print(_paint(f"提醒：没能检查上次中断的文档（{err}）", _YELLOW))
+        return
+    if count:
+        print(_paint(f"{count} 个文档上次处理到一半被中断，已标记为失败，可以重新处理", _YELLOW))
+
+
 def _new_model_key() -> str:
     """生成模型服务的密钥，写进 .run/model-key（只有自己能读），命令行抽取也从这里读。"""
     import secrets
@@ -737,6 +1106,32 @@ def _new_model_key() -> str:
 def _interrupt(signum: int, frame: object) -> None:
     """把 SIGTERM 当成 Ctrl + C。"""
     raise KeyboardInterrupt
+
+
+def _running() -> bool:
+    """jacara start 是不是正在运行。"""
+    import json
+
+    try:
+        run = json.loads(RUN_FILE.read_text(encoding="utf-8"))
+        return _alive(int(run["main"]))
+    except (FileNotFoundError, ValueError, KeyError, TypeError):
+        return False
+
+
+def _backup_commands(args: argparse.Namespace) -> int:
+    from jacara.core.config import get_settings
+    from jacara.ops import commands
+
+    if args.command == "restore-drill":
+        return commands.run_drill(args.archive, args.keep)
+    settings = get_settings()
+    if args.command == "restore":
+        return commands.run_restore(args.archive, settings, _running())
+    from jacara.core.db import get_engine
+    from jacara.core.storage import S3Storage
+
+    return commands.run_backup(get_engine(), S3Storage(settings), args.out, __version__, _running())
 
 
 def _stop_running() -> int:

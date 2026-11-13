@@ -1,0 +1,164 @@
+# 起步模板：Canada GST/HST invoice（供买方申请 input tax credit）。
+# 依据：Input Tax Credit Information (GST/HST) Regulations SOR/91-45 s.3（2024-06-20 版，至 2026-10-19 现行）：
+#   < $100：供应商名称、日期、总额；$100–< $500：再加 GST/HST 登记号和税额（或含税声明及税率）；
+#   ≥ $500：再加买方名称、付款条件、足以识别的描述。税率：GST 5%；HST ON 13%、NS 14%（2025-04-01 起）、NB/NL/PE 15%。
+# 场景：加拿大 GST/HST 登记企业申请 ITC、报销。
+# 来源：laws-lois.justice.gc.ca SOR/91-45 s.3；canada.ca GST/HST calculator (and rates)。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "ca_gst_hst_invoice"
+version = 1
+title = "加拿大 GST/HST 发票"
+titles = { en = "GST/HST Invoice (Canada)", fr = "Facture TPS/TVH" }
+countries = ["CA"]
+domains = ["发票"]
+description = "加拿大的 GST/HST 发票：供应商名称和 GST/HST 登记号（BN + RT）、日期、买方名称、付款条件、描述、税率、GST/HST（和 QST/PST）、总额。BN 校验位不对、税率不是 5/13/14/15%、$100 以上没有登记号、$500 以上没有买方或付款条件会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "ca_business_no", "ca_rates", "ca_regno_100", "ca_buyer_500"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+names = { en = "Document Title", fr = "Titre" }
+type = "string"
+description = "单据最上面的标题，照抄"
+aliases = ["Titre"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票号码"
+names = { en = "Invoice No.", fr = "Numéro de facture" }
+type = "string"
+required = true
+unique = true
+description = "照抄，不要改格式"
+aliases = ["Numéro de facture"]
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue", fr = "Date" }
+type = "date"
+required = true
+aliases = ["Date"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller", fr = "Fournisseur" }
+type = "string"
+required = true
+aliases = ["Fournisseur"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address", fr = "Adresse du fournisseur" }
+type = "string"
+aliases = ["Adresse du fournisseur"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "GST/HST 登记号"
+names = { en = "GST/HST Registration No.", fr = "Numéro d'inscription TPS/TVH" }
+type = "string"
+aliases = ["GST/HST #", "BN", "GST No", "Numéro d'inscription TPS/TVH"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer", fr = "Acquéreur" }
+type = "string"
+aliases = ["Acquéreur"]
+
+[[fields]]
+name = "buyer_address"
+label = "买方地址"
+names = { en = "Buyer Address", fr = "Adresse de l'acquéreur" }
+type = "string"
+aliases = ["Adresse de l'acquéreur"]
+
+[[fields]]
+name = "payment_terms"
+label = "付款条件"
+names = { en = "Payment Terms", fr = "Modalités de paiement" }
+type = "string"
+aliases = ["Modalités de paiement"]
+
+[[fields]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate", fr = "Taux" }
+type = "string"
+description = "照抄，如 10%；有几个税率就留空，看明细"
+aliases = ["Taux"]
+
+[[fields]]
+name = "net_total"
+label = "不含税合计"
+names = { en = "Total excl. Tax", fr = "Sous-total" }
+type = "number"
+aliases = ["Sous-total"]
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax", fr = "TPS/TVH" }
+type = "number"
+aliases = ["TPS/TVH"]
+
+[[fields]]
+name = "pst"
+label = "省销售税（PST / QST）"
+names = { en = "PST / QST", fr = "TVQ / TVP" }
+type = "number"
+aliases = ["PST", "QST", "TVQ", "TVQ / TVP"]
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+names = { en = "Total incl. Tax", fr = "Total" }
+type = "number"
+required = true
+aliases = ["Total"]
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items", fr = "Articles" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description", fr = "Description" }
+type = "string"
+aliases = ["Description"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity", fr = "Quantité" }
+type = "number"
+aliases = ["Quantité"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price", fr = "Prix unitaire" }
+type = "number"
+aliases = ["Prix unitaire"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount", fr = "Montant" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+aliases = ["Montant"]
+
+[[tables.columns]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate", fr = "Taux de taxe" }
+type = "string"
+aliases = ["Taux de taxe"]

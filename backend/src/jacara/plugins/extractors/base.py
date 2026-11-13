@@ -7,13 +7,14 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from jacara.plugins.ocr.base import OcrPage
 
-FieldType = Literal["string", "number", "date"]
+FieldType = Literal["string", "number", "date", "date_range"]
+"""date_range：日期范围（ADR 0039），值是照抄的原文，开始、结束日期由代码拆出来。"""
 
 
 class ExtractionError(RuntimeError):
@@ -73,6 +74,10 @@ class ExtractedField:
     """值跨几行时（商品名、地址折行），最后一行的行号。只占一行时是 None。"""
     blocks: tuple[int, ...] = ()
     """模型说这个值用了哪几个文字块（编号，ADR 0034）。证据对齐按它核对。"""
+    text: str | None = None
+    """原文里这个值一字不差的写法（ADR 0040）：数字、日期、日期范围才有，
+    例如 value 是 2014-08-03，text 是 "August 3 , 2014"。
+    证据对齐先按 text 在原文里找，再看 value 和它对不对得上。"""
 
 
 @dataclass(frozen=True)
@@ -89,6 +94,12 @@ class ExtractionResult:
     backend: str
     prompt_version: str
     duration_ms: int
+    vision: str | None = None
+    """这次抽取给模型看了原图（ADR 0038），写着为什么看；没看图是 None。"""
+    sent: Mapping[str, Any] | None = None
+    """这次发给模型的是什么（ADR 0053）：哪几个文字块（编号）、发了多少字、几张图、
+    几个以前改过的例子、发出去的单据文字原文和它的 sha256。追查"模型为什么没取到"时用：
+    值在不在发出去的文字里，决定是 OCR 的问题还是抽取的问题。"""
 
 
 class Extractor(Protocol):
@@ -102,10 +113,12 @@ class Extractor(Protocol):
         fields: Sequence[FieldSpec],
         tables: Sequence[TableSpec] = (),
         structure: PageStructure | None = None,
+        images: Sequence[bytes] = (),
     ) -> ExtractionResult:
         """从一页 OCR 结果里抽出指定的字段和表格。表格的每一格单独作为一个字段返回。
 
-        structure 是这一页的结构（文字块编号、表格、标题 → 值）；不给就只按规则分析一次。"""
+        structure 是这一页的结构（文字块编号、表格、标题 → 值）；不给就只按规则分析一次。
+        images 是单据原图（PNG，每页一张，ADR 0038）：给了就让模型看着图抽。"""
         ...
 
     def discover(self, page: OcrPage, structure: PageStructure | None = None) -> ExtractionResult:
@@ -118,6 +131,9 @@ if TYPE_CHECKING:
 
 DISCOVER = "discover"
 """键值对发现的"模板名"：存在 extractions.template 里，表示这一轮没有用模板。"""
+
+AUTO = "auto"
+"""上传时选"自动判断"（ADR 0038）：每张单据从我的模板里挑最合适的一个。"""
 
 
 def kv_name(index: int) -> str:

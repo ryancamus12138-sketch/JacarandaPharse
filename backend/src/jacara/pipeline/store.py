@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from jacara.core.owner import PERSONAL_OWNER, Owner
 from jacara.models import Document, ExtractedValue, Extraction
+from jacara.pipeline.pages import local_box
 from jacara.plugins.aligners.base import AlignedField
 from jacara.plugins.exporters.base import DocumentReport
 from jacara.plugins.ocr.base import OcrPage
@@ -41,7 +42,7 @@ def save_document(
         filename=path.name,
         sha256=file_sha256(path),
         size_bytes=path.stat().st_size,
-        page_count=len(reports),
+        page_count=page_count(reports),
         status="done",
         user_id=owner.user_id,
         team_id=owner.team_id,
@@ -49,6 +50,11 @@ def save_document(
     session.add(document)
     add_extractions(session, document, reports)
     return document
+
+
+def page_count(reports: Sequence[DocumentReport]) -> int:
+    """文件有几页：最后一张单据的最后一页（一张单据可能占好几页，ADR 0036）。"""
+    return max((r.last_page or r.page for r in reports), default=0)
 
 
 def add_extractions(
@@ -59,10 +65,12 @@ def add_extractions(
     run: int = 1,
     template_version_id: uuid.UUID | None = None,
     run_reason: str | None = None,
+    ocr_snapshot: str | None = None,
 ) -> None:
     """把每一页的抽取结果挂到一个已有的文档上。后台任务处理上传的文件时用这个。
 
     抽取结果的归属和文档一样（同一个 user、同一个 team）。run 是第几轮处理（ADR 0030）。
+    ocr_snapshot 是这一轮 OCR 快照存在哪里（ADR 0053），同一轮的几张单据都指向它。
     """
     who = {"user_id": document.user_id, "team_id": document.team_id}
     for report in reports:
@@ -70,6 +78,7 @@ def add_extractions(
         extraction = Extraction(
             document=document,
             page=report.page,
+            last_page=report.last_page,
             source=report.text_source,
             ocr_engine=report.ocr_engine,
             model=e.model,
@@ -77,20 +86,29 @@ def add_extractions(
             prompt_version=e.prompt_version,
             template=report.template,
             template_version=report.template_version,
-            template_version_id=template_version_id,
+            # 自动判断的（ADR 0038）每张单据各用各的模板；没有自动判断就用文档上选的
+            template_version_id=report.template_version_id
+            if report.classified is not None
+            else template_version_id,
+            classified=dict(report.classified) if report.classified is not None else None,
+            vision=e.vision,
             run=run,
             run_reason=run_reason,
             duration_ms=e.duration_ms,
             raw_output=e.raw_output,
             checks=checks_json(report.checks),
-            ocr=ocr_json(report.ocr_page),
+            ocr=report_ocr_json(report),
             structure=report.structure.to_json() if report.structure else None,
+            model_input=dict(e.sent) if e.sent else None,
+            ocr_snapshot=ocr_snapshot,
             **who,
         )
         session.add(extraction)
         flagged = report.checks.fields_with_issues()
         for position, field in enumerate(report.aligned):
             row = _value_row(field, position, extraction, field.field.name in flagged, who)
+            row.evidence = _evidence_json(field, report)
+            row.candidates = candidates_json(field, report)
             if field.field.name in report.manual:
                 row.origin = "manual"  # 人工填的：不是模型说"原文没有"，是等人填
                 row.needs_review = False
@@ -124,23 +142,80 @@ def _value_row(
         status=field.status,
         needs_review=field.needs_review or rule_failed,
         note=field.note,
-        evidence=_evidence_json(field),
         **who,
     )
 
 
-def _evidence_json(field: AlignedField) -> dict[str, Any] | None:
+def _evidence_json(field: AlignedField, report: DocumentReport) -> dict[str, Any] | None:
+    """出处：哪一页（文件里的页码）、这一页上的框。几页拼成的单据（ADR 0036），
+    拼成的长页上的框换回那一页自己的坐标；框跨两页时只框上面那页的部分。"""
     ev = field.evidence
     if ev is None:
         return None
+    page, bbox = report.page, list(ev.bbox)
+    lines = ev.lines
+    if report.page_starts:
+        index, bbox = local_box(ev.bbox, report.page_starts)
+        page = report.page + index
+        same = [ln for ln in lines if local_box(ln.bbox, report.page_starts)[0] == index]
+        if same and len(same) < len(lines):
+            boxes = [local_box(ln.bbox, report.page_starts)[1] for ln in same]
+            bbox = [
+                min(b[0] for b in boxes),
+                min(b[1] for b in boxes),
+                max(b[2] for b in boxes),
+                max(b[3] for b in boxes),
+            ]
     return {
+        "page": page,
         "row": ev.row,
         "blocks": list(field.field.blocks),
         "row_text": ev.row_text,
-        "text": " ".join(line.text for line in ev.lines),
-        "bbox": [round(v, 1) for v in ev.bbox],
+        "text": " ".join(line.text for line in lines),
+        "bbox": [round(v, 1) for v in bbox],
         "confidence": round(ev.confidence, 4),
         "similarity": ev.similarity,
+        **({"quote": field.field.text} if field.field.text else {}),
+        **({"text_layer": field.layer} if field.layer else {}),
+    }
+
+
+def candidates_json(field: AlignedField, report: DocumentReport) -> dict[str, Any] | None:
+    """候选（ADR 0042）存成 JSON：框换回那一页自己的坐标，和出处一样。"""
+    if not field.candidates:
+        return None
+    items = []
+    for c in field.candidates:
+        page, box = report.page, list(c.box) if c.box else None
+        if box is not None and report.page_starts:
+            index, box = local_box(box, report.page_starts)
+            page = report.page + index
+        items.append(
+            {
+                "source": c.source,
+                "text": c.text,
+                "value": c.value,
+                "page": page,
+                "box": [round(v, 1) for v in box] if box else None,
+                "confidence": round(c.confidence, 4) if c.confidence is not None else None,
+                "note": c.note,
+                "dpi": c.dpi,
+                "rule_ok": c.rule_ok,
+            }
+        )
+    return {"items": items}
+
+
+def report_ocr_json(report: DocumentReport) -> dict[str, Any] | None:
+    """一张单据的 OCR 结果：只占一页的照旧存这一页；占好几页的，每一页存自己的
+    （{"pages": [{"page": 3, "width", "height", "lines"}, …]}，坐标是那一页自己的，ADR 0036）。"""
+    if not report.pages:
+        return ocr_json(report.ocr_page)
+    return {
+        "pages": [
+            {"page": report.page + k, "engine": p.engine, **(ocr_json(p) or {})}
+            for k, p in enumerate(report.pages)
+        ]
     }
 
 
@@ -157,6 +232,32 @@ def ocr_json(page: OcrPage | None) -> dict[str, Any] | None:
     return {
         "width": page.width,
         "height": page.height,
+        **({"note": page.models["note"]} if page.models.get("note") else {}),
+        **(
+            {
+                "text_layer": [
+                    {"text": ln.text, "box": [round(v, 1) for v in ln.bbox]}
+                    for ln in page.text_layer
+                ]
+            }
+            if page.text_layer
+            else {}
+        ),
+        **(
+            {
+                "forms": [
+                    {
+                        "name": f.name,
+                        "value": f.value,
+                        "box": [round(v, 1) for v in f.box],
+                        "hidden": f.hidden,
+                    }
+                    for f in page.forms
+                ]
+            }
+            if page.forms
+            else {}
+        ),
         "lines": [
             {
                 "text": line.text,
@@ -172,7 +273,7 @@ def ocr_json(page: OcrPage | None) -> dict[str, Any] | None:
 
 def page_from_json(data: dict[str, Any], engine: str) -> OcrPage:
     """ocr_json 的反方向：从数据库里存的 OCR 结果还原一页，不用重新识别（试跑用）。"""
-    from jacara.plugins.ocr.base import OcrLine, Point
+    from jacara.plugins.ocr.base import FormValue, OcrLine, Point
 
     lines = tuple(
         OcrLine(
@@ -185,6 +286,25 @@ def page_from_json(data: dict[str, Any], engine: str) -> OcrPage:
         for line in data.get("lines", [])
         if len(line.get("polygon", [])) == 4
     )
+    layer = tuple(
+        OcrLine(
+            text=line["text"],
+            polygon=(
+                Point(line["box"][0], line["box"][1]),
+                Point(line["box"][2], line["box"][1]),
+                Point(line["box"][2], line["box"][3]),
+                Point(line["box"][0], line["box"][3]),
+            ),
+            confidence=1.0,
+        )
+        for line in data.get("text_layer", [])
+        if len(line.get("box", [])) == 4
+    )
+    forms = tuple(
+        FormValue(f["name"], f["value"], tuple(f["box"]), bool(f.get("hidden")))  # type: ignore[arg-type]
+        for f in data.get("forms", [])
+        if len(f.get("box", [])) == 4
+    )
     return OcrPage(
         width=int(data.get("width") or 0),
         height=int(data.get("height") or 0),
@@ -192,6 +312,8 @@ def page_from_json(data: dict[str, Any], engine: str) -> OcrPage:
         engine=engine,
         models={"engine": engine},
         duration_ms=0,
+        text_layer=layer,
+        forms=forms,
     )
 
 

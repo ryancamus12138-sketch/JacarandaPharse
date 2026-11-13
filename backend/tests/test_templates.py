@@ -119,7 +119,7 @@ def test_template_version_is_saved_and_read_back(factory, report, tmp_path):
 
 
 def test_templates_api(client):
-    response = client.get("/api/v1/templates")
+    response = client.get("/api/v1/templates?builtin=true")
     assert response.status_code == 200
     receipt = next(t for t in response.json() if t["name"] == "receipt")
     assert receipt["version"] == 3
@@ -135,6 +135,10 @@ def test_templates_api(client):
         "options": [],
         "extract": True,
         "compute": "",
+        "unique": False,
+        "range_export": "normalized",
+        "range_separator": " ~ ",
+        "names": {},
     }
     change = next(r for r in receipt["rules"] if r["id"] == "change")
     assert change["title"] == "现金 − 总额 = 找零"

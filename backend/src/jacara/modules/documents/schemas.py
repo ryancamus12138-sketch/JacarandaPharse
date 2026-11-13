@@ -21,9 +21,70 @@ __all__ = [
     "DocumentOut",
     "DocumentPage",
     "ExtractionOut",
+    "SentOut",
+    "SentText",
     "ValueOut",
 ]
 """ValueOut 搬到了 fields 模块；这里继续导出，原来从这里 import 的代码不用改。"""
+
+
+class DeleteIn(BaseModel):
+    """一次删除几份文档。"""
+
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+
+
+class ReviewTimeIn(BaseModel):
+    """审核页报来的审核用时：这一段时间里人在操作的秒数（审核页每半分钟报一次，离开时再报一次）。"""
+
+    seconds: int = Field(ge=1, le=600)
+
+
+class ReprocessManyIn(BaseModel):
+    """勾选的几份一起重新处理，每份用同样的设置。不写的项：和每份上次一样。"""
+
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+    template: str | None = None
+    """我的模板的 id、discover 或 auto。
+    不写：每份用自己现在这个模板的最新版（自动判断的再判断一次）。"""
+    split: Literal["auto", "one", "pages"] | None = None
+    """一个文件里几张单据。不写：每份和上次一样（几份一起改时不能写页码）。"""
+    vision: Literal["always", "off", "default"] | None = "default"
+    """看不看原图。default 按系统设置；不写（null）：和上次一样。"""
+    pdf_read: Literal["image", "text", "default"] | None = "default"
+    """PDF 怎么读（只对 PDF 有效）。default 按系统设置；不写（null）：和上次一样。"""
+    reason: Literal[
+        "template_changed", "wrong_template", "bad_result", "model_changed", "batch", "other"
+    ] = "batch"
+    note: str = Field(default="", max_length=500)
+
+
+class ReprocessManyOut(BaseModel):
+    queued: int
+    """放进队列了几份。"""
+    skipped: list[str] = []
+    """没处理的（正在处理、还在排队、没有原文件），每份一句话：文件名 + 原因。"""
+
+
+class DeleteOut(BaseModel):
+    deleted: int
+    skipped: list[str] = []
+    """没删的（正在处理的），每份一句话：文件名 + 原因。"""
+
+
+class FolderOut(BaseModel):
+    """批量导入的一个文件夹。"""
+
+    folder: str
+    count: int
+
+
+class SameFile(BaseModel):
+    """内容一样的另一份文档。"""
+
+    id: uuid.UUID
+    filename: str
+    created_at: datetime
 
 
 class DocumentOut(BaseModel):
@@ -56,12 +117,51 @@ class DocumentOut(BaseModel):
     """现在用的是第几轮处理的结果。"""
     discover: bool = False
     """下一次（或这一次）处理不用模板，抽出所有键值对。"""
+    auto: bool = False
+    """下一次（或这一次）处理自动判断用哪个模板（ADR 0038）。"""
+    vision: str | None = None
+    """看不看原图：always、off；null 按系统设置（ADR 0038）。"""
+    pdf_read: str | None = None
+    """PDF 怎么读：image 画成图做 OCR、text 只读文字层；null 按系统设置（ADR 0042）。"""
     skipped_at: datetime | None = None
     """审核时点了"先跳过"的时间；没跳过是 null。"""
     skip_reason: str | None = None
     """跳过的原因（可以没有）。"""
     open_comments: int = 0
     """还没解决的备注有几条。"""
+    folder: str | None = None
+    """批量导入时所在的文件夹（ADR 0036）。"""
+    split: str = "auto"
+    """一个文件里有几张单据：auto、one、pages 或页码范围。"""
+    same_file: list[SameFile] = []
+    """同一个文件（内容完全一样）之前也传过：那几份文档（ADR 0036）。"""
+    duplicate_skipped: bool = False
+    """批量导入时选了"跳过重复的文件"，这次没有新建，返回的是之前那份。"""
+
+
+class SentOut(BaseModel):
+    """这次发给模型的是什么（ADR 0053）的摘要。原文太长，不放进详情，要看用 /sent 接口。"""
+
+    blocks: int
+    """发给模型的文字块有几个。"""
+    total_blocks: int
+    """这一页（或几页拼成的单据）一共有几个文字块。"""
+    chars: int
+    """发出去的单据文字有多少字。"""
+    images: int
+    """附了几张原图。"""
+    lessons: int
+    """带了几个以前人改过的例子。"""
+    has_snapshot: bool
+    """这一轮的 OCR 快照存下来了没有（回放要用）。"""
+
+
+class SentText(BaseModel):
+    """发给模型的单据文字原文和文字块编号（ADR 0053）。"""
+
+    blocks: list[int]
+    text: str
+    sha256: str
 
 
 class ExtractionOut(BaseModel):
@@ -69,6 +169,11 @@ class ExtractionOut(BaseModel):
 
     id: uuid.UUID
     page: int
+    """这张单据从第几页开始。"""
+    last_page: int | None = None
+    """到第几页结束（ADR 0036）；只占一页是 null。"""
+    source_notes: list[str] = []
+    """读文字时的特别情况，例如"PDF 文字层是乱码，这一页改用 OCR"。"""
     source: str
     model: str
     prompt_version: str
@@ -77,15 +182,25 @@ class ExtractionOut(BaseModel):
     template_version: int
     template_title: str = ""
     """模板的中文名。"""
+    classified: dict[str, Any] | None = None
+    """自动判断用哪个模板的经过（ADR 0038）：picked、reason、by、candidates。"""
+    vision: str | None = None
+    """给模型看了原图的原因（ADR 0038）；没看是 null。"""
     run: int = 1
     run_reason: str | None = None
     labels: dict[str, str] = {}
     """字段 ID → 中文名。表格的列写成 items.amount，表名写成 items。"""
+    languages: list[str] = []
+    """字段名能切换的语言（ADR 0048），第一个是默认的中文；模板只有中文时是空的。"""
+    label_sets: dict[str, dict[str, str]] = {}
+    """别的语言的 labels：语言代码 → {字段 ID → 名字}，格式和 labels 一样（ADR 0048）。"""
     checks: dict[str, Any]
     """抽取时的规则结果，永远不变。"""
     current_checks: dict[str, Any] | None = None
     """按审核之后的当前值重新检查的结果（删掉的行不算）。审核页面显示这个。"""
     values: list[ValueOut]
+    sent: SentOut | None = None
+    """这次发给模型的是什么（ADR 0053）。这次更新之前处理的是 null。"""
 
 
 class RunOut(BaseModel):
@@ -117,6 +232,7 @@ REPROCESS_REASONS: dict[str, str] = {
     "wrong_template": "选错了模板",
     "bad_result": "结果不好，再跑一次",
     "model_changed": "换了模型或 OCR",
+    "batch": "批量重新处理",
     "other": "其他",
 }
 """重新处理的原因（审计和历史里显示中文）。"""
@@ -126,10 +242,20 @@ class ReprocessIn(BaseModel):
     """重新处理：换模板（或用同一个模板的最新版）跑一轮新的。旧的结果留着可以查看。"""
 
     template: str | None = None
-    """我的模板的 id，或者 discover。不写：用现在这个模板的最新版。"""
-    reason: Literal["template_changed", "wrong_template", "bad_result", "model_changed", "other"]
+    """我的模板的 id、discover 或 auto（自动判断，ADR 0038）。不写：用现在这个模板的最新版
+    （自动判断的再自动判断一次）。"""
+    reason: Literal[
+        "template_changed", "wrong_template", "bad_result", "model_changed", "batch", "other"
+    ]
     note: str = Field(default="", max_length=500)
     """补充说明。原因选"其他"时必须写。"""
+    split: str | None = Field(default=None, max_length=200)
+    """文件里有几张单据（ADR 0036）：auto、one、pages 或"1-2, 3, 4-6"。不写：和上次一样。"""
+    vision: Literal["always", "off", "default"] | None = None
+    """看不看原图（ADR 0038）：always 每张都看、off 不看、default 按系统设置。不写：和上次一样。"""
+    pdf_read: Literal["image", "text", "default"] | None = None
+    """PDF 怎么读（ADR 0042）：image 画成图做 OCR（文字层只核对）、text 只读文字层、
+    default 按系统设置。不写：和上次一样。"""
 
 
 class DocumentPage(BaseModel):
@@ -156,6 +282,41 @@ class RegionIn(BaseModel):
     """页面上的一块区域：[x0, y0, x1, y1]，和页面图片一样的像素坐标。"""
 
     box: list[float] = Field(min_length=4, max_length=4)
+
+
+class LookIn(BaseModel):
+    """让模型看一块区域（ADR 0038）：框，和要填的字段（可以不写）。"""
+
+    box: list[float] = Field(min_length=4, max_length=4)
+    label: str | None = Field(default=None, max_length=100)
+    """要填的字段的中文名，例如"找零""第 2 行 金额"。"""
+    type: Literal["string", "number", "date"] | None = None
+
+
+class LookOut(BaseModel):
+    text: str
+    """模型在图上读出的文字。"""
+    value: str | None
+    """要填的字段的值（数字只有数字、日期 YYYY-MM-DD）；没说字段或者图里没有是 null。"""
+    model: str
+
+
+class RegionDescription(BaseModel):
+    """框选建模板（ADR 0047）：框里的值、旁边的标签、在页面哪里、像什么类型。"""
+
+    text: str
+    confidence: float | None
+    label: str | None
+    """框左边（同一行）或上面最近的标签，去掉了冒号；没有是 null。"""
+    side: str | None
+    """值在标签的"右边"还是"下面"。"""
+    type: Literal["string", "number", "date", "date_range"]
+    position: str
+    """在页面哪里：左上角、上方中间、右下角……"""
+    name: str
+    """从标签猜的字段 ID（英文标签才猜得出，中文是 field_1 这种，要人改）。"""
+    description: str
+    """给模型看的位置说明：在单据右上角，「Invoice No」右边。"""
 
 
 class RegionOut(BaseModel):
@@ -199,6 +360,8 @@ class DashboardCounts(BaseModel):
     reviewed_today: int
     average_page_seconds: float | None
     """最近 7 天每页平均处理用时（秒）。"""
+    stage_seconds: dict[str, float] | None = None
+    """最近 7 天每份平均各步用时（秒，ADR 0051）：read 认字、wait 排队等模型、extract 模型这边。"""
 
 
 class Dashboard(BaseModel):

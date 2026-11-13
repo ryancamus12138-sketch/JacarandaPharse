@@ -58,6 +58,8 @@ class ChatMessage:
 
     role: Role
     content: str
+    images: tuple[bytes, ...] = ()
+    """附带的图片（PNG），放在文字后面（ADR 0038）。模型服务要加载了视觉模型才看得懂。"""
 
 
 @dataclass(frozen=True)
@@ -76,7 +78,9 @@ class ChatResult:
 
 
 class ModelBackend(Protocol):
-    """模型后端接口：任何类只要有 name 属性和 chat 方法，就是一个模型后端。"""
+    """模型后端接口：任何类只要有 name 属性和 chat 方法，就是一个模型后端。
+
+    能看图的后端另外有 sees_images() -> bool（ADR 0038），没有就当不能看图。"""
 
     name: str
 

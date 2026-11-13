@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from importlib.metadata import version
 from pathlib import Path
@@ -23,6 +24,9 @@ class RapidOcrEngine:
         self.config = config or OcrConfig()
         # 模型加载要一两秒，所以第一次用到时才加载，并且只加载一次。
         self._engine: Any = None
+        self._lock = threading.Lock()
+        """网页服务里所有请求共用这一个引擎（在线程池里跑）。RapidOCR 会记住上一次的开关
+        （检测开没开），两个人同时"重新识别"会互相串，所以一次只让一个用。"""
 
     def _params(self) -> dict[str, object]:
         """把通用的 OcrConfig 翻译成 RapidOCR 自己的参数名。"""
@@ -31,6 +35,7 @@ class RapidOcrEngine:
             "Global.log_level": "warning",
             "Global.use_cls": c.use_angle_cls,
             "Global.text_score": c.min_confidence,
+            "Global.max_side_len": c.max_side,
             "EngineConfig.onnxruntime.use_cuda": c.device == "cuda",
             "EngineConfig.onnxruntime.use_coreml": c.device == "coreml",
         }
@@ -57,6 +62,7 @@ class RapidOcrEngine:
         }
 
     def _load(self) -> Any:
+        """调用方要拿着 self._lock。"""
         if self._engine is None:
             from rapidocr import RapidOCR
 
@@ -64,13 +70,15 @@ class RapidOcrEngine:
         return self._engine
 
     def recognize(self, image: Path) -> OcrPage:
-        engine = self._load()
         width, height = exif_size(image)
 
         started = time.perf_counter()
-        # 三个开关每次都写明：RapidOCR 会记住上一次传的值（read_line 关掉了检测），
-        # 不写的话，用过一次 read_line 之后，整页识别也不找字了
-        result = engine(str(image), use_det=True, use_cls=self.config.use_angle_cls, use_rec=True)
+        with self._lock:
+            # 三个开关每次都写明：RapidOCR 会记住上一次传的值（read_line 关掉了检测），
+            # 不写的话，用过一次 read_line 之后，整页识别也不找字了
+            result = self._load()(
+                str(image), use_det=True, use_cls=self.config.use_angle_cls, use_rec=True
+            )
         duration_ms = round((time.perf_counter() - started) * 1000)
 
         lines: list[OcrLine] = []
@@ -99,7 +107,8 @@ class RapidOcrEngine:
         框选的小块图片，"检测"那一步有时一个字都找不到（字贴着边、太小），
         直接识别反而能认出来。认不出返回 None。
         """
-        result = self._load()(str(image), use_det=False, use_cls=False, use_rec=True)
+        with self._lock:
+            result = self._load()(str(image), use_det=False, use_cls=False, use_rec=True)
         texts = [t for t in (result.txts or ()) if t and t.strip()]
         if not texts:
             return None

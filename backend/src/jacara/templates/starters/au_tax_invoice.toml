@@ -5,16 +5,18 @@
 # 规则和字段说明只写通用规定，不放任何真实单据的内容。
 
 name = "au_tax_invoice"
-version = 1
+version = 3
 title = "澳洲税务发票"
-region = "au"
-category = "发票"
+titles = { en = "Australian Tax Invoice" }
+domains = ["发票"]
+countries = ["AU"]
 description = "澳洲的 Tax invoice（抵扣 GST 用）。字段按 ATO 对税务发票的要求：1,000 澳元以下七项，1,000 澳元及以上加买方。"
 rules = ["issue_date_exists", "issue_date_not_future", "au_tax_invoice_title", "seller_abn", "buyer_abn", "au_buyer_1000", "au_gst_eleventh", "net_tax_gross", "item_line"]
 
 [[fields]]
 name = "document_title"
 label = "单据标题"
+names = { en = "Document Title" }
 type = "string"
 required = true
 description = "单据上写的标题，税务发票要写明 Tax invoice，原样照抄"
@@ -23,12 +25,15 @@ aliases = ["Tax Invoice", "Tax invoice"]
 [[fields]]
 name = "invoice_no"
 label = "发票号"
+names = { en = "Invoice No." }
+unique = true
 type = "string"
 aliases = ["Invoice No.", "Invoice #", "Invoice Number"]
 
 [[fields]]
 name = "issue_date"
 label = "开票日期"
+names = { en = "Date of Issue" }
 type = "date"
 required = true
 aliases = ["Invoice Date", "Date", "Date of issue"]
@@ -36,6 +41,7 @@ aliases = ["Invoice Date", "Date", "Date of issue"]
 [[fields]]
 name = "seller_name"
 label = "卖方名称"
+names = { en = "Supplier Name" }
 type = "string"
 required = true
 description = "开发票的公司名称（或注册的商号）"
@@ -44,6 +50,7 @@ aliases = ["From", "Supplier", "Seller"]
 [[fields]]
 name = "seller_tax_id"
 label = "卖方 ABN"
+names = { en = "Supplier ABN" }
 type = "string"
 required = true
 description = "卖方的 ABN，11 位数字，常写成 12 345 678 901，原样照抄"
@@ -52,6 +59,7 @@ aliases = ["ABN"]
 [[fields]]
 name = "buyer_name"
 label = "买方名称"
+names = { en = "Buyer Name" }
 type = "string"
 description = "买方的名称；1,000 澳元及以上的税务发票必须有买方名称或 ABN"
 aliases = ["Bill To", "Customer", "Invoice To"]
@@ -59,18 +67,21 @@ aliases = ["Bill To", "Customer", "Invoice To"]
 [[fields]]
 name = "buyer_tax_id"
 label = "买方 ABN"
+names = { en = "Buyer ABN" }
 type = "string"
 aliases = ["Customer ABN", "Buyer ABN"]
 
 [[fields]]
 name = "net_total"
 label = "不含 GST 合计"
+names = { en = "Total excl. GST" }
 type = "number"
 aliases = ["Subtotal", "Total excl. GST"]
 
 [[fields]]
 name = "tax_total"
 label = "GST"
+names = { en = "GST" }
 type = "number"
 description = "GST 金额。只写了“总额含 GST”（Total includes GST）时填那个 GST 金额"
 aliases = ["GST", "Total GST", "Includes GST"]
@@ -78,6 +89,7 @@ aliases = ["GST", "Total GST", "Includes GST"]
 [[fields]]
 name = "gross_total"
 label = "含 GST 总额"
+names = { en = "Total incl. GST" }
 type = "number"
 required = true
 aliases = ["Total", "Total incl. GST", "Total (incl. GST)", "Amount Due"]
@@ -85,35 +97,41 @@ aliases = ["Total", "Total incl. GST", "Total (incl. GST)", "Amount Due"]
 [[tables]]
 name = "items"
 label = "明细"
+names = { en = "Items" }
 description = "卖了什么，每样一行（要有数量和价格）。小计、GST、总额这些行不算明细"
 required = true
 
 [[tables.columns]]
 name = "description"
 label = "内容"
+names = { en = "Description" }
 type = "string"
 aliases = ["Description", "Item"]
 
 [[tables.columns]]
 name = "quantity"
 label = "数量"
+names = { en = "Quantity" }
 type = "number"
 aliases = ["Qty", "Quantity"]
 
 [[tables.columns]]
 name = "unit_price"
 label = "单价"
+names = { en = "Unit Price" }
 type = "number"
 aliases = ["Unit Price", "Rate"]
 
 [[tables.columns]]
 name = "amount"
 label = "金额"
+names = { en = "Amount" }
 type = "number"
 aliases = ["Amount", "Line Total"]
 
 [[tables.columns]]
 name = "gst_flag"
 label = "是否含 GST"
+names = { en = "GST Applies" }
 type = "string"
 description = "这一行是否含 GST 的标记（如 *、GST、GST free），原样照抄；没有就留空"

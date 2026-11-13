@@ -37,6 +37,8 @@ class DocumentFilter:
     """和 value_search 一起用：只在这个字段里找（字段 ID，例如 invoice_no）。"""
     skipped: bool | None = None
     """True：只看跳过的；False：不看跳过的；None：都看。"""
+    folder: str | None = None
+    """批量导入的文件夹：这个文件夹和它下面的子文件夹（ADR 0036）。"""
 
 
 def _like(text: str) -> str:
@@ -82,6 +84,64 @@ class DocumentRepository:
             )
         )
         return list(self.session.scalars(query))
+
+    def delete(self, document: Document) -> None:
+        """把一个文档和它的全部结果从数据库里删掉：
+        错误归因 → 审核记录 → 字段 → 每一轮的抽取 → 备注 → OCR 样本 → 文档。"""
+        from sqlalchemy import delete
+
+        from jacara.models import Comment, ErrorAttribution, OcrSample
+
+        extractions = select(Extraction.id).where(Extraction.document_id == document.id)
+        values = select(ExtractedValue.id).where(ExtractedValue.extraction_id.in_(extractions))
+        self.session.execute(
+            delete(ErrorAttribution).where(ErrorAttribution.document_id == document.id)
+        )
+        self.session.execute(delete(ValueRevision).where(ValueRevision.value_id.in_(values)))
+        self.session.execute(
+            delete(ExtractedValue).where(ExtractedValue.extraction_id.in_(extractions))
+        )
+        self.session.execute(delete(Extraction).where(Extraction.document_id == document.id))
+        self.session.execute(delete(Comment).where(Comment.document_id == document.id))
+        self.session.execute(delete(OcrSample).where(OcrSample.document_id == document.id))
+        self.session.execute(delete(Document).where(Document.id == document.id))
+        self.session.expunge(document)
+
+    def folders(self, team_id: uuid.UUID) -> list[tuple[str, int]]:
+        """批量导入的文件夹和各有几份文档，按名字排序。"""
+        rows = self.session.execute(
+            select(Document.folder, func.count())
+            .where(Document.team_id == team_id, Document.folder.is_not(None))
+            .group_by(Document.folder)
+            .order_by(Document.folder)
+        ).all()
+        return [(str(folder), int(count)) for folder, count in rows]
+
+    def first_with_hash(self, team_id: uuid.UUID, sha256: str) -> Document | None:
+        """同一个团队里最早传的、内容一样的文档。"""
+        return self.session.scalars(
+            select(Document)
+            .where(Document.team_id == team_id, Document.sha256 == sha256)
+            .order_by(Document.created_at)
+            .limit(1)
+        ).first()
+
+    def same_files(
+        self, team_id: uuid.UUID, documents: list[Document]
+    ) -> dict[uuid.UUID, list[Document]]:
+        """每份文档：同一个团队里内容一样（sha256 相同）的其他文档，先传的在前（ADR 0036）。"""
+        hashes = {d.sha256 for d in documents}
+        if not hashes:
+            return {}
+        found = self.session.scalars(
+            select(Document)
+            .where(Document.team_id == team_id, Document.sha256.in_(hashes))
+            .order_by(Document.created_at)
+        ).all()
+        by_hash: dict[str, list[Document]] = {}
+        for d in found:
+            by_hash.setdefault(d.sha256, []).append(d)
+        return {d.id: [o for o in by_hash.get(d.sha256, []) if o.id != d.id] for d in documents}
 
     def page(
         self, team_id: uuid.UUID, limit: int, offset: int, filters: DocumentFilter | None = None
@@ -131,6 +191,11 @@ class DocumentRepository:
             if f.field:
                 found.append(ExtractedValue.name == f.field)
             conditions.append(exists().where(*found))
+        if f.folder:
+            name = f.folder.strip("/")
+            conditions.append(
+                or_(Document.folder == name, Document.folder.like(f"{_like(name)}/%", escape="\\"))
+            )
         if f.skipped is True:
             conditions.append(Document.skipped_at.is_not(None))
         elif f.skipped is False:
@@ -274,6 +339,28 @@ class DocumentRepository:
         )
         value = self.session.scalar(query)
         return None if value is None else int(value)
+
+    def stage_seconds(self, team_id: uuid.UUID, since: datetime) -> dict[str, float] | None:
+        """最近处理完的文档，每份平均各步用了几秒（ADR 0051）：认字、排队等模型、模型这边。"""
+        rows = self.session.scalars(
+            select(Document.timings).where(
+                Document.team_id == team_id,
+                Document.processed_at >= since,
+                Document.status.in_(("done", "reviewed")),
+                Document.timings.is_not(None),
+            )
+        ).all()
+        found: dict[str, list[float]] = {"read": [], "wait": [], "extract": []}
+        for timings in rows:
+            for step in found:
+                value = (timings or {}).get(f"{step}_ms")
+                if isinstance(value, int | float):
+                    found[step].append(value / 1000)
+        if not found["extract"]:
+            return None
+        return {
+            step: round(sum(values) / len(values), 1) for step, values in found.items() if values
+        }
 
     def review_counts(self, document_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
         """每个文档还有多少个字段等人确认：标了需要确认，并且还没有任何审核记录。"""

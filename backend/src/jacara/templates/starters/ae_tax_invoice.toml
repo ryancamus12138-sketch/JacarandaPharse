@@ -1,0 +1,171 @@
+# 起步模板：UAE tax invoice / simplified tax invoice。
+# 依据：Federal Decree-Law No. 8 of 2017 art. 65；Executive Regulation art. 59(1)（Tax Invoice 字样、供应商名称地址 TRN、
+#   登记买方的名称地址 TRN、顺序号、日期和供货日期、描述、单价数量税率金额、总额和 VAT（AED）、汇率）；art. 59(2)(5) 简易税票：
+#   买方未登记不限额，买方已登记 ≤ AED 10,000（Cabinet Decision 100/2024、100/2025 修订 art. 59）。VAT 5%。
+#   电子发票：2026-07-01 试行，年收入 AED 5,000 万以上 2027-01-01 起强制。
+# 场景：阿联酋 VAT 登记企业开具，买方凭此抵扣进项；报销。
+# 来源：invoicedataextraction「UAE VAT invoice requirements」（引 FTA 2026 handbook、Ministerial Decision 66/2026）。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "ae_tax_invoice"
+version = 1
+title = "阿联酋增值税税务发票"
+titles = { en = "Tax Invoice (UAE)", ar = "فاتورة ضريبية" }
+countries = ["AE"]
+domains = ["发票"]
+description = "阿联酋的 tax invoice：Tax Invoice 字样、供应商名称地址 TRN、买方名称地址 TRN、发票号、日期、供货日期、描述、单价数量、税率、VAT（AED）、总额。TRN 不是 15 位、VAT 不等于 5%、没有 Tax Invoice 字样会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "ae_trn", "ae_vat_5", "ae_title"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+names = { en = "Document Title", ar = "عنوان المستند" }
+type = "string"
+description = "单据最上面的标题，照抄"
+aliases = ["عنوان المستند"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票号码"
+names = { en = "Invoice No.", ar = "رقم الفاتورة" }
+type = "string"
+required = true
+unique = true
+description = "照抄，不要改格式"
+aliases = ["رقم الفاتورة"]
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue", ar = "تاريخ الإصدار" }
+type = "date"
+required = true
+aliases = ["تاريخ الإصدار"]
+
+[[fields]]
+name = "supply_date"
+label = "交易日期"
+names = { en = "Date of Supply", ar = "تاريخ التوريد" }
+type = "date"
+description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+aliases = ["تاريخ التوريد"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller", ar = "اسم المورد" }
+type = "string"
+required = true
+aliases = ["اسم المورد"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address", ar = "عنوان المورد" }
+type = "string"
+aliases = ["عنوان المورد"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "供应商 TRN"
+names = { en = "Supplier TRN", ar = "الرقم الضريبي للمورد" }
+type = "string"
+aliases = ["TRN", "الرقم الضريبي للمورد"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer", ar = "اسم المشتري" }
+type = "string"
+aliases = ["اسم المشتري"]
+
+[[fields]]
+name = "buyer_address"
+label = "买方地址"
+names = { en = "Buyer Address", ar = "عنوان المشتري" }
+type = "string"
+aliases = ["عنوان المشتري"]
+
+[[fields]]
+name = "buyer_tax_id"
+label = "买方 TRN"
+names = { en = "Recipient TRN", ar = "الرقم الضريبي للمشتري" }
+type = "string"
+aliases = ["الرقم الضريبي للمشتري"]
+
+[[fields]]
+name = "currency"
+label = "币种"
+names = { en = "Currency" }
+type = "string"
+
+[[fields]]
+name = "exchange_rate"
+label = "汇率"
+names = { en = "Exchange Rate" }
+type = "string"
+description = "外币开票时换成 AED 的汇率，照抄"
+
+[[fields]]
+name = "net_total"
+label = "不含税合计"
+names = { en = "Total excl. Tax", ar = "الإجمالي غير شامل الضريبة" }
+type = "number"
+aliases = ["الإجمالي غير شامل الضريبة"]
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax", ar = "ضريبة القيمة المضافة" }
+type = "number"
+aliases = ["ضريبة القيمة المضافة"]
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+names = { en = "Total incl. Tax", ar = "الإجمالي شامل الضريبة" }
+type = "number"
+required = true
+aliases = ["الإجمالي شامل الضريبة"]
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items", ar = "البنود" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description", ar = "الوصف" }
+type = "string"
+aliases = ["الوصف"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity", ar = "الكمية" }
+type = "number"
+aliases = ["الكمية"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price", ar = "سعر الوحدة" }
+type = "number"
+aliases = ["سعر الوحدة"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount", ar = "المبلغ" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+aliases = ["المبلغ"]
+
+[[tables.columns]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate", ar = "نسبة الضريبة" }
+type = "string"
+aliases = ["نسبة الضريبة"]

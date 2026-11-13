@@ -41,6 +41,9 @@ class Rule:
     severity: Severity = "error"
     per_row: str | None = None
     flags: tuple[str, ...] | None = None
+    requires: tuple[str, ...] = ()
+    """模板里要有这些字段（值可以是空的）这条规则才算"用得上"。查"缺了什么"的规则靠它，
+    只出现在相关的模板里（收银小票的 TSE 规则不会出现在德国发票模板里，ADR 0049）。"""
 
 
 @dataclass(frozen=True)

@@ -1,7 +1,7 @@
 import { DeleteOutlined, FunctionOutlined, PlusOutlined } from '@ant-design/icons'
 import { Button, Card, Flex, Input, List, Select, Switch, Tag, Typography } from 'antd'
 import { FormulaInput } from './FormulaInput'
-import { REGION_TEXT } from './templateFields'
+import { countryName } from './labels'
 import type { CustomRule, RuleInfo, Template, TemplateIn } from '../../api/types'
 
 
@@ -13,18 +13,20 @@ function missingFor(rule: RuleInfo, draft: TemplateIn): string[] {
     names.add(t.name)
     for (const c of t.columns) names.add(`${t.name}.*.${c.name}`)
   }
+  const wanted = [...rule.needs, ...(rule.requires ?? [])]
   if (rule.per_row) {
     const table = draft.tables.find((t) => t.name === rule.per_row)
     if (!table) return [rule.per_row]
-    return rule.needs.filter((n) => !table.columns.some((c) => c.name === n))
+    return wanted.filter((n) => !table.columns.some((c) => c.name === n))
   }
-  return rule.needs.filter((n) => !names.has(n))
+  return wanted.filter((n) => !names.has(n))
 }
 
 /**
  * 模板的规则：内置规则（开关）+ 自己写的规则（可以加、可以删，ADR 0035）。
- * 只列这个模板用得上的规则（要的字段模板里都有）：通用模板只列通用规则；
- * 中国、澳洲的模板（从地区起步模板复制的）再加本地区的规则。别的检查自己写。
+ * 只列跟这个模板有关的规则：已经选了的，加上要的字段模板里都有、而且是通用规则或
+ * 本模板国家的规则。别的国家的规则、缺字段的规则一律不列（化验单不会出现发票、ABN 的规则）。
+ * 想用某个国家的规则，先在上面"国家和地区"选上那个国家。别的检查自己写。
  */
 export function RulesCard({
   template,
@@ -50,10 +52,11 @@ export function RulesCard({
       on: draft.rules.includes(rule.id),
     }))
     .sort((a, b) => Number(b.saved) - Number(a.saved) || a.missing.length - b.missing.length)
-  // 通用模板只列通用规则；中国、澳洲的模板再加本地区的规则
-  const region = draft.region ?? ''
+  // 只列用得上的：要的字段都有，而且是通用规则或本模板所属国家的规则；
+  // 这次编辑前就选了的也列着，方便关掉。只读的只看选了的
+  const countries = draft.countries ?? []
   const usable = (g: (typeof groups)[number]) =>
-    g.missing.length === 0 && (!g.rule.region || g.rule.region === region)
+    g.missing.length === 0 && (!g.rule.country || countries.includes(g.rule.country))
   const shown = groups.filter((g) => (readOnly ? g.on : g.on || g.saved || usable(g)))
   const custom = draft.custom_rules
   const setCustom = (i: number, patch: Partial<CustomRule>) =>
@@ -62,8 +65,9 @@ export function RulesCard({
   return (
     <Card title={`规则（选了 ${draft.rules.length + custom.length} 条）`} size="small">
       <Typography.Paragraph type="secondary">
-        规则用单据上的数字互相验证（例如 明细合计 = 总额）。这里只列这个模板用得上的通用规则；
-        别的检查在下面"自己写的规则"里写。必填字段没值也会标红。
+        规则用单据上的数字互相验证（例如 明细合计 = 总额）。这里只列跟这个模板有关的规则：
+        要用的字段模板里都有的通用规则，和上面选的国家的规则；加了字段、选了国家，相关的规则会出现在这里。
+        别的检查在"自己写的规则"里写。必填字段没值也会标红。
       </Typography.Paragraph>
       <List
         size="small"
@@ -86,17 +90,23 @@ export function RulesCard({
               <Tag color={rule.severity === 'error' ? 'red' : 'gold'}>
                 {rule.severity === 'error' ? '错误' : '警告'}
               </Tag>
-              {rule.region && <Tag>{REGION_TEXT[rule.region] ?? rule.region}</Tag>}
+              {rule.country && <Tag color="geekblue">{countryName(rule.country)}</Tag>}
               {missing.length > 0 && (
                 <Typography.Text type={on ? 'warning' : 'secondary'} style={{ fontSize: 12 }}>
                   缺字段 {missing.join('、')}
-                  {on ? '，会跳过' : ''}
+                  {on && !readOnly ? '，保存时会去掉' : ''}
+                </Typography.Text>
+              )}
+              {missing.length === 0 && on && !readOnly && rule.country && !countries.includes(rule.country) && (
+                <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                  上面没选{countryName(rule.country)}，保存时会去掉
                 </Typography.Text>
               )}
             </Flex>
           </List.Item>
         )}
       />
+
       <Typography.Title level={5} style={{ marginTop: 16 }}>
         自己写的规则
       </Typography.Title>

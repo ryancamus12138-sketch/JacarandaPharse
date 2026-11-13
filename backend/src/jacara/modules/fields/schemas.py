@@ -18,6 +18,17 @@ class SuggestionOut(BaseModel):
     """来自第几轮。"""
 
 
+class RangeOut(BaseModel):
+    """日期范围拆开的结果（ADR 0039）：按当前值、用代码拆的。"""
+
+    start: str | None
+    end: str | None
+    days: int | None
+    """一共几天，首尾都算。"""
+    problem: str | None
+    """拆不开、日月分不清、结束早于开始；没问题是 null。"""
+
+
 class ValueOut(BaseModel):
     """一个字段。value 是模型的原值，current_value 是审核之后的当前值。"""
 
@@ -44,6 +55,8 @@ class ValueOut(BaseModel):
     """抽取时找到的出处，永远不变。"""
     current_evidence: dict[str, Any] | None = None
     """当前出处：从原文选取过就是选的那几块，否则等于 evidence。原图上画的是这个。"""
+    candidates: dict[str, Any] | None = None
+    """候选（ADR 0042）：{"items": [...]}，各个来源读出来的不同的值，给人选。"""
     origin: str = "model"
     """model：模型抽的；manual：人工填的；computed：按模板的公式算的（ADR 0035）。"""
     deleted: bool = False
@@ -58,8 +71,12 @@ class ValueOut(BaseModel):
     """颜色：red、yellow、grey、green（证据 × 校验 × 有没有人审核过）。只有文档详情里有。"""
     label: str | None = None
     """中文名：模板里的 label；键值对发现时是单据上的原名。只有文档详情里有。"""
+    names: dict[str, str] = {}
+    """别的语言的名字（ADR 0048）：语言代码 → 名字。模板里没写的语言没有。只有文档详情里有。"""
     suggestion: SuggestionOut | None = None
     """重新处理之后：上一轮人审核过、可以直接沿用的结果。只有文档详情里有。"""
+    range: RangeOut | None = None
+    """日期范围字段拆开的开始、结束（ADR 0039）。只有文档详情里有。"""
 
 
 class AdoptOut(BaseModel):
@@ -83,6 +100,12 @@ class RevisionIn(BaseModel):
     source_box: list[float] | None = Field(default=None, min_length=4, max_length=4)
     """框选：人在原图上框出的区域 [x0, y0, x1, y1]（重新识别这块之后确认的值放在 value）。
     新出处就是这个框。"""
+    transcription: str | None = Field(default=None, max_length=500)
+    """图中原文（ADR 0050）：图上原样的文字。只能和一块原文（source_lines 只有一个）或框选一起用。
+    从原文选取时没给 value，值从它读出。团队开了"自动收集纠错样本"时，保存的同时存成 OCR 样本。"""
+    page: int | None = Field(default=None, ge=1)
+    """从原文选取、框选的是文件的第几页（ADR 0036：一张单据可以占好几页）。
+    不写就是这张单据的第一页。"""
 
 
 class ConfirmManyIn(BaseModel):

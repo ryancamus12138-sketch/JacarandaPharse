@@ -1,0 +1,232 @@
+# 起步模板：海运提单（Bill of Lading）。
+# 字段按 UCP 600 第 20 条对提单的要求（承运人名称、装运港和卸货港、已装船批注和日期、正本份数、
+# 签发人）和提单正面的通用栏目（托运人、收货人、通知方、船名航次、唛头、件数、货物描述、毛重、体积、
+# 运费支付方式、集装箱号和封号）设计。只写字段和通用要求，不放任何真实提单的内容。
+
+name = "bill_of_lading"
+version = 2
+title = "海运提单（B/L）"
+titles = { en = "Bill of Lading (B/L)", ar = "بوليصة الشحن (B/L)", de = "Konnossement (B/L)", es = "Conocimiento de embarque (B/L)", fr = "Connaissement (B/L)", hi = "लदान बिल (B/L)", id = "Konosemen (B/L)", it = "Polizza di carico (B/L)", ja = "船荷証券（B/L）", ko = "선하증권(B/L)", ms = "Bil muatan (B/L)", nl = "Cognossement (B/L)", pl = "Konosament (B/L)", th = "ใบตราส่งสินค้าทางทะเล (B/L)", vi = "Vận đơn đường biển (B/L)", "zh-Hant" = "海運提單（B/L）" }
+domains = ["物流", "外贸单证"]
+description = "海运提单、海运单（Sea Waybill）：提单号、承运人、托运人、收货人、通知方、船名航次、装货港和卸货港、装船日期、正本份数、件数、毛重、体积、运费条款，以及每个集装箱的箱号、封号、箱型、件数、毛重、体积。集装箱号校验位不对、件数和重量加起来对不上、装船日期晚于签发日期会提醒。"
+rules = ["container_no", "bl_packages", "bl_weight", "bl_measurement", "bl_onboard_before_issue"]
+
+[[fields]]
+name = "bl_no"
+label = "提单号"
+names = { en = "B/L No.", ar = "رقم البوليصة", de = "B/L-Nummer", es = "N.º de B/L", fr = "N° de connaissement", hi = "B/L संख्या", id = "Nomor B/L", it = "N. polizza", ja = "B/L番号", ko = "B/L 번호", ms = "No. B/L", nl = "B/L-nummer", pl = "Numer konosamentu", th = "เลขที่ B/L", vi = "Số vận đơn", "zh-Hant" = "提單號碼" }
+type = "string"
+required = true
+unique = true
+aliases = ["提单号码", "B/L No", "B/L No.", "Bill of Lading No", "BL No", "Waybill No"]
+
+[[fields]]
+name = "carrier"
+label = "承运人"
+names = { en = "Carrier", ar = "الناقل", de = "Verfrachter", es = "Transportista", fr = "Transporteur", hi = "वाहक", id = "Pengangkut", it = "Vettore", ja = "運送人", ko = "운송인", ms = "Pengangkut", nl = "Vervoerder", pl = "Przewoźnik", th = "ผู้ขนส่ง", vi = "Người chuyên chở", "zh-Hant" = "承運人" }
+type = "string"
+required = true
+description = "船公司或承运人名称（常在标题旁边的 Logo 或签发处），照抄"
+aliases = ["承运人", "船公司", "Carrier", "Shipping Line"]
+
+[[fields]]
+name = "shipper"
+label = "托运人"
+names = { en = "Shipper", ar = "الشاحن", de = "Versender", es = "Embarcador", fr = "Expéditeur", hi = "प्रेषक", id = "Pengirim", it = "Spedizioniere", ja = "荷送人", ko = "송하인", ms = "Pengirim", nl = "Verzender", pl = "Nadawca", th = "ผู้ส่งสินค้า", vi = "Người gửi hàng", "zh-Hant" = "出貨人" }
+type = "string"
+required = true
+description = "Shipper 一栏的公司名称（地址不用写）"
+aliases = ["发货人", "Shipper", "Shipper/Exporter"]
+
+[[fields]]
+name = "consignee"
+label = "收货人"
+names = { en = "Consignee", ar = "المرسل إليه", de = "Empfänger", es = "Consignatario", fr = "Destinataire", hi = "प्रेषिती", id = "Penerima", it = "Destinatario", ja = "荷受人", ko = "수하인", ms = "Penerima", nl = "Ontvanger", pl = "Odbiorca", th = "ผู้รับสินค้า", vi = "Người nhận hàng", "zh-Hant" = "收貨人" }
+type = "string"
+description = "Consignee 一栏照抄，写 TO ORDER、TO ORDER OF 某银行的也照抄"
+aliases = ["收货人", "Consignee"]
+
+[[fields]]
+name = "notify_party"
+label = "通知方"
+names = { en = "Notify Party", ar = "الطرف المُخطَر", de = "Meldeadresse", es = "Notificar a", fr = "Partie à notifier", hi = "सूचित पक्ष", id = "Pihak yang diberitahu", it = "Parte da notificare", ja = "着荷通知先", ko = "통지처", ms = "Pihak dimaklumkan", nl = "Notify party", pl = "Strona do powiadomienia", th = "ผู้รับแจ้ง", vi = "Bên nhận thông báo", "zh-Hant" = "通知人" }
+type = "string"
+description = "Notify Party 一栏的公司名称；写 SAME AS CONSIGNEE 的照抄"
+aliases = ["通知人", "Notify Party", "Notify"]
+
+[[fields]]
+name = "vessel"
+label = "船名"
+names = { en = "Vessel", ar = "السفينة", de = "Schiff", es = "Buque", fr = "Navire", hi = "जहाज़", id = "Kapal", it = "Nave", ja = "船名", ko = "선명", ms = "Kapal", nl = "Schip", pl = "Statek", th = "ชื่อเรือ", vi = "Tên tàu", "zh-Hant" = "船名" }
+type = "string"
+aliases = ["船名", "Vessel", "Ocean Vessel", "Vessel Name"]
+
+[[fields]]
+name = "voyage"
+label = "航次"
+names = { en = "Voyage No.", ar = "رقم الرحلة", de = "Reisenummer", es = "N.º de viaje", fr = "N° de voyage", hi = "यात्रा संख्या", id = "Nomor pelayaran", it = "N. viaggio", ja = "航海番号", ko = "항차", ms = "No. pelayaran", nl = "Reisnummer", pl = "Numer podróży", th = "เที่ยวเรือ", vi = "Số chuyến", "zh-Hant" = "航次" }
+type = "string"
+aliases = ["航次", "Voyage", "Voy. No", "Voyage No"]
+
+[[fields]]
+name = "place_of_receipt"
+label = "收货地"
+names = { en = "Place of Receipt", ar = "مكان الاستلام", de = "Übernahmeort", es = "Lugar de recepción", fr = "Lieu de prise en charge", hi = "प्राप्ति स्थान", id = "Tempat penerimaan", it = "Luogo di presa in carico", ja = "受取地", ko = "수령지", ms = "Tempat penerimaan", nl = "Plaats van ontvangst", pl = "Miejsce przyjęcia", th = "สถานที่รับสินค้า", vi = "Nơi nhận hàng", "zh-Hant" = "收貨地" }
+type = "string"
+aliases = ["收货地点", "Place of Receipt"]
+
+[[fields]]
+name = "port_of_loading"
+label = "装货港"
+names = { en = "Port of Loading", ar = "ميناء الشحن", de = "Verladehafen", es = "Puerto de carga", fr = "Port de chargement", hi = "लदान बंदरगाह", id = "Pelabuhan muat", it = "Porto di imbarco", ja = "船積港", ko = "선적항", ms = "Pelabuhan muat", nl = "Laadhaven", pl = "Port załadunku", th = "ท่าเรือต้นทาง", vi = "Cảng xếp hàng", "zh-Hant" = "裝運港" }
+type = "string"
+required = true
+aliases = ["装运港", "Port of Loading", "POL"]
+
+[[fields]]
+name = "port_of_discharge"
+label = "卸货港"
+names = { en = "Port of Discharge", ar = "ميناء التفريغ", de = "Löschhafen", es = "Puerto de descarga", fr = "Port de déchargement", hi = "उतराई बंदरगाह", id = "Pelabuhan bongkar", it = "Porto di sbarco", ja = "荷揚港", ko = "양하항", ms = "Pelabuhan punggah", nl = "Loshaven", pl = "Port wyładunku", th = "ท่าเรือปลายทาง", vi = "Cảng dỡ hàng", "zh-Hant" = "卸貨港" }
+type = "string"
+required = true
+aliases = ["卸货港", "Port of Discharge", "POD"]
+
+[[fields]]
+name = "place_of_delivery"
+label = "交货地"
+names = { en = "Place of Delivery", ar = "مكان التسليم", de = "Ablieferungsort", es = "Lugar de entrega", fr = "Lieu de livraison", hi = "सुपुर्दगी स्थान", id = "Tempat penyerahan", it = "Luogo di consegna", ja = "引渡地", ko = "인도지", ms = "Tempat penghantaran", nl = "Plaats van aflevering", pl = "Miejsce dostawy", th = "สถานที่ส่งมอบ", vi = "Nơi giao hàng", "zh-Hant" = "交貨地" }
+type = "string"
+aliases = ["交货地点", "Place of Delivery", "Final Destination"]
+
+[[fields]]
+name = "shipped_on_board_date"
+label = "装船日期"
+names = { en = "Shipped on Board Date", ar = "تاريخ الشحن على السفينة", de = "An-Bord-Datum", es = "Fecha de embarque", fr = "Date de mise à bord", hi = "जहाज़ पर लदान तिथि", id = "Tanggal muat", it = "Data di imbarco", ja = "船積日", ko = "선적일", ms = "Tarikh dimuatkan", nl = "Datum aan boord", pl = "Data załadunku na statek", th = "วันที่บรรทุกขึ้นเรือ", vi = "Ngày xếp hàng lên tàu", "zh-Hant" = "裝船日期" }
+type = "date"
+description = "已装船批注（Shipped on Board / Laden on Board）上的日期；没有批注的留空"
+aliases = ["装船日期", "Shipped on Board", "On Board Date", "Laden on Board"]
+
+[[fields]]
+name = "issue_place"
+label = "签发地点"
+names = { en = "Place of Issue", ar = "مكان الإصدار", de = "Ausstellungsort", es = "Lugar de emisión", fr = "Lieu d'émission", hi = "जारी करने का स्थान", id = "Tempat penerbitan", it = "Luogo di emissione", ja = "発行地", ko = "발행지", ms = "Tempat dikeluarkan", nl = "Plaats van uitgifte", pl = "Miejsce wystawienia", th = "สถานที่ออก", vi = "Nơi phát hành", "zh-Hant" = "簽發地點" }
+type = "string"
+aliases = ["签发地点", "Place of Issue"]
+
+[[fields]]
+name = "issue_date"
+label = "签发日期"
+names = { en = "Date of Issue", ar = "تاريخ الإصدار", de = "Ausstellungsdatum", es = "Fecha de emisión", fr = "Date d'émission", hi = "जारी करने की तिथि", id = "Tanggal terbit", it = "Data di emissione", ja = "発行日", ko = "발행일", ms = "Tarikh dikeluarkan", nl = "Uitgiftedatum", pl = "Data wystawienia", th = "วันที่ออก", vi = "Ngày phát hành", "zh-Hant" = "開立日期" }
+type = "date"
+aliases = ["签发日期", "Date of Issue", "Place and Date of Issue"]
+
+[[fields]]
+name = "originals"
+label = "正本份数"
+names = { en = "No. of Original B/Ls", ar = "عدد النسخ الأصلية", de = "Anzahl Originale", es = "N.º de originales", fr = "Nombre d'originaux", hi = "मूल प्रतियों की संख्या", id = "Jumlah asli", it = "N. originali", ja = "B/L原本通数", ko = "원본 발행통수", ms = "Bilangan asal", nl = "Aantal originelen", pl = "Liczba oryginałów", th = "จำนวนต้นฉบับ", vi = "Số bản gốc", "zh-Hant" = "正本份數" }
+type = "string"
+description = "Number of Original B(s)/L 照抄，如 THREE (3)；海运单写 ZERO 或 NIL 的照抄"
+aliases = ["正本份数", "Number of Original", "No. of Original B/L"]
+
+[[fields]]
+name = "freight_terms"
+label = "运费条款"
+names = { en = "Freight Terms", ar = "شروط الشحن", de = "Frachtbedingungen", es = "Condiciones de flete", fr = "Conditions de fret", hi = "भाड़ा शर्तें", id = "Syarat pengangkutan", it = "Condizioni di nolo", ja = "運賃条件", ko = "운임조건", ms = "Terma tambang", nl = "Vrachtcondities", pl = "Warunki frachtu", th = "เงื่อนไขค่าระวาง", vi = "Điều kiện cước", "zh-Hant" = "運費條款" }
+type = "string"
+description = "运费预付还是到付，照抄（FREIGHT PREPAID、FREIGHT COLLECT）"
+aliases = ["运费支付", "Freight", "Freight Payable at", "Freight & Charges"]
+
+[[fields]]
+name = "shipping_marks"
+label = "唛头"
+names = { en = "Marks and Numbers", ar = "العلامات والأرقام", de = "Markierungen und Nummern", es = "Marcas y números", fr = "Marques et numéros", hi = "चिह्न और संख्याएँ", id = "Merek dan nomor", it = "Marche e numeri", ja = "荷印・番号", ko = "화인 및 번호", ms = "Tanda dan nombor", nl = "Merken en nummers", pl = "Znaki i numery", th = "เครื่องหมายและเลขหมาย", vi = "Ký mã hiệu và số", "zh-Hant" = "嘜頭及號碼" }
+type = "string"
+aliases = ["唛头", "Marks and Numbers", "Marks & Nos"]
+
+[[fields]]
+name = "description_of_goods"
+label = "货物描述"
+names = { en = "Description of Goods", ar = "وصف البضاعة", de = "Warenbeschreibung", es = "Descripción de la mercancía", fr = "Description des marchandises", hi = "माल का विवरण", id = "Uraian barang", it = "Descrizione della merce", ja = "貨物明細", ko = "화물명세", ms = "Perihalan barang", nl = "Omschrijving goederen", pl = "Opis towaru", th = "รายละเอียดสินค้า", vi = "Mô tả hàng hóa", "zh-Hant" = "貨物描述" }
+type = "string"
+description = "Description of Goods 照抄（多行用空格连起来），SAID TO CONTAIN 等套话也照抄"
+aliases = ["货物描述", "品名", "Description of Goods", "Description of Packages and Goods"]
+
+[[fields]]
+name = "total_packages"
+label = "总件数"
+names = { en = "Total No. of Packages", ar = "إجمالي الطرود", de = "Packstücke gesamt", es = "Total de bultos", fr = "Nombre total de colis", hi = "कुल पैकेज", id = "Total kemasan", it = "Colli totali", ja = "総梱包数", ko = "총 포장수", ms = "Jumlah bungkusan", nl = "Totaal colli", pl = "Łączna liczba opakowań", th = "จำนวนหีบห่อรวม", vi = "Tổng số kiện", "zh-Hant" = "總件數" }
+type = "number"
+aliases = ["件数", "No. of Packages", "Number of Packages", "Total Packages"]
+
+[[fields]]
+name = "package_unit"
+label = "包装单位"
+names = { en = "Kind of Packages", ar = "نوع الطرود", de = "Art der Packstücke", es = "Clase de bultos", fr = "Nature des colis", hi = "पैकेज का प्रकार", id = "Jenis kemasan", it = "Tipo di colli", ja = "梱包の種類", ko = "포장종류", ms = "Jenis bungkusan", nl = "Soort verpakking", pl = "Rodzaj opakowań", th = "ชนิดหีบห่อ", vi = "Loại kiện", "zh-Hant" = "包裝種類" }
+type = "string"
+aliases = ["包装种类", "Kind of Packages"]
+
+[[fields]]
+name = "total_gross_weight"
+label = "总毛重"
+names = { en = "Total Gross Weight", ar = "إجمالي الوزن القائم", de = "Bruttogewicht gesamt", es = "Peso bruto total", fr = "Poids brut total", hi = "कुल सकल वजन", id = "Total berat kotor", it = "Peso lordo totale", ja = "総総重量", ko = "총 총중량", ms = "Jumlah berat kasar", nl = "Totaal brutogewicht", pl = "Łączna masa brutto", th = "น้ำหนักรวมทั้งหมด", vi = "Tổng trọng lượng cả bì", "zh-Hant" = "總毛重" }
+type = "number"
+description = "公斤，只要数字"
+aliases = ["毛重", "Gross Weight", "G.W.", "Total Gross Weight"]
+
+[[fields]]
+name = "total_measurement"
+label = "总体积"
+names = { en = "Total Measurement", ar = "إجمالي الحجم", de = "Volumen gesamt", es = "Volumen total", fr = "Volume total", hi = "कुल माप", id = "Total ukuran", it = "Volume totale", ja = "総容積", ko = "총 용적", ms = "Jumlah ukuran", nl = "Totaal volume", pl = "Łączna objętość", th = "ปริมาตรรวม", vi = "Tổng thể tích", "zh-Hant" = "總材積" }
+type = "number"
+description = "立方米（CBM），只要数字"
+aliases = ["体积", "Measurement", "CBM"]
+
+[[tables]]
+name = "containers"
+label = "集装箱"
+names = { en = "Containers", ar = "الحاويات", de = "Container", es = "Contenedores", fr = "Conteneurs", hi = "कंटेनर", id = "Kontainer", it = "Container", ja = "コンテナ", ko = "컨테이너", ms = "Kontena", nl = "Containers", pl = "Kontenery", th = "ตู้คอนเทนเนอร์", vi = "Container", "zh-Hant" = "貨櫃" }
+description = "每个集装箱一行（散货、拼箱没有箱号的就没有这张表）"
+
+[[tables.columns]]
+name = "container_no"
+label = "箱号"
+names = { en = "Container No.", ar = "رقم الحاوية", de = "Containernummer", es = "N.º de contenedor", fr = "N° de conteneur", hi = "कंटेनर संख्या", id = "Nomor kontainer", it = "N. container", ja = "コンテナ番号", ko = "컨테이너 번호", ms = "No. kontena", nl = "Containernummer", pl = "Numer kontenera", th = "หมายเลขตู้", vi = "Số container", "zh-Hant" = "貨櫃號碼" }
+type = "string"
+description = "4 个字母 + 7 位数字，照抄，如 MSKU1234565"
+aliases = ["集装箱号", "Container No", "CNTR No"]
+
+[[tables.columns]]
+name = "seal_no"
+label = "封号"
+names = { en = "Seal No.", ar = "رقم الختم", de = "Plombennummer", es = "N.º de precinto", fr = "N° de scellé", hi = "सील संख्या", id = "Nomor segel", it = "N. sigillo", ja = "シール番号", ko = "봉인번호", ms = "No. meterai", nl = "Zegelnummer", pl = "Numer plomby", th = "หมายเลขซีล", vi = "Số chì", "zh-Hant" = "封條號碼" }
+type = "string"
+aliases = ["铅封号", "Seal No", "Seal"]
+
+[[tables.columns]]
+name = "container_type"
+label = "箱型"
+names = { en = "Container Type", ar = "نوع الحاوية", de = "Containertyp", es = "Tipo de contenedor", fr = "Type de conteneur", hi = "कंटेनर प्रकार", id = "Jenis kontainer", it = "Tipo di container", ja = "コンテナタイプ", ko = "컨테이너 종류", ms = "Jenis kontena", nl = "Containertype", pl = "Typ kontenera", th = "ประเภทตู้", vi = "Loại container", "zh-Hant" = "櫃型" }
+type = "string"
+description = "照抄，如 20GP、40HQ、40'HC"
+aliases = ["箱型", "Type", "Size/Type"]
+
+[[tables.columns]]
+name = "packages"
+label = "件数"
+names = { en = "Packages", ar = "الطرود", de = "Packstücke", es = "Bultos", fr = "Colis", hi = "पैकेज", id = "Kemasan", it = "Colli", ja = "梱包数", ko = "포장수", ms = "Bungkusan", nl = "Colli", pl = "Opakowania", th = "หีบห่อ", vi = "Số kiện", "zh-Hant" = "件數" }
+type = "number"
+aliases = ["件数", "Packages", "PKGS"]
+
+[[tables.columns]]
+name = "gross_weight"
+label = "毛重"
+names = { en = "Gross Weight", ar = "الوزن القائم", de = "Bruttogewicht", es = "Peso bruto", fr = "Poids brut", hi = "सकल वजन", id = "Berat kotor", it = "Peso lordo", ja = "総重量", ko = "총중량", ms = "Berat kasar", nl = "Brutogewicht", pl = "Masa brutto", th = "น้ำหนักรวม", vi = "Trọng lượng cả bì", "zh-Hant" = "毛重" }
+type = "number"
+aliases = ["毛重", "Gross Weight", "G.W."]
+
+[[tables.columns]]
+name = "measurement"
+label = "体积"
+names = { en = "Measurement", ar = "الحجم", de = "Volumen", es = "Volumen", fr = "Volume", hi = "माप", id = "Ukuran", it = "Volume", ja = "容積", ko = "용적", ms = "Ukuran", nl = "Volume", pl = "Objętość", th = "ปริมาตร", vi = "Thể tích", "zh-Hant" = "材積" }
+type = "number"
+aliases = ["体积", "Measurement", "CBM"]

@@ -51,6 +51,8 @@ class PageStructure:
     """和 words 一一对应的 OCR 文字块（带四个角的坐标），出处框用。"""
     sources: dict[str, str] = field(default_factory=dict, compare=False, hash=False)
     """结构是怎么来的：{"layout": "pp_layout_cdla", "table": "slanet-plus.onnx" 或 "规则"}。"""
+    page_starts: tuple[float, ...] = ()
+    """几页拼成的一张单据（ADR 0036）：每一页从多高开始。只有一页是空的。"""
 
     def word(self, number: int) -> Block | None:
         """编号 → 文字块（编号从 1 开始）。"""
@@ -83,6 +85,7 @@ class PageStructure:
             "width": self.width,
             "height": self.height,
             "sources": self.sources,
+            **({"page_starts": list(self.page_starts)} if self.page_starts else {}),
             "words": list(self.words),
             "lines": list(self.lines),
             "layouts": list(self.layouts),
@@ -137,4 +140,5 @@ def structure_from_json(data: dict[str, Any], page: OcrPage) -> PageStructure | 
         keys=tuple(data.get("keys", [])),
         ocr_lines=lines,
         sources=dict(data.get("sources") or {}),
+        page_starts=tuple(float(v) for v in data.get("page_starts") or ()),
     )

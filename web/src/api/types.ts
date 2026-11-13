@@ -94,11 +94,31 @@ export interface DocumentSummary {
   current_run?: number
   /** 不用模板、抽出所有键值对（"用样例建模板"的第一步）。 */
   discover?: boolean
+  /** 自动判断用哪个模板（ADR 0038）。 */
+  auto?: boolean
+  /** 看不看原图：always、off；null 按系统设置（ADR 0038）。 */
+  vision?: string | null
+  /** PDF 怎么读（ADR 0042）：image、text；null 按系统设置。 */
+  pdf_read?: string | null
   /** 审核时点了"先跳过"的时间；没跳过是 null。 */
   skipped_at?: string | null
   skip_reason?: string | null
   /** 还没解决的备注几条。 */
   open_comments?: number
+  /** 批量导入时所在的文件夹（ADR 0036）。 */
+  folder?: string | null
+  /** 一个文件里有几张单据：auto 自动判断、one 整个文件一张、pages 每页一张，或页码范围 "1-2, 3"。 */
+  split?: string
+  /** 内容完全一样的文件之前也传过：那几份。 */
+  same_file?: { id: string; filename: string; created_at: string }[]
+  /** 批量导入选了"跳过重复的文件"：这次没有新建，返回的是之前那份。 */
+  duplicate_skipped?: boolean
+}
+
+/** 批量导入的一个文件夹和里面有几份文档。 */
+export interface FolderCount {
+  folder: string
+  count: number
 }
 
 /** 文档列表的筛选条件。都不填 = 全部。 */
@@ -118,6 +138,8 @@ export interface DocumentFilters {
   field?: string
   /** true 只看跳过的，false 不看跳过的 */
   skipped?: boolean
+  /** 批量导入的文件夹（含子文件夹） */
+  folder?: string
 }
 
 /** 审核页面的"上一份 / 下一份"（只算待审核的）。 */
@@ -143,6 +165,8 @@ export interface Dashboard {
     processed_today: number
     reviewed_today: number
     average_page_seconds: number | null
+    /** 最近 7 天每份平均各步用时（秒）：read 认字、wait 排队等模型、extract 模型这边（ADR 0051）。 */
+    stage_seconds?: { read?: number; wait?: number; extract?: number } | null
   }
   /** 排队中和处理中的（带进度）。 */
   queue: DocumentSummary[]
@@ -155,7 +179,7 @@ export interface Dashboard {
 export interface ExportRecord {
   id: string
   filename: string
-  format: 'xlsx' | 'zip'
+  format: 'xlsx' | 'zip' | 'csv' | 'csv-zip' | 'json'
   size_bytes: number
   document_count: number
   documents: { id: string; filename: string }[]
@@ -174,10 +198,23 @@ export interface ExportPage {
 export interface SystemInfo {
   version: string
   mode: 'personal' | 'team'
-  model: { server: string; file: string | null; loaded: string | null; context: number | null }
+  model: {
+    server: string
+    file: string | null
+    loaded: string | null
+    context: number | null
+    /** 视觉模型文件（mmproj，ADR 0038）。 */
+    vision_file?: string | null
+    /** 模型服务现在能不能看图。 */
+    sees_images?: boolean
+    /** 什么时候看原图：auto、always、off。 */
+    vision_mode?: string
+  }
   ocr: { engine: string; version: string | null }
   /** 页面结构分析用的模型（ADR 0034）。null：没开。 */
   structure?: { layout: string | null; table: string | null } | null
+  /** 监视文件夹（放进去的文件自动导入）；没设是 null。 */
+  watch_dir?: string | null
   templates: { name: string; title: string; version: number }[]
   data: {
     documents: number
@@ -210,21 +247,56 @@ export interface Evidence {
   similarity: number
   /** 出处那几块的原文文字。更新前处理的文档没有。 */
   text?: string
+  /** 模型抄的原文写法（ADR 0040），数字、日期、日期范围才有。 */
+  quote?: string
   /** 模型说用了哪几个文字块（编号，ADR 0034）。v3 之前处理的没有。 */
   blocks?: number[]
+  /** 在文件的第几页（ADR 0036：一张单据可以占好几页）。更新前处理的没有，就是这张单据的第一页。 */
+  page?: number
+  /** 和 PDF 文字层核对的结果（ADR 0042）：none 没有文字层、absent 这里文字层没有字、agree 一致、
+   * ambiguous 对不上是哪一行、conflict 不一样。 */
+  text_layer?: 'none' | 'absent' | 'agree' | 'ambiguous' | 'conflict'
 }
 
 /**
  * matched 找到一样的；fuzzy 只找到相似的；not_found 原文里找不到；empty 模型说原文里没有；
  * rejected 模型给了值、原文里核对不上，按规则没有填（ADR 0034）。
  */
-export type AlignStatus = 'matched' | 'fuzzy' | 'not_found' | 'empty' | 'rejected' | 'computed'
+export type AlignStatus =
+  | 'matched'
+  | 'fuzzy'
+  | 'not_found'
+  | 'empty'
+  | 'rejected'
+  | 'computed'
+  /** 看原图读的（ADR 0038）：OCR 认错或漏了，要人对着原图核对。 */
+  | 'seen'
+
+/** 一个字段的候选值（ADR 0042）：各个来源读出来的不同的值，给人选，系统不会自己替换。 */
+export interface Candidate {
+  /** ocr 整页 OCR；text_layer PDF 自带的文字；zoom 局部放大再识别；form PDF 表单字段。 */
+  source: 'ocr' | 'text_layer' | 'zoom' | 'form'
+  text: string
+  /** 按字段类型整理过的值（数字、日期）；整理不出来是 null，用 text。 */
+  value: string | null
+  page: number
+  /** 这一页图片上的框 [左, 上, 右, 下]。 */
+  box: [number, number, number, number] | null
+  confidence: number | null
+  /** 表单字段：页面上能看到 / 页面不可见 / 可见性待确认。 */
+  note: string
+  dpi: number | null
+  /** 换成这个值，和这个字段有关的规则过不过（只是提示）；规则不管这个字段是 null。 */
+  rule_ok: boolean | null
+}
 
 /** 一个字段（后端的 ValueOut）。 */
 export interface FieldValue {
   id: string
   name: string
-  type: 'string' | 'number' | 'date'
+  type: FieldType
+  /** 日期范围拆开的开始、结束（ADR 0039）：按当前值、后端用代码拆的。 */
+  range?: { start: string | null; end: string | null; days: number | null; problem: string | null } | null
   /** 模型抽出的原值，永远不变。 */
   value: string | null
   /** 模型给了、但原文里核对不上、按规则没有填的值（ADR 0034）。核对原图后可以采用。 */
@@ -241,6 +313,8 @@ export interface FieldValue {
   note: string
   /** 抽取时找到的出处，永远不变。 */
   evidence: Evidence | null
+  /** 候选（ADR 0042）：有冲突、可能漏读时才有。 */
+  candidates?: { items: Candidate[] } | null
   /** 当前出处：从原文选取过就是选的那几块，否则等于 evidence。原图上画这个。 */
   current_evidence: Evidence | null
   /** model：模型抽的；manual：审核时人工增加的行。 */
@@ -288,9 +362,23 @@ export interface Checks {
 }
 
 /** 一页的抽取结果。 */
+/** 自动判断用哪个模板的经过（ADR 0038）。 */
+export interface Classified {
+  picked: { template_id: string; version_id: string; title: string; version: number } | null
+  reason: string
+  /** model：模型选的；keywords：按关键字；none：没有可选的模板。 */
+  by: 'model' | 'keywords' | 'none'
+  candidates: { template_id: string; title: string; score: number }[]
+}
+
 export interface Extraction {
   id: string
+  /** 这张单据从第几页开始。 */
   page: number
+  /** 到第几页结束（ADR 0036）；只占一页是 null。 */
+  last_page?: number | null
+  /** 读文字时的特别情况，例如"第 2 页：PDF 文字层是乱码，这一页改用 OCR"。 */
+  source_notes?: string[]
   source: string
   model: string
   prompt_version: string
@@ -299,15 +387,42 @@ export interface Extraction {
   template_version: number
   /** 模板的中文名。 */
   template_title?: string
+  /** 自动判断用哪个模板的经过（ADR 0038）；上传时直接选了模板的是 null。 */
+  classified?: Classified | null
+  /** 给模型看了原图的原因（ADR 0038）；没看是 null。 */
+  vision?: string | null
   run?: number
   run_reason?: string | null
   /** 字段 ID → 中文名。表格的列写成 items.amount，表名写成 items。 */
   labels?: Record<string, string>
+  /** 字段名能切换的语言（ADR 0048），第一个是中文；模板只有中文时是空的。 */
+  languages?: string[]
+  /** 别的语言的 labels：语言代码 → {字段 ID → 名字}。 */
+  label_sets?: Record<string, Record<string, string>>
   /** 抽取时的规则结果，永远不变。 */
   checks: Checks
   /** 按审核之后的当前值重新检查的结果（删掉的行不算）。页面显示这个。 */
   current_checks: Checks | null
   values: FieldValue[]
+  /** 这次发给模型的是什么（ADR 0053）。更新之前处理的是 null。 */
+  sent?: SentSummary | null
+}
+
+/** 发给模型的摘要（ADR 0053）。 */
+export interface SentSummary {
+  blocks: number
+  total_blocks: number
+  chars: number
+  images: number
+  lessons: number
+  has_snapshot: boolean
+}
+
+/** 发给模型的单据文字原文。 */
+export interface SentText {
+  blocks: number[]
+  text: string
+  sha256: string
 }
 
 /** 文档详情：文档本身 + 每一页的抽取结果。 */
@@ -338,6 +453,7 @@ export type ReprocessReason =
   | 'wrong_template'
   | 'bad_result'
   | 'model_changed'
+  | 'batch'
   | 'other'
 
 export const REPROCESS_REASONS: Record<ReprocessReason, string> = {
@@ -345,10 +461,14 @@ export const REPROCESS_REASONS: Record<ReprocessReason, string> = {
   wrong_template: '选错了模板',
   bad_result: '结果不好，再跑一次',
   model_changed: '换了模型或 OCR',
+  batch: '批量重新处理',
   other: '其他',
 }
 
-export type FieldType = 'string' | 'number' | 'date'
+export type FieldType = 'string' | 'number' | 'date' | 'date_range'
+
+/** 日期范围导出成（ADR 0039）：统一格式、原文、拆成两列。 */
+export type RangeExport = 'normalized' | 'original' | 'columns'
 
 /** 模板里的一个字段（或表格的一列）。 */
 export interface TemplateField {
@@ -370,6 +490,14 @@ export interface TemplateField {
   extract: boolean
   /** 计算字段的公式（ADR 0035），例如 check_out - check_in。空 = 不是计算字段。 */
   compute?: string
+  /** 不能重复（ADR 0036）：发票号码这类，别的单据里有一样的值就提醒可能重复报销。 */
+  unique?: boolean
+  /** 日期范围导出成什么样（ADR 0039），默认统一格式。 */
+  range_export?: RangeExport
+  /** 统一格式里开始、结束之间写什么，默认 " ~ "。 */
+  range_separator?: string
+  /** 别的语言的名字（ADR 0048）：语言代码 → 名字。label 是默认的中文名。 */
+  names?: Record<string, string>
 }
 
 export interface TemplateTable {
@@ -379,6 +507,8 @@ export interface TemplateTable {
   required: boolean
   export: boolean
   columns: TemplateField[]
+  /** 别的语言的表名（ADR 0048）。 */
+  names?: Record<string, string>
 }
 
 export interface TemplateRule {
@@ -391,12 +521,11 @@ export interface TemplateRule {
 /** 规则库里的一条规则（编辑器里选）。 */
 export interface RuleInfo extends TemplateRule {
   per_row: string | null
-  /** 地区规则：cn 中国、au 澳洲；通用的是空的。编辑器默认只列通用规则。 */
-  region: string
+  /** 模板里要有这些字段（值可以空）这条规则才用得上（ADR 0049）。 */
+  requires?: string[]
+  /** 只适用于某个国家的规则：国家代码（CN、AU）；通用的是空的。 */
+  country: string
 }
-
-/** 模板的地区：空 = 通用；cn 中国、au 澳洲。 */
-export type TemplateRegion = '' | 'cn' | 'au'
 
 /** 自己写的规则（ADR 0035）：条件例如 sum(items.amount) == total。 */
 export interface CustomRule {
@@ -414,6 +543,12 @@ export interface Template {
   name: string
   version: number
   title: string
+  /** 模板名的别的语言写法（ADR 0048）。 */
+  titles?: Record<string, string>
+  /** 能切换的语言，第一个是默认的中文。 */
+  languages?: string[]
+  /** 起步模板的依据：法规条款、使用场景、查证来源。 */
+  basis?: string[]
   description: string
   category: string
   kind: TemplateKind
@@ -425,8 +560,14 @@ export interface Template {
   tables: TemplateTable[]
   rules: TemplateRule[]
   custom_rules?: CustomRule[]
-  /** 地区：空 = 通用；cn 中国、au 澳洲。通用模板只用通用规则。 */
-  region?: TemplateRegion
+  /** 功能领域（发票、交通……），可以有几个。 */
+  domains?: string[]
+  /** 国家和地区代码（CN、AU……）；空 = 通用。 */
+  countries?: string[]
+  /** 自定义标签。 */
+  tags?: string[]
+  /** 最近一次有文档用它的时间。 */
+  last_used_at?: string | null
   /** 从起步模板复制的：起步模板后来加的公式（字段 ID → 公式），这份还没有。 */
   starter_formulas?: Record<string, string>
   versions: { version: number; note: string; created_at: string }[]
@@ -510,14 +651,19 @@ export interface ExcelAnalysis {
 /** 保存模板（每次保存是一个新版本）。 */
 export interface TemplateIn {
   title: string
+  titles?: Record<string, string>
   category: string
   description: string
   fields: TemplateField[]
   tables: TemplateTable[]
   rules: string[]
   custom_rules: CustomRule[]
-  region?: TemplateRegion
+  domains: string[]
+  countries: string[]
+  tags: string[]
   note: string
+  /** 从 Excel 建的模板：改原表某一列填什么。键"sheet 名::表头"，值是字段 ID 或 period.start 这种（ADR 0039）。 */
+  column_refs?: Record<string, string>
 }
 
 /** 用样例建模板：选的一个字段。source 是样例里的键值对（kv.3）；自己加的为空。 */
@@ -548,6 +694,13 @@ export interface RevisionIn {
   source_lines?: number[]
   /** 框选：原图上框出的区域 [x0, y0, x1, y1]（重新识别之后确认的值放在 value）。出处就是这个框。 */
   source_box?: Box
+  /**
+   * 图中原文（ADR 0050）：图上原样的文字。只能和一块原文或框选一起用；从原文选取时值从它读出。
+   * 团队开了"自动收集纠错样本"时，保存的同时存成 OCR 样本。
+   */
+  transcription?: string
+  /** 从原文选取、框选的是第几页（一张单据可以占好几页）。 */
+  page?: number
 }
 
 /** 页面上的一个框 [左, 上, 右, 下]，和页面图片一样的像素坐标。 */

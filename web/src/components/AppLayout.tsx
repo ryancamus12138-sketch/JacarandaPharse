@@ -1,12 +1,14 @@
 import {
   AppstoreOutlined,
   AuditOutlined,
+  BarChartOutlined,
   DashboardOutlined,
   ExportOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
   LogoutOutlined,
   MenuOutlined,
+  ScanOutlined,
   TeamOutlined,
 } from '@ant-design/icons'
 import { Button, Flex, Grid, Layout, Menu, type MenuProps, Tag, Typography } from 'antd'
@@ -31,6 +33,8 @@ export function AppLayout() {
     { key: '/documents', icon: <FileTextOutlined />, label: '文档' },
     { key: '/templates', icon: <AppstoreOutlined />, label: '模板' },
     { key: '/exports', icon: <ExportOutlined />, label: '导出记录' },
+    { key: '/insights', icon: <BarChartOutlined />, label: '统计' },
+    { key: '/ocr-samples', icon: <ScanOutlined />, label: 'OCR 样本' },
     { key: '/system', icon: <InfoCircleOutlined />, label: '系统信息' },
     ...(can('user:manage')
       ? [{ key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' }]

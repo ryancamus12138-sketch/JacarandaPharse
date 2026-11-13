@@ -16,7 +16,7 @@ import {
 } from 'react'
 import { ApiError } from '../../api/client'
 import type { Box, FieldValue, PageOcr, PageStructure } from '../../api/types'
-import { boxColor, evidenceOf, fieldLabel, splitCell } from './fields'
+import { boxColor, evidenceOf, fieldLabel, shownValue, splitCell } from './fields'
 import { usePageImage } from './usePageImage'
 
 const ZOOMS = [0.5, 0.75, 1, 1.5, 2, 3]
@@ -413,7 +413,7 @@ export function PageViewer({
                       onMouseEnter={() => onHover(v.id)}
                       onMouseLeave={() => onHover(null)}
                     >
-                      <title>{`${fieldLabel(v.name)}：${v.current_value ?? ''}`}</title>
+                      <title>{`${fieldLabel(v.name)}：${shownValue(v) ?? ''}`}</title>
                     </rect>
                   )
                 })}

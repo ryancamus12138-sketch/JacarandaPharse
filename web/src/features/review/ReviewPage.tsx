@@ -2,6 +2,7 @@ import {
   ArrowLeftOutlined,
   AppstoreAddOutlined,
   CheckOutlined,
+  DeleteOutlined,
   HistoryOutlined,
   DownOutlined,
   LeftOutlined,
@@ -21,6 +22,7 @@ import {
   Popconfirm,
   Result,
   Segmented,
+  Select,
   Space,
   Spin,
   Tooltip,
@@ -36,14 +38,18 @@ import {
   getNeighbors,
   getPageOcr,
   getPageStructure,
+  deleteDocuments,
 } from '../../api/documents'
-import type { Box, FieldValue, RevisionIn } from '../../api/types'
+import { getSampleSettings } from '../../api/ocrSamples'
+import type { Box, DocumentDetail, Extraction, FieldValue, RevisionIn } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
 import { ExportButton } from '../documents/ExportButton'
+import { languageOptions, useLanguage } from '../../utils/languages'
 import { StatusTag } from '../documents/StatusTag'
 import { FieldDetail, FieldPanel } from './FieldPanel'
 import {
   displayLabel,
+  evidenceOf,
   neighbor,
   orderFields,
   setTemplateLabels,
@@ -53,13 +59,17 @@ import {
 import { PageViewer } from './PageViewer'
 import { ReasonDialog, type ReasonRequest } from './ReasonDialog'
 import { RegionPanel } from './RegionPanel'
+import { TranscriptionPanel } from './TranscriptionPanel'
 import { openCommentsOnPage, useComments } from './comments'
 import { CommentsButton, SkipButton, SkippedNotice } from './ReviewExtras'
 import { ReprocessButton, RunSwitcher } from './RunControls'
 import { SaveAsTemplate } from './SaveAsTemplate'
 import { useConfirmMany } from './useConfirmMany'
+import { useReviewTimer } from './useReviewTimer'
 import { useRevise } from './useRevise'
 import { useRows } from './useRows'
+import { Tip } from '../../components/Tip'
+import { ExtractionNotes } from './ExtractionNotes'
 
 /** 下一个还在等确认的字段（从 afterId 后面开始找，找到最后再从头找）。 */
 function nextPending(values: FieldValue[], afterId: string | null): string | null {
@@ -115,6 +125,8 @@ function ReviewWorkspace({ id }: { id: string }) {
   const [ocrOn, setOcrOn] = useState(false)
   const [altHeld, setAltHeld] = useState(false)
   const [picked, setPicked] = useState<number[]>([])
+  // 开了"自动收集纠错样本"（ADR 0050）：单击的一块原文先核对图中原文再填入
+  const [checking, setChecking] = useState<number | null>(null)
   const [reasonRequest, setReasonRequest] = useState<ReasonRequest | null>(null)
   // 框选：模式开关、正在画的框、画好了等着用的框
   const [drawOn, setDrawOn] = useState(false)
@@ -187,14 +199,46 @@ function ReviewWorkspace({ id }: { id: string }) {
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
 
+  const remove = useMutation({
+    mutationFn: () => deleteDocuments([id]),
+    onSuccess: ({ deleted, skipped }) => {
+      if (deleted === 0) {
+        void message.warning(skipped[0] ?? '没有删除')
+        return
+      }
+      void message.success('已删除')
+      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      // 删完打开下一份待审核的；没有了就回列表
+      const next = neighbors.data?.next ?? neighbors.data?.previous
+      void navigate(next ? `/documents/${next}` : '/documents')
+    },
+    onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
+  })
+
   const viewingOld =
     document.data !== undefined &&
     (document.data.viewing_run ?? 1) !== (document.data.current_run ?? 1)
   // 旧的几轮、正在重新处理的：只能看
   const canEdit = can('value:review') && !viewingOld && doneOrReviewed
-  const currentExtraction = document.data?.extractions.find((e) => e.page === page)
-  // 字段的中文名用这份文档的模板里的（换了文档、换了轮次就换）
-  setTemplateLabels(currentExtraction?.labels)
+  const sampleSettings = useQuery({
+    queryKey: ['ocr-sample-settings'],
+    queryFn: getSampleSettings,
+    staleTime: 60_000,
+  })
+  const collecting = canEdit && sampleSettings.data?.collect === true
+  useReviewTimer(id, canEdit && document.data?.status === 'done')
+  // 第 page 页属于哪一张单据（一张单据可以占好几页，ADR 0036）
+  const currentExtraction = coveringExtraction(document.data?.extractions ?? [], page)
+  // 字段名的语言（ADR 0048）：模板写了几种语言就能切换，按模板记住选的
+  const languages = currentExtraction?.languages?.length ? currentExtraction.languages : ['zh']
+  const languageKey = `review.${currentExtraction?.template ?? ''}`
+  const [language, setLanguage] = useLanguage(languageKey, languages)
+  const otherLabels = currentExtraction?.label_sets?.[language]
+  // 字段名用这份文档的模板里的（换了文档、换了轮次、换了语言就换）
+  setTemplateLabels(
+    otherLabels ? { ...currentExtraction?.labels, ...otherLabels } : currentExtraction?.labels,
+  )
   const adopt = useMutation({
     mutationFn: () => adoptPrevious(id),
     onSuccess: ({ confirmed, edited }) => {
@@ -212,6 +256,12 @@ function ReviewWorkspace({ id }: { id: string }) {
   )
   const showOcr = (ocrOn || altHeld) && canEdit && ocr.data?.available === true
   const selected = values.find((v) => v.id === selectedId) ?? null
+  // 原图上只画这一页的出处框（几页的单据，别的页的框不画在这页上）
+  const pageValues = useMemo(
+    () =>
+      values.filter((v) => (evidenceOf(v)?.page ?? currentExtraction?.page ?? 1) === page),
+    [values, currentExtraction, page],
+  )
 
   /** 用这几块原文填进选中的字段。表格的格子填完跳到下一格（一行商品连着点下去）。 */
   function applyPick(lines: number[]) {
@@ -220,9 +270,9 @@ function ReviewWorkspace({ id }: { id: string }) {
     }
   }
 
-  /** 用框选、重新识别并确认过的文字填进选中的字段。 */
-  function applyBox(box: Box, text: string) {
-    applyChange({ action: 'edit', reason: '', value: text, source_box: box })
+  /** 用框选、重新识别并确认过的文字填进选中的字段。transcription：图中原文（收集 OCR 样本时才有）。 */
+  function applyBox(box: Box, text: string, reason = '', transcription?: string) {
+    applyChange({ action: 'edit', reason, value: text, source_box: box, transcription })
   }
 
   function applyChange(change: RevisionIn) {
@@ -230,10 +280,12 @@ function ReviewWorkspace({ id }: { id: string }) {
       return
     }
     revise.mutate(
-      { valueId: selected.id, change },
+      // 选的是哪一页的原文（几页的单据，ADR 0036）
+      { valueId: selected.id, change: { ...change, page } },
       {
         onSuccess: () => {
           setPicked([])
+          setChecking(null)
           setDraft(null)
           setDrawn(null)
           if (splitCell(selected.name)) {
@@ -251,9 +303,14 @@ function ReviewWorkspace({ id }: { id: string }) {
   /** 换了选中的字段：多选到一半的原文、画好还没用的框都作废。null = 取消选中。 */
   function select(valueId: string | null) {
     setPicked([])
+    setChecking(null)
     setDraft(null)
     setDrawn(null)
     setSelectedId(valueId)
+    // 几页的单据：选中的字段出处在别的页，原图翻到那一页
+    const target = values.find((v) => v.id === valueId)
+    const where = target ? evidenceOf(target)?.page : undefined
+    if (where && where !== page) setPage(where)
   }
 
   function pickLine(index: number, multi: boolean) {
@@ -266,7 +323,10 @@ function ReviewWorkspace({ id }: { id: string }) {
       return
     }
     if (multi) {
+      setChecking(null)
       setPicked((p) => (p.includes(index) ? p.filter((i) => i !== index) : [...p, index]))
+    } else if (collecting && picked.length === 0) {
+      setChecking(index) // 先核对图中原文，回车再填入
     } else {
       applyPick([...picked.filter((i) => i !== index), index])
     }
@@ -372,6 +432,8 @@ function ReviewWorkspace({ id }: { id: string }) {
         if (drawn || draft) {
           setDraft(null)
           setDrawn(null)
+        } else if (checking !== null) {
+          setChecking(null)
         } else if (picked.length > 0) {
           setPicked([])
         } else {
@@ -402,7 +464,7 @@ function ReviewWorkspace({ id }: { id: string }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [values, selectedId, canEdit, revise, picked, reasonRequest, drawn, draft])
+  }, [values, selectedId, canEdit, revise, picked, checking, reasonRequest, drawn, draft])
 
   const back = (
     <Link to="/documents">
@@ -435,7 +497,7 @@ function ReviewWorkspace({ id }: { id: string }) {
     )
   }
 
-  const extraction = doc.extractions.find((e) => e.page === page)
+  const extraction = coveringExtraction(doc.extractions, page)
   const pendingTotal = doc.extractions.reduce(
     (sum, e) => sum + e.values.filter((v) => v.pending_review).length,
     0,
@@ -444,6 +506,7 @@ function ReviewWorkspace({ id }: { id: string }) {
     setPage(next)
     setSelectedId(null)
     setPicked([])
+    setChecking(null)
   }
 
   const pagePending = values.filter((v) => v.pending_review).map((v) => v.id)
@@ -494,11 +557,19 @@ function ReviewWorkspace({ id }: { id: string }) {
           存成模板
         </Button>
       )}
+      {!viewingOld && can('template:manage') && (
+        <Tooltip title="在这份单据的原图上框出要的值，建一个新模板（ADR 0047）">
+          <Button icon={<AppstoreAddOutlined />} onClick={() => navigate(`/templates/from-boxes/${doc.id}`)}>
+            框选建模板
+          </Button>
+        </Tooltip>
+      )}
       {!viewingOld && can('document:process') && <ReprocessButton doc={doc} />}
       {doc.status === 'done' && !viewingOld && !doc.skipped_at && can('document:review') && (
         <SkipButton doc={doc} next={() => goTo(neighbors.data?.next ?? neighbors.data?.previous)} />
       )}
-      <CommentsButton doc={doc} selected={selected} page={page} />
+      {/* 字段的备注记在这张单据的第一页（几页的单据，翻到哪页都看得到） */}
+      <CommentsButton doc={doc} selected={selected} page={extraction?.page ?? page} />
       {doc.status === 'done' && !viewingOld && (
         <Tooltip title={finishBlocked}>
           <Button
@@ -515,7 +586,7 @@ function ReviewWorkspace({ id }: { id: string }) {
       {/* 一直显示；没有标黄的（等你确认的）就是灰的，鼠标停上去说明为什么 */}
       {canEdit && (
         <Popconfirm
-          title={`这一页 ${pagePending.length} 个标黄的都是对的？`}
+          title={`这张单据 ${pagePending.length} 个标黄的都是对的？`}
           description="不用一个一个点。每个都会记一条确认记录，可以在修改历史里看到。"
           okText="全部确认"
           cancelText="取消"
@@ -523,7 +594,7 @@ function ReviewWorkspace({ id }: { id: string }) {
           onConfirm={() => confirmMany.mutate(pagePending)}
         >
           <Tooltip
-            title={pagePending.length === 0 ? '这一页没有标黄（等你确认）的了' : undefined}
+            title={pagePending.length === 0 ? '这张单据没有标黄（等你确认）的了' : undefined}
           >
             <Button
               icon={<CheckOutlined />}
@@ -538,7 +609,7 @@ function ReviewWorkspace({ id }: { id: string }) {
       {/* 原文一致、规则也通过的（绿的）还没人点过确认：一次确认掉，审核记录里留下"人看过" */}
       {canEdit && (
         <Popconfirm
-          title={`确认这一页 ${pageVerified.length} 个原文一致、规则通过的字段？`}
+          title={`确认这张单据 ${pageVerified.length} 个原文一致、规则通过的字段？`}
           description="它们和原文完全一致、规则也没问题，确认后审核记录里会留下“人看过”。"
           okText="确认"
           cancelText="取消"
@@ -547,7 +618,7 @@ function ReviewWorkspace({ id }: { id: string }) {
         >
           <Tooltip
             title={
-              pageVerified.length === 0 ? '这一页原文一致、规则通过的都确认过了' : undefined
+              pageVerified.length === 0 ? '这张单据原文一致、规则通过的都确认过了' : undefined
             }
           >
             <Button
@@ -560,7 +631,21 @@ function ReviewWorkspace({ id }: { id: string }) {
           </Tooltip>
         </Popconfirm>
       )}
-      <ExportButton ids={[doc.id]} />
+      <ExportButton ids={[doc.id]} languages={languages} language={language} onLanguage={setLanguage} />
+      {can('document:delete') && doc.status !== 'processing' && (
+        <Popconfirm
+          title={`删除「${doc.filename}」？`}
+          description="原始文件、处理结果、审核记录、备注都会删掉，不能恢复。删完打开下一份。"
+          okText="删除"
+          okButtonProps={{ danger: true }}
+          cancelText="取消"
+          onConfirm={() => remove.mutate()}
+        >
+          <Button danger icon={<DeleteOutlined />} loading={remove.isPending}>
+            删除
+          </Button>
+        </Popconfirm>
+      )}
       {back}
     </Flex>
   )
@@ -631,25 +716,18 @@ function ReviewWorkspace({ id }: { id: string }) {
         />
       )}
       {discover && !viewingOld && (
-        <Alert
-          type="info"
-          showIcon
+        <Tip
+          id="review-discover"
           style={{ marginBottom: 12 }}
           title="这份没有用模板，抽出了单据上所有的键值对"
           description='看一下哪些是要的、值对不对，然后点"存成模板"：选字段、起中文名，以后同类单据直接用这个模板。'
         />
       )}
-      {doc.page_count > 1 && (
-        <Segmented
-          value={page}
-          onChange={(value) => changePage(Number(value))}
-          options={Array.from({ length: doc.page_count }, (_, i) => ({
-            label: `第 ${i + 1} 页`,
-            value: i + 1,
-          }))}
-          style={{ marginBottom: 16 }}
-        />
-      )}
+      {currentExtraction?.source_notes?.map((note) => (
+        <Alert key={note} type="warning" showIcon style={{ marginBottom: 12 }} title={note} />
+      ))}
+      <ExtractionNotes extraction={currentExtraction} documentId={id} />
+      <PageTabs doc={doc} page={page} onChange={changePage} />
       <Flex
         gap={narrow ? 16 : 24}
         vertical={narrow}
@@ -670,7 +748,11 @@ function ReviewWorkspace({ id }: { id: string }) {
               lines={ocr.data?.lines ?? []}
               busy={revise.isPending}
               onUseLines={(indexes) => applyPick(indexes)}
-              onUseText={(text) => applyBox(drawn, text)}
+              type={selected.type}
+              collecting={collecting}
+              onUseText={(text, byModel, transcription) =>
+                applyBox(drawn, text, byModel ? '模型看原图读的，人核对过' : '', transcription)
+              }
               onCancel={() => {
                 setDraft(null)
                 setDrawn(null)
@@ -683,6 +765,18 @@ function ReviewWorkspace({ id }: { id: string }) {
               showIcon
               style={{ marginBottom: 8 }}
               title="框好了。先在右边选中要填的字段"
+            />
+          )}
+          {checking !== null && selected && (
+            <TranscriptionPanel
+              key={checking} // 换了一块原文，输入框重新开始
+              ocrText={ocr.data?.lines[checking]?.text ?? ''}
+              label={displayLabel(values, selected)}
+              busy={revise.isPending}
+              onUse={(transcription) =>
+                applyChange({ action: 'edit', reason: '', source_lines: [checking], transcription })
+              }
+              onCancel={() => setChecking(null)}
             />
           )}
           {picked.length > 0 && selected && (
@@ -713,7 +807,7 @@ function ReviewWorkspace({ id }: { id: string }) {
           <PageViewer
             documentId={doc.id}
             page={page}
-            values={values}
+            values={pageValues}
             selectedId={selectedId}
             hoveredId={hoveredId}
             onSelect={select}
@@ -724,7 +818,7 @@ function ReviewWorkspace({ id }: { id: string }) {
             onToggleStructure={() => setStructureOn((on) => !on)}
             showOcr={showOcr}
             onToggleOcr={() => setOcrOn((on) => !on)}
-            picked={picked}
+            picked={checking !== null ? [checking] : picked}
             onPickLine={pickLine}
             canDraw={canEdit}
             drawOn={drawOn}
@@ -796,6 +890,7 @@ function ReviewWorkspace({ id }: { id: string }) {
               style={{ maxHeight: '55%', overflow: 'auto', flexShrink: 0, paddingRight: 4 }}
             >
               <FieldDetail
+                documentId={doc.id}
                 value={selected}
                 label={displayLabel(values, selected)}
                 canEdit={canEdit}
@@ -817,12 +912,26 @@ function ReviewWorkspace({ id }: { id: string }) {
               />
             </div>
           )}
+          {languages.length > 1 && (
+            <Flex align="center" gap={8} style={{ marginBottom: 8 }}>
+              <Typography.Text type="secondary">字段名</Typography.Text>
+              <Select
+                data-keep-selection
+                size="small"
+                aria-label="字段名的语言"
+                value={language}
+                options={languageOptions(languages)}
+                onChange={setLanguage}
+                style={{ minWidth: 140 }}
+              />
+            </Flex>
+          )}
           <div style={{ flex: 1, minHeight: 0, overflow: 'auto', paddingRight: 4 }}>
           {extraction ? (
             <FieldPanel
               extraction={{ ...extraction, values }}
               sortMode={sortMode}
-              comments={openCommentsOnPage(comments.data, page)}
+              comments={openCommentsOnPage(comments.data, extraction.page)}
               onSortMode={(mode) => {
                 setSortMode(mode)
                 saveSortMode(mode)
@@ -884,5 +993,73 @@ function ReviewWorkspace({ id }: { id: string }) {
         <SaveAsTemplate doc={doc} open={savingTemplate} onClose={() => setSavingTemplate(false)} />
       )}
     </Card>
+  )
+}
+
+
+/** 第 page 页属于哪一张单据（哪一条抽取记录）。 */
+function coveringExtraction(extractions: Extraction[], page: number): Extraction | undefined {
+  return extractions.find((e) => e.page <= page && page <= (e.last_page ?? e.page))
+}
+
+/**
+ * 翻页（ADR 0036）：一个文件有几张单据时，上面一排是单据（"单据 2 · 第 3–4 页"），
+ * 选中的单据有好几页时，下面一排是它的页。只有一张一页的单据就什么都不显示。
+ */
+function PageTabs({
+  doc,
+  page,
+  onChange,
+}: {
+  doc: DocumentDetail
+  page: number
+  onChange: (page: number) => void
+}) {
+  const parts = doc.extractions
+  const current = coveringExtraction(parts, page)
+  const range = (e: Extraction) =>
+    (e.last_page ?? e.page) === e.page ? `第 ${e.page} 页` : `第 ${e.page}–${e.last_page} 页`
+  const pages = current ? (current.last_page ?? current.page) - current.page + 1 : doc.page_count
+  if (parts.length <= 1 && pages <= 1 && doc.page_count <= 1) return null
+  return (
+    <Flex vertical gap={8} style={{ marginBottom: 16 }}>
+      {parts.length > 1 && (
+        <Segmented
+          value={current?.id}
+          onChange={(id) => {
+            const e = parts.find((x) => x.id === id)
+            if (e) onChange(e.page)
+          }}
+          options={parts.map((e, i) => {
+            const pending = e.values.filter((v) => v.pending_review).length
+            return {
+              value: e.id,
+              label: `单据 ${i + 1} · ${range(e)}${pending ? `（${pending} 待确认）` : ''}`,
+            }
+          })}
+        />
+      )}
+      {pages > 1 && current && (
+        <Segmented
+          size="small"
+          value={page}
+          onChange={(value) => onChange(Number(value))}
+          options={Array.from({ length: pages }, (_, i) => ({
+            label: `第 ${current.page + i} 页`,
+            value: current.page + i,
+          }))}
+        />
+      )}
+      {!current && doc.page_count > 1 && (
+        <Segmented
+          value={page}
+          onChange={(value) => onChange(Number(value))}
+          options={Array.from({ length: doc.page_count }, (_, i) => ({
+            label: `第 ${i + 1} 页`,
+            value: i + 1,
+          }))}
+        />
+      )}
+    </Flex>
   )
 }

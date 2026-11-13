@@ -1,6 +1,7 @@
-"""文字比对对齐器：把值换成原文里可能的写法，逐行查找。
+"""文字比对对齐器：逐行查找值在原文里的位置。
 
-- 数字 9.0 可能写成 9.00、1,234.50；日期 2018-12-25 可能写成 25/12/2018。
+- 数字：把原文里的数读出来按数值比（core/numbers.py），9.0 写成 9.00、78.5、1,234.50 都认；
+- 日期：把原文里像日期的写法读成日期再比（core/dates.py），25/12/2018、25 DEC 18 都认。
 - 先查模型说的那一行，找不到再查全文。
 - 文字字段允许 OCR 小错（相似度够高算 fuzzy）；数字和日期必须完全一致，差一位都不行。
 """
@@ -8,13 +9,29 @@
 from __future__ import annotations
 
 import re
-from datetime import date
 from difflib import SequenceMatcher
+from typing import Protocol
 
+from jacara.core.dates import date_pattern
+from jacara.core.numbers import number_pattern
 from jacara.plugins.aligners.base import AlignedField, Evidence
 from jacara.plugins.extractors.base import ExtractedField, ExtractionResult, split_cell_name
 from jacara.plugins.ocr.base import OcrLine, OcrPage, Point
 from jacara.plugins.ocr.layout import OcrRow, group_rows
+
+
+class Span(Protocol):
+    """找到的一段：re.Match 和 core.numbers.NumberMatch 都是。"""
+
+    def start(self) -> int: ...
+
+    def end(self) -> int: ...
+
+
+class Finder(Protocol):
+    """查找规则：正则（日期、时间）和 core.numbers.NumberPattern（数字）都是。"""
+
+    def search(self, text: str, /) -> Span | None: ...
 
 
 def _squash(text: str) -> str:
@@ -22,54 +39,28 @@ def _squash(text: str) -> str:
     return re.sub(r"\s+", "", text).lower()
 
 
-def number_variants(value: float, *, loose: bool) -> list[str]:
-    """一个数字在单据上可能的写法。
+_TIME = re.compile(r"^\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*$")
+_AMPM = r"\s*[ap]\.?\s*m\b\.?"
 
-    loose=True 时加上不带小数的写法（9、1,234）。这种写法太容易撞上数量、编号，
-    所以只在模型指定的那一行里用。
+
+def time_pattern(value: str) -> re.Pattern[str] | None:
+    """一个时间（14:05、20:13:39）在单据上可能的写法；不是时间返回 None。
+
+    模板常让模型写成 24 小时制，单据上却常写 8:13:39 PM：两种都算对上。
+    值没写秒时，原文带不带秒都行。24 小时制的写法后面不能跟 AM/PM（8:13 PM 不是 08:13）。
     """
-    if value < 0:
-        # 折扣：收据上常写成 6.00-、-6.00 或 (6.00)，找数字本身就行
-        return number_variants(-value, loose=loose)
-    variants = [f"{value:.2f}", f"{value:,.2f}"]
-    if loose and value == int(value):
-        variants += [str(int(value)), f"{int(value):,}"]
-    return list(dict.fromkeys(variants))  # 去重，保留顺序
-
-
-def date_variants(value: str) -> list[str]:
-    """一个 YYYY-MM-DD 日期在单据上可能的写法。
-
-    评测发现收据上的写法很多（docs/eval/README.md）：补不补 0（5/3/2018）、两位年份（18/03/18）、
-    月份写英文（28 MAR 18、02/JAN/2017）、不带分隔符（25032018、20180304）。
-    """
-    try:
-        d = date.fromisoformat(value)
-    except ValueError:
-        return [value]
-    dd, mm, yyyy = f"{d.day:02d}", f"{d.month:02d}", f"{d.year}"
-    day, month, yy = str(d.day), str(d.month), yyyy[2:]
-    variants = [value]
-    for sep in ("/", "-", "."):
-        variants += [f"{yyyy}{sep}{mm}{sep}{dd}"]
-        for year in (yyyy, yy):
-            variants += [f"{dd}{sep}{mm}{sep}{year}", f"{mm}{sep}{dd}{sep}{year}"]
-            variants += [f"{day}{sep}{month}{sep}{year}", f"{month}{sep}{day}{sep}{year}"]
-    variants += [f"{dd}{mm}{yyyy}", f"{yyyy}{mm}{dd}"]
-    variants += [f"{d.year}年{d.month}月{d.day}日", f"{yyyy}年{mm}月{dd}日"]
-    for name in (d.strftime("%B"), d.strftime("%b")):  # August、Aug
-        variants += [f"{name} {d.day}, {yyyy}", f"{name} {dd}, {yyyy}"]
-        for year in (yyyy, yy):
-            for first in (day, dd):
-                variants += [f"{first} {name} {year}", f"{first}-{name}-{year}"]
-                variants += [f"{first}/{name}/{year}", f"{first}{name}{year}"]
-    return list(dict.fromkeys(variants))
-
-
-def _exact_pattern(variants: list[str]) -> re.Pattern[str]:
-    """数字和日期的查找规则：前后不能紧挨着别的数字，避免 9.00 匹配到 19.00 或 9.000。"""
-    alternatives = "|".join(re.escape(v) for v in variants)
-    return re.compile(rf"(?<![\d.,])(?:{alternatives})(?![\d]|[.,]\d)", re.IGNORECASE)
+    m = _TIME.match(value)
+    if m is None:
+        return None
+    hour, minute, second = int(m[1]), m[2], m[3]
+    if hour > 23 or int(minute) > 59:
+        return None
+    sec = f":{second}" if second else r"(?::\d{2})?"
+    h12 = hour % 12 or 12
+    half = "p" if hour >= 12 else "a"
+    clock24 = rf"(?<!\d)0?{hour}:{minute}{sec}(?![\d:])(?!{_AMPM})"
+    clock12 = rf"(?<!\d)0?{h12}:{minute}{sec}\s*{half}\.?\s*m\b\.?"
+    return re.compile(rf"{clock24}|{clock12}", re.IGNORECASE)
 
 
 def _tidy(text: str) -> str:
@@ -118,15 +109,19 @@ class TextMatchAligner:
             # 先找模型说的那一行附近：同一个价格（9.99）在收据上常出现好几次
             others.sort(key=lambda r: abs(r.index - (field.row or 0)))
 
-        if field.type == "string":
+        clock = time_pattern(str(field.value)) if field.type == "string" else None
+        if clock is not None:
+            # 时间：原文写 8:13:39 PM、模型写 20:13:39 也算一样
+            evidence = self._find_exact(clock, claimed + others)
+        elif field.type in ("string", "date_range"):
             span = (last - field.row + 1) if field.row is not None and last is not None else 1
             evidence = self._find_text(str(field.value), claimed + others, span)
         elif field.type == "number" and isinstance(field.value, float):
-            loose = _exact_pattern(number_variants(field.value, loose=True))
-            strict = _exact_pattern(number_variants(field.value, loose=False))
+            loose = number_pattern(field.value, loose=True)
+            strict = number_pattern(field.value, loose=False)
             evidence = self._find_exact(loose, claimed) or self._find_exact(strict, others)
         else:
-            pattern = _exact_pattern(date_variants(str(field.value)))
+            pattern = date_pattern(field.value)
             evidence = self._find_exact(pattern, claimed + others)
 
         if evidence is None:
@@ -153,7 +148,7 @@ class TextMatchAligner:
         status = "matched" if evidence.similarity == 1.0 else "fuzzy"
         return AlignedField(field, status, evidence, bool(notes), "；".join(notes))
 
-    def _find_exact(self, pattern: re.Pattern[str], rows: list[OcrRow]) -> Evidence | None:
+    def _find_exact(self, pattern: Finder, rows: list[OcrRow]) -> Evidence | None:
         for row in rows:
             if pattern.search(_tidy(row.text)):
                 lines = (
@@ -267,7 +262,7 @@ def _lines_for(needle: str, lines: tuple[OcrLine, ...]) -> tuple[OcrLine, ...]:
     return tuple(picked) or lines
 
 
-def _clip_to(line: OcrLine, found: re.Match[str] | None) -> OcrLine:
+def _clip_to(line: OcrLine, found: Span | None) -> OcrLine:
     """值只是这个文字块的一部分时，按字在块里的位置估出值那一段的框（沿着块的上下边按比例截）。
 
     "Date: 31/12/2017" 是一块，值 31/12/2017 在后面 10 个字：框只画后面那段。

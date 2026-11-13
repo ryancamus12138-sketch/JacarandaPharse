@@ -44,12 +44,44 @@ class Settings(BaseSettings):
     jacara_model: Path | None = None
     """jacara start 要启动的模型文件（.gguf）。不写就用 models/ 文件夹里唯一的那个 .gguf。"""
 
+    jacara_mmproj: Path | None = None
+    """视觉模型文件（mmproj-*.gguf，ADR 0038）：有了它模型能看原图。
+    不写就用 models/ 里唯一的 mmproj*.gguf；没有就只看文字。"""
+    jacara_vision: Literal["auto", "always", "off"] = "auto"
+    """什么时候让模型看原图（ADR 0038）：auto 只在照片、扫描件 OCR 不可靠时看；
+    always 每张都看（慢）；off 不看。"""
+    jacara_pdf_read: Literal["image", "text"] = "image"
+    """PDF 怎么读文字（ADR 0042）：image 每页画成图做 OCR，和照片走同一条路，PDF 自带的文字
+    只拿来核对；text 只读 PDF 自带的文字（快，只适合确定干净的电子版）。"""
+    jacara_ocr_det: Path | None = None
+    """自己的文字检测模型（.onnx，ADR 0046）。不写就用网页上选的，再没有就用 RapidOCR 自带的。"""
+    jacara_ocr_rec: Path | None = None
+    """自己的文字识别模型（.onnx），一般要配套的字典 JACARA_OCR_DICT。"""
+    jacara_ocr_dict: Path | None = None
+    jacara_learn: bool = True
+    """抽取时把同一个模板以前人工改过的例子告诉模型（ADR 0045）。"""
+    jacara_learn_mode: Literal["recent", "curated"] = "recent"
+    """怎么挑例子：recent 最近改得多的（ADR 0045）；curated 整理过的：只用错在模型的、合并重复、
+    去掉过期的、同一个发单方优先（ADR 0055）。先用 jacara eval replay 比过再换。"""
+    jacara_ocr_max_side: int = 4000
+    """整页 OCR 前，图的长边最多多少像素（ADR 0042）。"""
     jacara_layout: bool = True
     """抽取前先用版面模型找出页面上的区域（标题、正文、表格、页眉页脚），ADR 0034。"""
     jacara_table_model: Path | None = None
     """表格结构模型（SLANet-plus 的 .onnx）。不写就用 models/table/slanet-plus.onnx；
     没有这个文件时，
     表格的格子按文字位置用规则划分。"""
+
+    jacara_pipeline: bool = True
+    """后台分两个工位（ADR 0051）：OCR 工位认字、模型工位抽取，两边同时干活，批量导入更快。
+    false：一个进程从头做到尾（以前的做法，省几百 MB 内存）。"""
+    jacara_watch_dir: Path | None = None
+    """监视文件夹（ADR 0036）：放进去的图片和 PDF 自动导入。
+    jacara start 会一起启动；不写就不监视。"""
+    jacara_watch_template: str | None = None
+    """监视文件夹导入时用的模板（我的模板的 id）。不写就用上一次用的。"""
+    jacara_watch_user: str | None = None
+    """团队模式下，监视文件夹导入的文件算谁传的（用户名）。个人模式不用写。"""
 
     max_upload_mb: int = 50
     """上传文件的大小上限（MB）。"""
@@ -83,13 +115,52 @@ class Settings(BaseSettings):
         if self.jacara_model is not None:
             path = self.jacara_model
             return path if path.is_absolute() else PROJECT_ROOT / path
-        found = sorted((PROJECT_ROOT / "models").glob("*.gguf"))
+        chosen = chosen_file("model")
+        if chosen:
+            return chosen
+        found = sorted(p for p in (PROJECT_ROOT / "models").glob("*.gguf") if not is_mmproj(p))
+        return found[0] if len(found) == 1 else None
+
+    def find_mmproj(self) -> Path | None:
+        """视觉模型文件（ADR 0038）：先看 JACARA_MMPROJ，再看 models/ 里唯一的 mmproj*.gguf。"""
+        if self.jacara_mmproj is not None:
+            path = self.jacara_mmproj
+            path = path if path.is_absolute() else PROJECT_ROOT / path
+            return path if path.is_file() else None
+        if model_choices().get("mmproj") == "":
+            return None  # 网页上选了"不用视觉模型"
+        chosen = chosen_file("mmproj")
+        if chosen:
+            return chosen
+        found = sorted(p for p in (PROJECT_ROOT / "models").glob("*.gguf") if is_mmproj(p))
         return found[0] if len(found) == 1 else None
 
     def table_model(self) -> Path | None:
         """表格结构模型文件；没有就是 None。"""
-        path = self.jacara_table_model or PROJECT_ROOT / "models" / "table" / "slanet-plus.onnx"
+        path = (
+            self.jacara_table_model
+            or chosen_file("table")
+            or PROJECT_ROOT / "models" / "table" / "slanet-plus.onnx"
+        )
         return path if path.is_file() else None
+
+    def ocr_models(self) -> dict[str, Path]:
+        """自己的 OCR 模型文件（检测 det、识别 rec、识别用的字典 dict），ADR 0046。
+        先看 JACARA_OCR_DET / _REC / _DICT，再看网页上选的；都没有就用 RapidOCR 自带的。"""
+        found: dict[str, Path] = {}
+        for key, env in (
+            ("det", self.jacara_ocr_det),
+            ("rec", self.jacara_ocr_rec),
+            ("dict", self.jacara_ocr_dict),
+        ):
+            path = (
+                (env if env.is_absolute() else PROJECT_ROOT / env)
+                if env
+                else chosen_file(f"ocr_{key}")
+            )
+            if path is not None and path.is_file():
+                found[key] = path
+        return found
 
     def weak_secrets(self) -> list[str]:
         """还是空的、或者还是示例值 change-me 的密钥，返回它们在 .env 里的名字。"""
@@ -109,6 +180,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 """项目根目录：这个文件在 backend/src/jacara/core/ 下面，往上四层。"""
 
 _PLACEHOLDERS = {"", "change-me"}
+
+
+def is_mmproj(path: Path) -> bool:
+    """视觉模型文件（mmproj）：名字里有 mmproj。它不是对话模型，找模型时跳过。"""
+    return "mmproj" in path.name.lower()
 
 
 @lru_cache
@@ -136,3 +212,31 @@ def model_api_key() -> str | None:
         return MODEL_KEY_FILE.read_text(encoding="utf-8").strip() or None
     except OSError:
         return None
+
+
+CHOICES_FILE = "models/selected.json"
+"""网页上"换模型"选的文件（ADR 0046），放在 models/ 里（models/ 不进仓库，每台电脑自己的）。
+格式：{"model": "models/xxx.gguf", "mmproj": "models/mmproj.gguf" 或 ""（不用）, "table": …,
+"ocr_det": …, "ocr_rec": …, "ocr_dict": …}，路径相对项目根目录。.env 里写了的优先。"""
+
+
+def model_choices() -> dict[str, str]:
+    """网页上选的模型文件。没选过、文件坏了是空的。"""
+    import json
+
+    path = PROJECT_ROOT / CHOICES_FILE
+    try:
+        data = json.loads(path.read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in data.items() if isinstance(v, str)} if isinstance(data, dict) else {}
+
+
+def chosen_file(key: str) -> Path | None:
+    """网页上为 key 选的文件，还在才返回。"""
+    value = model_choices().get(key)
+    if not value:
+        return None
+    path = Path(value)
+    path = path if path.is_absolute() else PROJECT_ROOT / path
+    return path if path.is_file() else None

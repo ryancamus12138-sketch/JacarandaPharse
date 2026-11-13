@@ -92,6 +92,17 @@ export function trialTemplate(id: string, documentId: string): Promise<TrialResu
 }
 
 /** 用样例建模板：样例文档里选好的键值对 → 新模板；样例换成按新模板的结果。 */
+/** 在样例上框选建模板（ADR 0047）：框好的字段 → 新模板。 */
+export function createFromBoxes(body: {
+  document_id: string
+  title: string
+  category: string
+  description: string
+  fields: (TemplateField & { page: number; box: number[] })[]
+}): Promise<Template> {
+  return api<Template>('/templates/from-boxes', { method: 'POST', json: body })
+}
+
 export function createFromSample(body: {
   document_id: string
   title: string
@@ -139,4 +150,12 @@ export function importTemplate(file: unknown): Promise<Template> {
 /** 删除模板。有文档用过的不能删（只能归档）。 */
 export function deleteTemplate(id: string): Promise<void> {
   return api<void>(`/templates/${id}`, { method: 'DELETE' })
+}
+
+/** 只改模板的标签（功能领域、国家和地区、自定义标签），不出新版本。 */
+export function setTemplateLabels(
+  id: string,
+  body: { domains?: string[]; countries?: string[]; tags?: string[] },
+): Promise<Template> {
+  return api<Template>(`/templates/${id}/labels`, { method: 'PATCH', json: body })
 }

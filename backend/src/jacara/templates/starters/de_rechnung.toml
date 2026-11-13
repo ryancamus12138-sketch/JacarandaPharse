@@ -1,0 +1,166 @@
+# 起步模板：Deutschland Rechnung（§14 UStG）/ Kleinbetragsrechnung（§33 UStDV）。
+# 依据：§14 Abs. 4 UStG Pflichtangaben：Name und Anschrift von Unternehmer und Leistungsempfänger、Steuernummer oder USt-IdNr.、
+#   Ausstellungsdatum、fortlaufende Rechnungsnummer、Menge und Art、Zeitpunkt der Leistung、Entgelt nach Steuersätzen、
+#   Steuersatz und Steuerbetrag bzw. Hinweis auf Steuerbefreiung；§33 UStDV：Gesamtbetrag ≤ 250 € 可只写名称地址、日期、
+#   品名数量、含税总额和税率。Steuersätze 19 % / 7 %（§12 UStG）。USt-IdNr. 校验按 ISO 7064 MOD 11,10。
+#   2025-01-01 起 B2B 要能收 E-Rechnung（Wachstumschancengesetz）；纸质打印件和 PDF 照样识别。
+# 场景：德国企业之间开票、Vorsteuerabzug、报销。
+# 来源：gesetze-im-internet.de §33 UStDV；IHK「Pflichtangaben auf Rechnungen」。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "de_rechnung"
+version = 1
+title = "德国增值税发票（Rechnung）"
+titles = { en = "Invoice (Germany)", de = "Rechnung" }
+countries = ["DE"]
+domains = ["发票"]
+description = "德国的 Rechnung：开票方和收票方名称地址、Steuernummer 或 USt-IdNr.、日期、连续的发票号、品名数量、交付时间、按税率分开的净额、税率和税额、免税说明。USt-IdNr. 校验位不对、税率不是 19/7/0%、超过 250 € 缺收票方或发票号会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "de_ust_idnr", "de_rates", "de_full_over_250"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+names = { en = "Document Title", de = "Belegart" }
+type = "string"
+description = "单据最上面的标题，照抄"
+aliases = ["Belegart"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票号码"
+names = { en = "Invoice No.", de = "Rechnungsnummer" }
+type = "string"
+unique = true
+description = "照抄，不要改格式"
+aliases = ["Rechnungsnummer"]
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue", de = "Rechnungsdatum" }
+type = "date"
+required = true
+aliases = ["Rechnungsdatum"]
+
+[[fields]]
+name = "supply_date"
+label = "交易日期"
+names = { en = "Date of Supply", de = "Leistungsdatum" }
+type = "date"
+description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+aliases = ["Leistungsdatum"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller", de = "Leistender Unternehmer" }
+type = "string"
+required = true
+aliases = ["Leistender Unternehmer"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address", de = "Anschrift" }
+type = "string"
+aliases = ["Anschrift"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "增值税识别号"
+names = { en = "VAT ID", de = "USt-IdNr." }
+type = "string"
+aliases = ["USt-IdNr.", "USt-ID", "VAT ID"]
+
+[[fields]]
+name = "seller_steuernummer"
+label = "税号（Steuernummer）"
+names = { en = "Tax Number", de = "Steuernummer" }
+type = "string"
+aliases = ["St.-Nr.", "Steuer-Nr.", "Steuernummer"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer", de = "Leistungsempfänger" }
+type = "string"
+aliases = ["Leistungsempfänger"]
+
+[[fields]]
+name = "buyer_address"
+label = "买方地址"
+names = { en = "Buyer Address", de = "Anschrift Empfänger" }
+type = "string"
+aliases = ["Anschrift Empfänger"]
+
+[[fields]]
+name = "net_total"
+label = "不含税合计"
+names = { en = "Total excl. Tax", de = "Nettobetrag" }
+type = "number"
+aliases = ["Nettobetrag"]
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax", de = "Umsatzsteuer" }
+type = "number"
+aliases = ["Umsatzsteuer"]
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+names = { en = "Total incl. Tax", de = "Gesamtbetrag" }
+type = "number"
+required = true
+aliases = ["Gesamtbetrag"]
+
+[[fields]]
+name = "tax_exemption"
+label = "免税说明"
+names = { en = "Tax Exemption Note", de = "Hinweis Steuerbefreiung" }
+type = "string"
+description = "如 steuerfreie innergemeinschaftliche Lieferung、§19 UStG，照抄"
+aliases = ["Hinweis Steuerbefreiung"]
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items", de = "Positionen" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description", de = "Bezeichnung" }
+type = "string"
+aliases = ["Bezeichnung"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity", de = "Menge" }
+type = "number"
+aliases = ["Menge"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price", de = "Einzelpreis" }
+type = "number"
+aliases = ["Einzelpreis"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount", de = "Betrag" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+aliases = ["Betrag"]
+
+[[tables.columns]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate", de = "Steuersatz" }
+type = "string"
+aliases = ["Steuersatz"]

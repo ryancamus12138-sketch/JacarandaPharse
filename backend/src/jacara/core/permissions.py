@@ -18,6 +18,7 @@ Action = Literal[
     "document:read",
     "document:download",
     "document:process",
+    "document:delete",
     "document:review",
     "document:export",
     "value:read",
@@ -25,6 +26,7 @@ Action = Literal[
     "template:manage",
     "user:manage",
     "audit:read",
+    "system:manage",
 ]
 
 BASE: set[Action] = {"document:read", "document:download", "document:export", "value:read"}
@@ -33,13 +35,18 @@ BASE: set[Action] = {"document:read", "document:download", "document:export", "v
 GRANTABLE: dict[Action, str] = {
     "document:create": "上传文件",
     "document:process": "重新处理",
+    "document:delete": "删除文档",
     "value:review": "修改和确认字段",
     "document:review": "完成审核",
     "template:manage": "管理模板",
 }
 """管理员可以给使用者单独开通的权限（权限名 → 界面上显示的名字）。"""
 
-ADMIN_ONLY: dict[Action, str] = {"user:manage": "管理用户", "audit:read": "查看审计日志"}
+ADMIN_ONLY: dict[Action, str] = {
+    "user:manage": "管理用户",
+    "audit:read": "查看审计日志",
+    "system:manage": "换模型",
+}
 """只有管理员能做，不能开通给使用者。"""
 
 

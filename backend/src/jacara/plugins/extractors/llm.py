@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 from jacara.plugins.extractors.base import (
@@ -20,14 +21,14 @@ from jacara.plugins.extractors.base import (
     cell_name,
     kv_name,
 )
-from jacara.plugins.model_backends import ChatMessage, ModelBackend
+from jacara.plugins.model_backends import ChatMessage, ChatResult, ModelBackend
 from jacara.plugins.ocr.base import OcrPage
 from jacara.plugins.ocr.layout import continuation_rows, group_rows
 from jacara.structure.analyze import analyze_page
 from jacara.structure.graph import PageStructure
 from jacara.structure.serialize import spatial_text, structure_text
 
-PROMPT_VERSION = "extract-v6"
+PROMPT_VERSION = "extract-v8"
 """提示词的版本号。改了下面的提示词就要改这个号，结果里会记录它。
 
 v1：OCR 文字逐块拼接。v2：按视觉行合并、加行号，并要求模型给出值所在的行号。
@@ -37,6 +38,11 @@ v4：表格每行只给一个行号、格子直接写值（回答短一半多）
 v5：折行的值：值跨几行时连起来写，给 row 和 row_end（ADR 0033）。
 v6：按文字块（ADR 0034）：每块带编号、按版面原样排开，附上版面区域、标题 → 值、表格；
     每个值回答用了哪几块（blocks），不再给行号。
+v7：一张单据可以有好几页（ADR 0036）：几页接在一起给，页与页之间写"第 n 页"分隔，
+    并提醒跨页的表格接着写、每页重复的表头和页眉页脚不算。只有一页的单据，提示词和 v6 一样。
+v8：数字、日期、日期范围除了 value（理解后的标准值），还要 text（原文一字不差的写法，ADR 0040）。
+    系统按 text 在原文里核对，再看 value 和 text 对不对得上，不再靠把 value 还原成各种写法去找。
+    日期范围的 value 是 {start, end}。
 """
 
 SYSTEM_PROMPT = """你是文档信息抽取助手。用户会给你一张单据的文字和要抽取的字段。
@@ -51,33 +57,75 @@ SYSTEM_PROMPT = """你是文档信息抽取助手。用户会给你一张单据�
    值跨好几块（地址、长的商品名折成两行）时，把这几块里属于它的文字按顺序连起来（中间加一个空格），
    blocks 写这几块。一块里只有一部分是值（"Date: 31/12/2017" 里的日期），
    blocks 写这一块，value 只写值。
-4. 数字字段只填数字，不带货币符号和千分位逗号。
-5. 日期字段统一写成 YYYY-MM-DD。
+4. 数字、日期、日期范围字段多回答一个 text：原文里这个值一字不差的写法
+   （包括货币符号、空格、标点、月份英文，
+   例如 "$4.11"、"August 3 , 2014"、"July 1 - July 31 , 2014"）；
+   value 写你理解后的标准值：数字只填数字，不带货币符号和千分位逗号；日期写成 YYYY-MM-DD；
+   日期范围的 value 写 start 和 end（都是 YYYY-MM-DD），原文只写了一次年份的，两边都用这个年份。
+   原文看不出年份或者日月顺序的，不要猜：value 填 null，text 照抄。
+5. 找不到的字段 value、text 都填 null。
 6. 看清值在哪个标题下面、属于哪一栏：例如 Rooms 下面的数字是房间数，不是晚数。
 7. 表格按原文顺序，一行一个对象，每一格回答 value 和 blocks；没有表格就给空列表。
    不要把小计、税、总额、找零当成表格的行，同一行商品不要重复写。商品名折成两行仍是同一行商品。"""
 
-_TYPE_NAMES = {"string": "文字", "number": "数字", "date": "日期"}
+VISION_PROMPT_VERSION = PROMPT_VERSION + "+vision"
+"""给模型看了原图时记这个版本号（ADR 0038）：
+提示词多了下面的 VISION_NOTE，其余和 extract-v7 一样。"""
+
+VISION_NOTE = """另外附上了这张单据的原图（{n} 张，按页的顺序）。文字块是 OCR 从图上认出来的，
+可能认错或漏掉（手写、印章、模糊、反光、褶皱的地方）。
+- 原图和文字块一致：照常回答 value 和 blocks。
+- OCR 认错了：value 写你在原图上看到的，blocks 写认错的那几块。
+- OCR 漏掉了（文字块里没有）：value 写你在原图上看到的，blocks 写 []。
+- 原图上也看不清的，value 填 null，不要猜。"""
+
+CLASSIFY_PROMPT_VERSION = "classify-v1"
+"""自动判断用哪个模板的提示词版本（ADR 0038）。"""
+
+CLASSIFY_PROMPT = """你在给单据分类。用户给你一张单据开头的文字，和几个编了号的模板
+（每个模板有名字、说明、功能领域、国家和地区、要抽的字段）。
+选一个最适合这张单据的模板：单据的种类要对上（发票、小票、账单、行程单、报告……），
+国家和地区也要对上（写着"通用"的模板不分国家）。
+没有一个合适就选 0，不要勉强。reason 用一句中文说明为什么。只根据给出的文字判断。"""
+
+CLASSIFY_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {"choice": {"type": "integer"}, "reason": {"type": "string"}},
+    "required": ["choice", "reason"],
+}
+
+_TYPE_NAMES = {"string": "文字", "number": "数字", "date": "日期", "date_range": "日期范围"}
 
 _BLOCKS: dict[str, object] = {"type": "array", "items": {"type": "integer"}}
 """用到的文字块编号。"""
+_DATE: dict[str, object] = {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}
+_TEXT: dict[str, object] = {"anyOf": [{"type": "string"}, {"type": "null"}]}
+"""原文的写法（ADR 0040）：一字不差，或者 null。"""
 
-DISCOVER_PROMPT_VERSION = "discover-v3"
-"""键值对发现的提示词版本。v2：值跨几行（row_end）。v3：按文字块（blocks），和 extract-v6 一样。"""
+DISCOVER_PROMPT_VERSION = "discover-v5"
+"""键值对发现的提示词版本。v2：值跨几行（row_end）。v3：按文字块（blocks），和 extract-v6 一样。
+v4：日期范围、夹在句子里的日期照抄原文，不要改写成 YYYY-MM-DD；
+blocks 只写值用到的块，不写名称那块。日期范围的 type 是 date_range（ADR 0039）。
+v5：每一项多回答 text（原文一字不差的写法，ADR 0040），value 写理解后的标准值。"""
 
 DISCOVER_PROMPT = """你是文档信息抽取助手。用户会给你一张单据的文字。
 文字是按单据上的位置排开的，每块文字前面的 ⟨数字⟩ 是这块的编号；后面可能还有按位置找出来的
 "标题 → 值"和表格，帮你看清结构，以原文为准。
 任务：找出单据上所有"名称：值"形式的信息（例如 发票号码、日期、合计、地址、电话），
-每一项给出 key（单据上印的名称，照抄原文）、value（值，照抄原文）、type、
+每一项给出 key（单据上印的名称，照抄原文）、value（值）、text（值在原文里一字不差的写法）、type、
 blocks（值用到的文字块编号）。
 规则：
 1. 只根据给出的文字回答，不要猜，不要补充文字里没有的信息。
 2. key 用单据上的原话；单据上没有印名称、但意思明确的值（例如最上面的商家名），
    key 用简短的中文说明，例如"商家名称"。值写在标题下面的，key 用那个标题。
-3. type：金额、数量这类纯数字写 number，value 只填数字，不带货币符号和千分位逗号；
-   日期写 date，value 写成 YYYY-MM-DD；其他写 string，value 照抄原文。
-4. 值跨几块（例如地址折成两行）时连起来写（中间加一个空格），blocks 写这几块。
+3. text 永远照抄原文（包括货币符号、空格、标点、月份英文）。value 和 type：
+   金额、数量这类纯数字写 number，value 只填数字，不带货币符号和千分位逗号；
+   单独一个日期写 date，value 写成 YYYY-MM-DD；
+   日期范围（July 1 - July 31, 2014、2014年7月1日至31日）写 date_range，
+   value 写成 "开始 ~ 结束"（都是 YYYY-MM-DD，原文只写了一次年份的两边都用这个年份）；
+   其他写 string，value 和 text 一样照抄原文。看不出年份或日月顺序的，不要猜，type 写 string。
+4. 值跨几块（例如地址折成两行）时连起来写（中间加一个空格），blocks 写这几块；
+   只写值用到的块，不写印着名称的那块，也不写旁边别的栏的块。
 5. 商品明细这种表格不要逐格列出，每一行商品也不要当成键值对；同一项不要重复写。"""
 
 DISCOVER_SCHEMA: dict[str, object] = {
@@ -90,10 +138,11 @@ DISCOVER_SCHEMA: dict[str, object] = {
                 "properties": {
                     "key": {"type": "string"},
                     "value": {"anyOf": [{"type": "string"}, {"type": "number"}, {"type": "null"}]},
-                    "type": {"enum": ["string", "number", "date"]},
+                    "text": _TEXT,
+                    "type": {"enum": ["string", "number", "date", "date_range"]},
                     "blocks": _BLOCKS,
                 },
-                "required": ["key", "value", "type", "blocks"],
+                "required": ["key", "value", "text", "type", "blocks"],
                 "additionalProperties": False,
             },
         }
@@ -115,11 +164,33 @@ def _plain_schema(f: FieldSpec) -> dict[str, object]:
 
 
 def _value_schema(f: FieldSpec) -> dict[str, object]:
-    """一个值：{"value": 值或 null, "blocks": [文字块编号]}，两个都必须有。"""
+    """一个值：{"value", "blocks"}；数字、日期、日期范围再加 text（原文的写法，ADR 0040）。"""
+    if f.type == "string":
+        return {
+            "type": "object",
+            "properties": {"value": _plain_schema(f), "blocks": _BLOCKS},
+            "required": ["value", "blocks"],
+            "additionalProperties": False,
+        }
+    if f.type == "date_range":
+        either: dict[str, object] = {"anyOf": [_DATE, {"type": "null"}]}
+        value: dict[str, object] = {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {"start": either, "end": either},
+                    "required": ["start", "end"],
+                    "additionalProperties": False,
+                },
+                {"type": "null"},
+            ]
+        }
+    else:
+        value = _plain_schema(f)
     return {
         "type": "object",
-        "properties": {"value": _plain_schema(f), "blocks": _BLOCKS},
-        "required": ["value", "blocks"],
+        "properties": {"value": value, "text": _TEXT, "blocks": _BLOCKS},
+        "required": ["value", "text", "blocks"],
         "additionalProperties": False,
     }
 
@@ -153,11 +224,39 @@ def _field_line(f: FieldSpec, indent: str = "") -> str:
     return f"{indent}- {f.name}（{_TYPE_NAMES[f.type]}）：{f.description}"
 
 
+MULTI_PAGE_NOTE = (
+    "这张单据有 {n} 页，下面按顺序接在一起，页与页之间有“第 n 页”分隔。"
+    "字段在哪一页都可以；表格跨页时接着写，每页重复的表头、页眉页脚、“承上页”“续下页”这类行不算表格的行。"
+)
+
+
 def page_prompt(structure: PageStructure) -> str:
-    """给模型看的单据：版面原样 + 结构。"""
+    """给模型看的单据：版面原样 + 结构。几页拼成的单据先说一句有几页（ADR 0036）。"""
     text = f"单据文字（按位置排开，⟨数字⟩ 是文字块编号）：\n{spatial_text(structure)}"
+    if len(structure.page_starts) > 1:
+        text = MULTI_PAGE_NOTE.format(n=len(structure.page_starts)) + "\n\n" + text
     extra = structure_text(structure)
     return f"{text}\n\n{extra}" if extra else text
+
+
+def sent_record(
+    structure: PageStructure, document_text: str, images: int = 0, lessons: int = 0
+) -> dict[str, Any]:
+    """发给模型的是什么（ADR 0053）：版面原样里写进去的文字块编号、单据文字原文和 sha256、
+    几张图、几个例子。存进抽取记录，追查"值在不在发出去的文字里"。"""
+    numbers = sorted(
+        structure.number_of(c) for line in structure.lines for c in structure.blocks[line].children
+    )
+    return {
+        "version": 1,
+        "blocks": numbers,
+        "total_blocks": len(structure.words),
+        "chars": len(document_text),
+        "sha256": hashlib.sha256(document_text.encode("utf-8")).hexdigest(),
+        "text": document_text,
+        "images": images,
+        "lessons": lessons,
+    }
 
 
 def build_messages(
@@ -165,15 +264,87 @@ def build_messages(
     fields: Sequence[FieldSpec],
     tables: Sequence[TableSpec] = (),
     structure: PageStructure | None = None,
+    images: Sequence[bytes] = (),
+    lessons: str = "",
 ) -> list[ChatMessage]:
-    """拼出发给模型的消息：系统规则 + 字段和表格说明 + 单据（版面原样 + 结构）。"""
+    """拼出发给模型的消息：系统规则 + 字段和表格说明 + 单据（版面原样 + 结构）。
+
+    lessons 是以前人工改过的例子（ADR 0045），放在单据前面。
+
+    images 是单据原图（ADR 0038）：附在后面，并说明 OCR 可能认错的地方以图为准。"""
     structure = structure or analyze_page(page)
     field_lines = "\n".join(_field_line(f) for f in fields)
     for t in tables:
         columns = "\n".join(_field_line(c, "  ") for c in t.columns)
         field_lines += f"\n- {t.name}（表格，每行一个对象）：{t.description}\n{columns}"
-    user = f"要抽取的字段：\n{field_lines}\n\n{page_prompt(structure)}"
-    return [ChatMessage("system", SYSTEM_PROMPT), ChatMessage("user", user)]
+    learned = f"{lessons}\n\n" if lessons else ""
+    user = f"要抽取的字段：\n{field_lines}\n\n{learned}{page_prompt(structure)}"
+    if images:
+        user += "\n\n" + VISION_NOTE.format(n=len(images))
+    return [ChatMessage("system", SYSTEM_PROMPT), ChatMessage("user", user, tuple(images))]
+
+
+SEGMENT_PROMPT_VERSION = "segment-v1"
+"""判断"这一页是不是上一页的续页"的提示词版本（ADR 0036）。"""
+
+SEGMENT_PROMPT = """你在整理扫描或导出的单据。一个文件里可能有好几张单据，一张单据也可能有好几页。
+用户给你上一页的最后几行和这一页的最前几行。判断这一页是上一页那张单据的续页（同一张单据的下一页），
+还是一张新的单据。
+- 续页：接着上一页的明细表往下写、没有新的单据抬头、写着“续”“承上页”、页码是第 2 页及以后。
+- 新单据：有自己的抬头（商家、发票号码、单据标题）、单号或日期和上一页不同、
+  上一页已经有合计或签名结尾。
+只根据给出的文字判断。"""
+
+SEGMENT_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {"continues": {"type": "boolean"}, "reason": {"type": "string"}},
+    "required": ["continues", "reason"],
+}
+
+SEGMENT_LINES = 25
+"""判断续页时给模型看上一页的最后几行、这一页的最前几行。"""
+
+
+LOOK_PROMPT_VERSION = "look-v1"
+"""审核时"让模型看这块"的提示词版本（ADR 0038）。"""
+
+LOOK_PROMPT = """你在帮人核对单据。用户给你单据上框出来的一小块图，
+可能有手写、印章、模糊、被笔迹盖住的字。
+1. text：照原样写出图里的文字（多行用空格连起来），看不清的字不要猜，写 ?。
+2. value：如果用户说了要填哪个字段，写这个字段的值：数字只写数字（不带货币符号和千分位逗号），
+   日期写成 YYYY-MM-DD，文字照抄。图里没有这个字段的值就写 null。"""
+
+LOOK_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "text": {"type": "string"},
+        "value": {"anyOf": [{"type": "string"}, {"type": "number"}, {"type": "null"}]},
+    },
+    "required": ["text", "value"],
+}
+
+
+def look_at(
+    backend: ModelBackend, image: bytes, label: str | None = None, kind: str | None = None
+) -> tuple[str, str | None, str]:
+    """让模型看一小块图（ADR 0038）：返回（图里的文字，要填的字段的值，模型名）。"""
+    ask = "读出图里的文字。"
+    if label:
+        ask += f"要填的字段：{label}（{_TYPE_NAMES.get(kind or 'string', '文字')}）。"
+    messages = [ChatMessage("system", LOOK_PROMPT), ChatMessage("user", ask, (image,))]
+    result = backend.chat(messages, json_schema=LOOK_SCHEMA)
+    try:
+        data = json.loads(result.text)
+    except json.JSONDecodeError as err:
+        raise ExtractionError(f"模型的回答不是合格的 JSON：{result.text[:200]}") from err
+    if not isinstance(data, dict):
+        raise ExtractionError(f"模型的回答不是 JSON 对象：{result.text[:200]}")
+    text = " ".join(str(data.get("text") or "").split())
+    value = data.get("value")
+    if isinstance(value, float) and value == int(value) and kind != "number":
+        value = int(value)
+    shown = None if value is None or (isinstance(value, str) and not value.strip()) else str(value)
+    return text, shown, result.model
 
 
 class LlmExtractor:
@@ -181,6 +352,62 @@ class LlmExtractor:
 
     def __init__(self, backend: ModelBackend) -> None:
         self.backend = backend
+        self.on_text: Callable[[int], None] | None = None
+        """抽取时模型每写一段就告诉它一共写了多少字（处理进度用）。不设就不流式。"""
+        self.lessons: tuple[str, int] = ("", 0)
+        """以前人工改过的例子（ADR 0045）：（提示词里的那一段, 几条）。流水线抽取前设、抽完清掉。"""
+        self.lessons_mode = "recent"
+        """例子是怎么挑的（ADR 0055）：curated 时提示词版本记成 +curatedN。"""
+
+    def _ask(self, messages: list[ChatMessage], schema: dict[str, object]) -> ChatResult:
+        """问模型。要报进度、模型服务又能边写边传时，用流式；否则一次拿回来。"""
+        stream = getattr(self.backend, "chat_stream", None)
+        if self.on_text is not None and callable(stream):
+            return cast(ChatResult, stream(messages, json_schema=schema, on_text=self.on_text))
+        return self.backend.chat(messages, json_schema=schema)
+
+    def continues(self, previous: OcrPage, current: OcrPage) -> bool | None:
+        """这一页是不是上一页那张单据的续页（ADR 0036）。模型答不上来返回 None（当作新单据）。"""
+        before = "\n".join(r.text for r in group_rows(previous)[-SEGMENT_LINES:])
+        after = "\n".join(r.text for r in group_rows(current)[:SEGMENT_LINES])
+        messages = [
+            ChatMessage("system", SEGMENT_PROMPT),
+            ChatMessage("user", f"上一页的最后几行：\n{before}\n\n这一页的最前几行：\n{after}"),
+        ]
+        result = self.backend.chat(messages, json_schema=SEGMENT_SCHEMA)
+        try:
+            data = json.loads(result.text)
+        except json.JSONDecodeError:
+            return None
+        answer = data.get("continues") if isinstance(data, dict) else None
+        return answer if isinstance(answer, bool) else None
+
+    def sees_images(self) -> bool:
+        """模型能不能看图（模型服务加载了视觉模型，ADR 0038）。"""
+        check = getattr(self.backend, "sees_images", None)
+        return bool(check()) if callable(check) else False
+
+    def choose(self, text: str, options: Sequence[str]) -> tuple[int, str] | None:
+        """自动判断用哪个模板（ADR 0038）：返回（第几个，从 1 开始，0 是都不合适；理由）。
+        模型的回答不合格返回 None。"""
+        listed = "\n".join(f"{n}. {o}" for n, o in enumerate(options, start=1))
+        messages = [
+            ChatMessage("system", CLASSIFY_PROMPT),
+            ChatMessage("user", f"模板：\n{listed}\n\n单据开头的文字：\n{text}"),
+        ]
+        result = self.backend.chat(messages, json_schema=CLASSIFY_SCHEMA)
+        try:
+            data = json.loads(result.text)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(data, dict):
+            return None
+        choice, reason = data.get("choice"), data.get("reason")
+        if not isinstance(choice, int) or isinstance(choice, bool):
+            return None
+        if not 0 <= choice <= len(options):
+            return None
+        return choice, reason if isinstance(reason, str) else ""
 
     def extract(
         self,
@@ -188,12 +415,13 @@ class LlmExtractor:
         fields: Sequence[FieldSpec],
         tables: Sequence[TableSpec] = (),
         structure: PageStructure | None = None,
+        images: Sequence[bytes] = (),
     ) -> ExtractionResult:
         structure = structure or analyze_page(page)
         schema = build_schema(fields, tables)
-        result = self.backend.chat(
-            build_messages(page, fields, tables, structure), json_schema=schema
-        )
+        lessons, count = self.lessons
+        result = self._ask(build_messages(page, fields, tables, structure, images, lessons), schema)
+        sent = sent_record(structure, page_prompt(structure), len(images), count)
         try:
             data = json.loads(result.text)
         except json.JSONDecodeError as err:
@@ -235,8 +463,14 @@ class LlmExtractor:
             raw_output=result.text,
             model=result.model,
             backend=result.backend,
-            prompt_version=PROMPT_VERSION,
+            prompt_version=(VISION_PROMPT_VERSION if images else PROMPT_VERSION)
+            + (
+                f"+{'curated' if self.lessons_mode == 'curated' else 'lessons'}{count}"
+                if count
+                else ""
+            ),
             duration_ms=result.duration_ms,
+            sent=sent,
         )
 
     def discover(self, page: OcrPage, structure: PageStructure | None = None) -> ExtractionResult:
@@ -249,7 +483,7 @@ def _discover(self: LlmExtractor, page: OcrPage, structure: PageStructure) -> Ex
         ChatMessage("system", DISCOVER_PROMPT),
         ChatMessage("user", page_prompt(structure)),
     ]
-    result = self.backend.chat(messages, json_schema=DISCOVER_SCHEMA)
+    result = self._ask(messages, DISCOVER_SCHEMA)
     try:
         data = json.loads(result.text)
     except json.JSONDecodeError as err:
@@ -272,8 +506,27 @@ def _discover(self: LlmExtractor, page: OcrPage, structure: PageStructure) -> Ex
             value = _as_number(value)
             if value is None:
                 type_, value = "string", str(item.get("value"))
+        elif type_ == "date":
+            # 模型有时把单个日期照抄原文（August 3 , 2014），换成 YYYY-MM-DD；读不出就当文字
+            value = str(value).strip()
+            day = _as_date(value)
+            if day is None:
+                type_ = "string"
+            else:
+                value = day
+        elif type_ == "date_range":
+            ranged = _range_value(str(value))
+            if ranged is None or "~" not in ranged:
+                type_, value = "string", str(value).strip()
+            else:
+                value = ranged
         else:
             value = str(value).strip()
+        text = item.get("text")
+        text = " ".join(text.split()) if isinstance(text, str) and text.strip() else None
+        original = str(item.get("value")).strip()
+        if text is None and type_ != "string" and original != str(value):
+            text = " ".join(original.split())  # 模型把原文写进了 value：原文就是它
         if (key, str(value)) in seen:
             continue  # 同一项写了两遍
         seen.add((key, str(value)))
@@ -288,6 +541,7 @@ def _discover(self: LlmExtractor, page: OcrPage, structure: PageStructure) -> Ex
                 label=key[:200],
                 row_end=row_end,
                 blocks=blocks,
+                text=text if type_ != "string" else None,
             )
         )
     return ExtractionResult(
@@ -297,7 +551,21 @@ def _discover(self: LlmExtractor, page: OcrPage, structure: PageStructure) -> Ex
         backend=result.backend,
         prompt_version=DISCOVER_PROMPT_VERSION,
         duration_ms=result.duration_ms,
+        sent=sent_record(structure, messages[1].content),
     )
+
+
+def _as_date(value: str) -> str | None:
+    """日期写成 YYYY-MM-DD；读不出返回 None。"""
+    from datetime import date
+
+    from jacara.core.textvalue import parse_date
+
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        day = parse_date(value)
+        return day.isoformat() if day else None
 
 
 def _as_number(value: object) -> float | None:
@@ -339,15 +607,65 @@ def _field(
         raise ExtractionError(f"模型的回答缺少字段 {name}：{raw[:200]}")
     item = cast(dict[str, Any], item)
     value = item["value"]
+    # 模型没给 text、value 却是照抄的原文（老格式、或者没听话）：原文就是它
+    copied = value.strip() if isinstance(value, str) and spec.type != "string" else None
     if spec.type == "number" and isinstance(value, int) and not isinstance(value, bool):
         value = float(value)
+    if spec.type == "date" and isinstance(value, str):
+        # 日期统一存成 YYYY-MM-DD：模型照抄了原文（August 3 , 2014）也换过来；
+        # 读不出就原样，核对时标出来
+        value = _as_date(value.strip()) or value
+    if spec.type == "date_range":
+        value = _range_value(value)
+    text = item.get("text")
+    text = " ".join(text.split()) if isinstance(text, str) and text.strip() else None
+    if text is None and copied and copied != value:
+        text = " ".join(copied.split())
+    if value is None and text is not None and spec.type != "string":
+        value = _from_text(spec.type, text)  # 模型看不准没填，按原文读一次；读不出还是空
     blocks = _blocks(item, structure) if value is not None else ()
     row, row_end = _rows_of(blocks, structure)
     if not blocks and value is not None:
         row, row_end = _legacy_rows(item)
     return ExtractedField(
-        name=name, type=spec.type, value=value, row=row, row_end=row_end, blocks=blocks
+        name=name,
+        type=spec.type,
+        value=value,
+        row=row,
+        row_end=row_end,
+        blocks=blocks,
+        text=text if value is not None else None,
     )
+
+
+def _range_value(value: object) -> str | None:
+    """日期范围的 value：{"start", "end"} → "2014-07-01 ~ 2014-07-31"（老格式的原文字符串也认）。"""
+    from jacara.core.daterange import parse_date_range
+
+    if isinstance(value, dict):
+        start = _as_date(str(value.get("start") or "")) if value.get("start") else None
+        end = _as_date(str(value.get("end") or "")) if value.get("end") else None
+        if start is None and end is None:
+            return None
+        return f"{start or ''} ~ {end or ''}".strip()
+    if isinstance(value, str) and value.strip():
+        found = parse_date_range(value).range
+        return found.text() if found and found.start and found.end else value.strip()
+    return None
+
+
+def _from_text(type_: str, text: str) -> str | float | None:
+    """模型 value 填了 null、只给了原文：按规则读一次（读不出就是 None）。"""
+    from jacara.core.daterange import parse_date_range
+
+    if type_ == "number":
+        return _as_number(text)
+    if type_ == "date":
+        return _as_date(text)
+    found = parse_date_range(text).range
+    if found is None or found.start is None or found.end is None:
+        return None
+    return found.text()
 
 
 def _cell(row: dict[str, Any], column: str) -> object:
@@ -378,6 +696,7 @@ def _renamed(cell: ExtractedField, name: str) -> ExtractedField:
         label=cell.label,
         row_end=cell.row_end,
         blocks=cell.blocks,
+        text=cell.text,
     )
 
 

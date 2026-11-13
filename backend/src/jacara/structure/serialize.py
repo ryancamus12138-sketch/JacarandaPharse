@@ -23,8 +23,14 @@ def spatial_text(s: PageStructure) -> str:
     """版面原样：一行一个视觉行，每块按横向位置排，块前面带 ⟨编号⟩。"""
     out: list[str] = []
     previous: Block | None = None
+    page = 0
     for line_id in s.lines:
         line = s.blocks[line_id]
+        # 几页拼成的单据：到了下一页，写一行分隔（ADR 0036）
+        while page + 1 < len(s.page_starts) and line.box[1] >= s.page_starts[page + 1]:
+            page += 1
+            out += ["", f"──────── 第 {page + 1} 页 ────────", ""]
+            previous = None
         if previous is not None:
             h = max(min(line.box[3] - line.box[1], previous.box[3] - previous.box[1]), 1.0)
             if line.box[1] - previous.box[3] > 1.2 * h:

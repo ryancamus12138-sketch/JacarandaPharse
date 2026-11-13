@@ -1,9 +1,10 @@
-import { ScanOutlined } from '@ant-design/icons'
-import { useMutation } from '@tanstack/react-query'
+import { EyeOutlined, ScanOutlined } from '@ant-design/icons'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Alert, Button, Flex, Input, Typography } from 'antd'
 import { useState } from 'react'
 import { ApiError } from '../../api/client'
-import { ocrRegion } from '../../api/documents'
+import { lookRegion, ocrRegion } from '../../api/documents'
+import { getVision } from '../../api/system'
 import type { Box, OcrLine } from '../../api/types'
 
 interface Props {
@@ -17,8 +18,15 @@ interface Props {
   busy: boolean
   /** 用框里已经认出的文字块（和"点原文填值"一样）。 */
   onUseLines: (indexes: number[]) => void
-  /** 用重新识别、人确认过的文字。 */
-  onUseText: (text: string) => void
+  /** 字段类型（string、number、date），让模型按类型写值。 */
+  type?: string
+  /**
+   * 用重新识别（或模型看图读出）、人确认过的文字。byModel：是模型看图读的。
+   * transcription：图中原文（开了"自动收集纠错样本"才有，ADR 0050）。
+   */
+  onUseText: (text: string, byModel: boolean, transcription?: string) => void
+  /** 开了"自动收集纠错样本"：填入的同时把框里的图和图中原文存成 OCR 样本。 */
+  collecting?: boolean
   onCancel: () => void
 }
 
@@ -34,9 +42,10 @@ function linesIn(lines: OcrLine[], [x0, y0, x1, y1]: Box): OcrLine[] {
 }
 
 /**
- * 框好之后：两种用法。
+ * 框好之后：三种用法。
  * - 用框里的文字：框住的 OCR 文字块直接填进去（快）；
- * - 重新识别这块：把这块裁下来放大再认一次，结果可以改，确认后填进去（OCR 认错的地方用这个）。
+ * - 重新识别这块：把这块裁下来放大再认一次，结果可以改，确认后填进去（OCR 认错的地方用这个）；
+ * - 让模型看这块（ADR 0038，要有视觉模型）：手写、印章、被笔迹盖住的字，模型看图读出要填的值。
  */
 export function RegionPanel({
   documentId,
@@ -45,16 +54,41 @@ export function RegionPanel({
   label,
   lines,
   busy,
+  type,
   onUseLines,
   onUseText,
+  collecting = false,
   onCancel,
 }: Props) {
   const inside = linesIn(lines, box)
   const [text, setText] = useState<string | null>(null)
+  // 图中原文单独填的（框里还有别的字，和要填的值不一样）；null = 和填入的值一样
+  const [own, setOwn] = useState<string | null>(null)
+  const [byModel, setByModel] = useState(false)
+  const [seen, setSeen] = useState<string | null>(null)
+  const vision = useQuery({ queryKey: ['vision'], queryFn: getVision, staleTime: 60_000 })
   const read = useMutation({
     mutationFn: () => ocrRegion(documentId, page, box),
-    onSuccess: (result) => setText(result.text),
+    onSuccess: (result) => {
+      setText(result.text)
+      setByModel(false)
+      setSeen(null)
+    },
   })
+  const look = useMutation({
+    mutationFn: () => lookRegion(documentId, page, { box, label, type }),
+    onSuccess: (result) => {
+      setText(result.value ?? result.text)
+      setByModel(true)
+      setSeen(result.text)
+    },
+  })
+  const error = read.error ?? look.error
+  // 模型看图读的值可能已经转过格式，图中原文默认用它在图上看到的字
+  const transcription = collecting ? (own ?? (byModel && seen ? seen : text) ?? undefined) : undefined
+  const use = () => {
+    if (text?.trim()) onUseText(text.trim(), byModel, transcription?.trim() || undefined)
+  }
 
   return (
     <Alert
@@ -89,25 +123,40 @@ export function RegionPanel({
             >
               重新识别这块
             </Button>
+            {vision.data?.sees_images && (
+              <Button
+                size="small"
+                icon={<EyeOutlined />}
+                loading={look.isPending}
+                onClick={() => look.mutate()}
+              >
+                让模型看这块
+              </Button>
+            )}
             <Button size="small" onClick={onCancel}>
               取消（Esc）
             </Button>
           </Flex>
-          {read.error && (
+          {error && (
             <Typography.Text type="danger">
-              {read.error instanceof ApiError ? read.error.message : String(read.error)}
+              {error instanceof ApiError ? error.message : String(error)}
+            </Typography.Text>
+          )}
+          {byModel && seen !== null && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              模型在图上看到：「{seen || '（没看出字）'}」。手写、盖住的字模型也可能看错，填之前对一下原图。
             </Typography.Text>
           )}
           {text !== null && (
             <Flex gap={8} align="center">
-              <Typography.Text>重新识别：</Typography.Text>
+              <Typography.Text>{byModel ? '模型读的：' : '重新识别：'}</Typography.Text>
               <Input
                 size="small"
                 autoFocus
                 value={text}
                 placeholder="没认出文字，可以直接输入"
                 onChange={(e) => setText(e.target.value)}
-                onPressEnter={() => text.trim() && onUseText(text.trim())}
+                onPressEnter={use}
                 style={{ flex: 1 }}
               />
               <Button
@@ -115,10 +164,32 @@ export function RegionPanel({
                 type="primary"
                 disabled={!text.trim()}
                 loading={busy}
-                onClick={() => onUseText(text.trim())}
+                onClick={use}
               >
                 填入
               </Button>
+            </Flex>
+          )}
+          {text !== null && collecting && own === null && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              图中原文{byModel && seen ? `用模型在图上看到的「${seen}」` : '和上面填入的一样'}
+              ，会和框里的图一起存成 OCR 样本。框里还有别的字（比如标签）？
+              <Button type="link" size="small" onClick={() => setOwn(transcription ?? text)}>
+                单独填写图中原文
+              </Button>
+            </Typography.Text>
+          )}
+          {text !== null && collecting && own !== null && (
+            <Flex gap={8} align="center">
+              <Typography.Text>图中原文：</Typography.Text>
+              <Input
+                size="small"
+                value={own}
+                placeholder="框里所有的字，按图上原样"
+                onChange={(e) => setOwn(e.target.value)}
+                onPressEnter={use}
+                style={{ flex: 1, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}
+              />
             </Flex>
           )}
         </Flex>

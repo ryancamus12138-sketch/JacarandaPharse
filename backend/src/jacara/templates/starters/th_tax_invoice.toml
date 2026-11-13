@@ -1,0 +1,159 @@
+# 起步模板：ประเทศไทย ใบกำกับภาษีเต็มรูป / อย่างย่อ。
+# 依据：ประมวลรัษฎากร มาตรา 86/4（คำว่า ใบกำกับภาษี、ชื่อ ที่อยู่ เลขประจำตัวผู้เสียภาษีผู้ออก、ชื่อ ที่อยู่ผู้ซื้อ、เลขที่ใบกำกับ、
+#   รายการสินค้า、ภาษีมูลค่าเพิ่มแยกจากมูลค่า、วันที่）；ประกาศอธิบดีฯ ฉบับที่ 199（ตั้งแต่ 1 ม.ค. 2558：เลขประจำตัวผู้เสียภาษีผู้ซื้อ、
+#   สำนักงานใหญ่ / สาขาที่ ของผู้ขายและผู้ซื้อ）；มาตรา 86/6 ใบกำกับภาษีอย่างย่อ。VAT 7%（พระราชกฤษฎีกา ฉบับที่ 807 พ.ศ. 2569 ถึง 30 ก.ย. 2570）。
+# 场景：泰国 VAT 登记户开具，买方凭全额税票抵扣进项税；报销。
+# 来源：rd.go.th ประกาศอธิบดีฯ ฉบับที่ 199；lookuptax「Thailand VAT 7% extended, Decree 807」。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "th_tax_invoice"
+version = 1
+title = "泰国税务发票（ใบกำกับภาษี）"
+titles = { en = "Tax Invoice (Thailand)", th = "ใบกำกับภาษี" }
+countries = ["TH"]
+domains = ["发票"]
+description = "泰国的 ใบกำกับภาษี：ใบกำกับภาษี 字样、卖方名称地址和 13 位税号及总店/分店、买方名称地址税号及总店/分店、编号、日期、商品、金额、VAT。税号校验位不对、VAT 不等于 7%、没有 ใบกำกับภาษี 字样、写了买方税号没写分店会提醒。"
+rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "th_seller_tax_id", "th_buyer_tax_id", "th_vat_7", "th_title", "th_buyer_branch"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+names = { en = "Document Title", th = "ชื่อเอกสาร" }
+type = "string"
+description = "单据最上面的标题，照抄"
+aliases = ["ชื่อเอกสาร"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票号码"
+names = { en = "Invoice No.", th = "เลขที่" }
+type = "string"
+required = true
+unique = true
+description = "照抄，不要改格式"
+aliases = ["เลขที่"]
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue", th = "วันที่" }
+type = "date"
+required = true
+aliases = ["วันที่"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller", th = "ชื่อผู้ขาย" }
+type = "string"
+required = true
+aliases = ["ชื่อผู้ขาย"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address", th = "ที่อยู่ผู้ขาย" }
+type = "string"
+aliases = ["ที่อยู่ผู้ขาย"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "卖方税号"
+names = { en = "Seller Tax ID", th = "เลขประจำตัวผู้เสียภาษีอากร" }
+type = "string"
+description = "照抄，带上字母和分隔符"
+aliases = ["เลขประจำตัวผู้เสียภาษีอากร"]
+
+[[fields]]
+name = "seller_branch"
+label = "卖方总店 / 分店"
+names = { en = "Seller Head Office / Branch", th = "สำนักงานใหญ่/สาขา" }
+type = "string"
+description = "สำนักงานใหญ่ 或 สาขาที่ 00001，照抄"
+aliases = ["สำนักงานใหญ่/สาขา"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer", th = "ชื่อผู้ซื้อ" }
+type = "string"
+aliases = ["ชื่อผู้ซื้อ"]
+
+[[fields]]
+name = "buyer_address"
+label = "买方地址"
+names = { en = "Buyer Address", th = "ที่อยู่ผู้ซื้อ" }
+type = "string"
+aliases = ["ที่อยู่ผู้ซื้อ"]
+
+[[fields]]
+name = "buyer_tax_id"
+label = "买方税号"
+names = { en = "Buyer Tax ID", th = "เลขประจำตัวผู้เสียภาษีผู้ซื้อ" }
+type = "string"
+description = "照抄；没有就留空"
+aliases = ["เลขประจำตัวผู้เสียภาษีผู้ซื้อ"]
+
+[[fields]]
+name = "buyer_branch"
+label = "买方总店 / 分店"
+names = { en = "Buyer Head Office / Branch", th = "สาขาผู้ซื้อ" }
+type = "string"
+aliases = ["สาขาผู้ซื้อ"]
+
+[[fields]]
+name = "net_total"
+label = "不含税合计"
+names = { en = "Total excl. Tax", th = "มูลค่าสินค้า" }
+type = "number"
+aliases = ["มูลค่าสินค้า"]
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax", th = "ภาษีมูลค่าเพิ่ม" }
+type = "number"
+aliases = ["ภาษีมูลค่าเพิ่ม"]
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+names = { en = "Total incl. Tax", th = "จำนวนเงินรวมทั้งสิ้น" }
+type = "number"
+required = true
+aliases = ["จำนวนเงินรวมทั้งสิ้น"]
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items", th = "รายการ" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description", th = "รายการ" }
+type = "string"
+aliases = ["รายการ"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity", th = "จำนวน" }
+type = "number"
+aliases = ["จำนวน"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price", th = "ราคาต่อหน่วย" }
+type = "number"
+aliases = ["ราคาต่อหน่วย"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount", th = "จำนวนเงิน" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+aliases = ["จำนวนเงิน"]

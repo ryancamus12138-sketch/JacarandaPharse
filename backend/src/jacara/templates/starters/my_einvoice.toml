@@ -1,0 +1,209 @@
+# 起步模板：Malaysia e-Invoice（MyInvois，经 LHDN / IRBM 验证后的打印件）。
+# 依据：Income Tax Act 1967 s.82C（e-Invoice）、IRBM e-Invoice Guideline v4.6（2025-12）与 Specific Guideline（依 s.134A 发布）：
+#   供应商和买方的 TIN、BRN、SST 登记号（没有写 NA）、MSIC 代码、发票号、日期、明细、税额；经验证的电子发票打印件带 IRBM
+#   唯一编号（UIN）、验证日期时间和二维码。年营业额低于 RM1,000,000 的纳税人免于强制实施。
+# 场景：马来西亚企业间交易、报销；买方凭已验证的电子发票做支出抵扣。
+# 来源：LHDN IRBM e-Invoice Specific Guideline（hasil.gov.my）；vatupdate 2025-12-07 Guideline v4.6。
+# 只写字段和法规要求，不放任何真实单据的内容。
+
+name = "my_einvoice"
+version = 1
+title = "马来西亚电子发票（MyInvois）"
+titles = { en = "e-Invoice (Malaysia, MyInvois)", ms = "e-Invois" }
+countries = ["MY"]
+domains = ["发票"]
+description = "马来西亚 MyInvois 电子发票：供应商和买方的 TIN、BRN、SST 号，MSIC 代码，发票号和日期，明细、税额、合计，以及 LHDN 验证后的唯一编号（UIN）和验证时间。没读到 UIN 会提醒（可能不是已验证的电子发票）。"
+rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "my_validated"]
+
+[[fields]]
+name = "document_title"
+label = "单据标题"
+names = { en = "Document Title", ms = "Jenis e-Invois" }
+type = "string"
+description = "单据最上面的标题，照抄"
+aliases = ["Jenis e-Invois"]
+
+[[fields]]
+name = "invoice_no"
+label = "发票号码"
+names = { en = "Invoice No.", ms = "No. e-Invois" }
+type = "string"
+required = true
+unique = true
+description = "照抄，不要改格式"
+aliases = ["No. e-Invois"]
+
+[[fields]]
+name = "issue_date"
+label = "开具日期"
+names = { en = "Date of Issue", ms = "Tarikh" }
+type = "date"
+required = true
+aliases = ["Tarikh"]
+
+[[fields]]
+name = "seller_name"
+label = "卖方名称"
+names = { en = "Seller", ms = "Nama Pembekal" }
+type = "string"
+required = true
+aliases = ["Nama Pembekal"]
+
+[[fields]]
+name = "seller_tax_id"
+label = "供应商 TIN"
+names = { en = "Supplier TIN", ms = "TIN Pembekal" }
+type = "string"
+aliases = ["TIN", "Tax Identification No", "TIN Pembekal"]
+
+[[fields]]
+name = "seller_brn"
+label = "供应商注册号"
+names = { en = "Supplier BRN", ms = "No. Pendaftaran Pembekal" }
+type = "string"
+aliases = ["BRN", "Registration No", "SSM", "No. Pendaftaran Pembekal"]
+
+[[fields]]
+name = "seller_sst"
+label = "供应商 SST 登记号"
+names = { en = "Supplier SST No.", ms = "No. Pendaftaran SST" }
+type = "string"
+description = "没有 SST 的写 NA，照抄"
+aliases = ["No. Pendaftaran SST"]
+
+[[fields]]
+name = "msic"
+label = "MSIC 代码"
+names = { en = "MSIC Code", ms = "Kod MSIC" }
+type = "string"
+aliases = ["Kod MSIC"]
+
+[[fields]]
+name = "seller_address"
+label = "卖方地址"
+names = { en = "Seller Address", ms = "Alamat Pembekal" }
+type = "string"
+aliases = ["Alamat Pembekal"]
+
+[[fields]]
+name = "buyer_name"
+label = "买方名称"
+names = { en = "Buyer", ms = "Nama Pembeli" }
+type = "string"
+aliases = ["Nama Pembeli"]
+
+[[fields]]
+name = "buyer_tax_id"
+label = "买方 TIN"
+names = { en = "Buyer TIN", ms = "TIN Pembeli" }
+type = "string"
+description = "普通消费者合并开票时是 EI00000000010 这类，照抄"
+aliases = ["TIN Pembeli"]
+
+[[fields]]
+name = "buyer_brn"
+label = "买方注册号"
+names = { en = "Buyer BRN", ms = "No. Pendaftaran Pembeli" }
+type = "string"
+aliases = ["No. Pendaftaran Pembeli"]
+
+[[fields]]
+name = "buyer_address"
+label = "买方地址"
+names = { en = "Buyer Address", ms = "Alamat Pembeli" }
+type = "string"
+aliases = ["Alamat Pembeli"]
+
+[[fields]]
+name = "currency"
+label = "币种"
+names = { en = "Currency", ms = "Mata Wang" }
+type = "string"
+aliases = ["Mata Wang"]
+
+[[fields]]
+name = "net_total"
+label = "不含税合计"
+names = { en = "Total excl. Tax", ms = "Jumlah Tidak Termasuk Cukai" }
+type = "number"
+aliases = ["Jumlah Tidak Termasuk Cukai"]
+
+[[fields]]
+name = "tax_total"
+label = "税额合计"
+names = { en = "Total Tax", ms = "Jumlah Cukai" }
+type = "number"
+aliases = ["Jumlah Cukai"]
+
+[[fields]]
+name = "gross_total"
+label = "含税合计"
+names = { en = "Total incl. Tax", ms = "Jumlah Termasuk Cukai" }
+type = "number"
+required = true
+aliases = ["Jumlah Termasuk Cukai"]
+
+[[fields]]
+name = "uin"
+label = "LHDN 唯一编号（UIN）"
+names = { en = "IRBM Unique Identifier No.", ms = "Nombor Pengenalan Unik" }
+type = "string"
+unique = true
+aliases = ["UIN", "Unique Identifier", "Document UUID", "Nombor Pengenalan Unik"]
+
+[[fields]]
+name = "validated_at"
+label = "验证日期时间"
+names = { en = "Date and Time of Validation", ms = "Tarikh dan Masa Pengesahan" }
+type = "string"
+description = "照抄"
+aliases = ["Tarikh dan Masa Pengesahan"]
+
+[[tables]]
+name = "items"
+label = "明细"
+names = { en = "Items", ms = "Butiran" }
+description = "每一行商品或服务一行；表头、小计、合计不算"
+
+[[tables.columns]]
+name = "description"
+label = "品名"
+names = { en = "Description", ms = "Perihalan" }
+type = "string"
+aliases = ["Perihalan"]
+
+[[tables.columns]]
+name = "quantity"
+label = "数量"
+names = { en = "Quantity", ms = "Kuantiti" }
+type = "number"
+aliases = ["Kuantiti"]
+
+[[tables.columns]]
+name = "unit_price"
+label = "单价"
+names = { en = "Unit Price", ms = "Harga Seunit" }
+type = "number"
+aliases = ["Harga Seunit"]
+
+[[tables.columns]]
+name = "amount"
+label = "金额"
+names = { en = "Amount", ms = "Jumlah" }
+type = "number"
+description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+aliases = ["Jumlah"]
+
+[[tables.columns]]
+name = "tax_rate"
+label = "税率"
+names = { en = "Tax Rate", ms = "Kadar Cukai" }
+type = "string"
+aliases = ["Kadar Cukai"]
+
+[[tables.columns]]
+name = "tax"
+label = "税额"
+names = { en = "Tax", ms = "Cukai" }
+type = "number"
+aliases = ["Cukai"]

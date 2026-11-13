@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
+from jacara.core.storage import ObjectStorage
 from jacara.core.textvalue import parse_date, parse_number
 from jacara.models import ExtractedValue, Extraction, ValueRevision
 from jacara.modules.audit.service import record
@@ -49,10 +50,14 @@ class FieldError(Exception):
 
 
 class FieldService:
-    def __init__(self, session: Session, owner: Owner) -> None:
+    def __init__(
+        self, session: Session, owner: Owner, storage: ObjectStorage | None = None
+    ) -> None:
         self.session = session
         self.repo = ValueRepository(session)
         self.owner = owner
+        self.storage = storage
+        """收集 OCR 样本时存裁图用（ADR 0050）。没有就不收集。"""
 
     def history(self, value_id: uuid.UUID) -> ValueHistory:
         value = self._find(value_id)
@@ -75,6 +80,13 @@ class FieldService:
         evidence: dict[str, Any] | None = None
         if change.source_lines is not None and change.source_box is not None:
             raise FieldError("invalid", "从原文选取和框选只能用一种")
+        if change.transcription is not None and (
+            change.action != "edit"
+            or (change.source_box is None and len(change.source_lines or []) != 1)
+        ):
+            raise FieldError("invalid", "图中原文要对应原图上的一块原文或一个框")
+        sample_line: dict[str, Any] | None = None
+        page = self._page(value.extraction, change.page)
         if change.action == "edit" and change.source_box is not None:
             # 框选重新识别：值是人看过、确认的；出处就是框出的区域
             new_value = normalize(value.type, change.value)
@@ -82,6 +94,7 @@ class FieldService:
                 raise FieldError("invalid", "框里没有要填的值，请框住要识别的文字")
             x0, y0, x1, y1 = change.source_box
             evidence = {
+                "page": page,
                 "row": None,
                 "row_text": new_value,
                 "text": new_value,
@@ -98,10 +111,13 @@ class FieldService:
             reason = change.reason.strip() or "框选重新识别"
         elif change.action == "edit" and change.source_lines is not None:
             # 从原文选取：值从选的文字读出来，出处换成选的这几块
-            lines = self._ocr_lines(value.extraction, change.source_lines)
-            evidence = evidence_from_ocr(lines)
+            lines = self._ocr_lines(value.extraction, change.source_lines, page)
+            evidence = {"page": page, **evidence_from_ocr(lines)}
+            if change.transcription is not None:
+                sample_line = lines[0]
             if change.value is None:
-                new_value = value_from_text(value.type, " ".join(ln["text"] for ln in lines))
+                text = change.transcription or " ".join(ln["text"] for ln in lines)
+                new_value = value_from_text(value.type, text)
             else:
                 new_value = normalize(value.type, change.value)
             reason = change.reason.strip() or "从原文选取"
@@ -115,7 +131,22 @@ class FieldService:
         else:
             new_value, reason = value.current_value, change.reason.strip()
 
-        self._add(value, change.action, new_value, reason, evidence)
+        revision = self._add(value, change.action, new_value, reason, evidence)
+        sample = None
+        if change.transcription is not None:
+            from jacara.modules.ocr_samples.service import collect
+
+            sample = collect(
+                self.session,
+                self.storage,
+                self.owner,
+                value,
+                revision.id,
+                page,
+                change.transcription,
+                line=sample_line,
+                box=change.source_box,
+            )
         record(
             self.session,
             self.owner,
@@ -126,6 +157,7 @@ class FieldService:
             field=value.name,
             value=new_value,
             picked=evidence is not None,
+            **({"ocr_sample": str(sample.id)} if sample is not None else {}),
         )
         self._touch(value.extraction)
         return ValueOut.model_validate(value)
@@ -270,7 +302,7 @@ class FieldService:
         new_value: str | None,
         reason: str,
         evidence: dict[str, Any] | None,
-    ) -> None:
+    ) -> ValueRevision:
         revision = ValueRevision(
             original=value,
             seq=len(value.revisions) + 1,
@@ -286,6 +318,7 @@ class FieldService:
         except IntegrityError as err:
             # 两个人同时审核同一个字段：seq 一样，数据库只让一个写进去
             raise FieldError("conflict", "这个字段刚被别人审核过，请刷新后再试") from err
+        return revision
 
     def apply(self, value: ExtractedValue, action: str, new_value: str | None, reason: str) -> None:
         """沿用上一轮的审核时用：记一条审核记录（审计日志由调用方统一记一条）。"""
@@ -345,8 +378,21 @@ class FieldService:
             raise FieldError("not_found", "找不到这一页的抽取结果")
         return extraction
 
-    def _ocr_lines(self, extraction: Extraction, indexes: list[int]) -> list[dict[str, Any]]:
-        lines: list[dict[str, Any]] = (extraction.ocr or {}).get("lines", [])
+    def _page(self, extraction: Extraction, page: int | None) -> int:
+        """选的是第几页：要在这张单据的页里（ADR 0036）。"""
+        if page is None:
+            return extraction.page
+        if not extraction.page <= page <= (extraction.last_page or extraction.page):
+            raise FieldError("invalid", f"第 {page} 页不属于这张单据")
+        return page
+
+    def _ocr_lines(
+        self, extraction: Extraction, indexes: list[int], page: int | None = None
+    ) -> list[dict[str, Any]]:
+        from jacara.pipeline.pages import ocr_page_json
+
+        ocr = ocr_page_json(extraction.ocr, page or extraction.page, extraction.page)
+        lines: list[dict[str, Any]] = (ocr or {}).get("lines", [])
         if not lines:
             raise FieldError(
                 "invalid", "这一页没有保存 OCR 结果（新功能上线前处理的），不能从原文选取"
@@ -390,9 +436,13 @@ def normalize(type_: str, raw: str | None) -> str | None:
         try:
             return date.fromisoformat(text).isoformat()
         except ValueError:
-            raise FieldError(
-                "invalid", f"{text!r} 不是日期，请写成 2018-12-25 这样的格式"
-            ) from None
+            # 照原文写的也行（August 3 , 2014、25/12/2018），读出来存成 YYYY-MM-DD
+            day = parse_date(text)
+            if day is None:
+                raise FieldError(
+                    "invalid", f"{text!r} 读不出日期，请写成 2018-12-25 这样的格式"
+                ) from None
+            return day.isoformat()
     return text
 
 

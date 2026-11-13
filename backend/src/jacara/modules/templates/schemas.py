@@ -25,6 +25,13 @@ class TemplateFieldOut(BaseModel):
     extract: bool = True
     compute: str = ""
     """计算字段的公式（ADR 0035），空 = 不是计算字段。"""
+    unique: bool = False
+    """不能重复（ADR 0036）：别的文档里有一样的值就提醒可能重复报销。"""
+    range_export: str = "normalized"
+    """日期范围导出成：normalized 统一格式、original 原文、columns 拆成两列（ADR 0039）。"""
+    range_separator: str = " ~ "
+    names: dict[str, str] = {}
+    """别的语言的名字（ADR 0048）：语言代码 → 名字。label 是默认的中文名。"""
 
 
 class TemplateRuleOut(BaseModel):
@@ -41,6 +48,7 @@ class TemplateTableOut(BaseModel):
     columns: list[TemplateFieldOut]
     required: bool = False
     export: bool = True
+    names: dict[str, str] = {}
 
 
 class EntityOut(BaseModel):
@@ -127,12 +135,22 @@ class TemplateOut(BaseModel):
     """内置和起步模板是文件名（receipt、cn_einvoice）；我的模板是 id。"""
     version: int
     title: str
+    titles: dict[str, str] = {}
+    """模板名的别的语言写法（ADR 0048）。"""
+    languages: list[str] = ["zh"]
+    """能切换的语言，第一个是默认的中文。"""
+    basis: list[str] = []
+    """起步模板的依据：法规条款、使用场景、查证来源。我的模板是空的。"""
     description: str
     fields: list[TemplateFieldOut]
     rules: list[TemplateRuleOut]
     custom_rules: list[CustomRuleIO] = []
-    region: str = ""
-    """地区：空 = 通用；cn 中国、au 澳洲。"""
+    domains: list[str] = []
+    """功能领域（ADR 0037）：发票、交通、收据……可以有几个。"""
+    countries: list[str] = []
+    """国家和地区代码（CN、AU……）；空 = 通用。"""
+    tags: list[str] = []
+    """自定义标签。起步模板没有。"""
     tables: list[TemplateTableOut] = []
     """表格（例如商品明细）。每一格存成 items.2.amount 这样名字的字段。"""
     kind: TemplateKind = "builtin"
@@ -148,7 +166,9 @@ class TemplateOut(BaseModel):
     """从起步模板复制的：起步模板后来给哪些字段加了公式（字段 ID → 公式），我的这份还没有。
     编辑器里提示"套用"（ADR 0035）。表格的列写成 items.amount。"""
     used: int = 0
-    """有几份文档现在用的是这个模板（只在"一个模板"里有）。"""
+    """有几份文档用过这个模板（处理过或排队等着用）。我的模板才有。"""
+    last_used_at: datetime | None = None
+    """最近一次有文档用它是什么时候（模板页"最近用过"排序）。"""
     entities: list[EntityOut] = []
     references: list[ReferenceOut] = []
     workbook: WorkbookOut | None = None
@@ -162,15 +182,17 @@ class RuleInfo(BaseModel):
     needs: list[str]
     severity: str
     per_row: str | None = None
-    region: str = ""
-    """地区规则：cn 中国、au 澳洲；通用的是空的。编辑器默认只列通用规则。"""
+    requires: list[str] = []
+    """模板里要有这些字段（值可以空）这条规则才用得上（ADR 0049）。"""
+    country: str = ""
+    """只适用于某个国家的规则：国家代码（CN、AU）；通用的是空的。"""
 
 
 class TemplateFieldIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     """字段 ID：小写英文字母开头，只能有小写字母、数字、下划线。保存后不要改。"""
     label: str = Field(min_length=1, max_length=100)
-    type: Literal["string", "number", "date"] = "string"
+    type: Literal["string", "number", "date", "date_range"] = "string"
     required: bool = False
     description: str = Field(default="", max_length=2000)
     aliases: list[str] = Field(default=[], max_length=20)
@@ -183,6 +205,13 @@ class TemplateFieldIn(BaseModel):
     compute: str = Field(default="", max_length=500)
     """计算字段的公式（ADR 0035），例如 check_out - check_in。
     有公式就不交给模型，由别的字段算出来。"""
+    unique: bool = False
+    """不能重复（ADR 0036）：发票号码这类，别的文档里有一样的值就提醒。"""
+    range_export: Literal["normalized", "original", "columns"] = "normalized"
+    """日期范围（ADR 0039）导出成：统一格式、原文、拆成开始和结束两列。别的类型用不到。"""
+    range_separator: str = Field(default=" ~ ", min_length=1, max_length=10)
+    names: dict[str, str] = Field(default={}, max_length=30)
+    """别的语言的名字（ADR 0048）：{"en": "Invoice number", "ja": "請求書番号"}。"""
 
 
 class TemplateTableIn(BaseModel):
@@ -191,6 +220,7 @@ class TemplateTableIn(BaseModel):
     description: str = Field(default="", max_length=2000)
     required: bool = False
     export: bool = True
+    names: dict[str, str] = Field(default={}, max_length=30)
     columns: list[TemplateFieldIn] = Field(min_length=1, max_length=30)
 
 
@@ -198,16 +228,34 @@ class TemplateIn(BaseModel):
     """保存模板（每次保存是一个新版本）。"""
 
     title: str = Field(min_length=1, max_length=100)
+    titles: dict[str, str] = Field(default={}, max_length=30)
+    """模板名的别的语言写法（ADR 0048）。"""
     category: str = Field(default="", max_length=32)
     description: str = Field(default="", max_length=2000)
     fields: list[TemplateFieldIn] = Field(min_length=1, max_length=80)
     tables: list[TemplateTableIn] = Field(default=[], max_length=5)
     rules: list[str] = []
     custom_rules: list[CustomRuleIO] = Field(default=[], max_length=30)
-    region: Literal["", "cn", "au"] = ""
-    """地区：从起步模板带过来，编辑器里不改。"""
+    domains: list[str] = Field(default=[], max_length=10)
+    """功能领域，可以有几个。"""
+    countries: list[str] = Field(default=[], max_length=300)
+    """国家和地区代码；空 = 通用。"""
+    tags: list[str] = Field(default=[], max_length=20)
+    """自定义标签。"""
     note: str = Field(default="", max_length=500)
     """这一版改了什么。"""
+    column_refs: dict[str, str] = Field(default={}, max_length=500)
+    """从 Excel 建的模板：改原表某一列填什么（ADR 0039）。键是"sheet 名::表头"，值是字段 ID、
+    period.start / period.end / period.days（日期范围的开始、结束、天数），或者空（留空）。
+    不写的列不变。"""
+
+
+class LabelsIn(BaseModel):
+    """只改标签（不出新版本）。不写的那组不变。"""
+
+    domains: list[str] | None = Field(default=None, max_length=10)
+    countries: list[str] | None = Field(default=None, max_length=300)
+    tags: list[str] | None = Field(default=None, max_length=20)
 
 
 class TemplateCreate(BaseModel):
@@ -240,6 +288,23 @@ class SampleIn(BaseModel):
     description: str = Field(default="", max_length=2000)
     fields: list[SampleFieldIn] = Field(min_length=1, max_length=80)
     rules: list[str] = []
+
+
+class BoxFieldIn(TemplateFieldIn):
+    """框选建模板（ADR 0047）的一个字段：在样例第几页、框在哪（只用来记录，不进模板定义）。"""
+
+    page: int = Field(default=1, ge=1)
+    box: list[float] = Field(default=[], max_length=4)
+
+
+class BoxesIn(BaseModel):
+    """框选建模板：样例文档 + 框好的字段。样例可以是任何处理过的文档。"""
+
+    document_id: uuid.UUID
+    title: str = Field(min_length=1, max_length=100)
+    category: str = Field(default="", max_length=32)
+    description: str = Field(default="", max_length=2000)
+    fields: list[BoxFieldIn] = Field(min_length=1, max_length=80)
 
 
 class SampleOut(BaseModel):
@@ -302,7 +367,10 @@ class TemplateFile(BaseModel):
     tables: list[TemplateTableIn] = Field(default=[], max_length=5)
     rules: list[str] = []
     custom_rules: list[CustomRuleIO] = []
-    region: Literal["", "cn", "au"] = ""
+    domains: list[str] = []
+    countries: list[str] | None = None
+    """没有（旧的模板文件、标准 Excel）：按选的规则推断。"""
+    tags: list[str] = []
     entities: list[dict[str, Any]] = []
     references: list[dict[str, Any]] = []
     """参照表的全部数据（columns、rows）。"""
@@ -328,7 +396,7 @@ class ExcelColumn(BaseModel):
     auto 系统自动 / lookup 从参照表对照 / none 不填。"""
     field: str = ""
     label: str = ""
-    type: Literal["string", "number", "date"] = "string"
+    type: Literal["string", "number", "date", "date_range"] = "string"
     required: bool = False
     sensitive: bool = False
     description: str = ""

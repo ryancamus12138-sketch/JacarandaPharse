@@ -13,7 +13,8 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, NamedTuple
 
 from sqlalchemy.orm import Session
 
@@ -25,6 +26,7 @@ from jacara.models import Document, ExtractedValue, Extraction, TemplateRecord, 
 from jacara.modules.audit.service import record
 from jacara.modules.templates.repository import TemplateRepository
 from jacara.modules.templates.schemas import (
+    BoxesIn,
     CustomRuleIO,
     EntityOut,
     ExcelAnalysisOut,
@@ -32,6 +34,7 @@ from jacara.modules.templates.schemas import (
     ExcelSheet,
     FormulaCheckIn,
     FormulaCheckOut,
+    LabelsIn,
     ReferenceOut,
     RuleInfo,
     SampleIn,
@@ -54,14 +57,18 @@ from jacara.modules.templates.schemas import (
     WorkbookOut,
     WorkbookSheetOut,
 )
-from jacara.plugins.extractors.base import DISCOVER
+from jacara.plugins.extractors.base import AUTO, DISCOVER
 from jacara.plugins.validators import ALL_RULES, REGIONS
+from jacara.plugins.validators.rules import RULES
 from jacara.templates import (
     STARTERS,
     Template,
     TemplateError,
     TemplateField,
+    clean_countries,
+    clean_labels,
     from_definition,
+    infer_countries,
     load_starter,
     load_template,
     template_names,
@@ -99,6 +106,9 @@ def to_out(t: Template, kind: TemplateKind = "builtin") -> TemplateOut:
         name=t.name,
         version=t.version,
         title=t.title,
+        titles=dict(t.titles),
+        languages=list(t.languages),
+        basis=list(t.basis),
         description=t.description,
         category=t.category,
         kind=kind,
@@ -108,7 +118,8 @@ def to_out(t: Template, kind: TemplateKind = "builtin") -> TemplateOut:
             for r in t.rules
         ],
         custom_rules=[CustomRuleIO(**c.as_dict()) for c in t.custom_rules],
-        region=t.region,
+        domains=list(t.domains),
+        countries=list(t.countries),
         tables=[
             TemplateTableOut(
                 name=tb.name,
@@ -117,6 +128,7 @@ def to_out(t: Template, kind: TemplateKind = "builtin") -> TemplateOut:
                 columns=[_field(c) for c in tb.columns],
                 required=tb.required,
                 export=tb.export,
+                names=dict(tb.names),
             )
             for tb in t.tables
         ],
@@ -172,18 +184,35 @@ def _field(f: TemplateField) -> TemplateFieldOut:
         options=list(f.options),
         extract=f.extract,
         compute=f.compute,
+        unique=f.unique,
+        range_export=f.range_export,
+        range_separator=f.range_separator,
+        names=dict(f.names),
     )
 
 
-def carry_over(definition: dict[str, Any], previous: dict[str, Any]) -> dict[str, Any]:
+def carry_over(
+    definition: dict[str, Any],
+    previous: dict[str, Any],
+    column_refs: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """编辑器保存时不改对象、参照表、工作簿样式：从上一版带过来。
 
     编辑器里删掉的字段，它们在这几处的引用跟着去掉（不报错）：
     对象的编号字段没了，这个对象就不要了；参照表的对照字段没了，只是不再对照；
     工作簿里填这个字段的列，导出时留空。
+    column_refs：编辑器里改了原表某一列填什么（"sheet 名::表头" → 字段），先改再检查。
     """
     fields = {f["name"] for f in definition["fields"]}
     refs = fields | {f"{t['name']}.{c['name']}" for t in definition["tables"] for c in t["columns"]}
+    # 日期范围字段的开始、结束、天数也能填进原表的一列（ADR 0039）
+    refs |= {
+        f"{f['name']}.{part}"
+        for f in definition["fields"]
+        if f.get("type") == "date_range"
+        for part in ("start", "end", "days")
+    }
+    overrides = column_refs or {}
     tables = {t["name"] for t in definition["tables"]}
     entities = [
         {**e, "fields": [f for f in e["fields"] if f in fields]}
@@ -209,7 +238,13 @@ def carry_over(definition: dict[str, Any], previous: dict[str, Any]) -> dict[str
 
         sheets = []
         for sheet in workbook.get("sheets", []):
-            sheet = {**sheet, "columns": [{**c, "ref": keep(c["ref"])} for c in sheet["columns"]]}
+            sheet = {
+                **sheet,
+                "columns": [
+                    {**c, "ref": keep(_override(overrides, sheet["name"], c))}
+                    for c in sheet["columns"]
+                ],
+            }
             if (sheet["role"] == "items" and sheet.get("table") not in tables) or (
                 sheet["role"] == "entity" and sheet.get("entity") not in names
             ):
@@ -219,15 +254,72 @@ def carry_over(definition: dict[str, Any], previous: dict[str, Any]) -> dict[str
     return {**definition, "entities": entities, "references": references, "workbook": workbook}
 
 
+def _override(overrides: dict[str, str], sheet: str, column: dict[str, Any]) -> str:
+    """编辑器改了这一列填什么就用改的（改成空 = 留空），没改用原来的。"""
+    key = f"{sheet}::{column['header']}"
+    return overrides[key] if key in overrides else str(column.get("ref") or "")
+
+
+def _field_dump(f: TemplateFieldIn) -> dict[str, Any]:
+    """字段存进定义：日期范围的导出设置只有日期范围字段才写（别的字段写了也没用）。"""
+    data = f.model_dump()
+    if f.type != "date_range":
+        data.pop("range_export", None)
+        data.pop("range_separator", None)
+    if not data.get("names"):
+        data.pop("names", None)
+    return data
+
+
+def runnable_rules(
+    rules: list[str], definition: dict[str, Any], countries: list[str] | None
+) -> list[str]:
+    """只留下这个模板跑得了的内置规则：要的字段都有；某国的规则只给选了这个国家的模板。
+    删了字段、换了国家，依赖它们的规则保存时跟着去掉，不会留着永远跳过。
+    countries 是 None（旧的模板文件没写国家）时不按国家筛。不认识的编号留着，后面会报错说清楚。"""
+    from jacara.workbook.standard import usable_rule
+
+    kept: list[str] = []
+    for rule_id in dict.fromkeys(rules):
+        rule = RULES.get(rule_id)
+        # 没写国家：当成规则自己的国家，只按字段筛
+        place = [c.upper() for c in countries] if countries is not None else [REGIONS.get(rule_id)]
+        if rule is None or usable_rule(rule, {**definition, "countries": place}):
+            kept.append(rule_id)
+    return kept
+
+
 def definition_of(data: TemplateIn) -> dict[str, Any]:
     """编辑器提交的内容 → 存进数据库的定义（和 .toml 一样结构）。"""
+    fields = [_field_dump(f) for f in data.fields]
+    tables = [
+        {**t.model_dump(), "columns": [_field_dump(c) for c in t.columns]} for t in data.tables
+    ]
     return {
-        "fields": [f.model_dump() for f in data.fields],
-        "tables": [t.model_dump() for t in data.tables],
-        "rules": list(dict.fromkeys(data.rules)),
+        "fields": fields,
+        "tables": tables,
+        "rules": runnable_rules(data.rules, {"fields": fields, "tables": tables}, data.countries),
         "custom_rules": [c.model_dump() for c in data.custom_rules],
-        "region": data.region,
+        **({"titles": data.titles} if data.titles else {}),
     }
+
+
+class Pick(NamedTuple):
+    """上传、重新处理时选的模板。"""
+
+    version_id: uuid.UUID | None
+    """我的模板的哪个版本；None：键值对发现、自动判断，或者内置的收据模板。"""
+    discover: bool = False
+    auto: bool = False
+
+    @property
+    def audit(self) -> str:
+        """审计日志里写的"用了什么模板"。"""
+        if self.auto:
+            return AUTO
+        if self.discover:
+            return DISCOVER
+        return str(self.version_id or "receipt")
 
 
 class TemplateService:
@@ -242,6 +334,7 @@ class TemplateService:
         self.session = session
         self.pipeline = pipeline
         self.storage = storage
+        self._usage: dict[uuid.UUID, tuple[int, datetime | None]] | None = None
 
     @property
     def repo(self) -> TemplateRepository:
@@ -251,12 +344,18 @@ class TemplateService:
 
     # ---- 查看 ----
 
-    def list(self) -> list[TemplateOut]:
-        """我的模板（没归档的在前）+ 内置模板。"""
+    def list(self, builtin: bool = False) -> list[TemplateOut]:
+        """我的模板（没归档的在前）。builtin=True 时再加上内置模板。
+
+        内置模板（receipt、receipt_full）只给评测和命令行用，网页上不再列出（2026-11-12）；
+        以前用它处理的文档照常能看、能重新处理。
+        """
         require(self.owner, "document:read")
         mine = (
             [self._mine_out(r) for r in self.repo.list(self.owner.team_id)] if self.session else []
         )
+        if not builtin:
+            return mine
         return mine + [to_out(load_template(name)) for name in template_names()]
 
     def starters(self) -> list[TemplateOut]:
@@ -300,7 +399,8 @@ class TemplateService:
                 needs=list(r.needs),
                 severity=r.severity,
                 per_row=r.per_row,
-                region=REGIONS.get(r.id, ""),
+                requires=list(r.requires),
+                country=REGIONS.get(r.id, ""),
             )
             for r in ALL_RULES
         ]
@@ -349,6 +449,7 @@ class TemplateService:
             source = f"starter:{data.starter}"
             title = data.title or base.title
             category, description, definition = base.category, base.description, base.definition()
+            labels = (list(base.domains), list(base.countries), [])
         elif data.source == "copy":
             if data.copy_of is None:
                 raise TemplateFailure("invalid", "请选择要复制的模板")
@@ -358,41 +459,83 @@ class TemplateService:
             title = data.title or f"{original.title}（副本）"
             category, description = original.category, original.description
             definition = latest.definition
+            labels = (list(original.domains), list(original.countries), list(original.tags))
         elif data.content is not None:
             # 空白模板：编辑页里填好内容、点了保存才建
             content = data.content
             source, title = "blank", content.title.strip()
             category, description = content.category.strip(), content.description.strip()
             definition = definition_of(content)
+            labels = (content.domains, content.countries, content.tags)
         else:
             raise TemplateFailure("invalid", "空白模板要先填好内容再保存")
-        found = self._new(title, category, description, source, definition, "新建")
+        found = self._new(title, category, description, source, definition, "新建", labels=labels)
         return self._mine_out(found)
 
     def save(self, template_id: uuid.UUID, data: TemplateIn) -> TemplateOut:
         """保存一个新版本。用过旧版本的文档不受影响；以后上传、重新处理用新版本。"""
         require(self.owner, "template:manage")
         found = self._find(template_id)
-        definition = carry_over(definition_of(data), self.repo.latest(found).definition)
-        version = found.latest_version + 1
+        latest = self.repo.latest(found)
+        definition = carry_over(definition_of(data), latest.definition, data.column_refs)
+        # 只改了名字、说明、标签（定义没变）：不出新版本，用过它的文档也不用重新处理
+        changed = definition != latest.definition
+        version = found.latest_version + 1 if changed else found.latest_version
         self._check(definition, data.title, version)
-        self.repo.add_version(
-            TemplateVersion(
-                template_id=found.id,
-                version=version,
-                definition=definition,
-                note=data.note.strip(),
-                user_id=self.owner.user_id,
-                team_id=found.team_id,
+        if changed:
+            self.repo.add_version(
+                TemplateVersion(
+                    template_id=found.id,
+                    version=version,
+                    definition=definition,
+                    note=data.note.strip(),
+                    user_id=self.owner.user_id,
+                    team_id=found.team_id,
+                )
             )
-        )
         found.latest_version = version
         found.title = data.title.strip()
-        found.category = data.category.strip()
         found.description = data.description.strip()
-        self._audit("template:save", found, version=version)
+        self._set_labels(found, data.domains or [data.category], data.countries, data.tags)
+        self._audit("template:save", found, version=version, new_version=changed)
         self._reload(found)
         return self._mine_out(found)
+
+    def labels(self, template_id: uuid.UUID, data: LabelsIn) -> TemplateOut:
+        """只改功能领域、国家和地区、自定义标签（不出新版本）。"""
+        require(self.owner, "template:manage")
+        found = self._find(template_id)
+        self._set_labels(
+            found,
+            found.domains if data.domains is None else data.domains,
+            found.countries if data.countries is None else data.countries,
+            found.tags if data.tags is None else data.tags,
+        )
+        self._audit(
+            "template:labels",
+            found,
+            domains=found.domains,
+            countries=found.countries,
+            tags=found.tags,
+        )
+        self._reload(found)
+        return self._mine_out(found)
+
+    def _set_labels(
+        self,
+        found: TemplateRecord,
+        domains: list[str],
+        countries: list[str],
+        tags: list[str],
+    ) -> None:
+        where = f"模板「{found.title}」"
+        try:
+            found.domains = list(clean_labels(domains, where, "功能领域", 10))
+            found.countries = list(clean_countries(countries, where))
+            found.tags = list(clean_labels(tags, where, "自定义标签", 20))
+        except TemplateError as err:
+            raise TemplateFailure("invalid", str(err)) from err
+        found.category = found.domains[0] if found.domains else ""
 
     def archive(self, template_id: uuid.UUID, archived: bool) -> TemplateOut:
         require(self.owner, "template:manage")
@@ -420,6 +563,8 @@ class TemplateService:
     def export_file(self, name: str) -> TemplateFile:
         """模板 → 可以带到别的电脑上导入的 JSON：全部内容，连原 Excel（按原表导出用）一起。"""
         template = self._template_named(name)
+        template_id = _uuid(name)
+        record = self._find(template_id) if template_id is not None else None
         definition = template.definition()
         workbook_file = None
         if template.workbook and self.storage is not None:
@@ -436,7 +581,9 @@ class TemplateService:
             tables=[TemplateTableIn(**t) for t in definition["tables"]],
             rules=definition["rules"],
             custom_rules=[CustomRuleIO(**c) for c in definition.get("custom_rules", [])],
-            region=definition.get("region", ""),
+            domains=list(template.domains),
+            countries=list(template.countries),
+            tags=list(record.tags or ()) if record is not None else [],
             entities=definition["entities"],
             references=definition["references"],
             workbook=definition["workbook"] if workbook_file else None,
@@ -462,9 +609,15 @@ class TemplateService:
         definition = {
             "fields": [f.model_dump() for f in data.fields],
             "tables": [t.model_dump() for t in data.tables],
-            "rules": list(dict.fromkeys(data.rules)),
+            "rules": runnable_rules(
+                data.rules,
+                {
+                    "fields": [f.model_dump() for f in data.fields],
+                    "tables": [t.model_dump() for t in data.tables],
+                },
+                data.countries,
+            ),
             "custom_rules": [c.model_dump() for c in data.custom_rules],
-            "region": data.region,
             "entities": data.entities,
             "references": data.references,
             "workbook": workbook,
@@ -476,6 +629,12 @@ class TemplateService:
             "import",
             definition,
             f"导入（导出时是第 {data.version} 版）",
+            labels=(
+                data.domains or ([data.category.strip()] if data.category.strip() else []),
+                # 旧的模板文件、标准模板 Excel 没写国家：按选的规则认
+                list(infer_countries(data.rules)) if data.countries is None else data.countries,
+                data.tags,
+            ),
         )
         return self._mine_out(found)
 
@@ -589,30 +748,36 @@ class TemplateService:
             raise TemplateFailure("unavailable", "对象存储没有准备好")
         return self.storage
 
-    def delete(self, template_id: uuid.UUID) -> None:
-        """删除模板和它的全部版本。有文档用过（处理过或排队等着用）就不能删，只能归档：
-        删了的话，那些文档的字段中文名、规则、导出的列就还原不出来了。"""
+    def delete(self, template_id: uuid.UUID) -> int:
+        """删除模板（归档的、用过的都能删）。返回有几份文档用过它。
+
+        没有文档用过：模板和全部版本直接删掉。
+        有文档用过（处理过或排队等着用）：从模板列表、上传、重新处理里去掉，但版本留在数据库里，
+        那些文档照常显示字段中文名、检查规则、导出（它们记着用的是哪个版本）。
+        """
         require(self.owner, "template:manage")
         found = self._find(template_id)
         used = self.repo.documents_using(found.id)
+        self._audit("template:delete", found, versions=found.latest_version, documents=used)
         if used:
-            raise TemplateFailure(
-                "conflict",
-                f"有 {used} 份文档用过「{found.title}」，删了这些文档就对不上模板了。"
-                "不想再用的话，请归档",
-            )
-        self._audit("template:delete", found, versions=found.latest_version)
-        self.repo.delete(found)
+            found.deleted_at = datetime.now(UTC)
+            found.archived = True
+        else:
+            self.repo.delete(found)
+        return used
 
     # ---- 上传时选模板 ----
 
-    def pick_for_upload(self, choice: str | None) -> tuple[uuid.UUID | None, bool]:
-        """上传时选的模板 → （模板版本 id，是不是键值对发现）。
+    def pick_for_upload(self, choice: str | None) -> Pick:
+        """上传时选的模板 → （模板版本 id，是不是键值对发现，是不是自动判断）。
 
         没选：用这个人上一次上传用的；第一次上传就用内置的收据模板（老办法）。
+        auto：每张单据从我的模板里自动挑（ADR 0038）。
         """
         if choice == DISCOVER:
-            return None, True
+            return Pick(None, discover=True)
+        if choice == AUTO:
+            return Pick(None, auto=True)
         if choice in (None, ""):
             return self._last_choice()
         template_id = _uuid(choice)
@@ -621,12 +786,15 @@ class TemplateService:
         found = self._find(template_id)
         if found.archived:
             raise TemplateFailure("invalid", f"模板「{found.title}」已经归档了，不能再用来上传")
-        return self.repo.latest(found).id, False
+        return Pick(self.repo.latest(found).id)
 
     def latest_version_id(self, template_id: uuid.UUID) -> uuid.UUID:
-        return self.repo.latest(self._find(template_id)).id
+        found = self.repo.get(template_id, self.owner.team_id)
+        if found is None:
+            raise TemplateFailure("invalid", "这份文档用的模板已经删除了，请选一个模板再重新处理")
+        return self.repo.latest(found).id
 
-    def _last_choice(self) -> tuple[uuid.UUID | None, bool]:
+    def _last_choice(self) -> Pick:
         from sqlalchemy import select
 
         last = self.session_or_fail().scalar(
@@ -636,16 +804,18 @@ class TemplateService:
             .limit(1)
         )
         if last is None:
-            return None, False
+            return Pick(None)
+        if last.auto:
+            return Pick(None, auto=True)
         if last.discover:
-            return None, True
+            return Pick(None, discover=True)
         if last.template_version_id is None:
-            return None, False
+            return Pick(None)
         version = self.session_or_fail().get_one(TemplateVersion, last.template_version_id)
         record_ = version.template
-        if record_.archived:
-            return None, False
-        return self.repo.latest(record_).id, False
+        if record_.archived or record_.deleted_at is not None:
+            return Pick(None)
+        return Pick(self.repo.latest(record_).id)
 
     # ---- 试跑 ----
 
@@ -662,6 +832,7 @@ class TemplateService:
             )
         if self.pipeline is None:
             raise TemplateFailure("unavailable", "模型服务没有准备好")
+        from jacara.pipeline.pages import pages_json, stack_pages
         from jacara.pipeline.store import page_from_json
         from jacara.structure.graph import structure_from_json
 
@@ -669,7 +840,14 @@ class TemplateService:
         started = time.monotonic()
         out: list[TrialPage] = []
         for extraction in pages:
-            page = page_from_json(extraction.ocr or {}, extraction.ocr_engine)
+            # 几页拼成的单据（ADR 0036）：每一页还原后按处理时一样拼起来
+            stacked = stack_pages(
+                [
+                    page_from_json(p, p.get("engine") or extraction.ocr_engine)
+                    for _, p in pages_json(extraction.ocr, extraction.page)
+                ]
+            )
+            page = stacked.page
             # 用处理时存下来的页面结构（版面区域、表格是模型认的）；没有就按规则重新分析
             structure = (
                 structure_from_json(extraction.structure, page) if extraction.structure else None
@@ -732,7 +910,8 @@ class TemplateService:
             if original is not None and original.label and original.label != f.label:
                 item["aliases"] = list(dict.fromkeys([*f.aliases, original.label]))
             fields.append(item)
-        definition = {"fields": fields, "tables": [], "rules": list(dict.fromkeys(data.rules))}
+        rules = runnable_rules(data.rules, {"fields": fields, "tables": []}, None)
+        definition = {"fields": fields, "tables": [], "rules": rules}
         found = self._new(
             data.title.strip(),
             data.category.strip(),
@@ -745,6 +924,24 @@ class TemplateService:
         template = self._template(found, version)
         self._apply_sample(document, version, template, data)
         return self._mine_out(found), document.id
+
+    def from_boxes(self, data: BoxesIn) -> TemplateOut:
+        """在样例上框好的字段 → 新模板第 1 版（ADR 0047）。字段的名称、类型、别名（框旁边的标签）、
+        说明（在单据哪里）由页面上框选时填好；框的位置只记进模板的来源，不进定义。
+        样例不自动换成新模板的结果：页面上可以接着"用新模板重新处理"。"""
+        require(self.owner, "template:manage")
+        document = self._document(data.document_id)
+        fields = [f.model_dump(exclude={"page", "box"}) for f in data.fields]
+        definition = {"fields": fields, "tables": [], "rules": []}
+        found = self._new(
+            data.title.strip(),
+            data.category.strip(),
+            data.description.strip(),
+            f"boxes:{document.id}",
+            definition,
+            "在样例上框选建模板",
+        )
+        return self._mine_out(found)
 
     def _apply_sample(
         self, document: Document, version: TemplateVersion, template: Template, data: SampleIn
@@ -761,6 +958,7 @@ class TemplateService:
             new = Extraction(
                 document=document,
                 page=old.page,
+                last_page=old.last_page,
                 source=old.source,
                 ocr_engine=old.ocr_engine,
                 model=old.model,
@@ -775,6 +973,7 @@ class TemplateService:
                 raw_output=old.raw_output,
                 checks={},
                 ocr=old.ocr,
+                structure=old.structure,
                 user_id=document.user_id,
                 team_id=document.team_id,
             )
@@ -801,6 +1000,7 @@ class TemplateService:
         document.current_run = run
         document.template_version_id = version.id
         document.discover = False
+        document.auto = False
         document.reviewed_at = None
         if document.status == "reviewed":
             document.status = "done"
@@ -882,8 +1082,16 @@ class TemplateService:
         source: str,
         definition: dict[str, Any],
         note: str,
+        labels: tuple[list[str], list[str], list[str]] | None = None,
     ) -> TemplateRecord:
-        self._check(definition, title, 1)
+        """新建模板（第 1 版）。labels 是（功能领域，国家和地区，自定义标签）；
+        不给就按 category 和定义里选的规则定（从 Excel 建、用样例建）。"""
+        template = self._check(definition, title, 1)
+        domains, countries, tags = labels or (
+            [category] if category else [],
+            list(template.countries),
+            [],
+        )
         found = self.repo.add(
             TemplateRecord(
                 title=title,
@@ -905,6 +1113,7 @@ class TemplateService:
                 team_id=self.owner.team_id,
             )
         )
+        self._set_labels(found, domains, countries, tags)
         self._reload(found)
         self._audit("template:create", found, source=source)
         return found
@@ -915,14 +1124,11 @@ class TemplateService:
         session.flush()
         session.expire(found, ["versions"])
 
-    def _check(self, definition: dict[str, Any], title: str, version: int) -> None:
+    def _check(self, definition: dict[str, Any], title: str, version: int) -> Template:
         try:
-            template = from_definition(definition, "check", version, title)
+            return from_definition(definition, "check", version, title)
         except TemplateError as err:
             raise TemplateFailure("invalid", str(err)) from err
-        problem = template.region_problem()
-        if problem:
-            raise TemplateFailure("invalid", problem)
 
     def _find(self, template_id: uuid.UUID) -> TemplateRecord:
         found = self.repo.get(template_id, self.owner.team_id)
@@ -949,14 +1155,14 @@ class TemplateService:
             found.category,
             found.description,
         )
-        starter = found.source.removeprefix("starter:")
-        if "region" not in version.definition and starter in STARTERS:
-            # 加"地区"之前从起步模板复制的：地区跟起步模板一样
-            template = replace(template, region=load_starter(starter).region)
-        return template
+        # 标签以 templates 表记的为准（ADR 0037）
+        return replace(
+            template, domains=tuple(found.domains or ()), countries=tuple(found.countries or ())
+        )
 
     def _out(self, found: TemplateRecord, version: TemplateVersion) -> TemplateOut:
         template = self._template(found, version)
+        used, last = self._stats().get(found.id, (0, None))
         return to_out(template, "mine").model_copy(
             update={
                 "id": found.id,
@@ -964,8 +1170,17 @@ class TemplateService:
                 "source": found.source,
                 "updated_at": found.updated_at,
                 "starter_formulas": _starter_formulas(template, found.source),
+                "tags": list(found.tags or ()),
+                "used": used,
+                "last_used_at": last,
             }
         )
+
+    def _stats(self) -> dict[uuid.UUID, tuple[int, datetime | None]]:
+        """每个模板有几份文档用、最近一次（同一次请求里只查一次）。"""
+        if self._usage is None:
+            self._usage = self.repo.usage_stats(self.owner.team_id)
+        return self._usage
 
     def _mine_out(self, found: TemplateRecord) -> TemplateOut:
         return self._out(found, self.repo.latest(found))

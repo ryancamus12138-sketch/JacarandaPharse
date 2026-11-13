@@ -1,12 +1,15 @@
 import { CheckOutlined, FileTextOutlined, SaveOutlined } from '@ant-design/icons'
 import { Button, Checkbox, Flex, Form, Input } from 'antd'
+import { useRef } from 'react'
 import type { FieldValue } from '../../api/types'
+import { shownValue } from './fields'
 import type { Revise } from './useRevise'
 
 const PLACEHOLDER: Record<FieldValue['type'], string> = {
   string: '',
   number: '数字，比如 1.00',
   date: '日期，比如 2018-12-25',
+  date_range: '原文，或者 2014-07-01 ~ 2014-07-31',
 }
 
 interface ReviewFormValues {
@@ -40,6 +43,15 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
   const missing = Form.useWatch('missing', form)
   const busy = revise.isPending && revise.variables?.valueId === v.id
 
+  const range = useRef<[string, string]>([v.range?.start ?? '', v.range?.end ?? ''])
+
+  /** 改了开始或结束日期：值写成统一格式（两个都有才写）。 */
+  function setRange(side: 0 | 1, day: string) {
+    range.current[side] = day
+    const [start, end] = range.current
+    if (start && end) form.setFieldsValue({ value: `${start} ~ ${end}` })
+  }
+
   function confirm() {
     const reason = (form.getFieldValue('reason') as string | undefined) ?? ''
     revise.mutate({ valueId: v.id, change: { action: 'confirm', reason } }, { onSuccess: onDone })
@@ -67,7 +79,7 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
         size="small"
         layout="vertical"
         initialValues={{
-          value: v.current_value ?? '',
+          value: shownValue(v) ?? '',
           // 人工新加的格子本来就是空的，等着填，不算"原文里没有"
           missing: v.current_value === null && v.origin !== 'manual',
           reason: '',
@@ -112,9 +124,32 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
             </span>
           </Flex>
         ) : null}
+        {v.type === 'date_range' && (
+          // 日期范围（ADR 0039）：直接改开始、结束日期，值写成 2014-07-01 ~ 2014-07-31
+          <Flex gap={6} align="center" wrap style={{ marginBottom: 8 }}>
+            <span style={{ fontSize: 12 }}>开始</span>
+            <Input
+              type="date"
+              size="small"
+              style={{ width: 150 }}
+              disabled={missing}
+              defaultValue={v.range?.start ?? ''}
+              onChange={(e) => setRange(0, e.target.value)}
+            />
+            <span style={{ fontSize: 12 }}>结束</span>
+            <Input
+              type="date"
+              size="small"
+              style={{ width: 150 }}
+              disabled={missing}
+              defaultValue={v.range?.end ?? ''}
+              onChange={(e) => setRange(1, e.target.value)}
+            />
+          </Flex>
+        )}
         <Form.Item
           name="value"
-          label="正确的值"
+          label={v.type === 'date_range' ? '正确的值（原文写法也行，系统会重新拆开）' : '正确的值'}
           rules={[{ required: !missing, whitespace: true, message: '请输入正确的值' }]}
           style={{ marginBottom: 4 }}
         >
