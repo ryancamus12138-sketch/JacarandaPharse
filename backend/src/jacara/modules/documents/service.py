@@ -445,6 +445,7 @@ class DocumentService:
             processed_today=self.repo.processed_since(team, today),
             reviewed_today=self.repo.reviewed_since(team, today),
             average_page_seconds=None if average is None else round(average / 1000, 1),
+            stage_seconds=self.repo.stage_seconds(team, today - timedelta(days=7)),
         )
         to_review = [
             DocumentOut.model_validate(d).model_copy(update={"review_count": n})
@@ -696,6 +697,14 @@ class DocumentService:
 
     def page_image(self, document_id: uuid.UUID, page: int) -> bytes:
         """第 page 页（从 1 开始）的 PNG 图片。坐标和抽取时一样，审核页面在上面画出处框。"""
+        document, data = self._page_file(document_id, page)
+        try:
+            return page_png(data, document.content_type == "application/pdf", page)
+        except Exception as err:
+            raise DocumentError("unreadable", "这个文件打不开，可能已损坏") from err
+
+    def _page_file(self, document_id: uuid.UUID, page: int) -> tuple[Document, bytes]:
+        """检查权限、页码，取回原文件（还没画成图）。"""
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
         if document.storage_key is None:
@@ -705,13 +714,9 @@ class DocumentService:
                 "not_found", f"这个文档只有 {document.page_count} 页，没有第 {page} 页"
             )
         try:
-            data = self.storage.get(document.storage_key)
+            return document, self.storage.get(document.storage_key)
         except StorageError as err:
             raise DocumentError("storage", "对象存储暂时不可用，请稍后再试") from err
-        try:
-            return page_png(data, document.content_type == "application/pdf", page)
-        except Exception as err:
-            raise DocumentError("unreadable", "这个文件打不开，可能已损坏") from err
 
     def describe_region(
         self, document_id: uuid.UUID, page: int, box: list[float]
@@ -768,9 +773,7 @@ class DocumentService:
         from jacara.pipeline.zoom import ZOOM_SCALE
         from jacara.plugins.ocr.loader import PDF_SCALE
 
-        self.page_image(document_id, page)  # 检查权限、页码、文件
-        document = self._find(document_id)
-        data = self.storage.get(document.storage_key or "")
+        document, data = self._page_file(document_id, page)  # 检查权限、页码，取回原文件
         is_pdf = document.content_type == "application/pdf"
         try:
             image = (
@@ -782,6 +785,8 @@ class DocumentService:
             crop = crop_region(image, [v * factor for v in box])
         except ValueError as err:
             raise DocumentError("invalid", str(err)) from err
+        except Exception as err:
+            raise DocumentError("unreadable", "这个文件打不开，可能已损坏") from err
         out = io.BytesIO()
         crop.save(out, format="PNG")
         return out.getvalue()

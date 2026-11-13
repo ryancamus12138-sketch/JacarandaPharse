@@ -46,6 +46,11 @@ class Document(Base, OwnedMixin, TimestampMixin):
     progress: Mapped[int | None]
     """处理进度 0～100。不在处理中时为空。"""
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    timings: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
+    )
+    """最近一次处理各步用了多久（ADR 0051）：认字 read_ms、排队等模型 wait_ms、模型这边 extract_ms，
+    split 是不是分了两个工位。处理中还记着交接用的 attempt。"""
     """处理完（成功或失败）的时间。工作台"今天处理了几份"用。"""
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     """点"完成审核"的时间。"""

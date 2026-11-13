@@ -22,6 +22,7 @@ from itertools import pairwise
 
 from jacara.core.cjk import plain_cjk
 from jacara.core.daterange import parse_date_range
+from jacara.core.numbers import number_pattern
 from jacara.core.textvalue import parse_date, parse_number
 from jacara.plugins.aligners.base import AlignedField, Candidate
 from jacara.plugins.aligners.crosscheck import cross_check
@@ -31,7 +32,6 @@ from jacara.plugins.aligners.text_match import (
     _squash,
     _tidy,
     date_variants,
-    number_variants,
 )
 from jacara.plugins.extractors.base import ExtractedField
 from jacara.plugins.ocr.base import FormValue, OcrLine, OcrPage
@@ -123,18 +123,27 @@ def _check_value(
         Candidate("text_layer", layer_text, layer_box, None, _value(a.field.type, layer_text)),
     ]
     zoomed = zoom(_union([box, layer_box])) if zoom is not None else None
-    note = f"PDF 文字层这里写的是「{layer_text}」，和 OCR 读的「{ocr_text}」不一样"
+    # 走到这里是"文字层里没有现在的值"，不一定是文字层和 OCR 不一样：
+    # 两边一样、只是和值对不上时要说清楚
+    same = _squash(plain_cjk(layer_text)) == _squash(plain_cjk(ocr_text))
+    if same:
+        note = f"PDF 文字层和 OCR 这里都是「{layer_text}」，和现在的值「{a.field.value}」对不上"
+    else:
+        note = f"PDF 文字层这里写的是「{layer_text}」，和 OCR 读的「{ocr_text}」不一样"
     zoom_agrees = False
     if zoomed is not None:
         zoomed = replace(zoomed, value=_value(a.field.type, zoomed.text))
         candidates.append(zoomed)
         zoom_agrees = supports(a.field.type, a.field.value, zoomed.text, key, day_first)
+        layer_value = _value(a.field.type, layer_text)
         if zoom_agrees:
             verdict = "，和现在的值一致"
-        elif supports(a.field.type, _value(a.field.type, layer_text), zoomed.text, key, day_first):
-            verdict = "，和文字层一致"
+        elif supports(a.field.type, layer_value, zoomed.text, key, day_first):
+            verdict = "，和文字层、OCR 一致" if same else "，和文字层一致"
+        elif supports(a.field.type, _value(a.field.type, ocr_text), zoomed.text, key, day_first):
+            verdict = "，和 OCR 一致"
         else:
-            verdict = "，三处都不一样"
+            verdict = "，和前两处也不一样" if same else "，三处都不一样"
         note += f"；{zoomed.note}读成「{zoomed.text}」{verdict}"
     review = key or not zoom_agrees
     return replace(
@@ -157,7 +166,7 @@ def supports(
         number = value if isinstance(value, (int, float)) else parse_number(str(value))
         if number is None:
             return False
-        return bool(_exact_pattern(number_variants(float(number), loose=True)).search(_tidy(text)))
+        return number_pattern(number, loose=True).search(_tidy(text)) is not None
     if type_ == "date":
         if _exact_pattern(date_variants(str(value))).search(_tidy(text)):
             return True

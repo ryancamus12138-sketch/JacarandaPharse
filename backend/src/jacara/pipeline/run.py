@@ -280,6 +280,7 @@ class Pipeline:
         vision: VisionMode | None = None,
         history: Mapping[str, int] | None = None,
         pdf_read: PdfRead | None = None,
+        pages: list[OcrPage] | None = None,
     ) -> list[DocumentReport]:
         """整个文件：每张单据一份报告。name 是显示用的文件名（默认取 path 的文件名）。
 
@@ -287,11 +288,13 @@ class Pipeline:
         pdf_read：这一次 PDF 怎么读（ADR 0042），不写用 Pipeline.pdf_read。
         progress 不为空时，每开始一步就报告一次：识别文字占前 10%，分单据到 15%，
         抽取按单据平分剩下的。
+        pages：已经认好的字（流水线的 OCR 工位做的，ADR 0051），给了就不再识别。
         """
         report = progress or (lambda _stage, _percent: None)
         name = name or path.name
-        report("识别文字", 5)
-        pages = self.read(path, pdf_read)
+        if pages is None:
+            report("识别文字", 5)
+            pages = self.read(path, pdf_read)
         looks = vision or self.vision
         images = page_images(path) if self.needs_images(looks) else [None] * len(pages)
         judge = getattr(self.extractor, "continues", None)

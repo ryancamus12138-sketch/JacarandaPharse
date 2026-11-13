@@ -95,6 +95,7 @@ def started(secrets, monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "_port_free", lambda port: True)
     monkeypatch.setattr(cli, "_wait_free", lambda port: True)
     monkeypatch.setattr(cli, "_infra_problems", lambda settings: [])
+    monkeypatch.setattr(cli, "_reset_interrupted", lambda: None)  # 不连数据库
     # 模型密钥写到临时文件夹；环境变量测完恢复原样
     from jacara.core import config
 
@@ -108,7 +109,17 @@ def test_start_warns_when_there_is_no_model(started, capsys):
     assert cli.main(["start", "--no-model", "--no-browser"]) == 0
     output = capsys.readouterr().out
     assert "没有模型服务" in output
-    assert len(started) == 1  # 只有 worker
+    # 只有后台任务：OCR 工位和模型工位（ADR 0051）
+    assert [c[-2:] for c in started] == [["--stage", "read"], ["--stage", "extract"]]
+
+
+def test_start_one_worker_when_the_pipeline_is_off(started, monkeypatch):
+    monkeypatch.setenv("JACARA_PIPELINE", "false")
+    from jacara.core.config import get_settings
+
+    get_settings.cache_clear()
+    assert cli.main(["start", "--no-model", "--no-browser"]) == 0
+    assert [c[-1] for c in started] == ["worker"]  # 一个进程从头做到尾
 
 
 def test_start_is_quiet_when_a_model_is_already_running(started, monkeypatch, capsys):
@@ -146,7 +157,7 @@ def test_start_reuses_a_model_that_is_already_running(started, monkeypatch, tmp_
     monkeypatch.setattr(cli, "_answers", lambda url, loading_ok=False: True)
     assert cli.main(["start", "--model", str(model), "--no-browser"]) == 0
     assert "已经有模型服务" in capsys.readouterr().out
-    assert len(started) == 1  # 没有再启动一个模型
+    assert all("worker" in c for c in started)  # 没有再启动一个模型
 
 
 def test_second_start_just_opens_the_browser(secrets, monkeypatch, capsys):

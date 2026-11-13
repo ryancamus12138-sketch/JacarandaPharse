@@ -138,3 +138,122 @@ def test_interrupted_documents_become_failed(factory, uploaded):
         document = session.get_one(Document, uploaded)
         assert document.status == "failed"
         assert document.error is not None
+
+
+# ---- 流水线：OCR 工位和模型工位（ADR 0051） ----
+
+
+class Sent:
+    """假的"交给模型工位"：记下交了什么。down=True 模拟队列连不上。"""
+
+    def __init__(self) -> None:
+        self.items: list[tuple[uuid.UUID, str]] = []
+        self.down = False
+
+    def __call__(self, document_id: uuid.UUID, attempt: str) -> None:
+        if self.down:
+            from jacara.core.queue import QueueError
+
+            raise QueueError("任务队列（Valkey）连不上")
+        self.items.append((document_id, attempt))
+
+
+def two_stations(factory, storage, document_id, ocr, backend=None):
+    from jacara.pipeline.process import extract_document, read_document
+
+    pipeline = Pipeline(ocr=ocr, extractor=LlmExtractor(backend or FakeBackend()))
+    sent = Sent()
+    read = read_document(
+        document_id, storage=storage, pipeline=pipeline, send=sent, factory=factory
+    )
+    return (
+        read,
+        sent,
+        lambda attempt: extract_document(
+            document_id, attempt, storage=storage, pipeline=pipeline, factory=factory
+        ),
+    )
+
+
+def test_two_stations_give_the_same_result(factory, storage, uploaded, receipt_page):
+    ocr = FakeOcr(receipt_page)
+    read, sent, extract = two_stations(factory, storage, uploaded, ocr)
+    assert read == "read"
+    [(document_id, attempt)] = sent.items
+    assert document_id == uploaded
+    with session_scope(factory) as session:
+        document = session.get_one(Document, uploaded)
+        assert document.status == "processing"  # 认好字了，等模型
+        assert document.stage == "文字已认好，排队等模型"
+    assert f"pipeline/{uploaded}/{attempt}.json" in storage.files
+
+    ocr.page = None  # 模型工位不再认字：用 OCR 工位交过来的
+    assert extract(attempt) == "done"
+    assert not any(k.startswith("pipeline/") for k in storage.files)  # 交接文件做完就删
+    with session_scope(factory) as session:
+        document = session.get_one(Document, uploaded)
+        assert document.status == "done"
+        values = {v.name: v.value for v in document.extractions[0].values}
+        assert values["total"] == "9.0"
+        timings = document.timings or {}
+        assert timings["split"] is True
+        assert {"read_ms", "wait_ms", "extract_ms"} <= set(timings)
+
+
+def test_one_process_records_timings_too(factory, storage, uploaded, receipt_page):
+    assert run(factory, storage, uploaded, FakeOcr(receipt_page)) == "done"
+    with session_scope(factory) as session:
+        timings = session.get_one(Document, uploaded).timings or {}
+        assert timings["split"] is False and timings["wait_ms"] == 0
+
+
+def test_stale_extract_task_is_skipped(factory, storage, uploaded, receipt_page):
+    """重新处理以后，上一次留在队列里的旧任务不能拿旧的字去抽。"""
+    read, _, extract = two_stations(factory, storage, uploaded, FakeOcr(receipt_page))
+    assert read == "read"
+    assert extract("old-attempt") == "skipped"
+    with session_scope(factory) as session:
+        assert session.get_one(Document, uploaded).status == "processing"  # 真的那个还在等
+
+
+def test_queue_down_after_reading_marks_failed(factory, storage, uploaded, receipt_page):
+    from jacara.pipeline.process import read_document
+
+    pipeline = Pipeline(ocr=FakeOcr(receipt_page), extractor=LlmExtractor(FakeBackend()))
+    sent = Sent()
+    sent.down = True
+    outcome = read_document(
+        uploaded, storage=storage, pipeline=pipeline, send=sent, factory=factory
+    )
+    assert outcome == "failed"
+    assert not any(k.startswith("pipeline/") for k in storage.files)
+    with session_scope(factory) as session:
+        assert session.get_one(Document, uploaded).status == "failed"
+
+
+def test_model_error_at_the_second_station(factory, storage, uploaded, receipt_page):
+    backend = FakeBackend(error="连不上模型服务 http://127.0.0.1:8080")
+    _, sent, extract = two_stations(factory, storage, uploaded, FakeOcr(receipt_page), backend)
+    assert extract(sent.items[0][1]) == "failed"
+    assert not any(k.startswith("pipeline/") for k in storage.files)
+    with session_scope(factory) as session:
+        document = session.get_one(Document, uploaded)
+        assert (document.status, document.error) == (
+            "failed",
+            "连不上模型服务 http://127.0.0.1:8080",
+        )
+
+
+def test_handoff_keeps_everything(receipt_page):
+    from dataclasses import replace
+
+    from jacara.pipeline.handoff import dump_pages, load_pages
+    from jacara.plugins.ocr.base import FormValue
+
+    page = replace(
+        receipt_page,
+        models={"rec": "PP-OCRv5"},
+        text_layer=receipt_page.lines[:2],
+        forms=(FormValue("Amount", "9.00", (1.0, 2.0, 3.0, 4.0), hidden=True),),
+    )
+    assert load_pages(dump_pages([page, receipt_page])) == [page, receipt_page]

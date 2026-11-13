@@ -165,6 +165,8 @@ export interface Dashboard {
     processed_today: number
     reviewed_today: number
     average_page_seconds: number | null
+    /** 最近 7 天每份平均各步用时（秒）：read 认字、wait 排队等模型、extract 模型这边（ADR 0051）。 */
+    stage_seconds?: { read?: number; wait?: number; extract?: number } | null
   }
   /** 排队中和处理中的（带进度）。 */
   queue: DocumentSummary[]

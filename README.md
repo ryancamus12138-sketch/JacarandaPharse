@@ -69,6 +69,7 @@ uv run jacara start
 - 已经在运行了再执行一次：不会报错，直接打开浏览器。要重启就先 `jacara stop`。
 - 8080 上已经有模型服务（例如另开的 `jacara serve`）：直接用它，不再启动一个。
 - 启动前会检查 `.env` 里的密钥不能还是 `change-me`。
+- 后台任务默认分两个工位（ADR 0051）：OCR 工位认字、模型工位抽取，模型在抽第 1 份时 OCR 已经在认第 2 份。`.env` 写 `JACARA_PIPELINE=false` 改回一个进程。工作台"每页用时"下面显示每份认字和模型各用了几秒。
 
 ## 开发：四个终端
 
@@ -76,7 +77,7 @@ uv run jacara start
 
 ```bash
 uv run jacara serve --model models/<模型文件>.gguf  # 1. 本地大模型
-uv run jacara worker                               # 2. 后台任务：处理上传的文件
+uv run jacara worker                               # 2. 后台任务：处理上传的文件（--stage read / extract 只做一个工位）
 uv run jacara api --reload                         # 3. Web API，改了后端代码自动重启
 cd web && npm run dev                              # 4. 网页开发服务器
 ```

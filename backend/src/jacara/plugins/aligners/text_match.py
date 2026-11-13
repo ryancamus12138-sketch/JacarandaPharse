@@ -1,6 +1,7 @@
-"""文字比对对齐器：把值换成原文里可能的写法，逐行查找。
+"""文字比对对齐器：逐行查找值在原文里的位置。
 
-- 数字 9.0 可能写成 9.00、1,234.50；日期 2018-12-25 可能写成 25/12/2018。
+- 数字：把原文里的数读出来按数值比（core/numbers.py），9.0 写成 9.00、78.5、1,234.50 都认；
+- 日期 2018-12-25 可能写成 25/12/2018。
 - 先查模型说的那一行，找不到再查全文。
 - 文字字段允许 OCR 小错（相似度够高算 fuzzy）；数字和日期必须完全一致，差一位都不行。
 """
@@ -10,31 +11,32 @@ from __future__ import annotations
 import re
 from datetime import date
 from difflib import SequenceMatcher
+from typing import Protocol
 
+from jacara.core.numbers import number_pattern
 from jacara.plugins.aligners.base import AlignedField, Evidence
 from jacara.plugins.extractors.base import ExtractedField, ExtractionResult, split_cell_name
 from jacara.plugins.ocr.base import OcrLine, OcrPage, Point
 from jacara.plugins.ocr.layout import OcrRow, group_rows
 
 
+class Span(Protocol):
+    """找到的一段：re.Match 和 core.numbers.NumberMatch 都是。"""
+
+    def start(self) -> int: ...
+
+    def end(self) -> int: ...
+
+
+class Finder(Protocol):
+    """查找规则：正则（日期、时间）和 core.numbers.NumberPattern（数字）都是。"""
+
+    def search(self, text: str, /) -> Span | None: ...
+
+
 def _squash(text: str) -> str:
     """比较文字时忽略大小写和空格：OCR 经常多读或少读空格。"""
     return re.sub(r"\s+", "", text).lower()
-
-
-def number_variants(value: float, *, loose: bool) -> list[str]:
-    """一个数字在单据上可能的写法。
-
-    loose=True 时加上不带小数的写法（9、1,234）。这种写法太容易撞上数量、编号，
-    所以只在模型指定的那一行里用。
-    """
-    if value < 0:
-        # 折扣：收据上常写成 6.00-、-6.00 或 (6.00)，找数字本身就行
-        return number_variants(-value, loose=loose)
-    variants = [f"{value:.2f}", f"{value:,.2f}"]
-    if loose and value == int(value):
-        variants += [str(int(value)), f"{int(value):,}"]
-    return list(dict.fromkeys(variants))  # 去重，保留顺序
 
 
 def date_variants(value: str) -> list[str]:
@@ -156,8 +158,8 @@ class TextMatchAligner:
             span = (last - field.row + 1) if field.row is not None and last is not None else 1
             evidence = self._find_text(str(field.value), claimed + others, span)
         elif field.type == "number" and isinstance(field.value, float):
-            loose = _exact_pattern(number_variants(field.value, loose=True))
-            strict = _exact_pattern(number_variants(field.value, loose=False))
+            loose = number_pattern(field.value, loose=True)
+            strict = number_pattern(field.value, loose=False)
             evidence = self._find_exact(loose, claimed) or self._find_exact(strict, others)
         else:
             pattern = _exact_pattern(date_variants(str(field.value)))
@@ -187,7 +189,7 @@ class TextMatchAligner:
         status = "matched" if evidence.similarity == 1.0 else "fuzzy"
         return AlignedField(field, status, evidence, bool(notes), "；".join(notes))
 
-    def _find_exact(self, pattern: re.Pattern[str], rows: list[OcrRow]) -> Evidence | None:
+    def _find_exact(self, pattern: Finder, rows: list[OcrRow]) -> Evidence | None:
         for row in rows:
             if pattern.search(_tidy(row.text)):
                 lines = (
@@ -301,7 +303,7 @@ def _lines_for(needle: str, lines: tuple[OcrLine, ...]) -> tuple[OcrLine, ...]:
     return tuple(picked) or lines
 
 
-def _clip_to(line: OcrLine, found: re.Match[str] | None) -> OcrLine:
+def _clip_to(line: OcrLine, found: Span | None) -> OcrLine:
     """值只是这个文字块的一部分时，按字在块里的位置估出值那一段的框（沿着块的上下边按比例截）。
 
     "Date: 31/12/2017" 是一块，值 31/12/2017 在后面 10 个字：框只画后面那段。

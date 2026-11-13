@@ -108,6 +108,43 @@ def test_agreeing_text_layer_is_only_recorded(tmp_path, ocr):
     assert not checked.needs_review and not checked.candidates
 
 
+def lab_page() -> Page:
+    """化验单上的结果大多是一位小数（78.5、0.9）。"""
+    return Page(
+        runs=[
+            Run(20, 150, "NEUT%"),
+            Run(200, 150, "78.5"),
+            Run(20, 100, "EO%"),
+            Run(200, 100, "0.9"),
+        ]
+    )
+
+
+def test_one_decimal_results_agree_with_the_text_layer(tmp_path, ocr):
+    """以前数字只按两位小数找（78.50），一位小数的结果文字层、OCR、放大再认三处一样也报"三处都不一样"。"""
+    path = write(tmp_path, lab_page())
+    page = load_pages(path, ocr)[0]
+    for text, value in (("78.5", 78.5), ("0.9", 0.9)):
+        [checked] = check_fields(
+            [aligned("r", "number", value, line_with(page, text))], page, None, Zoom(path, ocr)
+        )
+        assert checked.layer == "agree", checked.note
+        assert not checked.needs_review and not checked.candidates
+
+
+def test_layer_and_ocr_agree_but_the_value_does_not(tmp_path, ocr):
+    """文字层和 OCR 一样、只是和模型给的值对不上：说清楚是值的问题，不说"和 OCR 读的不一样"。"""
+    path = write(tmp_path, lab_page())
+    page = load_pages(path, ocr)[0]
+    [checked] = check_fields(
+        [aligned("r", "number", 78.6, line_with(page, "78.5"))], page, None, Zoom(path, ocr)
+    )
+    assert checked.layer == "conflict" and checked.needs_review
+    assert "PDF 文字层和 OCR 这里都是「78.5」，和现在的值「78.6」对不上" in checked.note
+    assert "和文字层、OCR 一致" in checked.note
+    assert "不一样" not in checked.note
+
+
 def test_images_have_no_text_layer(tmp_path, ocr):
     page = load_pages(write(tmp_path, wrong_invoice()), ocr)[0]
     bare = replace(page, text_layer=())
@@ -187,6 +224,8 @@ def test_zoom_on_a_photo_uses_the_original_image(tmp_path, ocr):
 
 def test_supports_compares_by_type():
     assert supports("number", 128.0, "Total: 128.00")
+    assert supports("number", 78.5, "78.5") and supports("number", "0.9", "0.9 ↑")
+    assert not supports("number", 78.5, "178.5") and not supports("number", 0.9, "0.95")
     assert not supports("number", 128.0, "Total: 1280.00")
     assert supports("date", "2014-08-03", "August 3 , 2014")
     assert not supports("string", "1234567890", "1234567898")  # 关键字段：一位不同就是不一样
@@ -214,3 +253,20 @@ def test_rule_hints_mark_which_candidate_passes():
     )
     [hinted] = rule_hints([a], [field], OnlyPositive())
     assert [c.rule_ok for c in hinted.candidates] == [False, True]
+
+
+def test_rendering_from_many_threads_at_once():
+    """pdfium 不是线程安全的：审核页一次要好几张局部图，接口在线程池里同时画同一个 PDF，
+    以前会报 "Failed to load page."（500）。现在所有 pdfium 调用排队用一把锁。"""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from jacara.plugins.ocr.loader import page_png
+
+    data = make_pdf(wrong_invoice(), wrong_invoice())
+
+    def render(k: int) -> bytes:
+        return page_png(data, True, 1 + k % 2, scale=2 + k % 3)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(render, range(48)))
+    assert all(r.startswith(b"\x89PNG") for r in results)

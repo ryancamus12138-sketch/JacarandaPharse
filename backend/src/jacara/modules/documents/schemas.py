@@ -296,6 +296,8 @@ class DashboardCounts(BaseModel):
     reviewed_today: int
     average_page_seconds: float | None
     """最近 7 天每页平均处理用时（秒）。"""
+    stage_seconds: dict[str, float] | None = None
+    """最近 7 天每份平均各步用时（秒，ADR 0051）：read 认字、wait 排队等模型、extract 模型这边。"""
 
 
 class Dashboard(BaseModel):

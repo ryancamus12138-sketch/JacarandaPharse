@@ -146,7 +146,6 @@ def _blocks_of(structure: Any, type_: str, value: str | float) -> tuple[int, ...
         _squash,
         _tidy,
         date_variants,
-        number_variants,
     )
 
     if structure is None:
@@ -157,8 +156,10 @@ def _blocks_of(structure: Any, type_: str, value: str | float) -> tuple[int, ...
         if (w := structure.word(n))
     ]
     if type_ == "number" and isinstance(value, float):
-        pattern = _exact_pattern(number_variants(value, loose=True))
-        return next(((n,) for n, t in texts if pattern.search(_tidy(t))), ())
+        from jacara.core.numbers import number_pattern
+
+        found = number_pattern(value, loose=True)
+        return next(((n,) for n, t in texts if found.search(_tidy(t))), ())
     if type_ == "date":
         from jacara.core.textvalue import parse_date
 

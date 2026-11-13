@@ -337,6 +337,28 @@ class DocumentRepository:
         value = self.session.scalar(query)
         return None if value is None else int(value)
 
+    def stage_seconds(self, team_id: uuid.UUID, since: datetime) -> dict[str, float] | None:
+        """最近处理完的文档，每份平均各步用了几秒（ADR 0051）：认字、排队等模型、模型这边。"""
+        rows = self.session.scalars(
+            select(Document.timings).where(
+                Document.team_id == team_id,
+                Document.processed_at >= since,
+                Document.status.in_(("done", "reviewed")),
+                Document.timings.is_not(None),
+            )
+        ).all()
+        found: dict[str, list[float]] = {"read": [], "wait": [], "extract": []}
+        for timings in rows:
+            for step in found:
+                value = (timings or {}).get(f"{step}_ms")
+                if isinstance(value, int | float):
+                    found[step].append(value / 1000)
+        if not found["extract"]:
+            return None
+        return {
+            step: round(sum(values) / len(values), 1) for step, values in found.items() if values
+        }
+
     def review_counts(self, document_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
         """每个文档还有多少个字段等人确认：标了需要确认，并且还没有任何审核记录。"""
         if not document_ids:

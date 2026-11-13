@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import re
 import tempfile
+import threading
 import time
 import unicodedata
 from dataclasses import replace
@@ -89,8 +90,14 @@ def load_pages(path: Path, ocr: OcrEngine, pdf_read: PdfRead = "image") -> list[
     raise UnsupportedFileError(f"不支持的文件类型：{suffix}，支持图片和 PDF")
 
 
+PDFIUM_LOCK = threading.RLock()
+"""pdfium 不是线程安全的：两个线程同时打开、画 PDF 会报 "Failed to load page."。
+网页服务的接口在线程池里跑，审核页一次要好几张局部图，所以所有 pdfium 的调用都要先拿这把锁。
+（后台任务是单独的进程，不受影响；拿锁也没关系。）"""
+
+
 def open_pdf(source: Path | bytes) -> pdfium.PdfDocument:
-    """打开 PDF，并准备好表单：画图时把表单里填的值也画上（ADR 0042）。"""
+    """打开 PDF，并准备好表单：画图时把表单里填的值也画上（ADR 0042）。调用方要拿着 PDFIUM_LOCK。"""
     pdf = pdfium.PdfDocument(source)
     pdf.init_forms()
     return pdf
@@ -99,18 +106,22 @@ def open_pdf(source: Path | bytes) -> pdfium.PdfDocument:
 def _image_pages(path: Path, ocr: OcrEngine) -> list[OcrPage]:
     """每页画成图做 OCR；文字层、表单字段另外读出来，挂在 OcrPage 上只做核对（ADR 0042）。"""
     pages: list[OcrPage] = []
-    pdf = open_pdf(path)
+    with PDFIUM_LOCK:
+        pdf = open_pdf(path)
+        count = len(pdf)
     try:
-        for number in range(len(pdf)):
-            page = pdf[number]
-            bitmap = page.render(scale=PDF_SCALE, may_draw_forms=True)
-            conv = bitmap.get_posconv(page)
-            words, hidden = text_words(page, conv)
-            layer = as_lines(_phrases(words))
-            forms = tuple(form_values(pdf, page, conv))
+        for number in range(count):
+            with PDFIUM_LOCK:  # 只在用 pdfium 时拿着锁，OCR 的时候放开
+                page = pdf[number]
+                bitmap = page.render(scale=PDF_SCALE, may_draw_forms=True)
+                conv = bitmap.get_posconv(page)
+                words, hidden = text_words(page, conv)
+                layer = as_lines(_phrases(words))
+                forms = tuple(form_values(pdf, page, conv))
+                picture = bitmap.to_pil()
             with tempfile.TemporaryDirectory() as folder:
                 image_path = Path(folder) / f"page-{number + 1}.png"
-                bitmap.to_pil().save(image_path)
+                picture.save(image_path)
                 scanned = ocr.recognize(image_path)
             models = {
                 **scanned.models,
@@ -124,7 +135,8 @@ def _image_pages(path: Path, ocr: OcrEngine) -> list[OcrPage]:
                 )
             pages.append(replace(scanned, models=models, text_layer=layer, forms=forms))
     finally:
-        pdf.close()
+        with PDFIUM_LOCK:
+            pdf.close()
     return pages
 
 
@@ -261,11 +273,12 @@ def _phrase(words: list[dict[str, Any]]) -> tuple[str, float, float, float, floa
 
 def _render_and_ocr(path: Path, number: int, ocr: OcrEngine) -> OcrPage:
     """把 PDF 的一页渲染成图片，再做 OCR。"""
-    pdf = open_pdf(path)
-    try:
-        image = pdf[number].render(scale=PDF_SCALE, may_draw_forms=True).to_pil()
-    finally:
-        pdf.close()
+    with PDFIUM_LOCK:
+        pdf = open_pdf(path)
+        try:
+            image = pdf[number].render(scale=PDF_SCALE, may_draw_forms=True).to_pil()
+        finally:
+            pdf.close()
     with tempfile.TemporaryDirectory() as folder:
         image_path = Path(folder) / f"page-{number + 1}.png"
         image.save(image_path)
@@ -281,11 +294,14 @@ def page_images(path: Path) -> list[np.ndarray]:
     suffix = path.suffix.lower()
     pictures: list[Image.Image] = []
     if suffix == ".pdf":
-        pdf = open_pdf(path)
-        try:
-            pictures = [page.render(scale=PDF_SCALE, may_draw_forms=True).to_pil() for page in pdf]
-        finally:
-            pdf.close()
+        with PDFIUM_LOCK:
+            pdf = open_pdf(path)
+            try:
+                pictures = [
+                    page.render(scale=PDF_SCALE, may_draw_forms=True).to_pil() for page in pdf
+                ]
+            finally:
+                pdf.close()
     elif suffix in IMAGE_SUFFIXES:
         with Image.open(path) as picture:
             pictures = [ImageOps.exif_transpose(picture).copy()]
@@ -303,13 +319,14 @@ def page_png(data: bytes, is_pdf: bool, number: int, scale: float = PDF_SCALE) -
     页码超出范围时抛 IndexError，由调用方先检查。
     """
     if is_pdf:
-        pdf = open_pdf(data)
-        try:
-            if not 1 <= number <= len(pdf):
-                raise IndexError(number)
-            image = pdf[number - 1].render(scale=scale, may_draw_forms=True).to_pil()  # pyright: ignore[reportArgumentType]
-        finally:
-            pdf.close()
+        with PDFIUM_LOCK:
+            pdf = open_pdf(data)
+            try:
+                if not 1 <= number <= len(pdf):
+                    raise IndexError(number)
+                image = pdf[number - 1].render(scale=scale, may_draw_forms=True).to_pil()  # pyright: ignore[reportArgumentType]
+            finally:
+                pdf.close()
     else:
         if number != 1:
             raise IndexError(number)

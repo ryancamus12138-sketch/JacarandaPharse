@@ -2,20 +2,15 @@
 
 import pytest
 
+from jacara.core.numbers import number_pattern
 from jacara.plugins.aligners import TextMatchAligner
-from jacara.plugins.aligners.text_match import _exact_pattern, date_variants, number_variants
+from jacara.plugins.aligners.text_match import _exact_pattern, date_variants
 from jacara.plugins.extractors import ExtractedField, ExtractionResult
 
 
 def align(page, *fields):
     result = ExtractionResult(tuple(fields), "", "test", "test", "test", 0)
     return {a.field.name: a for a in TextMatchAligner().align(page, result)}
-
-
-def test_number_variants():
-    assert number_variants(1234.5, loose=False) == ["1234.50", "1,234.50"]
-    assert "9" in number_variants(9.0, loose=True)
-    assert "9" not in number_variants(9.0, loose=False)
 
 
 def test_date_variants_include_common_spellings():
@@ -57,7 +52,7 @@ def test_two_digit_year_is_found_but_not_inside_a_longer_date():
     ],
 )
 def test_number_pattern_boundaries(text, found):
-    pattern = _exact_pattern(number_variants(9.0, loose=False))
+    pattern = number_pattern(9.0, loose=False)
     assert bool(pattern.search(text)) is found
 
 

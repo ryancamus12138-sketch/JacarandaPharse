@@ -90,7 +90,15 @@ def main(argv: list[str] | None = None) -> int:
     p_api.add_argument("--port", type=int, default=8000, help="端口，默认 8000")
     p_api.add_argument("--reload", action="store_true", help="改了代码自动重启（开发用）")
 
-    sub.add_parser("worker", help="启动后台任务：处理通过 API 上传的文件（要先运行 jacara serve）")
+    p_worker = sub.add_parser(
+        "worker", help="启动后台任务：处理通过 API 上传的文件（要先运行 jacara serve）"
+    )
+    p_worker.add_argument(
+        "--stage",
+        choices=["all", "read", "extract"],
+        default="all",
+        help="做哪一段（ADR 0051）：all 从头做到尾（默认）；read 只认字；extract 只调模型抽取",
+    )
 
     p_watch = sub.add_parser(
         "watch", help="监视一个文件夹，放进去的图片和 PDF 自动导入（Ctrl + C 停止）"
@@ -178,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "api":
         return _api(args)
     if args.command == "worker":
-        return _worker()
+        return _worker(args.stage)
     if args.command == "watch":
         return _watch(args)
     if args.command == "start":
@@ -729,11 +737,12 @@ def _backfill_ocr() -> int:
     return 0 if not failed else 1
 
 
-def _worker() -> int:
+def _worker(stage: str = "all") -> int:
     from jacara.worker import run_worker
 
-    print("后台任务已启动，等待上传的文件（Ctrl + C 停止）")
-    run_worker()
+    names = {"all": "后台任务", "read": "后台任务（OCR 工位）", "extract": "后台任务（模型工位）"}
+    print(f"{names[stage]}已启动，等待上传的文件（Ctrl + C 停止）")
+    run_worker(stage)  # type: ignore[arg-type]
     return 0
 
 
@@ -907,7 +916,15 @@ def _start(args: argparse.Namespace) -> int:
         print(f"启动模型服务：{model.name} → http://127.0.0.1:{MODEL_PORT}")
         if mmproj is not None:
             print(f"视觉模型：{mmproj.name}（照片、扫描件 OCR 不可靠时让模型看原图）")
-    children.append(subprocess.Popen([sys.executable, "-m", "jacara.cli", "worker"]))
+    worker = [sys.executable, "-m", "jacara.cli", "worker"]
+    if settings.jacara_pipeline:
+        # 流水线（ADR 0051）：OCR 工位和模型工位各一个进程，同时干活。
+        # 上次中断的先在这里统一标成失败：等两个工位各自起来再做，会误伤另一个已经开始干的活
+        _reset_interrupted()
+        children.append(subprocess.Popen([*worker, "--stage", "read"]))  # noqa: S603
+        children.append(subprocess.Popen([*worker, "--stage", "extract"]))  # noqa: S603
+    else:
+        children.append(subprocess.Popen(worker))  # noqa: S603
     if settings.jacara_watch_dir is not None:
         # 监视文件夹（ADR 0036）：.env 里写了 JACARA_WATCH_DIR 才启动
         children.append(subprocess.Popen([sys.executable, "-m", "jacara.cli", "watch"]))
@@ -933,6 +950,18 @@ def _start(args: argparse.Namespace) -> int:
         RUN_FILE.unlink(missing_ok=True)
         signal.signal(signal.SIGTERM, previous)
     return 0
+
+
+def _reset_interrupted() -> None:
+    from jacara.pipeline.process import reset_interrupted
+
+    try:
+        count = reset_interrupted()
+    except Exception as err:  # 数据库还没起来：worker 处理时自然会报，这里不挡启动
+        print(_paint(f"提醒：没能检查上次中断的文档（{err}）", _YELLOW))
+        return
+    if count:
+        print(_paint(f"{count} 个文档上次处理到一半被中断，已标记为失败，可以重新处理", _YELLOW))
 
 
 def _new_model_key() -> str:

@@ -19,6 +19,7 @@ import {
   Row,
   Statistic,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd'
 import type { ReactNode } from 'react'
@@ -169,7 +170,15 @@ export function DashboardPage() {
             suffix={c?.average_page_seconds != null ? '秒' : undefined}
             icon={<FieldTimeOutlined />}
             color="#7b5cc4"
-            note="最近 7 天的平均"
+            note={
+              c?.stage_seconds ? (
+                <Tooltip title="每份单据平均：OCR 认字、认好以后排队等模型、模型抽取和核对。两个工位同时干活，批量导入时认字和模型的时间是重叠的">
+                  每份：认字 {c.stage_seconds.read ?? '–'} 秒 · 模型 {c.stage_seconds.extract ?? '–'} 秒
+                </Tooltip>
+              ) : (
+                '最近 7 天的平均'
+              )
+            }
           />
         </Col>
       </Row>

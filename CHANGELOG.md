@@ -5,11 +5,12 @@
 
 ## [未发布]
 
-v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）、模板标签（ADR 0037）、v3 第 3 批（ADR 0038）、日期范围字段（ADR 0039）、值和原文写法（ADR 0040）、v3 第 4 批（ADR 0041）、PDF 画成图识别（ADR 0042）、物流和质检起步模板（ADR 0043）、修改统计和导出审核数据（ADR 0044）、从人改过的地方学（ADR 0045）、在网页上换模型（ADR 0046）、在样例上框选建模板（ADR 0047）、模板多语言和按地区管理（ADR 0048）、各国法定单据模板（ADR 0049）、OCR 纠错样本（ADR 0050）。
-升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at、domains、countries、tags；documents 加 auto、vision，extractions 加 classified、vision；documents 加 pdf_read，extracted_values 加 candidates；新表 team_settings、ocr_samples），再 `cd web && npm run build`。表格结构模型可选，见 README。
+v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页面（ADR 0034）、计算字段（ADR 0035）、v3 第 2 批（ADR 0036）、模板标签（ADR 0037）、v3 第 3 批（ADR 0038）、日期范围字段（ADR 0039）、值和原文写法（ADR 0040）、v3 第 4 批（ADR 0041）、PDF 画成图识别（ADR 0042）、物流和质检起步模板（ADR 0043）、修改统计和导出审核数据（ADR 0044）、从人改过的地方学（ADR 0045）、在网页上换模型（ADR 0046）、在样例上框选建模板（ADR 0047）、模板多语言和按地区管理（ADR 0048）、各国法定单据模板（ADR 0049）、OCR 纠错样本（ADR 0050）、后台流水线（ADR 0051）。
+升级：`uv sync`（新依赖 rapid-layout、rapid-table），`uv run alembic upgrade head`（新表 profiles、comments，documents 加跳过的三列，extractions 加 structure，extracted_values 加 rejected_value；extractions 加 last_page，documents 加 split、folder，templates 加 deleted_at、domains、countries、tags；documents 加 auto、vision，extractions 加 classified、vision；documents 加 pdf_read，extracted_values 加 candidates；新表 team_settings、ocr_samples；documents 加 timings），再 `cd web && npm run build`。表格结构模型可选，见 README。
 
 ### 新增
 
+- 后台流水线（ADR 0051）：OCR 工位和模型工位两个进程同时干活，模型在抽第 1 份时 OCR 已经在认第 2 份，批量导入更快；`JACARA_PIPELINE=false` 改回一个进程。每份记下认字、排队、模型各用了几秒，工作台"每页用时"下面显示平均
 - OCR 纠错样本（ADR 0050）：菜单"OCR 样本"，打开"自动收集纠错样本"（管理员）后，审核页点一块原文先核对「图中原文」，
   按图改对、回车填入；保存审核的同时，这一行按 OCR 当时的四个角裁成小图，连同图上原样的文字存成样本，
   自动分成认错字、认对的行、漏认、原因未确定，标出字认错、漏字、多字等。框选重新识别的也能收集（框里还有别的字时单独填图中原文）。
@@ -85,6 +86,8 @@ v3 第 1 批（ADR 0032）、折行的值（ADR 0033）、按文字块理解页�
 
 ### 修复
 
+- 一位、三位小数的数字（化验单的 78.5、0.9，单价 1.234）找不到出处：数字以前只按两位小数的写法找（78.50），这类值全部标"出处有疑点"，和 PDF 文字层核对时也对不上，文字层、OCR、放大再认三处一样还提示"三处都不一样"。现在不再把值猜成各种写法去搜，而是把原文里的数读出来按数值比（`core/numbers.py`）：几位小数都行，欧洲写法 1.234,56、12,5 也认；文字层和 OCR 一样、只是和值对不上时，提示改成"文字层和 OCR 这里都是……，和现在的值……对不上"
+- 审核页同时取几张局部图（候选旁边的小图）时偶尔报 500（"Failed to load page."）或"这个文件打不开"：PDF 渲染库 pdfium 不能几个线程同时用，现在所有 PDF 渲染排队用一把锁；局部图也不再把整页先画一遍
 - 有的 PDF 把汉字记成部首编码（"示"记成 ⽰、"小"记成 ⼩、"门"记成 ⻔），看着一样、复制出来不一样，模型读成平常的字后和原文对不上，大量字段被当成"原文里对不上"不填。读 PDF 文字层时先换成平常的字
 - 导出模板 Excel 的"规则"表以前列出系统里全部 35 条规则（化验单模板里也有发票、机票、澳洲税务的规则）；现在只列这个模板选了的，和字段都有、国家对得上、可以加上的
 - 起步模板补齐规则：航空行程单加"总额大于 0"（第 4 版），酒店账单加"开票日期不在未来"（第 5 版）

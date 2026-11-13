@@ -264,9 +264,10 @@ def test_discount_line_passes_the_line_rule():
 
 
 def test_discount_is_found_however_it_is_written():
-    from jacara.plugins.aligners.text_match import number_variants
+    from jacara.core.numbers import number_pattern
 
-    assert "6.00" in number_variants(-6.0, loose=False)
+    for text in ("SUMMERINA 6.00-", "-6.00", "(6.00)"):
+        assert number_pattern(-6.0, loose=False).search(text)
 
 
 def test_cell_may_be_one_row_off(receipt_page):

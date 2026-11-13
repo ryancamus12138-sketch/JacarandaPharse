@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     没有这个文件时，
     表格的格子按文字位置用规则划分。"""
 
+    jacara_pipeline: bool = True
+    """后台分两个工位（ADR 0051）：OCR 工位认字、模型工位抽取，两边同时干活，批量导入更快。
+    false：一个进程从头做到尾（以前的做法，省几百 MB 内存）。"""
     jacara_watch_dir: Path | None = None
     """监视文件夹（ADR 0036）：放进去的图片和 PDF 自动导入。
     jacara start 会一起启动；不写就不监视。"""
