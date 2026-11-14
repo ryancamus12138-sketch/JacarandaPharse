@@ -1,4 +1,4 @@
-"""账号相关的数据库读写。"""
+"""Account persistence."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from datetime import datetime
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
+from jacara.core.i18n import tr
 from jacara.core.owner import PERSONAL_OWNER
 from jacara.models import AuthSession, PasswordResetCode, Team, User
 
@@ -17,13 +18,13 @@ class AuthRepository:
         self.session = session
 
     def default_team(self) -> Team:
-        """现在一个安装只有一个团队。还没有就建一个。
+        """The single team of this installation; created if missing.
 
-        id 沿用个人模式的 team id：从个人模式切换到团队模式，以前的文档都还在这个团队里。
-        """
+                Its id reuses the personal-mode team id, so documents created in personal mode
+        remain in this team after switching to team mode."""
         team = self.session.scalars(select(Team).order_by(Team.created_at)).first()
         if team is None:
-            team = Team(id=PERSONAL_OWNER.team_id, name="默认团队")
+            team = Team(id=PERSONAL_OWNER.team_id, name=tr("默认团队"))
             self.session.add(team)
             self.session.flush()
         return team
@@ -50,7 +51,8 @@ class AuthRepository:
         self.session.flush()
 
     def live_session(self, token_hash: str, now: datetime) -> AuthSession | None:
-        """token 对应的、没过期、没退出、用户没停用的会话。"""
+        """The session for this token if it has not expired, has not been logged out and its user is
+        active."""
         query = (
             select(AuthSession)
             .join(User)
@@ -65,10 +67,10 @@ class AuthRepository:
         return self.session.scalars(query).one_or_none()
 
     def revoke_sessions(self, user_id: uuid.UUID, now: datetime, keep: str | None = None) -> None:
-        """让这个用户所有还有效的登录都作废（停用用户、改密码时用）。
+        """Revoke all active sessions of this user (on deactivation and password changes).
 
-        keep：留下这一个（token 哈希）。自己改密码时，别的设备退出，正在用的这个不退出。
-        """
+                keep: the session to keep (token hash). When users change their own password,
+        other devices are logged out but the current one is not."""
         query = update(AuthSession).where(
             AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None)
         )
@@ -79,7 +81,7 @@ class AuthRepository:
     def live_reset_code(
         self, user_id: uuid.UUID, code_hash: str, now: datetime
     ) -> PasswordResetCode | None:
-        """这个用户的、对得上的、没过期、没用过的重设码。"""
+        """A matching reset code of this user that has not expired and has not been used."""
         return self.session.scalars(
             select(PasswordResetCode).where(
                 PasswordResetCode.user_id == user_id,
@@ -90,7 +92,8 @@ class AuthRepository:
         ).one_or_none()
 
     def void_reset_codes(self, user_id: uuid.UUID, now: datetime) -> None:
-        """让这个用户还没用的重设码都作废：新生成一个时，旧的就不能再用了。"""
+        """Revoke this user's unused reset codes: once a new one is generated, older ones are no
+        longer valid."""
         self.session.execute(
             update(PasswordResetCode)
             .where(PasswordResetCode.user_id == user_id, PasswordResetCode.used_at.is_(None))

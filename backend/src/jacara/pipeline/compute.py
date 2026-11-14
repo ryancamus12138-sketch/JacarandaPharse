@@ -1,7 +1,8 @@
-"""算计算字段（ADR 0035）：抽取之后算一次；审核时参与计算的值改了，再算一次。
+"""Compute calculated fields: once after extraction, and again during review whenever an input value
+changes.
 
-两处用同一份代码，所以处理时算出的值和审核后重算的值一定一致。
-"""
+Both use the same code, so values computed during processing always equal values recomputed after
+review."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from jacara.core.i18n import stored
 from jacara.formulas import Formula, Inputs, Outcome, evaluate
 from jacara.plugins.extractors.base import cell_name, split_cell_name
 from jacara.templates import Template
@@ -16,23 +18,23 @@ from jacara.templates import Template
 
 @dataclass(frozen=True)
 class Computed:
-    """算出来的一个字段（表格的格子是 items.2.amount 这样的名字）。"""
+    """One computed field (table cells use names like items.2.amount)."""
 
     name: str
     value: float | None
     note: str
-    """给人看的：按什么公式算的、算出多少；算不出来时说缺了什么。"""
+    """Human-readable: the formula used and the result; when not computable, what is missing."""
     formula: str
-    """给人看的公式（中文名）。"""
+    """Human-readable formula (with display names)."""
 
 
 def compute(template: Template, values: Mapping[str, Any]) -> list[Computed]:
-    """按模板的公式算出所有计算字段。values 是现在的值：字段名 → 值（文字或数字，没有就是 None），
-    表格的格子用 items.2.amount 这样的名字，删掉的行不要放进来。
+    """Compute all calculated fields from the template formulas. values holds the current values:
+    field name → value (text or number, None if absent); table cells use names like
+    items.2.amount, and deleted rows must be excluded.
 
-    先算每一行的公式（明细的金额 = 数量 × 单价），再算普通字段（总额 = sum(items.amount)），
-    算出的值马上能给后面的公式用。
-    """
+        Per-row formulas run first (line amount = quantity × unit price), then regular fields
+    (total = sum(items.amount)); each result is immediately available to later formulas."""
     formulas = template.formulas()
     if not formulas:
         return []
@@ -41,7 +43,8 @@ def compute(template: Template, values: Mapping[str, Any]) -> list[Computed]:
     results: list[Computed] = []
 
     for table, columns in formulas.columns.items():
-        # 每一行的公式里写的是列名：列名优先（明细的 date 和单据的 date 可能重名）
+        # Per-row formulas reference column names, which take precedence (a line-item date and the
+        # document date may share a name).
         row_labels = {
             **labels,
             **{c: labels.get(f"{table}.{c}", c) for c in _columns(template, table)},
@@ -70,16 +73,30 @@ def compute(template: Template, values: Mapping[str, Any]) -> list[Computed]:
 def _result(name: str, formula: Formula, outcome: Outcome, labels: Mapping[str, str]) -> Computed:
     readable = formula.readable(labels)
     if outcome.value is not None:
-        return Computed(name, outcome.value, f"按公式算：{readable} = {outcome.value:g}", readable)
+        return Computed(
+            name,
+            outcome.value,
+            stored("按公式算：{readable} = {value:g}", readable=readable, value=outcome.value),
+            readable,
+        )
     if outcome.missing is not None:
         missing = labels.get(outcome.missing, outcome.missing)
         if "." in outcome.missing:
             table, column = outcome.missing.split(".", 1)
-            missing = f"{labels.get(table, table)}的{labels.get(outcome.missing, column)}"
-        reason = f"「{missing}」没有值"
+            missing = stored(
+                "{table}的{column}",
+                table=labels.get(table, table),
+                column=labels.get(outcome.missing, column),
+            )
+        reason = stored("「{missing}」没有值", missing=missing)
     else:
-        reason = outcome.problem or "算不出来"
-    return Computed(name, None, f"按公式算（{readable}），但{reason}，算不出来", readable)
+        reason = outcome.problem or stored("算不出来")
+    return Computed(
+        name,
+        None,
+        stored("按公式算（{readable}），但{reason}，算不出来", readable=readable, reason=reason),
+        readable,
+    )
 
 
 def _columns(template: Template, table: str) -> list[str]:
@@ -87,13 +104,13 @@ def _columns(template: Template, table: str) -> list[str]:
 
 
 def _rows(values: Mapping[str, Any], table: str) -> list[int]:
-    """表里有哪几行（按行号）。"""
+    """Row numbers present in the table."""
     rows = {cell[1] for name in values if (cell := split_cell_name(name)) and cell[0] == table}
     return sorted(rows)
 
 
 def _row(values: Mapping[str, Any], table: str, index: int) -> dict[str, Any]:
-    """一行的每一列：列名 → 值。"""
+    """Every column of one row: column name → value."""
     return {
         cell[2]: value
         for name, value in values.items()

@@ -1,11 +1,11 @@
-# ruff: noqa: E501
-"""数据集库和 OCR 评测的表（ADR 0059、0060）。
+"""Dataset library and OCR evaluation tables.
 
-datasets         数据集：一个 zip（存对象存储）+ 名字、版本、种类、来源、每边几条。按团队分。
-ocr_eval_runs    一次 OCR 模型评测：哪个数据集、哪一边、两个模型，结果和进度。
+datasets         Datasets: a zip archive (in object storage) plus name, version, kind, source and
+per-split counts. Scoped by team.
+ocr_eval_runs    One OCR model evaluation: dataset, split, the two models, results and progress.
 
-模型库不在数据库里：模型文件和模型卡在 models/hub/（每台电脑自己的，和 models/selected.json 一样）。
-"""
+The model library is not in the database: model files and model cards live in models/hub/ (local
+to each machine, like models/selected.json)."""
 
 from __future__ import annotations
 
@@ -26,26 +26,30 @@ class Dataset(Base, OwnedMixin, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(64))
     version: Mapped[int]
-    """同一个团队里同名再存一次，版本号加 1（MLflow 注册模型的版本规则）。"""
+    """Storing the same name again in a team increments the version (MLflow registered model
+    versioning)."""
     kind: Mapped[str] = mapped_column(String(16))
-    """ocr_rec（识别：单行小图 + 文字）或 ocr_det（检测：整页图 + 文字框）。"""
+    """ocr_rec (recognition: line crop + text) or ocr_det (detection: full page + text boxes)."""
     source: Mapped[str] = mapped_column(String(16))
-    """samples（OCR 样本导出）、det_pages（检测样本）、upload（上传的）。"""
+    """samples (OCR sample export), det_pages (detection samples), upload (uploaded)."""
     description: Mapped[str] = mapped_column(Text, default="")
-    """数据集卡的正文：从哪来、怎么标的、要注意什么。"""
+    """Dataset card body: origin, annotation method, caveats."""
     storage_key: Mapped[str] = mapped_column(String(255))
     sha256: Mapped[str] = mapped_column(String(64))
     size: Mapped[int]
     counts: Mapped[dict[str, Any]] = mapped_column(JsonColumn)
-    """每边几条：{"train": 120, "val": 30, "test": 0, "all": 0}；all 是不分边的（PPOCRLabel 导出）。"""
+    """Entries per split: {"train": 120, "val": 30, "test": 0, "all": 0}; all is unsplit (PPOCRLabel
+    export)."""
     groups: Mapped[dict[str, Any]] = mapped_column(JsonColumn, default=dict)
-    """每边几组业务单据（有 document_group 的才有）。"""
+    """Business document groups per split (only when document_group is present)."""
     files: Mapped[list[Any]] = mapped_column(JsonColumn, default=list)
-    """读了 zip 里哪几个标注文件，每个属于哪一边：[{"file": "rec_gt_val.txt", "split": "val"}]。"""
+    """Label files read from the archive and their splits: [{"file": "rec_gt_val.txt", "split":
+    "val"}]."""
     problems: Mapped[dict[str, Any]] = mapped_column(JsonColumn, default=dict)
-    """导入时跳过的行和原因：{"图片打不开": 2}。"""
+    """Lines skipped on import and why: {"unreadable image": 2}."""
     export_id: Mapped[uuid.UUID | None]
-    """从 OCR 样本导出来的：对应的导出记录（ocr_sample_exports）。"""
+    """For datasets exported from OCR samples: the corresponding export record
+    (ocr_sample_exports)."""
 
 
 class OcrEvalRun(Base, OwnedMixin, TimestampMixin):
@@ -54,18 +58,19 @@ class OcrEvalRun(Base, OwnedMixin, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     dataset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("datasets.id"), index=True)
     split: Mapped[str] = mapped_column(String(8))
-    """评哪一边：val、test、train、all。"""
+    """Split to evaluate: val, test, train, all."""
     task: Mapped[str] = mapped_column(String(8))
-    """rec（识别）或 det（检测），跟着数据集的种类。"""
+    """rec (recognition) or det (detection), following the dataset kind."""
     arms: Mapped[list[Any]] = mapped_column(JsonColumn)
-    """两个模型：[{"name": "A", "label": "在用", "det": 路径或 null, "rec": …, "dict": …, "sha256": {…}}]。
-    创建时就把"在用"解析成具体文件，以后换了模型也知道当时比的是哪个。"""
+    """The two models: [{"name": "A", "label": "In use", "det": path or null, "rec": …, "dict": …,
+    "sha256": {…}}]. "In use" is resolved to concrete files at creation, so the compared models
+    remain known after the selection changes."""
     status: Mapped[str] = mapped_column(String(12), default="queued")
-    """queued（排队）、running（在跑）、done（完成）、failed（出错）。"""
+    """queued, running, done, failed."""
     progress: Mapped[str] = mapped_column(String(64), default="")
     summary: Mapped[dict[str, Any] | None] = mapped_column(JsonColumn)
     lines_key: Mapped[str | None] = mapped_column(String(255))
-    """每一条的结果（对象存储，jsonl）：里面有单据上的文字，是业务数据。"""
+    """Per-item results (object storage, jsonl). Contains document text, i.e. business data."""
     error: Mapped[str] = mapped_column(Text, default="")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

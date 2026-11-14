@@ -2,12 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import { listComments } from '../../api/documents'
 import type { DocComment } from '../../api/types'
 
-/** 一份文档的备注（备注按钮和字段旁边的小图标共用一份）。 */
+/** Comments of a document (shared by the comments button and the icons next to fields). */
 export function useComments(id: string) {
   return useQuery({ queryKey: ['comments', id], queryFn: () => listComments(id) })
 }
 
-/** 这一页每个字段还没解决的备注几条：字段 ID → 条数。 */
+/** Unresolved comments per field on this page: field ID → count. */
 export function openCommentsOnPage(
   comments: DocComment[] | undefined,
   page: number,

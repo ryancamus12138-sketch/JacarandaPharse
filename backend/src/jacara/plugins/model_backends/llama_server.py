@@ -1,8 +1,8 @@
-"""llama-server 后端：通过 HTTP 调用本机的 llama-server（llama.cpp 自带的模型服务）。
+"""llama-server backend: calls the local llama-server (the model server bundled with llama.cpp) over
+HTTP.
 
-llama-server 实现了 OpenAI 格式的 /v1/chat/completions 接口，所以这里的写法
-也适用于其他兼容这个格式的本地服务。
-"""
+llama-server implements the OpenAI-compatible /v1/chat/completions endpoint, so this code also
+works with other local servers compatible with that format."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from collections.abc import Callable
 
 import httpx
 
+from jacara.core.i18n import N_, stored
 from jacara.plugins.model_backends.base import (
     ChatMessage,
     ChatResult,
@@ -20,14 +21,15 @@ from jacara.plugins.model_backends.base import (
     ModelConfig,
 )
 
-WRONG_KEY = "模型服务要密钥，但密钥不对。模型是 jacara start 启动的话，请重新运行 jacara start"
+WRONG_KEY = N_("模型服务要密钥，但密钥不对。模型是 jacara start 启动的话，请重新运行 jacara start")
 
 VISION_CACHE_S = 60
-"""问过一次"能不能看图"之后，一分钟内不再问。"""
+"""Once queried, the image capability is cached for one minute."""
 
 
 def _message(m: ChatMessage) -> dict[str, object]:
-    """一条消息。带图的写成 OpenAI 的多段格式：先文字，再一张张图（base64 的 data URL）。"""
+    """One message. Messages with images use the OpenAI multi-part format: text first, then each
+    image (base64 data URL)."""
     if not m.images:
         return {"role": m.role, "content": m.content}
     parts: list[dict[str, object]] = [{"type": "text", "text": m.content}]
@@ -45,7 +47,8 @@ class LlamaServerBackend:
         self._vision: tuple[float, bool] | None = None
 
     def sees_images(self) -> bool:
-        """问模型服务（/props 的 modalities.vision）加载了视觉模型没有。结果记一分钟。"""
+        """Ask the model server (modalities.vision in /props) whether a vision projector is loaded.
+        Cached for one minute."""
         now = time.monotonic()
         if self._vision is not None and now - self._vision[0] < VISION_CACHE_S:
             return self._vision[1]
@@ -68,7 +71,7 @@ class LlamaServerBackend:
     def _payload(
         self, messages: list[ChatMessage], json_schema: dict[str, object] | None
     ) -> dict[str, object]:
-        """把通用的消息和配置翻译成 llama-server 要的请求内容。"""
+        """Translate generic messages and configuration into a llama-server request body."""
         c = self.config
         payload: dict[str, object] = {
             "messages": [_message(m) for m in messages],
@@ -78,7 +81,8 @@ class LlamaServerBackend:
         if c.max_tokens is not None:
             payload["max_tokens"] = c.max_tokens
         if json_schema is not None:
-            # 服务端会按这个格式限制模型的输出，模型"想"说别的也说不出来。
+            # The server constrains the model output to this schema; the model cannot produce
+            # anything else.
             payload["response_format"] = {"type": "json_object", "schema": json_schema}
         payload.update(c.extra)
         return payload
@@ -98,31 +102,47 @@ class LlamaServerBackend:
             )
         except httpx.ConnectError as err:
             raise ModelBackendError(
-                f"连不上模型服务 {self.config.base_url}。请先运行 `uv run jacara serve` 启动模型。"
+                stored(
+                    "连不上模型服务 {base_url}。请先运行 `uv run jacara serve` 启动模型。",
+                    base_url=self.config.base_url,
+                )
             ) from err
         except httpx.TimeoutException as err:
             raise ModelBackendError(
-                f"模型超过 {self.config.timeout_s:.0f} 秒没有回答，可以调大 timeout_s。"
+                stored(
+                    "模型超过 {timeout_s:.0f} 秒没有回答，可以调大 timeout_s。",
+                    timeout_s=self.config.timeout_s,
+                )
             ) from err
 
         if response.status_code == 401:
             raise ModelBackendError(WRONG_KEY)
         if response.status_code != 200:
             detail = response.text[:300]
-            raise ModelBackendError(f"模型服务报错（{response.status_code}）：{detail}")
+            raise ModelBackendError(
+                stored(
+                    "模型服务报错（{status_code}）：{detail}",
+                    status_code=response.status_code,
+                    detail=detail,
+                )
+            )
 
         data = response.json()
         usage = data.get("usage", {})
         if data["choices"][0].get("finish_reason") == "length":
-            # 回答写到 max_tokens 就被截断了，后面拿到的一定是半截 JSON，不如直接说清楚
+            # An answer cut off at max_tokens is necessarily incomplete JSON; report that
+            # explicitly.
             limit = (
-                f"{self.config.max_tokens} 个 token"
+                stored("{max_tokens} 个 token", max_tokens=self.config.max_tokens)
                 if self.config.max_tokens is not None
-                else "模型服务的上下文长度"
+                else stored("模型服务的上下文长度")
             )
             raise ModelBackendError(
-                f"模型的回答太长，写到 {limit} 被截断了。"
-                "可以调大上下文长度（jacara serve --context）后重试。"
+                stored(
+                    "模型的回答太长，写到 {limit} 被截断了。可以调大上下文长度（jacara serve "
+                    "--context）后重试。",
+                    limit=limit,
+                )
             )
         return ChatResult(
             text=data["choices"][0]["message"]["content"],
@@ -140,8 +160,8 @@ class LlamaServerBackend:
         json_schema: dict[str, object] | None = None,
         on_text: Callable[[int], None] | None = None,
     ) -> ChatResult:
-        """和 chat 一样，但让模型边写边传回来；每收到一段就告诉 on_text 一共写了多少字。
-        处理进度按它走（模型写了多少）。"""
+        """Like chat, but streams the answer and reports the total characters written to on_text
+        after each chunk; progress follows it."""
         url = f"{self.config.base_url}/v1/chat/completions"
         start = time.perf_counter()
         payload = {
@@ -160,7 +180,13 @@ class LlamaServerBackend:
                     raise ModelBackendError(WRONG_KEY)
                 if response.status_code != 200:
                     detail = response.read().decode("utf-8", "replace")[:300]
-                    raise ModelBackendError(f"模型服务报错（{response.status_code}）：{detail}")
+                    raise ModelBackendError(
+                        stored(
+                            "模型服务报错（{status_code}）：{detail}",
+                            status_code=response.status_code,
+                            detail=detail,
+                        )
+                    )
                 for line in response.iter_lines():
                     if not line.startswith("data:"):
                         continue
@@ -181,16 +207,24 @@ class LlamaServerBackend:
                         on_text(written)
         except httpx.ConnectError as err:
             raise ModelBackendError(
-                f"连不上模型服务 {self.config.base_url}。请先运行 `uv run jacara serve` 启动模型。"
+                stored(
+                    "连不上模型服务 {base_url}。请先运行 `uv run jacara serve` 启动模型。",
+                    base_url=self.config.base_url,
+                )
             ) from err
         except httpx.TimeoutException as err:
             raise ModelBackendError(
-                f"模型超过 {self.config.timeout_s:.0f} 秒没有回答，可以调大 timeout_s。"
+                stored(
+                    "模型超过 {timeout_s:.0f} 秒没有回答，可以调大 timeout_s。",
+                    timeout_s=self.config.timeout_s,
+                )
             ) from err
         if finish == "length":
             raise ModelBackendError(
-                "模型的回答太长，写到模型服务的上下文长度被截断了。"
-                "可以调大上下文长度（jacara serve --context）后重试。"
+                stored(
+                    "模型的回答太长，写到模型服务的上下文长度被截断了。"
+                    "可以调大上下文长度（jacara serve --context）后重试。"
+                )
             )
         return ChatResult(
             text="".join(parts),

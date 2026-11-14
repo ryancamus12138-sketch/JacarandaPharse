@@ -6,8 +6,9 @@ import { LoginPage } from './auth/LoginPage'
 import { ResetPasswordPage } from './auth/ResetPasswordPage'
 import { RequireAuth } from './auth/RequireAuth'
 import { AppLayout } from './components/AppLayout'
+import { useTranslation } from 'react-i18next'
 
-// 每个页面单独打包，打开时才下载：第一次打开网页要下载的东西少很多
+// Each page is a separate chunk downloaded on first visit, which greatly reduces the initial download.
 const DashboardPage = lazy(() =>
   import('./features/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })),
 )
@@ -51,7 +52,7 @@ const TemplateEditorPage = lazy(() =>
 )
 
 
-/** 页面还在下载时显示转圈。 */
+/** Spinner shown while a page chunk is loading. */
 function Page({ children }: { children: ReactNode }) {
   return (
     <Suspense
@@ -66,8 +67,9 @@ function Page({ children }: { children: ReactNode }) {
   )
 }
 
-/** 路由：哪个网址显示哪个页面。 */
+/** Routes: which page each URL shows. */
 export default function App() {
+  const { t } = useTranslation()
   return (
     <BrowserRouter>
       <AuthProvider>
@@ -141,7 +143,7 @@ export default function App() {
             <Route path="settings/:section?" element={<Page>
                   <SettingsPage />
                 </Page>} />
-            {/* 以前的网址：都搬进了设置（ADR 0063） */}
+            {/* Legacy URLs, now all under settings. */}
             <Route path="system" element={<Navigate to="/settings/about" replace />} />
             <Route path="profile" element={<Navigate to="/settings/personal" replace />} />
             <Route path="admin/users" element={<Navigate to="/settings/team" replace />} />
@@ -151,10 +153,10 @@ export default function App() {
               element={
                 <Result
                   status="404"
-                  title="找不到这个页面"
+                  title={t('找不到这个页面')}
                   extra={
                     <Link to="/">
-                      <Button type="primary">回首页</Button>
+                      <Button type="primary">{t('回首页')}</Button>
                     </Link>
                   }
                 />

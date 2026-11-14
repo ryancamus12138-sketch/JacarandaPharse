@@ -1,4 +1,5 @@
-"""回放（ADR 0053）：同一份 OCR 快照、换一种设置再抽，和人审核过的值比。"""
+"""Replay: extract again from the same OCR snapshot with different settings and compare with
+reviewed values."""
 
 from __future__ import annotations
 
@@ -56,8 +57,8 @@ def test_bootstrap_by_group_is_seeded():
     rows = [_row(f"g{i}", False, True) for i in range(5)] + [_row("g9", True, True)]
     low, high = group_bootstrap(rows) or (0, 0)
     assert 0 < low <= high <= 1
-    assert group_bootstrap(rows) == group_bootstrap(rows)  # 同一个种子，结果一样
-    assert group_bootstrap([_row("g1", True, False)]) is None  # 一组不算
+    assert group_bootstrap(rows) == group_bootstrap(rows)  # Same seed, same result.
+    assert group_bootstrap([_row("g1", True, False)]) is None  # A single group does not count.
     assert evidence_level(5, 200) == "process"
     assert evidence_level(12, 80) == "thin"
     assert evidence_level(20, 120) == "trend"
@@ -65,7 +66,7 @@ def test_bootstrap_by_group_is_seeded():
 
 @pytest.fixture
 def reviewed(client, factory, storage, receipt_page) -> uuid.UUID:
-    """处理一份收据（模型把合计读成 8），人改成 9，完成审核。"""
+    """Process a receipt (the model reads the total as 8), correct it to 9 and complete review."""
     document_id = upload(client)
     wrong = {**RECEIPT, "total": (8.0, 6)}
     process(factory, storage, document_id, receipt_page, SchemaBackend(wrong))
@@ -96,19 +97,22 @@ def test_replay_finds_what_the_new_setting_fixed(
         reviewed_at = session.get_one(Document, reviewed).reviewed_at
 
     def pipelines(arm: Arm):
-        return pipeline(None, SchemaBackend(RECEIPT))  # B：读对了合计；OCR 是空的，只能用快照
+        # B reads the total correctly; OCR is empty, so only the snapshot can be used.
+        return pipeline(None, SchemaBackend(RECEIPT))
 
     arms = (Arm("A", "当时存下的结果"), Arm("B", "新模型", "http://127.0.0.1:9"))
     result = replay(factory, storage, arms, pipelines)
     s = summarize(result)
     assert (s["documents"], s["fixed"], s["broken"]) == (1, 1, 0)
     total = next(r for r in result.rows if r.field == "total")
-    # 8 在原文里找不到，当时核对没通过、值是空的（标黄）：A 算漏了
+    # 8 is not in the source, so verification failed at the time and the value is empty (flagged): A
+    # counts as missed.
     assert (total.truth, total.a.value, total.b.value) == ("9.0", None, "9.0")
     assert total.a.flagged and (total.a_outcome, total.b_outcome) == ("missing", "correct")
     assert s["a"]["missing"] == 1 and s["b"]["missing"] == 0
     assert s["evidence"] == "process"
-    assert result.manifest.snapshots[str(reviewed)]  # 两边用的同一份快照，记了 sha256
+    # Both arms used the same snapshot, recorded by sha256.
+    assert result.manifest.snapshots[str(reviewed)]
     assert sum(s["models"]["B"].values()) == 1
 
     md = write_result(result, tmp_path / "out")
@@ -116,7 +120,7 @@ def test_replay_finds_what_the_new_setting_fixed(
     lines = (tmp_path / "out" / "fields.jsonl").read_text(encoding="utf-8").splitlines()
     assert any(json.loads(x)["field"] == "total" for x in lines)
 
-    # 只读：审核数据一点没动
+    # Read-only: review data untouched.
     with session_scope(factory) as session:
         assert session.query(ExtractedValue).count() == before
         document = session.get_one(Document, reviewed)
@@ -137,7 +141,7 @@ def test_documents_without_snapshot_are_skipped(factory, storage, reviewed):
     assert only.rows == []
 
 
-# ---- 表格明细（ADR 0062） ----
+# ---- Line items ----
 
 
 def _truth(*rows: tuple[str, str]) -> list[dict[str, tuple[str, str | None]]]:
@@ -152,7 +156,7 @@ def test_rows_are_matched_by_most_correct_cells_not_by_position():
     from jacara.eval.tables import compare_table, match_rows, micro
 
     truth = _truth(("PC", "9.00"), ("BAG", "0.50"))
-    pred = _pred(("BAG", "0.5"), ("PC", "9"))  # 顺序反了，数字写法不同
+    pred = _pred(("BAG", "0.5"), ("PC", "9"))  # Reversed order, different number notation.
     assert match_rows(truth, pred) == {0: 1, 1: 0}
     side = compare_table("items", truth, pred)
     assert [c.outcome for c in side.cells] == ["correct"] * 4
@@ -165,7 +169,7 @@ def test_unmatched_rows_count_as_missing_and_extra():
     from jacara.eval.tables import compare_table, micro
 
     truth = _truth(("PC", "9.00"), ("PEN", "2.00"))
-    pred = _pred(("PC", "9.00"), ("SUBTOTAL", "11.00"))  # 第 2 行一格也没对上：不算配上
+    pred = _pred(("PC", "9.00"), ("SUBTOTAL", "11.00"))  # No correct cell in row 2: not matched.
     side = compare_table("items", truth, pred)
     assert [c.outcome for c in side.cells] == ["correct", "correct", "missing", "missing"]
     assert (side.extra_cells, side.extra_rows) == (2, 1)
@@ -194,7 +198,7 @@ def test_empty_tables_on_either_side():
 
 @pytest.fixture
 def items_document(client, factory, receipt_page, tmp_path) -> uuid.UUID:
-    """商品明细两行：PC（对的）和 BAG（多出来的），人删掉了 BAG 那一行。"""
+    """Two line items: PC (correct) and BAG (spurious); the reviewer deleted the BAG row."""
     from datetime import datetime
 
     from jacara.pipeline.store import save_document
@@ -246,11 +250,13 @@ def test_truth_is_the_reviewed_table_and_a_is_what_the_model_said(factory, items
     with session_scope(factory) as session:
         extraction = session.query(Extraction).filter_by(document_id=items_document).one()
         truth, stored = _stored_tables(extraction)
-    assert [row["name"][1] for row in truth["items"]] == ["PC"]  # 删掉的行不在标准答案里
-    assert [row["name"].value for row in stored["items"]] == ["PC", "BAG"]  # 模型当时给了两行
+    # Deleted rows are not in the ground truth.
+    assert [row["name"][1] for row in truth["items"]] == ["PC"]
+    # The model gave two rows at the time.
+    assert [row["name"].value for row in stored["items"]] == ["PC", "BAG"]
     side = _compare_tables(truth, stored)["items"]
     assert {c.outcome for c in side.cells} == {"correct"}
-    assert side.extra_rows == 1  # BAG 是多出来的
+    assert side.extra_rows == 1  # BAG is spurious.
 
 
 def test_table_summary_and_markdown(tmp_path):
@@ -291,4 +297,4 @@ def test_table_summary_and_markdown(tmp_path):
     assert t["b"]["extra_rows"] == 1 and t["b"]["precision"] == 0.6667
     assert t["by_column"]["receipt:items.amount"]["fixed"] == 1
     md = summary_markdown(summarize(result))
-    assert "## 表格明细（ADR 0062）" in md and "修好了 **1** 格" in md
+    assert "## 表格明细" in md and "修好了 **1** 格" in md

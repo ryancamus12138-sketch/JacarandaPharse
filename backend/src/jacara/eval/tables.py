@@ -1,17 +1,19 @@
-"""表格明细的回放比较（ADR 0062）：人审核后的行和抽出来的行先一一配对，再逐格比。
+"""Replay comparison of table line items: reviewed rows are paired with extracted rows, then
+compared cell by cell.
 
-做法照 DocILE 基准的"明细识别"（Line Item Recognition，LIR）评测（Šimsa 等，ICDAR 2023，
-arXiv:2302.05658，第 4.2 节）：
+Follows the Line Item Recognition (LIR) evaluation of the DocILE benchmark (Šimsa et al., ICDAR
+2023, arXiv:2302.05658, section 4.2):
 
-1. 每一对（人审核后的行，抽出来的行）先逐格比，数这一对里"对了的格"有几个；
-2. 在所有配对方式里，找让"对了的格"总数最多的那一种（最大匹配，使总召回最高）；
-3. 指标是所有明细格子上的 micro F1。
+1. For each pair (reviewed row, extracted row), compare cell by cell and count the correct cells;
+2. Among all pairings, choose the one with the largest total of correct cells (maximum matching,
+   maximizing overall recall);
+3. The metric is micro F1 over all line-item cells.
 
-配对用 scipy.optimize.linear_sum_assignment（maximize=True）求解。
-replay.py 用到这里时在函数里导入（这里要用 replay 的 Pred、outcome，顶层互相导入会循环）。
-一个格子也没对上的配对不算配上：
-那一行人审核后的格子算漏、抽出来的格子算多（这样分和算成"错"，P、R、F1 完全一样，但更好读）。
-"""
+The pairing is solved with scipy.optimize.linear_sum_assignment (maximize=True). replay.py
+imports this module inside functions (this module uses Pred and outcome from replay; top-level
+imports would be circular). A pair without a single correct cell is not considered matched: the
+reviewed cells of that row count as missed and the extracted cells as spurious. Precision, recall
+and F1 are identical to counting them as wrong, but the result is easier to read."""
 
 from __future__ import annotations
 
@@ -24,41 +26,43 @@ from scipy.optimize import linear_sum_assignment
 from jacara.eval.replay import Outcome, Pred, outcome
 
 TruthRow = Mapping[str, tuple[str, str | None]]
-"""人审核后的一行：列名 → (类型, 值)。"""
+"""One reviewed row: column name → (type, value)."""
 
 PredRow = Mapping[str, Pred]
-"""抽出来的一行：列名 → 预测。"""
+"""One extracted row: column name → prediction."""
 
 
 @dataclass(frozen=True)
 class CellResult:
-    """人审核后的一格，在某一边的结果。"""
+    """Outcome of one reviewed cell in one arm."""
 
     table: str
     row: int
-    """人审核后第几行（从 1 开始，按显示顺序）。"""
+    """Reviewed row number (1-based, display order)."""
     column: str
     type: str
     truth: str | None
     pred: Pred
     outcome: Outcome
     matched_row: int | None
-    """配上的抽出来的那一行（从 1 开始）；没配上是 None。"""
+    """Matched extracted row (1-based); None if unmatched."""
 
 
 @dataclass(frozen=True)
 class TableSide:
-    """一张表在一边的结果：人审核后每一格的结果，加上多出来的格子数。"""
+    """Result of one table in one arm: the outcome of every reviewed cell plus the number of
+    spurious cells."""
 
     cells: list[CellResult]
     extra_cells: int
-    """抽出来的、没有对应的人审核格子的非空格（多出来的行，或配上的行里人那边没有的列）。"""
+    """Non-empty extracted cells with no corresponding reviewed cell (unmatched rows, or columns in
+    matched rows that are empty on the reviewed side)."""
     extra_rows: int
-    """抽出来的行里没配上的行数。"""
+    """Number of unmatched extracted rows."""
 
 
 def _score(truth: TruthRow, pred: PredRow) -> int:
-    """一对行里对了的格子数（人那边是空的格子不算）。"""
+    """Number of correct cells in a row pair (cells empty on the reviewed side are not counted)."""
     return sum(
         outcome(type_, value, pred[column].value) == "correct"
         for column, (type_, value) in truth.items()
@@ -67,7 +71,8 @@ def _score(truth: TruthRow, pred: PredRow) -> int:
 
 
 def match_rows(truth: Sequence[TruthRow], pred: Sequence[PredRow]) -> dict[int, int]:
-    """人审核后的行号（下标）→ 抽出来的行号（下标）。只留下至少对了一格的配对。"""
+    """Reviewed row index → extracted row index. Only pairs with at least one correct cell are
+    kept."""
     if not truth or not pred:
         return {}
     score = np.array([[_score(t, p) for p in pred] for t in truth], dtype=np.int64)
@@ -110,7 +115,7 @@ def _filled(value: str | None) -> bool:
 
 @dataclass(frozen=True)
 class Micro:
-    """所有明细格子上的 micro 指标（DocILE LIR 的主指标是 micro F1）。"""
+    """Micro metrics over all line-item cells (the primary DocILE LIR metric is micro F1)."""
 
     correct: int
     wrong: int

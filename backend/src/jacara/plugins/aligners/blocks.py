@@ -1,13 +1,15 @@
-"""按文字块核对的证据对齐（ADR 0034，LMDX 的做法）。
+"""Block-based evidence alignment (the LMDX approach).
 
-模型回答每个值时说了"用了哪几块"（编号）。这里去那几块核对：
-1. 那几块里确实有这个值（文字相似度够高；数字、日期必须完全一致）→ 出处就是这几块。
-   一块里只有一部分是值（"Date: 31/12/2017"），框只框值那一段。
-2. 那几块里没有（或者模型没说用了哪几块）→ 退回按文字在整页找（TextMatchAligner）。
-   找到了：值留着，标黄，说明"模型说的那几块里没有，在别处找到了"。
-3. 整页都找不到 → 按 LMDX 丢掉：值存成空的，模型给的值记下来（rejected），标红，
-   人核对原文后可以一键采用。
-"""
+For each value the model names the text blocks it used (by index). Those blocks are checked:
+1. The blocks contain the value (sufficient text similarity; numbers and dates must match
+   exactly) → the evidence is these blocks. When only part of a block is the value ("Date:
+   31/12/2017"), the box covers just that part.
+2. The blocks do not contain it (or the model named none) → fall back to a full-page text search
+   (TextMatchAligner). If found, the value is kept and flagged: "not in the blocks the model
+   referenced; found elsewhere".
+3. Not found anywhere on the page → dropped as in LMDX: the stored value is empty, the model
+   value is recorded (rejected) and flagged red; a reviewer can accept it with one click after
+   checking the source."""
 
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ import re
 from dataclasses import replace
 
 from jacara.core.dates import date_pattern
+from jacara.core.i18n import join_notes, stored
 from jacara.core.numbers import number_pattern
 from jacara.plugins.aligners.base import AlignedField, Evidence
 from jacara.plugins.aligners.crosscheck import cross_check
@@ -46,7 +49,7 @@ class BlockAligner:
         self.min_similarity = min_similarity
         self.min_confidence = min_confidence
         self.text = TextMatchAligner(min_similarity, min_confidence)
-        """模型说的那几块对不上时，按文字在整页找。"""
+        """Full-page text search used when the blocks named by the model do not match."""
 
     def align(
         self,
@@ -55,7 +58,8 @@ class BlockAligner:
         structure: PageStructure | None = None,
         day_first: bool | None = None,
     ) -> tuple[AlignedField, ...]:
-        """day_first：数字日期是不是 日/月（按模板的国家），交叉检查日期时用。"""
+        """day_first: whether numeric dates are day/month (from the template country); used when
+        cross-checking dates."""
         structure = structure or analyze_page(page)
         rows = group_rows(page)
         seen = result.vision is not None
@@ -70,10 +74,11 @@ class BlockAligner:
         day_first: bool | None = None,
     ) -> AlignedField:
         if field.value is None:
-            return AlignedField(field, "empty", None, False, "模型说原文里没有这个字段")
+            return AlignedField(field, "empty", None, False, stored("模型说原文里没有这个字段"))
 
         if field.text and field.type != "string":
-            # 模型抄了原文（ADR 0040）：先按原文的写法找，再看它理解的值对不对得上
+            # The model copied the source text: search for it as written first, then check whether
+            # the interpreted value matches.
             quoted = self._quoted(field, s, rows, day_first)
             if quoted is not None:
                 return quoted
@@ -83,35 +88,47 @@ class BlockAligner:
             if evidence is not None:
                 return self._checked(field, evidence)
 
-        # 模型说的那几块里没有（或者没说）：按文字在整页找
+        # Not in the named blocks (or none named): full-page text search.
         found = self.text._align_field(field, rows)
         if found.status in ("matched", "fuzzy") and found.evidence is not None:
             if not field.blocks and field.row is not None:
-                return found  # 照老格式给了行号（extract-v5）：和以前一样按行号找，不另外提示
+                # Line number in the old format (extract-v5): search by line number as before,
+                # without an extra note.
+                return found
             where = (
-                f"模型说值在 {_cited(field.blocks)}，那几块里没有这个值；在别处找到了"
+                stored(
+                    "模型说值在 {cited}，那几块里没有这个值；在别处找到了",
+                    cited=_cited(field.blocks),
+                )
                 if field.blocks
-                else "模型没说值在哪几块；按文字在原文里找到了"
+                else stored("模型没说值在哪几块；按文字在原文里找到了")
             )
-            note = "；".join(n for n in (where, found.note) if n)
+            note = join_notes(where, found.note)
             return replace(found, needs_review=True, note=note)
 
         if seen:
             return self._seen(field, s)
-        cited = f"它说的文字块 {_cited(field.blocks)} 里没有、" if field.blocks else ""
-        return AlignedField(
-            field,
-            "rejected",
-            None,
-            True,
-            f"模型给了「{_shown(field)}」，但{cited}原文里找不到，按规则没有填（核对原文后可以采用）",
+        note = (
+            stored(
+                "模型给了「{shown}」，但它说的文字块 {cited} 里没有、原文里找不到，"
+                "按规则没有填（核对原文后可以采用）",
+                shown=_shown(field),
+                cited=_cited(field.blocks),
+            )
+            if field.blocks
+            else stored(
+                "模型给了「{shown}」，但原文里找不到，按规则没有填（核对原文后可以采用）",
+                shown=_shown(field),
+            )
         )
+        return AlignedField(field, "rejected", None, True, note)
 
     def _quoted(
         self, field: ExtractedField, s: PageStructure, rows, day_first: bool | None
     ) -> AlignedField | None:
-        """按模型抄的原文（text）找出处，再交叉检查 value（ADR 0040）。原文里找不到返回 None，
-        交给按值找的老办法（模型可能抄错了一两个字）。"""
+        """Locate evidence by the source text copied by the model (text), then cross-check value.
+        Returns None if the text is not found, falling back to the value-based search (the model
+        may have miscopied a character or two)."""
         text = field.text or ""
         as_text = replace(field, value=text, type="string")
         notes: list[str] = []
@@ -122,11 +139,22 @@ class BlockAligner:
                 return None
             evidence = found.evidence
             if field.blocks:
-                notes.append(f"模型说值在 {_cited(field.blocks)}，那几块里没有；在别处找到了")
+                notes.append(
+                    stored(
+                        "模型说值在 {cited}，那几块里没有；在别处找到了", cited=_cited(field.blocks)
+                    )
+                )
         if evidence.similarity < 1.0:
-            notes.append(f"原文里只有相似的文字（相似度 {evidence.similarity:.2f}）")
+            notes.append(
+                stored(
+                    "原文里只有相似的文字（相似度 {similarity:.2f}）",
+                    similarity=evidence.similarity,
+                )
+            )
         if evidence.confidence < self.min_confidence:
-            notes.append(f"原文这里 OCR 置信度只有 {evidence.confidence:.2f}")
+            notes.append(
+                stored("原文这里 OCR 置信度只有 {confidence:.2f}", confidence=evidence.confidence)
+            )
         check = cross_check(field.type, field.value, text, day_first)
         if check.verdict != "ok":
             notes.append(check.note)
@@ -135,11 +163,12 @@ class BlockAligner:
             if sign:
                 notes.append(sign)
         status = "matched" if not notes else "fuzzy"
-        return AlignedField(field, status, evidence, bool(notes), "；".join(notes))
+        return AlignedField(field, status, evidence, bool(notes), join_notes(*notes))
 
     def _seen(self, field: ExtractedField, s: PageStructure) -> AlignedField:
-        """看了原图（ADR 0038），文字里对不上的值：是模型在图上读的。值留着，要人核对。
-        模型说了 OCR 认错的是哪几块，就把那几块当出处框出来。"""
+        """Values from the page image that do not match the text: read by the model from the image.
+        The value is kept for review. Blocks the model named as misread by OCR are boxed as
+        evidence."""
         words = [w for n in field.blocks if (w := s.word(n)) is not None]
         lines = [ln for n in field.blocks if (ln := s.ocr_line(n)) is not None]
         if words and len(lines) == len(words):
@@ -147,18 +176,21 @@ class BlockAligner:
             evidence = Evidence(
                 int(words[0].attrs["row"]), " / ".join(w.text for w in words), tuple(lines), 0.0
             )
-            note = (
-                f"看原图读的：OCR 认成「{ocr}」，模型在图上看到的是「{_shown(field)}」，请核对原图"
+            note = stored(
+                "看原图读的：OCR 认成「{ocr}」，模型在图上看到的是「{shown}」，请核对原图",
+                ocr=ocr,
+                shown=_shown(field),
             )
             return AlignedField(field, "seen", evidence, True, note)
-        note = (
-            f"看原图读的：OCR 文字里没有「{_shown(field)}」"
-            "（可能是手写、印章或没认出来），请核对原图"
+        note = stored(
+            "看原图读的：OCR 文字里没有「{shown}」（可能是手写、印章或没认出来），请核对原图",
+            shown=_shown(field),
         )
         return AlignedField(field, "seen", None, True, note)
 
     def _in_blocks(self, field: ExtractedField, s: PageStructure) -> Evidence | None:
-        """在模型说的那几块里核对值。对得上就返回出处，对不上返回 None。"""
+        """Check the value against the blocks named by the model. Returns the evidence on a match,
+        None otherwise."""
         words = [w for n in field.blocks if (w := s.word(n)) is not None]
         lines = [ln for n in field.blocks if (ln := s.ocr_line(n)) is not None]
         if not words or len(lines) != len(words):
@@ -168,7 +200,7 @@ class BlockAligner:
         row_text = " / ".join(w.text for w in words)
         clock = time_pattern(str(field.value)) if field.type == "string" else None
         if clock is not None:
-            # 时间：原文 8:13:39 PM、模型写成 24 小时制的 20:13:39，算对上
+            # Times: source 8:13:39 PM and the model's 24-hour 20:13:39 match.
             if not clock.search(text):
                 return None
             picked = [_clip_to(ln, clock.search(ln.text)) for ln in lines if clock.search(ln.text)]
@@ -177,8 +209,8 @@ class BlockAligner:
             value = str(field.value)
             score = _best_similarity(_squash(value), _squash(text))
             if score < self.min_similarity:
-                # 模型多写了块（印着名称的"Bill to Address:"、旁边一栏的"TOTAL AMOUNT DUE"）：
-                # 只留文字是这个值一部分的那几块再比
+                # The model named extra blocks (a printed "Bill to Address:", "TOTAL AMOUNT DUE" in
+                # the neighboring column): compare only the blocks whose text is part of the value.
                 kept = [
                     (w, ln)
                     for w, ln in zip(words, lines, strict=True)
@@ -213,15 +245,22 @@ class BlockAligner:
     def _checked(self, field: ExtractedField, evidence: Evidence) -> AlignedField:
         notes: list[str] = []
         if evidence.similarity < 1.0:
-            notes.append(f"原文里只有相似的文字（相似度 {evidence.similarity:.2f}）")
+            notes.append(
+                stored(
+                    "原文里只有相似的文字（相似度 {similarity:.2f}）",
+                    similarity=evidence.similarity,
+                )
+            )
         if evidence.confidence < self.min_confidence:
-            notes.append(f"原文这里 OCR 置信度只有 {evidence.confidence:.2f}")
+            notes.append(
+                stored("原文这里 OCR 置信度只有 {confidence:.2f}", confidence=evidence.confidence)
+            )
         if field.type == "number" and isinstance(field.value, float):
             sign = _sign_mismatch(field.value, evidence)
             if sign:
                 notes.append(sign)
         status = "matched" if evidence.similarity == 1.0 else "fuzzy"
-        return AlignedField(field, status, evidence, bool(notes), "；".join(notes))
+        return AlignedField(field, status, evidence, bool(notes), join_notes(*notes))
 
 
 def _shown(field: ExtractedField) -> str:

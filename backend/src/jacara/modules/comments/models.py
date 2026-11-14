@@ -1,8 +1,8 @@
-"""备注表。
+"""Comments table.
 
-comments  审核时留给同事的话，挂在整份文档上（field_name 为空）或某个字段上。
-          可以标"已解决"；只有写的人或管理员能删。
-"""
+comments  Notes left for colleagues during review, attached to a whole document (field_name
+empty) or to a field. Can be marked resolved; only the author or an administrator can delete
+them."""
 
 from __future__ import annotations
 
@@ -21,13 +21,14 @@ class Comment(Base, OwnedMixin, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"), index=True)
     page: Mapped[int | None]
-    """挂在第几页的字段上（多页文档里不同页可能有同名字段）。整份文档的备注为空。"""
+    """Page of the field the comment is attached to (fields with the same name may appear on
+    different pages of a multi-page document). Empty for document comments."""
     field_name: Mapped[str | None] = mapped_column(String(80))
-    """挂在哪个字段上（字段 ID，例如 total；表格里的一格是 items.2.amount）。
-    空 = 整份文档。"""
+    """Field the comment is attached to (field ID such as total; a table cell is items.2.amount).
+    Empty means the whole document."""
     body: Mapped[str] = mapped_column(Text)
-    """备注内容。"""
+    """Comment text."""
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    """标成"已解决"的时间。"""
+    """Time the comment was marked resolved."""
     resolved_by: Mapped[uuid.UUID | None]
-    """谁标的已解决。"""
+    """User who marked it resolved."""

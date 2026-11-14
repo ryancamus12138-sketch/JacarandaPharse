@@ -1,4 +1,4 @@
-"""登录和用户管理接口：/api/v1/auth、/api/v1/users。"""
+"""Authentication and user management API: /api/v1/auth, /api/v1/users."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from sqlalchemy.orm import Session
 
 from jacara.core.deps import get_owner, get_session, get_storage, get_token
+from jacara.core.i18n import render
 from jacara.core.owner import Owner
 from jacara.core.storage import ObjectStorage
 from jacara.modules.auth.profile import ProfileService
@@ -45,15 +46,16 @@ Storage = Annotated[ObjectStorage, Depends(get_storage)]
 
 
 def _http_error(err: AuthError) -> HTTPException:
-    return HTTPException(status_code=_STATUS.get(err.code, 400), detail=err.message)
+    return HTTPException(status_code=_STATUS.get(err.code, 400), detail=render(err.message))
 
 
 @auth_router.post("/login", summary="登录")
 def login(body: LoginIn, session: DbSession) -> LoginOut:
-    """用户名 + 密码，换一个 token。之后的请求在请求头里带上：`Authorization: Bearer <token>`。
+    """Exchange user name and password for a token. Send it with subsequent requests:
+    `Authorization: Bearer <token>`.
 
-    在 /docs 页面：复制返回的 token，点右上角 **Authorize**，粘贴进去。
-    """
+        On the /docs page: copy the returned token, click **Authorize** in the top-right corner
+    and paste it."""
     try:
         return AuthService(session).login(body.username, body.password)
     except AuthError as err:
@@ -62,7 +64,7 @@ def login(body: LoginIn, session: DbSession) -> LoginOut:
 
 @auth_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, summary="退出登录")
 def logout(session: DbSession, token: Annotated[str | None, Depends(get_token)]) -> Response:
-    """让当前 token 作废。之后再用它会得到 401。"""
+    """Revoke the current token. Subsequent use returns 401."""
     if token:
         AuthService(session).logout(token)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -70,7 +72,8 @@ def logout(session: DbSession, token: Annotated[str | None, Depends(get_token)])
 
 @auth_router.get("/me", summary="当前用户")
 def me(session: DbSession, owner: CurrentOwner) -> MeOut:
-    """现在是谁、什么角色、能做哪些操作、是个人模式还是团队模式。"""
+    """Current user, role, permitted operations, and whether the instance runs in personal or team
+    mode."""
     return AuthService(session).me(owner)
 
 
@@ -81,7 +84,8 @@ def change_password(
     owner: CurrentOwner,
     token: Annotated[str | None, Depends(get_token)],
 ) -> Response:
-    """登录后自己改密码：先输原密码。改完以后别的设备上的登录都会退出，当前这个不退出。"""
+    """Change one's own password after login; the current password is required. Sessions on other
+    devices are logged out; the current one is not."""
     try:
         AuthService(session).change_password(owner, token, body)
     except AuthError as err:
@@ -93,10 +97,11 @@ def change_password(
     "/reset-password", status_code=status.HTTP_204_NO_CONTENT, summary="用重设码设新密码"
 )
 def reset_password(body: CodeReset, session: DbSession) -> Response:
-    """忘记密码时用：用户名 + 管理员给的重设码 + 新密码。不用登录。
+    """Forgotten password: user name + reset code from an administrator + new password. No login
+    required.
 
-    成功后这个账号所有登录都退出，用新密码重新登录。
-    """
+        On success all sessions of the account are logged out; log in again with the new
+    password."""
     try:
         AuthService(session).reset_with_code(body)
     except AuthError as err:
@@ -106,13 +111,13 @@ def reset_password(body: CodeReset, session: DbSession) -> Response:
 
 @auth_router.get("/profile", summary="个人资料")
 def get_profile(session: DbSession, owner: CurrentOwner) -> ProfileOut:
-    """自己的昵称、头像、用户名、团队、角色和能做的事。"""
+    """Own display name, avatar, user name, team, role and permitted operations."""
     return ProfileService(session, owner).get()
 
 
 @auth_router.patch("/profile", summary="改昵称")
 def update_profile(body: ProfileUpdate, session: DbSession, owner: CurrentOwner) -> ProfileOut:
-    """改自己的昵称。空字符串 = 不用昵称（显示用户名）。"""
+    """Change one's own display name. An empty string removes it (the user name is shown)."""
     try:
         return ProfileService(session, owner).update(body)
     except AuthError as err:
@@ -126,7 +131,7 @@ def update_profile(body: ProfileUpdate, session: DbSession, owner: CurrentOwner)
     responses={200: {"content": {"image/png": {}}}},
 )
 def get_avatar(session: DbSession, owner: CurrentOwner, storage: Storage) -> Response:
-    """256 × 256 的 PNG。没有头像时 404。"""
+    """256 × 256 PNG. 404 when there is no avatar."""
     try:
         data = ProfileService(session, owner, storage).avatar()
     except AuthError as err:
@@ -141,7 +146,8 @@ def set_avatar(
     storage: Storage,
     file: Annotated[UploadFile, File(description="PNG、JPG 或 WEBP，5 MB 以内")],
 ) -> ProfileOut:
-    """上传一张图片当头像。会裁成正方形、缩到 256 × 256，去掉照片里的拍摄信息。"""
+    """Upload an image as the avatar. It is cropped to a square, scaled to 256 × 256, and photo
+    metadata is removed."""
     try:
         return ProfileService(session, owner, storage).set_avatar(file.file.read())
     except AuthError as err:
@@ -150,29 +156,30 @@ def set_avatar(
 
 @auth_router.delete("/profile/avatar", summary="去掉头像")
 def remove_avatar(session: DbSession, owner: CurrentOwner) -> ProfileOut:
-    """不用头像了，之后显示名字的第一个字。"""
+    """Remove the avatar; the first character of the name is shown instead."""
     return ProfileService(session, owner).remove_avatar()
 
 
 @users_router.get("/permissions", summary="可开通的权限")
 def list_permissions(session: DbSession, owner: CurrentOwner) -> list[PermissionOut]:
-    """管理员可以给使用者开通的权限。新建或修改用户时，permissions 里填这里的 name。"""
+    """Permissions administrators can grant to members. Use these names in permissions when creating
+    or updating users."""
     return UserService(session, owner).grantable()
 
 
 @users_router.get("", summary="用户列表")
 def list_users(session: DbSession, owner: CurrentOwner) -> list[UserOut]:
-    """本团队所有用户（管理员）。"""
+    """All users of the team (administrators)."""
     return UserService(session, owner).list()
 
 
 @users_router.post("", status_code=status.HTTP_201_CREATED, summary="新建用户")
 def create_user(body: UserCreate, session: DbSession, owner: CurrentOwner) -> UserOut:
-    """新建一个本团队的用户（管理员）。密码至少 8 个字符。
+    """Create a user in the team (administrators). Passwords require at least 8 characters.
 
-    使用者默认能看、能导出；要上传、修改字段等，在 permissions 里开通，例如：
-    `{"username": "xiaowang", "password": "...", "permissions": ["document:create"]}`
-    """
+        Members can view and export by default; uploading, editing fields and so on are granted
+    in permissions, for example:
+        `{"username": "alice", "password": "...", "permissions": ["document:create"]}`"""
     try:
         return UserService(session, owner).create(body)
     except AuthError as err:
@@ -183,12 +190,14 @@ def create_user(body: UserCreate, session: DbSession, owner: CurrentOwner) -> Us
 def update_user(
     user_id: uuid.UUID, body: UserUpdate, session: DbSession, owner: CurrentOwner
 ) -> UserOut:
-    """改角色、开通或取消权限、改显示名、停用或重新启用（管理员）。只改给出的字段。
+    """Change role, grant or revoke permissions, change display name, deactivate or reactivate
+    (administrators). Only the given fields change.
 
-    - 开通权限：`{"permissions": ["document:create", "value:review"]}`（整个替换，不是追加）
-    - 停用：`{"is_active": false}`，这个用户已登录的也马上失效
-    - 改了马上生效，对方不用重新登录。
-    """
+        - Grant permissions: `{"permissions": ["document:create", "value:review"]}` (replaces the
+          list; does not append)
+        - Deactivate: `{"is_active": false}`; the user's existing sessions are revoked
+          immediately
+        - Changes take effect immediately; the user does not need to log in again."""
     try:
         return UserService(session, owner).update(user_id, body)
     except AuthError as err:
@@ -199,11 +208,12 @@ def update_user(
     "/{user_id}/reset-code", status_code=status.HTTP_201_CREATED, summary="生成重设码"
 )
 def create_reset_code(user_id: uuid.UUID, session: DbSession, owner: CurrentOwner) -> ResetCodeOut:
-    """给忘了密码的人生成一次性重设码（管理员）。15 分钟有效，只能用一次。
+    """Generate a one-time reset code for a user who forgot the password (administrators). Valid for
+    15 minutes, usable once.
 
-    把码当面或电话告诉本人，本人在登录页点"忘记密码"，输入码，自己设新密码。
-    管理员不知道对方的新密码。重新生成的话，之前的码作废。
-    """
+        Pass the code to the user in person or by phone; the user selects "Forgot password" on
+    the login page, enters the code and sets a new password. The administrator never learns the
+    new password. Generating a new code revokes the previous one."""
     try:
         return UserService(session, owner).create_reset_code(user_id)
     except AuthError as err:

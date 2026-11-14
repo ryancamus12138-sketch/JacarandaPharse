@@ -36,10 +36,11 @@ import { useAuth } from '../../auth/useAuth'
 import { formatTime } from '../../utils/format'
 import { useComments } from './comments'
 import { fieldLabel } from './fields'
+import { useTranslation } from 'react-i18next'
 
 const errorText = (err: unknown) => (err instanceof ApiError ? err.message : String(err))
 
-/** 跳过、取消跳过、写备注之后，列表、工作台、上一份 / 下一份都要重新取。 */
+/** After skipping, unskipping or commenting, the list, dashboard and previous / next must be refetched. */
 function useRefresh(id: string) {
   const client = useQueryClient()
   return () => {
@@ -51,10 +52,12 @@ function useRefresh(id: string) {
 }
 
 /**
- * "先跳过"：拿不准的先放一放（可以写个原因），自动打开下一份。
- * 跳过的不算进"下一份"；文档列表里可以筛"只看跳过的"，过后再回来。
+ * "Skip for now": set aside a document that needs more thought (optionally with a reason) and open the next
+ * one.
+ * Skipped documents are excluded from "Next"; the document list can filter to skipped documents for later.
  */
 export function SkipButton({ doc, next }: { doc: DocumentDetail; next: () => void }) {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const refresh = useRefresh(doc.id)
   const [open, setOpen] = useState(false)
@@ -65,7 +68,7 @@ export function SkipButton({ doc, next }: { doc: DocumentDetail; next: () => voi
       setOpen(false)
       setReason('')
       refresh()
-      void message.success('先跳过了。文档列表里选"只看跳过的"可以找回来')
+      void message.success(t('先跳过了。文档列表里选"只看跳过的"可以找回来'))
       next()
     },
     onError: (err) => void message.error(errorText(err)),
@@ -73,25 +76,25 @@ export function SkipButton({ doc, next }: { doc: DocumentDetail; next: () => voi
   return (
     <>
       <Button icon={<FastForwardOutlined />} onClick={() => setOpen(true)}>
-        先跳过
+        {t('先跳过')}
       </Button>
       <Modal
-        title="先跳过这份？"
+        title={t('先跳过这份？')}
         open={open}
-        okText="跳过，看下一份"
-        cancelText="取消"
+        okText={t('跳过，看下一份')}
+        cancelText={t('取消')}
         confirmLoading={skip.isPending}
         onOk={() => skip.mutate()}
         onCancel={() => setOpen(false)}
       >
         <Typography.Paragraph type="secondary">
-          跳过的不算进"下一份"。完成审核、重新处理或点"取消跳过"后回到待审核里。
+          {t('跳过的不算进"下一份"。完成审核、重新处理或点"取消跳过"后回到待审核里。')}
         </Typography.Paragraph>
         <Input.TextArea
           value={reason}
           maxLength={500}
           autoSize={{ minRows: 2, maxRows: 5 }}
-          placeholder="为什么跳过（可以不填），例如：看不清，要问财务"
+          placeholder={t('为什么跳过（可以不填），例如：看不清，要问财务')}
           onChange={(e) => setReason(e.target.value)}
         />
       </Modal>
@@ -99,15 +102,16 @@ export function SkipButton({ doc, next }: { doc: DocumentDetail; next: () => voi
   )
 }
 
-/** 跳过的文档顶上的提示，带"取消跳过"。 */
+/** Notice at the top of a skipped document, with "Unskip". */
 export function SkippedNotice({ doc, canUndo }: { doc: DocumentDetail; canUndo: boolean }) {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const refresh = useRefresh(doc.id)
   const unskip = useMutation({
     mutationFn: () => unskipDocument(doc.id),
     onSuccess: () => {
       refresh()
-      void message.success('已取消跳过，回到待审核里')
+      void message.success(t('已取消跳过，回到待审核里'))
     },
     onError: (err) => void message.error(errorText(err)),
   })
@@ -117,12 +121,12 @@ export function SkippedNotice({ doc, canUndo }: { doc: DocumentDetail; canUndo: 
       type="warning"
       showIcon
       style={{ marginBottom: 12 }}
-      title={`这份在 ${formatTime(doc.skipped_at)} 先跳过了`}
-      description={doc.skip_reason ? `原因：${doc.skip_reason}` : undefined}
+      title={t('这份在 {{formatTime}} 先跳过了', { formatTime: formatTime(doc.skipped_at) })}
+      description={doc.skip_reason ? t('原因：{{skip_reason}}', { skip_reason: doc.skip_reason }) : undefined}
       action={
         canUndo && (
           <Button size="small" icon={<UndoOutlined />} loading={unskip.isPending} onClick={() => unskip.mutate()}>
-            取消跳过
+            {t('取消跳过')}
           </Button>
         )
       }
@@ -131,8 +135,9 @@ export function SkippedNotice({ doc, canUndo }: { doc: DocumentDetail; canUndo: 
 }
 
 /**
- * 备注：留给同事的话。可以写在整份文档上，也可以写在右边选中的那个字段上。
- * 能看这份文档的人都能写、都能标"已解决"；只有写的人或管理员能删。
+ * Comments: notes for colleagues, on the whole document or on the field selected on the right.
+ * Anyone who can view the document can write and resolve comments; only the author or an administrator can
+ * delete them.
  */
 export function CommentsButton({
   doc,
@@ -141,9 +146,10 @@ export function CommentsButton({
 }: {
   doc: DocumentDetail
   selected: FieldValue | null
-  /** 现在看的是第几页（写在字段上的备注记下页码）。 */
+  /** Current page (field comments record the page). */
   page: number
 }) {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const { me } = useAuth()
   const client = useQueryClient()
@@ -182,19 +188,19 @@ export function CommentsButton({
     <>
       <Badge count={open_} size="small" offset={[-4, 4]}>
         <Button icon={<MessageOutlined />} onClick={() => setOpen(true)}>
-          备注
+          {t('备注')}
         </Button>
       </Badge>
-      <Drawer title="备注" open={open} onClose={() => setOpen(false)} size={420}>
+      <Drawer title={t('备注')} open={open} onClose={() => setOpen(false)} size={420}>
         <Flex vertical gap={8} style={{ marginBottom: 16 }}>
           <Segmented<'document' | 'field'>
             value={onField ? 'field' : 'document'}
             onChange={setTarget}
             options={[
-              { value: 'document', label: '写在整份文档上' },
+              { value: 'document', label: t('写在整份文档上') },
               {
                 value: 'field',
-                label: selected ? `写在「${fieldLabel(selected.name)}」上` : '先在右边选一个字段',
+                label: selected ? t('写在「{{fieldLabel}}」上', { fieldLabel: fieldLabel(selected.name) }) : t('先在右边选一个字段'),
                 disabled: selected === null,
               },
             ]}
@@ -203,7 +209,7 @@ export function CommentsButton({
             value={body}
             maxLength={2000}
             autoSize={{ minRows: 2, maxRows: 6 }}
-            placeholder="留给同事的话，例如：这张要问财务"
+            placeholder={t('留给同事的话，例如：这张要问财务')}
             onChange={(e) => setBody(e.target.value)}
           />
           <Button
@@ -213,13 +219,13 @@ export function CommentsButton({
             onClick={() => add.mutate()}
             style={{ alignSelf: 'flex-end' }}
           >
-            写上
+            {t('写上')}
           </Button>
         </Flex>
         <List
           loading={comments.isPending}
           dataSource={comments.data ?? []}
-          locale={{ emptyText: <Empty description="还没有备注" /> }}
+          locale={{ emptyText: <Empty description={t('还没有备注')} /> }}
           renderItem={(c) => (
             <List.Item
               style={{ opacity: c.resolved_at ? 0.55 : 1 }}
@@ -231,11 +237,11 @@ export function CommentsButton({
                   icon={c.resolved_at ? <UndoOutlined /> : <CheckOutlined />}
                   onClick={() => resolve.mutate({ id: c.id, resolved: c.resolved_at === null })}
                 >
-                  {c.resolved_at ? '重新打开' : '标为已解决'}
+                  {c.resolved_at ? t('重新打开') : t('标为已解决')}
                 </Button>,
                 (c.mine || me?.role === 'admin') && (
-                  <Popconfirm key="delete" title="删掉这条备注？" okText="删除" cancelText="取消" onConfirm={() => remove.mutate(c.id)}>
-                    <Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label="删除" />
+                  <Popconfirm key="delete" title={t('删掉这条备注？')} okText={t('删除')} cancelText={t('取消')} onConfirm={() => remove.mutate(c.id)}>
+                    <Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label={t('删除')} />
                   </Popconfirm>
                 ),
               ].filter(Boolean)}
@@ -249,11 +255,11 @@ export function CommentsButton({
                     </Typography.Text>
                     {c.field_name && (
                       <Tag>
-                        {doc.page_count > 1 && c.page ? `第 ${c.page} 页 · ` : ''}
+                        {doc.page_count > 1 && c.page ? t('第 {{page}} 页 · ', { page: c.page }) : ''}
                         {fieldLabel(c.field_name)}
                       </Tag>
                     )}
-                    {c.resolved_at && <Tag color="green">{c.resolved_by} 标了已解决</Tag>}
+                    {c.resolved_at && <Tag color="green">{t('{{resolved_by}} 标了已解决', { resolved_by: c.resolved_by })}</Tag>}
                   </Flex>
                 }
                 description={

@@ -1,4 +1,4 @@
-"""备注的对外格式。"""
+"""Public schemas for comments."""
 
 from __future__ import annotations
 
@@ -10,11 +10,13 @@ from pydantic import BaseModel, Field
 
 class CommentIn(BaseModel):
     body: str = Field(min_length=1, max_length=2000)
-    """备注内容，例如"这张要问财务"。"""
+    """Comment text, for example "Check with finance"."""
     field_name: str | None = Field(default=None, max_length=80)
-    """挂在哪个字段上（字段 ID；表格里的一格是 items.2.amount）。不填 = 整份文档。"""
+    """Field the comment is attached to (field ID; a table cell is items.2.amount). Omit for the
+    whole document."""
     page: int | None = Field(default=None, ge=1)
-    """字段在第几页。写在字段上时要给（多页文档里不同页可能有同名字段）。"""
+    """Page of the field. Required for field comments (fields with the same name may appear on
+    different pages of a multi-page document)."""
 
 
 class CommentOut(BaseModel):
@@ -24,10 +26,11 @@ class CommentOut(BaseModel):
     field_name: str | None
     body: str
     author: str
-    """写的人（昵称，没有昵称是用户名）。"""
+    """Author (display name, otherwise user name)."""
     mine: bool
-    """是不是自己写的（自己写的才能删，管理员都能删）。"""
+    """Whether the current user is the author (authors can delete their own comments; administrators
+    can delete any)."""
     created_at: datetime
     resolved_at: datetime | None
     resolved_by: str | None
-    """谁标的已解决。"""
+    """User who marked it resolved."""

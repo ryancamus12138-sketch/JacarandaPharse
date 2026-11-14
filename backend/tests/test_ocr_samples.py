@@ -1,7 +1,8 @@
-"""OCR 纠错样本（ADR 0050）：开关、审核时收集、裁图、分类、样本页、导出 ZIP、删除文档时一起删。
+"""OCR correction samples: switch, collection during review, cropping, classification, samples page,
+ZIP export, deletion with the document.
 
-文档用 conftest 的 receipt_page（500 × 1000 的收据，OCR 把找零读成 100），原图是一张同样大小的 PNG。
-"""
+Documents use receipt_page from conftest (a 500 × 1000 receipt where OCR reads the change as
+100); the image is a PNG of the same size."""
 
 import io
 import json
@@ -30,8 +31,8 @@ from jacara.plugins.extractors import ExtractionResult
 from jacara.plugins.validators import RuleValidator
 from jacara.templates import load_template
 
-DATE_LINE = 4  # "25/12/2018 8:13:39 PM"，框 (163, 369)-(345, 390)
-CHANGE_LINE = 13  # "100"，框 (407, 768)-(447, 791)
+DATE_LINE = 4  # "25/12/2018 8:13:39 PM", box (163, 369)-(345, 390)
+CHANGE_LINE = 13  # "100", box (407, 768)-(447, 791)
 KEY = "documents/receipt.png"
 RECEIPT = load_template("receipt").title
 
@@ -39,8 +40,8 @@ RECEIPT = load_template("receipt").title
 def page_png() -> bytes:
     image = Image.new("RGB", (500, 1000), "white")
     draw = ImageDraw.Draw(image)
-    draw.rectangle((170, 372, 340, 386), fill="black")  # 日期那一行的"字"
-    draw.rectangle((410, 770, 440, 788), fill="black")  # 找零
+    draw.rectangle((170, 372, 340, 386), fill="black")  # Text of the date line.
+    draw.rectangle((410, 770, 440, 788), fill="black")  # Change.
     return png_bytes(image)
 
 
@@ -99,7 +100,7 @@ def samples(client, **params) -> dict:
     return response.json()
 
 
-# ---- 开关 ----
+# ---- Switch ----
 
 
 def test_off_by_default_saves_the_review_but_no_sample(client, document_id):
@@ -109,7 +110,8 @@ def test_off_by_default_saves_the_review_but_no_sample(client, document_id):
     }
     response = pick(client, values(client, document_id)["date"], DATE_LINE, "25/12/2018 8:18:39 PM")
     assert response.status_code == 201
-    assert response.json()["current_value"] == "2018-12-25"  # 值从改好的原文读出
+    # The value is parsed from the corrected transcription.
+    assert response.json()["current_value"] == "2018-12-25"
     assert samples(client)["total"] == 0
 
 
@@ -121,7 +123,7 @@ def test_switch_is_recorded(client, factory, document_id):
         assert [log.detail["collect"] for log in logs] == [True, False]
 
 
-# ---- 收集 ----
+# ---- Collection ----
 
 
 def test_corrected_line_becomes_a_rec_error_sample(client, storage, document_id):
@@ -132,7 +134,7 @@ def test_corrected_line_becomes_a_rec_error_sample(client, storage, document_id)
     assert listed["total"] == 1
     sample = listed["items"][0]
     assert sample["kind"] == "line"
-    assert sample["transcription"] == "25/12/2018 8:18:39 PM"  # 去掉首尾空白
+    assert sample["transcription"] == "25/12/2018 8:18:39 PM"  # Surrounding whitespace stripped.
     assert sample["ocr_text"] == "25/12/2018 8:13:39 PM"
     assert sample["category"] == "rec_error"
     assert sample["error_tags"] == ["substitution"]
@@ -140,7 +142,7 @@ def test_corrected_line_becomes_a_rec_error_sample(client, storage, document_id)
     assert sample["source_format"] == "image"
     assert sample["ocr_engine"] == "rapidocr test"
     assert sample["status"] == "ready"
-    # 按这块的四个角裁：182 × 21，和识别模型当时看到的一样大
+    # Cropped by the block's four corners: 182 × 21, the same size the recognition model saw.
     assert (sample["width"], sample["height"]) == (182, 21)
     image = client.get(f"/api/v1/ocr-samples/{sample['id']}/image")
     assert image.headers["content-type"] == "image/png"
@@ -180,8 +182,8 @@ def test_drawn_box_over_ocr_text_is_unclear(client, document_id):
     assert draw(client, change, [400, 760, 450, 795], "1.00").status_code == 201
     sample = samples(client)["items"][0]
     assert (sample["category"], sample["ocr_text"]) == ("unclear", "100")
-    assert sample["error_tags"] == ["missing"]  # "100" → "1.00" 少了小数点
-    # 四周多留了一点（和"重新识别这块"一样）
+    assert sample["error_tags"] == ["missing"]  # "100" → "1.00": missing decimal point.
+    # Padding around the region (as with region re-recognition).
     assert sample["width"] > 50 and sample["height"] > 35
 
 
@@ -238,7 +240,7 @@ def test_failed_crop_keeps_the_review_and_can_be_retried(client, storage, docume
     assert (retried["status"], retried["width"], retried["height"]) == ("ready", 40, 23)
 
 
-# ---- 样本页 ----
+# ---- Samples page ----
 
 
 def test_edit_withdraw_and_restore(client, factory, document_id):
@@ -247,11 +249,12 @@ def test_edit_withdraw_and_restore(client, factory, document_id):
     sample_id = samples(client)["items"][0]["id"]
     url = f"/api/v1/ocr-samples/{sample_id}"
     edited = client.patch(url, json={"transcription": "100"}).json()
-    assert (edited["category"], edited["error_tags"]) == ("correct", [])  # 跟着重新分
+    # Reclassified accordingly.
+    assert (edited["category"], edited["error_tags"]) == ("correct", [])
     assert client.patch(url, json={"transcription": "1\n00"}).status_code == 422
     assert client.patch(url, json={"status": "withdrawn"}).json()["status"] == "withdrawn"
     assert samples(client, status="withdrawn")["total"] == 1
-    assert samples(client)["categories"] == {}  # 撤回的不算
+    assert samples(client)["categories"] == {}  # Withdrawn samples do not count.
     restored = client.patch(url, json={"status": "ready", "category": "unclear"}).json()
     assert (restored["status"], restored["category"]) == ("ready", "unclear")
     with session_scope(factory) as session:
@@ -272,17 +275,18 @@ def test_filters(client, document_id):
     assert client.get("/api/v1/ocr-samples/templates").json() == [RECEIPT]
 
 
-# ---- 导出 ----
+# ---- Export ----
 
 
 def test_export_preview_and_zip(client, factory, document_id):
     turn_on(client)
     v = values(client, document_id)
-    pick(client, v["change"], CHANGE_LINE, "1.00")  # 会导出
-    pick(client, v["total"], 9, "9.00")  # 认对的行，会导出
-    pick(client, v["date"], DATE_LINE, "25/12/2018 8:18:39 PM")  # 同一张图两种写法 ↓
+    pick(client, v["change"], CHANGE_LINE, "1.00")  # Exported.
+    pick(client, v["total"], 9, "9.00")  # Correct line, exported.
+    # Two transcriptions of the same image ↓
+    pick(client, v["date"], DATE_LINE, "25/12/2018 8:18:39 PM")
     pick(client, v["date"], DATE_LINE, "25/12/2018 8:19:39 PM")
-    pick(client, v["merchant"], 0, "BOOK TA.K (TAMAN DAYA) SDN BHD")  # 撤回 ↓
+    pick(client, v["merchant"], 0, "BOOK TA.K (TAMAN DAYA) SDN BHD")  # Withdrawn ↓
     withdrawn = next(s for s in samples(client)["items"] if s["field"] == "merchant")
     client.patch(f"/api/v1/ocr-samples/{withdrawn['id']}", json={"status": "withdrawn"})
 
@@ -300,7 +304,7 @@ def test_export_preview_and_zip(client, factory, document_id):
     assert response.status_code == 200
     archive = zipfile.ZipFile(io.BytesIO(response.content))
     names = set(archive.namelist())
-    # 一张单据只有一组：按哈希整组进训练集或验证集（ADR 0052）
+    # One document, one group: the whole group goes to training or validation by hash.
     part = next(p for p in ("train", "val") if f"rec_gt_{p}.txt" in names)
     assert names == {
         "crop_img/s_0001.png",
@@ -318,7 +322,7 @@ def test_export_preview_and_zip(client, factory, document_id):
     assert labels.splitlines() == ["crop_img/s_0001.png\t1.00", "crop_img/s_0002.png\t9.00"]
     rows = [json.loads(r) for r in archive.read("manifest.jsonl").decode().splitlines()]
     group = rows[0].pop("document_group")
-    assert group.startswith("g_") and len(group) == 14  # 稳定的组号，不含业务信息
+    assert group.startswith("g_") and len(group) == 14  # Stable group id without business data.
     assert rows[0] == {
         "sample_id": "s_0001",
         "image": "crop_img/s_0001.png",
@@ -334,13 +338,13 @@ def test_export_preview_and_zip(client, factory, document_id):
         "source_format": "image",
         "ocr_model_version": "rapidocr test",
     }
-    assert rows[1]["document_group"] == group  # 同一张单据
-    for row in rows:  # 路径都能找到图，图能打开
+    assert rows[1]["document_group"] == group  # Same document.
+    for row in rows:  # Every path resolves to an image that opens.
         Image.open(io.BytesIO(archive.read(row["image"]))).verify()
     readme = archive.read("README.md").decode("utf-8")
     assert "同一张图有两种写法：2 条" in readme and "label_file_list" in readme
     everything = b"".join(archive.read(n) for n in names)
-    assert b"receipt.png" not in everything  # 不带真实文件名
+    assert b"receipt.png" not in everything  # Real file names are not included.
     with session_scope(factory) as session:
         log = session.query(AuditLog).filter_by(action="ocr_samples:export").one()
         assert log.detail["count"] == 2
@@ -361,7 +365,7 @@ def test_nothing_to_export(client, document_id):
     assert response.status_code == 422
 
 
-# ---- 删除文档 ----
+# ---- Document deletion ----
 
 
 def test_deleting_the_document_deletes_its_samples(client, factory, storage, document_id):
@@ -378,7 +382,7 @@ def test_deleting_the_document_deletes_its_samples(client, factory, storage, doc
     assert crop not in storage.files and KEY not in storage.files
 
 
-# ---- 裁图和分类（不碰数据库） ----
+# ---- Cropping and classification (no database) ----
 
 
 def test_vertical_lines_are_turned():
@@ -401,7 +405,7 @@ def test_tilted_line_is_straightened():
         ("100", "1.00", ["missing"]),
         ("9.000", "9.00", ["extra"]),
         ("Total  9.00", "TOTAL 9.00", ["format"]),
-        ("ＡＢＣ", "ABC", ["format"]),  # 全角半角
+        ("ＡＢＣ", "ABC", ["format"]),  # Full-width and half-width.
         ("", "9.00", ["empty"]),
         ("9.00", "9.00", []),
         (None, "9.00", []),
@@ -421,16 +425,17 @@ def test_categories():
 
 def test_clean():
     assert clean("  17/05/24 ") == "17/05/24"
-    assert clean("a  b") == "a  b"  # 中间的空格照留
+    assert clean("a  b") == "a  b"  # Inner spaces are kept.
     assert clean("") is None
     assert clean("a\nb") is None
 
 
-# ---- 从以前的修改补收（ADR 0053） ----
+# ---- Backfilling from earlier corrections ----
 
 
 def test_backfill_collects_old_edits_as_pending(client, factory, document_id):
-    """开关关着的时候审核过的：点了原文、框了一块的补收进"待复核"，手打的不收，不重复收。"""
+    """Reviews made while the switch was off: corrections made by clicking source text or selecting
+    a region are backfilled as pending; typed values are not collected; no duplicates."""
     fields = values(client, document_id)
     old = {"action": "edit", "source_lines": [DATE_LINE]}
     assert (
@@ -446,7 +451,7 @@ def test_backfill_collects_old_edits_as_pending(client, factory, document_id):
         client.post(f"/api/v1/values/{fields['total']['id']}/revisions", json=typed).status_code
         == 201
     )
-    assert samples(client)["total"] == 0  # 开关关着：当时没收
+    assert samples(client)["total"] == 0  # Switch off: nothing was collected at the time.
 
     result = client.post("/api/v1/ocr-samples/backfill").json()
     assert result["created"] == 2
@@ -455,18 +460,20 @@ def test_backfill_collects_old_edits_as_pending(client, factory, document_id):
     assert {s["kind"] for s in pending} == {"line", "box"}
     assert all(s["origin"] == "backfill" for s in pending)
     line = next(s for s in pending if s["kind"] == "line")
-    assert line["transcription"] == line["ocr_text"]  # 先按 OCR 读的猜，复核时人改
+    # Initial guess from the OCR reading; corrected during verification.
+    assert line["transcription"] == line["ocr_text"]
     box_sample = next(s for s in pending if s["kind"] == "box")
-    assert box_sample["reviewed_value"] == "1.0"  # 存的是规整过的值；图里的原文复核时人写
+    # The stored value is normalized; the reviewer writes the transcription during verification.
+    assert box_sample["reviewed_value"] == "1.0"
 
     again = client.post("/api/v1/ocr-samples/backfill").json()
-    assert again["created"] == 0  # 同一次修改只收一条
+    assert again["created"] == 0  # Each correction is collected once.
 
-    # 还没复核的不能导出
+    # Unverified samples cannot be exported.
     preview = client.get("/api/v1/ocr-samples/export/preview").json()
     assert any("还没复核" in e["reason"] for e in preview["excluded"])
 
-    # 复核：改成图里真正的原文、通过
+    # Verification: correct to the actual text on the image and approve.
     fixed = client.patch(
         f"/api/v1/ocr-samples/{line['id']}",
         json={"transcription": "25/12/2018 8:13:39 PM", "status": "ready"},
@@ -477,11 +484,12 @@ def test_backfill_collects_old_edits_as_pending(client, factory, document_id):
     assert "ocr_samples:backfill" in actions and "ocr_samples:verify" in actions
 
 
-# ---- 认对的行、批量复核、合成用的语料（ADR 0055，A3） ----
+# ---- Correct lines, bulk approval, corpus for synthesis ----
 
 
 def test_confirmed_lines_are_collected_for_review(client, factory, document_id):
-    """审核完成、人没改过、出处正好一整块且只有这个值：收成认对的行，待复核；人过目才能导出。"""
+    """Reviewed, uncorrected, with evidence exactly one whole block containing only the value:
+    collected as a correctly read line, pending until a person has looked at it."""
     from jacara.modules.ocr_samples.service import only_value
 
     assert only_value("number", "9.0", "9.00") and only_value("number", "9.0", "RM 9.00")
@@ -496,7 +504,8 @@ def test_confirmed_lines_are_collected_for_review(client, factory, document_id):
     assert result["created"] == len(pending) >= 2
     assert {s["origin"] for s in pending} == {"confirmed"}
     assert all(s["category"] == "correct" and s["transcription"] == s["ocr_text"] for s in pending)
-    assert client.post("/api/v1/ocr-samples/confirmed-lines").json()["created"] == 0  # 不重复收
+    # No duplicates.
+    assert client.post("/api/v1/ocr-samples/confirmed-lines").json()["created"] == 0
 
     preview = client.get("/api/v1/ocr-samples/export/preview").json()
     assert preview["included"] == 0 and preview["paddle_minimum"] == 5000
@@ -527,7 +536,7 @@ def test_hard_characters_come_from_misread_samples():
     assert hard == {".": 1}
 
 
-# ---- 存进数据集库（ADR 0059） ----
+# ---- Storing in the dataset library ----
 
 
 def test_export_straight_into_the_dataset_library(client, factory, document_id):
@@ -546,5 +555,5 @@ def test_export_straight_into_the_dataset_library(client, factory, document_id):
     assert (dataset["kind"], dataset["source"], dataset["version"]) == ("ocr_rec", "samples", 1)
     assert sum(dataset["counts"].values()) == 1
     with session_scope(factory) as session:
-        record = session.query(OcrSampleExport).one()  # 照常记了导出记录
+        record = session.query(OcrSampleExport).one()  # An export record is written as usual.
         assert session.query(Dataset).one().export_id == record.id

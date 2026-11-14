@@ -1,9 +1,8 @@
-"""pdf read mode and value candidates (ADR 0042)
+"""pdf read mode and value candidates
 
 Revision ID: d7a2c9e4b1f6
 Revises: c5e1a8d3f7b4
-Create Date: 2026-11-18 12:00:00.000000
-"""
+Create Date: 2026-11-18 12:00:00.000000"""
 
 from collections.abc import Sequence
 
@@ -20,9 +19,10 @@ JSON = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 
 def upgrade() -> None:
-    # 这个文档下一次处理时 PDF 怎么读：image、text，空的按 JACARA_PDF_READ
+    # PDF read mode for the next run of this document: image or text; empty means JACARA_PDF_READ.
     op.add_column("documents", sa.Column("pdf_read", sa.String(length=8), nullable=True))
-    # 每个值的候选：OCR、PDF 文字层、局部放大再识别、表单字段读出来的不同的值
+    # Candidate values per field: differing readings from OCR, the PDF text layer, zoomed
+    # re-recognition and form fields.
     op.add_column("extracted_values", sa.Column("candidates", JSON, nullable=True))
 
 

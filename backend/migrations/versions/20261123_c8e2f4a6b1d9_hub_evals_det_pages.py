@@ -1,9 +1,8 @@
-"""dataset library, OCR model evaluations, detection samples (ADR 0059, 0060, 0061)
+"""dataset library, OCR model evaluations, detection samples
 
 Revision ID: c8e2f4a6b1d9
 Revises: b6f1c3d8e2a5
-Create Date: 2026-11-23 12:00:00.000000
-"""
+Create Date: 2026-11-23 12:00:00.000000"""
 
 from collections.abc import Sequence
 
@@ -29,7 +28,8 @@ def _owned_indexes(table: str) -> None:
 
 
 def upgrade() -> None:
-    # 数据集库（ADR 0059）：zip 在对象存储，这里记名字、版本、种类、每边几条
+    # Dataset library: archives are kept in object storage; this table stores name, version, kind
+    # and per-split counts.
     op.create_table(
         "datasets",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -55,7 +55,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("team_id", "name", "version"),
     )
     _owned_indexes("datasets")
-    # OCR 模型评测（ADR 0060）
+    # OCR model evaluations.
     op.create_table(
         "ocr_eval_runs",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -79,7 +79,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_ocr_eval_runs_dataset_id", "ocr_eval_runs", ["dataset_id"])
     _owned_indexes("ocr_eval_runs")
-    # 检测样本（ADR 0061）：一页上所有的文字框
+    # Detection samples: all text boxes of a page.
     op.create_table(
         "det_pages",
         sa.Column("id", sa.Uuid(), nullable=False),

@@ -1,11 +1,12 @@
-"""第一次安装（ADR 0064）：jacara setup。
+"""First-time setup: `jacara setup`.
 
-一步一步做，每一步说做了什么、没做成怎么办。可以重复运行：做好了的步骤跳过，已有的 .env 不动。
-1. .env：没有就照 .env.example 生成，密钥换成随机值，个人版、关掉接口文档页；
-2. Docker：启动数据库、任务队列、对象存储（docker compose up -d --wait）；
-3. 建表（alembic upgrade head）；
-4. 检查网页、llama-server、大模型文件，缺了告诉去哪拿。
-"""
+Runs step by step, reporting what each step did and how to fix a failure. Safe to re-run:
+completed steps are skipped and an existing .env is left untouched.
+1. .env: generated from .env.example if missing, with random secrets, personal edition and API
+   docs disabled;
+2. Docker: start the database, task queue and object storage (docker compose up -d --wait);
+3. Create tables (alembic upgrade head);
+4. Check the frontend, llama-server and model files, and explain where to obtain missing ones."""
 
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ from pathlib import Path
 PLACEHOLDER = "change-me"
 SECRET_KEYS = ("POSTGRES_PASSWORD", "S3_ACCESS_KEY", "S3_SECRET_KEY")
 PERSONAL = {"JACARA_MODE": "personal", "JACARA_API_DOCS": "false"}
-"""发布给个人用的默认值：个人版（不用登录），关掉接口文档页（ADR 0063、0064）。"""
+"""Defaults for personal releases: personal edition (no login) and API docs disabled."""
 
 MODEL_URL = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf"
 VISION_URL = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/mmproj-F16.gguf"
@@ -33,11 +34,12 @@ class Step:
     detail: str
     hint: str = ""
     required: bool = True
-    """False：缺了也能用（例如视觉模型），只是提醒。"""
+    """False: optional (for example the vision projector); reported as a warning only."""
 
 
 def make_env(example: str, token: Callable[[int], str] = secrets.token_hex) -> str:
-    """照 .env.example 生成 .env：必填的密钥换成随机值，个人版的默认值写上，别的原样。"""
+    """Generate .env from .env.example: required secrets replaced by random values, personal-edition
+    defaults set, everything else unchanged."""
     lines = []
     for line in example.splitlines():
         key, sep, value = line.partition("=")
@@ -70,7 +72,7 @@ def ensure_env(root: Path) -> Step:
     example = root / ".env.example"
     if not example.is_file():
         return Step(".env", False, "找不到 .env.example", "从发布包里重新解压一份")
-    # 只有自己能读写（里面有密钥）
+    # Owner read/write only (contains secrets).
     fd = os.open(env, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(make_env(example.read_text("utf-8")))
@@ -79,7 +81,7 @@ def ensure_env(root: Path) -> Step:
 
 
 def _run(args: list[str], root: Path, timeout: int) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603  命令和参数都是写死的
+    return subprocess.run(  # noqa: S603  Command and arguments are fixed.
         args, cwd=root, capture_output=True, text=True, timeout=timeout, check=False
     )
 
@@ -126,8 +128,9 @@ def migrate(root: Path) -> Step:
 
     try:
         command.upgrade(Config(str(root / "alembic.ini")), "head")
-    except Exception as err:  # 连不上数据库、迁移出错，都告诉人
-        reason = " ".join(str(err).split())[:200]  # 数据库的报错有好几行，压成一行
+    except Exception as err:  # Report unreachable databases and migration errors alike.
+        # Database errors span several lines; collapse them into one.
+        reason = " ".join(str(err).split())[:200]
         return Step("建表", False, f"{type(err).__name__}: {reason}", "先确认上一步数据库在运行")
     return Step("建表", True, "数据库是最新的")
 
@@ -186,8 +189,9 @@ def models_ready() -> list[Step]:
 
 
 def run_setup(root: Path, docker: bool = True, out: Callable[[str], None] = print) -> int:
-    """按顺序做；前面的必需步骤没做成，后面依赖它的就不做了。返回 0 表示可以 jacara start 了。"""
-    os.chdir(root)  # .env、alembic.ini、docker compose 都按项目根目录找
+    """Run the steps in order; steps depending on a failed required step are skipped. Returns 0 when
+    `jacara start` can be run."""
+    os.chdir(root)  # .env, alembic.ini and docker compose are resolved from the project root.
     steps: list[Step] = []
 
     def show(step: Step) -> Step:

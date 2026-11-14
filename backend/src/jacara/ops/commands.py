@@ -1,4 +1,4 @@
-"""命令行：jacara backup、jacara restore、jacara restore-drill（ADR 0054）。"""
+"""CLI commands: jacara backup, jacara restore, jacara restore-drill."""
 
 from __future__ import annotations
 
@@ -35,7 +35,8 @@ def _ini() -> Path:
 
 
 def migrate_to(url: str, revision: str | None) -> None:
-    """把这个数据库的结构变成 revision 那一版（None 或 head 就是最新）。只在表都是空的时候调用。"""
+    """Bring this database's schema to revision (None or head means latest). Call only when all
+    tables are empty."""
     from alembic import command
     from alembic.config import Config
     from alembic.runtime.migration import MigrationContext
@@ -61,7 +62,9 @@ def migrate_to(url: str, revision: str | None) -> None:
     try:
         command.upgrade(config, target)
     except CommandError:
-        command.downgrade(config, target)  # 空的库比备份新：退回备份时的版本，表是空的不丢东西
+        # Empty database newer than the backup: downgrade to the backup revision; nothing is lost
+        # since tables are empty.
+        command.downgrade(config, target)
 
 
 def _report(checks: list[Check]) -> bool:
@@ -89,7 +92,7 @@ def run_backup(
         ).scalar()
     print(f"备份到 {out_dir}/（数据库每张表 + 对象存储里每个文件）")
     path = backup(engine, storage, out_dir, version, _say)
-    os.chmod(path, 0o600)  # 里面是业务数据：只有自己能读
+    os.chmod(path, 0o600)  # Contains business data: owner-readable only.
     manifest = check_archive(path)
     rows = sum(manifest.tables.values())
     size = path.stat().st_size / 1024 / 1024
@@ -145,8 +148,9 @@ def _wait(ready: Callable[[], bool], seconds: float = 90) -> bool:
 
 
 def run_drill(archive: Path, keep: bool) -> int:
-    """恢复演练：另起一套空的数据库和对象存储（别的端口、别的数据卷），把包恢复进去、逐样打开，
-    默认做完就删掉这套演练环境。平时用的数据库和存储完全不碰。"""
+    """Restore drill: start a separate empty database and object storage (other ports, other
+    volumes), restore the archive into them and open every item; the drill environment is removed
+    afterwards by default. The production database and storage are never touched."""
     from sqlalchemy import create_engine, text
     from sqlalchemy.orm import sessionmaker
 
@@ -176,7 +180,7 @@ def run_drill(archive: Path, keep: bool) -> int:
             with engine.connect() as conn:
                 conn.execute(text("select 1"))
             storage.keys()
-        except Exception:  # 还没起来
+        except Exception:  # Not up yet.
             return False
         return True
 

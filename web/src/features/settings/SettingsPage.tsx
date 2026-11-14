@@ -10,12 +10,14 @@ import { DataSettings } from './DataSettings'
 import { ModelsCard } from './ModelsCard'
 import { ProcessingSettings } from './ProcessingSettings'
 import { useSettingsSections } from './sections'
+import { useTranslation } from 'react-i18next'
 
 function TeamSettings() {
+  const { t } = useTranslation()
   const { can } = useAuth()
   const items = [
-    ...(can('user:manage') ? [{ key: 'users', label: '用户管理', children: <UsersPage /> }] : []),
-    ...(can('audit:read') ? [{ key: 'audit', label: '审计日志', children: <AuditLogPage /> }] : []),
+    ...(can('user:manage') ? [{ key: 'users', label: t('用户管理'), children: <UsersPage /> }] : []),
+    ...(can('audit:read') ? [{ key: 'audit', label: t('审计日志'), children: <AuditLogPage /> }] : []),
   ]
   return <Tabs items={items} />
 }
@@ -30,8 +32,9 @@ const CONTENT: Record<string, () => ReactNode> = {
 }
 
 /**
- * 设置（ADR 0063）：进来以后左边栏换成设置的几类（AppLayout 里），顶上有"返回"。
- * 这里只放右边的内容。网址是 /settings/类别，可以直接收藏某一类。
+ * Settings: on entry the sidebar switches to the settings sections (in AppLayout) with "Back" on top. This
+ * component renders only the content on the right. URLs are /settings/SECTION, so each section can be
+ * bookmarked.
  */
 export function SettingsPage() {
   const { section } = useParams()
@@ -42,7 +45,7 @@ export function SettingsPage() {
   }
   return (
     <div style={{ maxWidth: 1100 }}>
-      {/* 个人资料页自己有标题，不重复 */}
+      {/* The profile page has its own title; avoid duplicating it. */}
       {current.key !== 'personal' && (
         <Typography.Title level={3} style={{ marginTop: 0, marginBottom: 16 }}>
           {current.label}

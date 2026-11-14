@@ -1,0 +1,5449 @@
+# English interface messages of JacarandaParse.
+# Message ids are the Chinese source text (gettext msgid model). Update with pybabel extract and
+# pybabel update, translate new entries here, then pybabel compile (docs/adr/0065-ui-language.md).
+# Licensed under the Apache License, Version 2.0.
+msgid ""
+msgstr ""
+"Project-Id-Version: JacarandaParse 1.0.0\n"
+"POT-Creation-Date: 2026-11-14 06:04+0000\n"
+"PO-Revision-Date: 2026-11-14 06:04+0000\n"
+"Last-Translator: JacarandaParse\n"
+"Language: en\n"
+"Language-Team: English\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: backend/src/jacara/core/daterange.py:75
+msgid "结束日期早于开始日期"
+msgstr "The end date is before the start date"
+
+#: backend/src/jacara/core/daterange.py:76
+msgid "数字日期分不清哪个是日、哪个是月（模板没选国家），先按 日/月 读的"
+msgstr "Numeric date: cannot tell which part is the day and which is the month (the template has no country); read as day/month"
+
+#: backend/src/jacara/core/daterange.py:187
+msgid "是空的"
+msgstr "is empty"
+
+#: backend/src/jacara/core/daterange.py:205
+msgid "日期不对"
+msgstr "Invalid date"
+
+#: backend/src/jacara/core/daterange.py:206
+msgid "只找到一个日期，当作结束日期"
+msgstr "Only one date found; used as the end date"
+
+#: backend/src/jacara/core/daterange.py:207
+msgid "认不出开始和结束日期"
+msgstr "Cannot recognize the start and end dates"
+
+#: backend/src/jacara/core/daterange.py:229
+msgid "原文里没有年份"
+msgstr "The source text has no year"
+
+#: backend/src/jacara/core/daterange.py:229
+msgid "认不出月份"
+msgstr "Cannot recognize the month"
+
+#: backend/src/jacara/core/daterange.py:234
+#: backend/src/jacara/core/daterange.py:240
+msgid "日期不对（没有这一天）"
+msgstr "Invalid date (no such day)"
+
+#: backend/src/jacara/core/deps.py:90
+msgid "请先登录"
+msgstr "Please sign in first"
+
+#: backend/src/jacara/core/deps.py:90
+msgid "登录已失效，请重新登录"
+msgstr "Your session has expired. Please log in again"
+
+#: backend/src/jacara/core/health.py:19
+msgid "运行 docker compose up -d 启动，再用 docker compose ps 看状态"
+msgstr "Run docker compose up -d to start them, then docker compose ps to check their status"
+
+#: backend/src/jacara/core/health.py:36 backend/src/jacara/core/health.py:41
+msgid ".env 密钥"
+msgstr ".env secrets"
+
+#: backend/src/jacara/core/health.py:38
+#, python-brace-format
+msgid "还是空的或 change-me：{names}"
+msgstr "Still empty or change-me: {names}"
+
+#: backend/src/jacara/core/health.py:38 backend/src/jacara/core/i18n.py:132
+#: backend/src/jacara/workbook/standard.py:152
+#: backend/src/jacara/workbook/standard.py:246
+#: backend/src/jacara/workbook/standard.py:425
+#: backend/src/jacara/workbook/standard.py:448
+msgid "、"
+msgstr ", "
+
+#: backend/src/jacara/core/health.py:39
+msgid "用 openssl rand -hex 16 生成随机值填进 .env"
+msgstr "Generate random values with openssl rand -hex 16 and put them in .env"
+
+#: backend/src/jacara/core/health.py:41
+msgid "都已改成自己的值"
+msgstr "All changed to your own values"
+
+#: backend/src/jacara/core/health.py:49
+#, python-brace-format
+msgid "已打包（{web_dist}）"
+msgstr "Built ({web_dist})"
+
+#: backend/src/jacara/core/health.py:49 backend/src/jacara/core/health.py:51
+msgid "网页"
+msgstr "Web UI"
+
+#: backend/src/jacara/core/health.py:51
+msgid "还没打包，打开 8000 只会看到提示"
+msgstr "Not built yet; opening port 8000 only shows a notice"
+
+#: backend/src/jacara/core/health.py:71
+msgid ".env 里的 POSTGRES_PASSWORD 和数据库创建时用的不一样"
+msgstr "POSTGRES_PASSWORD in .env differs from the one used when the database was created"
+
+#: backend/src/jacara/core/health.py:74
+#, python-brace-format
+msgid "版本 {value}"
+msgstr "Version {value}"
+
+#: backend/src/jacara/core/health.py:74 backend/src/jacara/core/health.py:96
+msgid "未知"
+msgstr "unknown"
+
+#: backend/src/jacara/core/health.py:97
+#, python-brace-format
+msgid "版本 {version}"
+msgstr "Version {version}"
+
+#: backend/src/jacara/core/health.py:120
+#, python-brace-format
+msgid "S3 拒绝访问（{code}）"
+msgstr "S3 access denied ({code})"
+
+#: backend/src/jacara/core/health.py:120
+msgid ".env 里的 S3 密钥不对"
+msgstr "The S3 keys in .env are wrong"
+
+#: backend/src/jacara/core/health.py:126
+#, python-brace-format
+msgid "已连接，存储桶 {s3_bucket} 已存在"
+msgstr "Connected; bucket {s3_bucket} exists"
+
+#: backend/src/jacara/core/health.py:131
+#, python-brace-format
+msgid "已连接，存储桶 {s3_bucket} 还没创建（上传文件时会创建）"
+msgstr "Connected; bucket {s3_bucket} not created yet (it is created on the first upload)"
+
+#: backend/src/jacara/core/health.py:142
+msgid "运行 uv run jacara serve --model 模型文件"
+msgstr "Run uv run jacara serve --model MODEL_FILE"
+
+#: backend/src/jacara/core/health.py:148
+#, python-brace-format
+msgid "服务返回 {status_code}"
+msgstr "The server returned {status_code}"
+
+#: backend/src/jacara/core/health.py:149
+msgid "模型可能还在加载，稍等再试"
+msgstr "The model may still be loading; try again shortly"
+
+#: backend/src/jacara/core/health.py:152
+#, python-brace-format
+msgid "已就绪（{model_server}）"
+msgstr "Ready ({model_server})"
+
+#: backend/src/jacara/core/i18n.py:129
+#: backend/src/jacara/modules/ocr_samples/service.py:1327
+#: backend/src/jacara/pipeline/current.py:210
+#: backend/src/jacara/pipeline/entities.py:78
+#: backend/src/jacara/plugins/exporters/excel.py:453
+msgid "；"
+msgstr "; "
+
+#: backend/src/jacara/core/permissions.py:39
+msgid "上传文件"
+msgstr "Upload files"
+
+#: backend/src/jacara/core/permissions.py:40
+msgid "重新处理"
+msgstr "Reprocess"
+
+#: backend/src/jacara/core/permissions.py:41
+msgid "删除文档"
+msgstr "Delete document"
+
+#: backend/src/jacara/core/permissions.py:42
+msgid "修改和确认字段"
+msgstr "Edit and confirm fields"
+
+#: backend/src/jacara/core/permissions.py:43
+msgid "完成审核"
+msgstr "Complete review"
+
+#: backend/src/jacara/core/permissions.py:44
+msgid "管理模板"
+msgstr "Manage templates"
+
+#: backend/src/jacara/core/permissions.py:49
+msgid "管理用户"
+msgstr "Manage users"
+
+#: backend/src/jacara/core/permissions.py:50
+msgid "查看审计日志"
+msgstr "View the audit log"
+
+#: backend/src/jacara/core/permissions.py:51
+msgid "换模型"
+msgstr "Models"
+
+#: backend/src/jacara/core/permissions.py:73
+msgid "这是别的团队的数据"
+msgstr "This data belongs to another team"
+
+#: backend/src/jacara/core/permissions.py:76
+msgid "只有管理员能做"
+msgstr "Administrators only"
+
+#: backend/src/jacara/core/permissions.py:76
+msgid "请找管理员开通"
+msgstr "Ask an administrator to grant it"
+
+#: backend/src/jacara/core/permissions.py:77
+#, python-brace-format
+msgid "没有权限：{name}（{hint}）"
+msgstr "Permission denied: {name} ({hint})"
+
+#: backend/src/jacara/core/queue.py:86 backend/src/jacara/core/queue.py:94
+#: backend/src/jacara/core/queue.py:100
+msgid "任务队列（Valkey）连不上"
+msgstr "Cannot reach the task queue (Valkey)"
+
+#: backend/src/jacara/core/storage.py:68
+#, python-brace-format
+msgid "保存文件失败：{err}"
+msgstr "Failed to save the file: {err}"
+
+#: backend/src/jacara/core/storage.py:77
+#, python-brace-format
+msgid "读取文件失败：{err}"
+msgstr "Failed to read the file: {err}"
+
+#: backend/src/jacara/core/storage.py:85
+#, python-brace-format
+msgid "删除文件失败：{err}"
+msgstr "Failed to delete the file: {err}"
+
+#: backend/src/jacara/core/storage.py:101
+#, python-brace-format
+msgid "列出文件失败：{err}"
+msgstr "Failed to list files: {err}"
+
+#: backend/src/jacara/core/storage.py:110
+#, python-brace-format
+msgid "读取文件信息失败：{err}"
+msgstr "Failed to read file information: {err}"
+
+#: backend/src/jacara/core/web.py:22
+msgid "网页还没有打包。在项目里运行：cd web && npm install && npm run build，然后重启。"
+msgstr "The web UI has not been built. In the project, run: cd web && npm install && npm run build, then restart."
+
+#: backend/src/jacara/core/web.py:40
+msgid "没有这个接口"
+msgstr "No such endpoint"
+
+#: backend/src/jacara/formulas.py:39
+msgid "开始"
+msgstr "start"
+
+#: backend/src/jacara/formulas.py:39
+msgid "结束"
+msgstr "end"
+
+#: backend/src/jacara/formulas.py:39
+msgid "天数"
+msgstr "days"
+
+#: backend/src/jacara/formulas.py:86
+msgid "公式是空的"
+msgstr "The formula is empty"
+
+#: backend/src/jacara/formulas.py:88
+msgid "公式太长了（最多 500 个字）"
+msgstr "The formula is too long (at most 500 characters)"
+
+#: backend/src/jacara/formulas.py:92
+#, python-brace-format
+msgid "公式写得不对：{source}"
+msgstr "Invalid formula: {source}"
+
+#: backend/src/jacara/formulas.py:96
+msgid "公式算出来要是数字（两个日期相减得到天数）"
+msgstr "A formula must produce a number (subtracting two dates gives a number of days)"
+
+#: backend/src/jacara/formulas.py:109
+#, python-brace-format
+msgid "公式里只能写数字，不能写 {value}"
+msgstr "Formulas may only contain numbers, not {value}"
+
+#: backend/src/jacara/formulas.py:115
+msgid "日期前面不能加正负号"
+msgstr "A date cannot have a sign in front of it"
+
+#: backend/src/jacara/formulas.py:124
+msgid "日期只能和日期相减（得到天数），不能和数字一起算"
+msgstr "A date can only be subtracted from another date (giving days), not combined with numbers"
+
+#: backend/src/jacara/formulas.py:131
+#, python-brace-format
+msgid "日期范围只能取 .start、.end、.days，不能取 .{attr}"
+msgstr "A date range only has .start, .end and .days, not .{attr}"
+
+#: backend/src/jacara/formulas.py:138
+msgid "表格的列要放在 sum() 里，例如 sum(items.amount)"
+msgstr "Table columns must go inside sum(), for example sum(items.amount)"
+
+#: backend/src/jacara/formulas.py:140
+msgid "公式里只能用字段、数字、+ - * /、括号和 sum、count、round、abs、min、max"
+msgstr "Formulas may only use fields, numbers, + - * /, parentheses and sum, count, round, abs, min, max"
+
+#: backend/src/jacara/formulas.py:159
+#, python-brace-format
+msgid "{name} 是一张表，要写成 sum({name}.列名) 或 count({name})"
+msgstr "{name} is a table; write sum({name}.column) or count({name})"
+
+#: backend/src/jacara/formulas.py:162
+#, python-brace-format
+msgid "没有叫 {name} 的字段"
+msgstr "No field named {name}"
+
+#: backend/src/jacara/formulas.py:165
+#, python-brace-format
+msgid "{name} 是日期范围，要写 {name}.start、{name}.end 或 {name}.days"
+msgstr "{name} is a date range; write {name}.start, {name}.end or {name}.days"
+
+#: backend/src/jacara/formulas.py:168
+#, python-brace-format
+msgid "{name} 是文字字段，不能参与计算"
+msgstr "{name} is a text field and cannot be used in calculations"
+
+#: backend/src/jacara/formulas.py:175
+#, python-brace-format
+msgid "每一行的公式里不能用 {func}()"
+msgstr "Per-row formulas cannot use {func}()"
+
+#: backend/src/jacara/formulas.py:177
+#, python-brace-format
+msgid "{func}() 里只能写一项"
+msgstr "{func}() takes exactly one argument"
+
+#: backend/src/jacara/formulas.py:181
+msgid "count() 里写表名，例如 count(items)"
+msgstr "count() takes a table name, for example count(items)"
+
+#: backend/src/jacara/formulas.py:189
+msgid "sum() 里写 表名.列名，例如 sum(items.amount)"
+msgstr "sum() takes table.column, for example sum(items.amount)"
+
+#: backend/src/jacara/formulas.py:193
+#, python-brace-format
+msgid "表 {table} 没有叫 {attr} 的列"
+msgstr "Table {table} has no column named {attr}"
+
+#: backend/src/jacara/formulas.py:197
+#, python-brace-format
+msgid "{table}.{attr} 不是数字，不能求和"
+msgstr "{table}.{attr} is not a number and cannot be summed"
+
+#: backend/src/jacara/formulas.py:203
+#, python-brace-format
+msgid "没有 {func}() 这个函数，能用的有 sum、count、round、abs、min、max"
+msgstr "There is no function {func}(); available: sum, count, round, abs, min, max"
+
+#: backend/src/jacara/formulas.py:207
+msgid "round(x, n) 的 n 要写整数，表示保留几位小数"
+msgstr "In round(x, n), n must be an integer: the number of decimal places"
+
+#: backend/src/jacara/formulas.py:209
+#, python-brace-format
+msgid "{func}() 里写一项，round 可以再加保留几位小数"
+msgstr "{func}() takes one argument; round may add the number of decimal places"
+
+#: backend/src/jacara/formulas.py:211
+#, python-brace-format
+msgid "{func}() 里至少写两项"
+msgstr "{func}() takes at least two arguments"
+
+#: backend/src/jacara/formulas.py:214
+#, python-brace-format
+msgid "{func}() 只能算数字"
+msgstr "{func}() only works with numbers"
+
+#: backend/src/jacara/formulas.py:260
+msgid "除以 0"
+msgstr "Division by 0"
+
+#: backend/src/jacara/formulas.py:262
+msgid "算出来不是数字"
+msgstr "The result is not a number"
+
+#: backend/src/jacara/formulas.py:359
+#, python-brace-format
+msgid "{table}的{part}"
+msgstr "{part} of {table}"
+
+#: backend/src/jacara/formulas.py:361
+#, python-brace-format
+msgid "-{operand}"
+msgstr "-{operand}"
+
+#: backend/src/jacara/formulas.py:365 backend/src/jacara/formulas.py:367
+#, python-brace-format
+msgid "({inner})"
+msgstr "({inner})"
+
+#: backend/src/jacara/formulas.py:369 backend/src/jacara/formulas.py:463
+#, python-brace-format
+msgid "{left} {operator} {right}"
+msgstr "{left} {operator} {right}"
+
+#: backend/src/jacara/formulas.py:374
+#, python-brace-format
+msgid "{args}合计"
+msgstr "total of {args}"
+
+#: backend/src/jacara/formulas.py:376
+#, python-brace-format
+msgid "{args}的行数"
+msgstr "number of rows of {args}"
+
+#: backend/src/jacara/formulas.py:377
+msgid "四舍五入"
+msgstr "round"
+
+#: backend/src/jacara/formulas.py:377
+msgid "绝对值"
+msgstr "abs"
+
+#: backend/src/jacara/formulas.py:377
+msgid "最小"
+msgstr "min"
+
+#: backend/src/jacara/formulas.py:377
+msgid "最大"
+msgstr "max"
+
+#: backend/src/jacara/formulas.py:379 backend/src/jacara/formulas.py:380
+#, python-brace-format
+msgid "{function}({args})"
+msgstr "{function}({args})"
+
+#: backend/src/jacara/formulas.py:389
+#: backend/src/jacara/modules/ocr_samples/service.py:1310
+msgid "，"
+msgstr ", "
+
+#: backend/src/jacara/formulas.py:409
+#, python-brace-format
+msgid "公式互相引用了：{name}"
+msgstr "Formulas refer to each other: {name}"
+
+#: backend/src/jacara/formulas.py:475
+msgid "条件是空的"
+msgstr "The condition is empty"
+
+#: backend/src/jacara/formulas.py:477
+msgid "条件太长了（最多 500 个字）"
+msgstr "The condition is too long (at most 500 characters)"
+
+#: backend/src/jacara/formulas.py:481
+#, python-brace-format
+msgid "条件写得不对：{source}"
+msgstr "Invalid condition: {source}"
+
+#: backend/src/jacara/formulas.py:485
+msgid "条件要写成 左边 比较 右边，例如 sum(items.amount) == total（比较用 == != < <= > >=）"
+msgstr "Write a condition as left comparison right, for example sum(items.amount) == total (comparisons: == != < <= > >=)"
+
+#: backend/src/jacara/formulas.py:491
+msgid "比较只能用 == != < <= > >="
+msgstr "Comparisons can only use == != < <= > >="
+
+#: backend/src/jacara/formulas.py:507
+msgid "比较的两边要都是数字，或者都是日期"
+msgstr "Both sides of a comparison must be numbers, or both dates"
+
+#: backend/src/jacara/modules/app_settings/service.py:46
+#: backend/src/jacara/modules/app_settings/service.py:57
+#: backend/src/jacara/modules/app_settings/service.py:67
+#: backend/src/jacara/modules/app_settings/service.py:75
+msgid "识别"
+msgstr "Recognition"
+
+#: backend/src/jacara/modules/app_settings/service.py:47
+msgid "让模型看原图"
+msgstr "Let the model see the page image"
+
+#: backend/src/jacara/modules/app_settings/service.py:48
+msgid "照片、扫描件 OCR 认不准时，让视觉模型看着原图读。要先放好视觉模型。"
+msgstr "When OCR cannot read photos or scans reliably, the vision model reads from the page image. Requires a vision model."
+
+#: backend/src/jacara/modules/app_settings/service.py:51
+msgid "OCR 不可靠时才看（推荐）"
+msgstr "Only when OCR is unreliable (recommended)"
+
+#: backend/src/jacara/modules/app_settings/service.py:52
+msgid "每张都看（慢）"
+msgstr "Every page (slow)"
+
+#: backend/src/jacara/modules/app_settings/service.py:53
+msgid "不看"
+msgstr "Never"
+
+#: backend/src/jacara/modules/app_settings/service.py:58
+msgid "PDF 怎么读文字"
+msgstr "How PDF text is read"
+
+#: backend/src/jacara/modules/app_settings/service.py:60
+msgid "画成图做 OCR，和照片走同一条路，PDF 自带的文字只拿来核对；只读自带文字快，但只适合确定干净的电子版。"
+msgstr "Render to images and OCR them, the same path as photos; the PDF's own text is used only for cross-checking. Reading only the embedded text is faster but suits only clean digital PDFs."
+
+#: backend/src/jacara/modules/app_settings/service.py:64
+msgid "画成图做 OCR（推荐）"
+msgstr "Render to images and OCR (recommended)"
+
+#: backend/src/jacara/modules/app_settings/service.py:64
+msgid "只读 PDF 自带的文字"
+msgstr "Read only the PDF's embedded text"
+
+#: backend/src/jacara/modules/app_settings/service.py:68
+msgid "OCR 时图片长边最多多少像素"
+msgstr "Maximum length of the longer image side for OCR (pixels)"
+
+#: backend/src/jacara/modules/app_settings/service.py:69
+msgid "超过的先缩小。大一点小字认得更准，但更慢。"
+msgstr "Larger images are scaled down first. Larger values read small text more accurately but are slower."
+
+#: backend/src/jacara/modules/app_settings/service.py:76
+msgid "先找页面上的区域"
+msgstr "Find page regions first"
+
+#: backend/src/jacara/modules/app_settings/service.py:77
+msgid "抽取前用版面模型找出标题、正文、表格、页眉页脚。"
+msgstr "Before extraction, a layout model finds titles, body text, tables, headers and footers."
+
+#: backend/src/jacara/modules/app_settings/service.py:81
+#: backend/src/jacara/modules/app_settings/service.py:87
+msgid "从人改过的地方学"
+msgstr "Learn from human corrections"
+
+#: backend/src/jacara/modules/app_settings/service.py:82
+msgid "抽取时带上以前人改过的例子"
+msgstr "Include earlier human corrections when extracting"
+
+#: backend/src/jacara/modules/app_settings/service.py:83
+msgid "同一个模板以前人工改过的值告诉模型，少犯同样的错。"
+msgstr "Values corrected by people on the same template are shown to the model to avoid repeating mistakes."
+
+#: backend/src/jacara/modules/app_settings/service.py:88
+msgid "怎么挑例子"
+msgstr "How examples are chosen"
+
+#: backend/src/jacara/modules/app_settings/service.py:89
+msgid "整理过的：只用错在模型的、合并重复、去掉过期的。换之前先用回放比一比。"
+msgstr "Curated: only model errors, duplicates merged, outdated ones removed. Compare with replay before switching."
+
+#: backend/src/jacara/modules/app_settings/service.py:91
+msgid "最近改得多的（默认）"
+msgstr "Most frequently corrected recently (default)"
+
+#: backend/src/jacara/modules/app_settings/service.py:91
+msgid "整理过的"
+msgstr "Curated"
+
+#: backend/src/jacara/modules/app_settings/service.py:94
+#: backend/src/jacara/modules/app_settings/service.py:100
+#: backend/src/jacara/modules/app_settings/service.py:106
+#: backend/src/jacara/modules/app_settings/service.py:112
+msgid "后台和导入"
+msgstr "Background workers and import"
+
+#: backend/src/jacara/modules/app_settings/service.py:95
+msgid "后台分两个工位"
+msgstr "Two background workers"
+
+#: backend/src/jacara/modules/app_settings/service.py:96
+msgid "OCR 和模型同时干活，批量导入更快；关掉省几百 MB 内存。"
+msgstr "OCR and the model run at the same time, making batch imports faster; turning it off saves a few hundred MB of memory."
+
+#: backend/src/jacara/modules/app_settings/service.py:101
+msgid "监视文件夹"
+msgstr "Watch folder"
+
+#: backend/src/jacara/modules/app_settings/service.py:102
+msgid "放进去的图片和 PDF 自动导入，不动原文件，重复的跳过。写完整路径；空着就不监视。"
+msgstr "Images and PDFs placed there are imported automatically; originals are left untouched and duplicates skipped. Enter a full path; leave empty to disable."
+
+#: backend/src/jacara/modules/app_settings/service.py:107
+msgid "监视文件夹用的模板"
+msgstr "Template for the watch folder"
+
+#: backend/src/jacara/modules/app_settings/service.py:108
+msgid "我的模板的 id；空着就用上一次上传时选的。"
+msgstr "Id of one of my templates; leave empty to use the one chosen at the last upload."
+
+#: backend/src/jacara/modules/app_settings/service.py:113
+msgid "上传文件最大多少 MB"
+msgstr "Maximum upload size (MB)"
+
+#: backend/src/jacara/modules/app_settings/service.py:114
+msgid "一个文件超过这么大就不收。"
+msgstr "Files larger than this are rejected."
+
+#: backend/src/jacara/modules/app_settings/service.py:120
+msgid "安全"
+msgstr "Security"
+
+#: backend/src/jacara/modules/app_settings/service.py:121
+msgid "打开接口文档页 /docs"
+msgstr "Enable the API docs page /docs"
+
+#: backend/src/jacara/modules/app_settings/service.py:122
+msgid "开发时有用；给别人用时建议关掉，少暴露一些接口细节。"
+msgstr "Useful during development; turn it off when others use the system to expose fewer API details."
+
+#: backend/src/jacara/modules/app_settings/service.py:165
+#, python-brace-format
+msgid "{label}：值不对"
+msgstr "{label}: invalid value"
+
+#: backend/src/jacara/modules/app_settings/service.py:172
+#, python-brace-format
+msgid "{label}：要在 {min}～{max} 之间"
+msgstr "{label}: must be between {min} and {max}"
+
+#: backend/src/jacara/modules/app_settings/service.py:178
+#, python-brace-format
+msgid "{label}：要写一个已经存在的文件夹的完整路径"
+msgstr "{label}: enter the full path of an existing folder"
+
+#: backend/src/jacara/modules/app_settings/service.py:229
+#, python-brace-format
+msgid "设置页不能改 {key}"
+msgstr "{key} cannot be changed on the settings page"
+
+#: backend/src/jacara/modules/app_settings/service.py:234
+#, python-brace-format
+msgid "{label}由 .env 里的 {env} 指定，页面上改不了"
+msgstr "{label} is set by {env} in .env and cannot be changed here"
+
+#: backend/src/jacara/modules/auth/profile.py:34
+#: backend/src/jacara/modules/auth/service.py:125
+#: backend/src/jacara/modules/comments/service.py:135
+#: backend/src/jacara/modules/comments/service.py:139
+#: backend/src/jacara/modules/exports/service.py:88
+msgid "本机用户"
+msgstr "Local user"
+
+#: backend/src/jacara/modules/auth/profile.py:44
+msgid "头像图片太大了，请选 5 MB 以内的"
+msgstr "The avatar image is too large; choose one under 5 MB"
+
+#: backend/src/jacara/modules/auth/profile.py:48
+msgid "头像只支持 PNG、JPG、WEBP 图片"
+msgstr "Avatars must be PNG, JPG or WEBP images"
+
+#: backend/src/jacara/modules/auth/profile.py:53
+msgid "这个文件打不开，不是图片或者已经损坏"
+msgstr "This file cannot be opened; it is not an image or is damaged"
+
+#: backend/src/jacara/modules/auth/profile.py:98
+msgid "还没有头像"
+msgstr "No avatar yet"
+
+#: backend/src/jacara/modules/auth/profile.py:110
+msgid "找不到你的账号"
+msgstr "Your account cannot be found"
+
+#: backend/src/jacara/modules/auth/profile.py:150
+msgid "ProfileService 没有拿到对象存储"
+msgstr "ProfileService has no object storage"
+
+#: backend/src/jacara/modules/auth/repository.py:27
+msgid "默认团队"
+msgstr "Default team"
+
+#: backend/src/jacara/modules/auth/service.py:64
+#, python-brace-format
+msgid "用户名 {username} 已经有人用了"
+msgstr "The username {username} is already taken"
+
+#: backend/src/jacara/modules/auth/service.py:95
+msgid "用户名或密码不对"
+msgstr "Wrong username or password"
+
+#: backend/src/jacara/modules/auth/service.py:148
+msgid "个人模式没有账号，不用密码"
+msgstr "Personal mode has no accounts and no passwords"
+
+#: backend/src/jacara/modules/auth/service.py:151
+msgid "原密码不对"
+msgstr "The current password is wrong"
+
+#: backend/src/jacara/modules/auth/service.py:153
+#: backend/src/jacara/modules/auth/service.py:176
+msgid "新密码不能和原来的一样"
+msgstr "The new password must differ from the current one"
+
+#: backend/src/jacara/modules/auth/service.py:173
+msgid "用户名或重设码不对，或者重设码已经用过、过期了"
+msgstr "Wrong username or reset code, or the reset code has already been used or has expired"
+
+#: backend/src/jacara/modules/auth/service.py:218
+#: backend/src/jacara/modules/auth/service.py:243
+msgid "找不到这个用户"
+msgstr "User not found"
+
+#: backend/src/jacara/modules/auth/service.py:222
+msgid "不能修改自己的角色或停用自己，免得没人能管理"
+msgstr "You cannot change your own role or deactivate yourself, so that someone can still administer the system"
+
+#: backend/src/jacara/modules/auth/service.py:245
+msgid "这个用户已停用，先启用再生成重设码"
+msgstr "This user is deactivated; activate the user before generating a reset code"
+
+#: backend/src/jacara/modules/comments/service.py:45
+msgid "备注不能是空的"
+msgstr "The comment cannot be empty"
+
+#: backend/src/jacara/modules/comments/service.py:49
+msgid "写在字段上的备注要说明是第几页"
+msgstr "A comment on a field must state the page"
+
+#: backend/src/jacara/modules/comments/service.py:52
+#, python-brace-format
+msgid "这份文档只有 {page_count} 页"
+msgstr "This document has only {page_count} pages"
+
+#: backend/src/jacara/modules/comments/service.py:98
+msgid "只有写这条备注的人或管理员能删"
+msgstr "Only the author of this comment or an administrator can delete it"
+
+#: backend/src/jacara/modules/comments/service.py:114
+#: backend/src/jacara/modules/documents/service.py:1025
+#: backend/src/jacara/modules/templates/service.py:1186
+msgid "找不到这个文档"
+msgstr "Document not found"
+
+#: backend/src/jacara/modules/comments/service.py:121
+msgid "找不到这条备注"
+msgstr "Comment not found"
+
+#: backend/src/jacara/modules/documents/schemas.py:249
+msgid "模板改了"
+msgstr "Template changed"
+
+#: backend/src/jacara/modules/documents/schemas.py:250
+msgid "选错了模板"
+msgstr "Wrong template selected"
+
+#: backend/src/jacara/modules/documents/schemas.py:251
+msgid "结果不好，再跑一次"
+msgstr "Poor result, run again"
+
+#: backend/src/jacara/modules/documents/schemas.py:252
+msgid "换了模型或 OCR"
+msgstr "Model or OCR changed"
+
+#: backend/src/jacara/modules/documents/schemas.py:253
+msgid "批量重新处理"
+msgstr "Bulk reprocessing"
+
+#: backend/src/jacara/modules/documents/schemas.py:254
+msgid "其他"
+msgstr "Other"
+
+#: backend/src/jacara/modules/documents/service.py:202
+#, python-brace-format
+msgid "不支持的文件类型：{content_type}，支持图片和 PDF"
+msgstr "Unsupported file type: {content_type}; images and PDFs are supported"
+
+#: backend/src/jacara/modules/documents/service.py:206
+#, python-brace-format
+msgid "文件超过 {limit} MB"
+msgstr "The file exceeds {limit} MB"
+
+#: backend/src/jacara/modules/documents/service.py:208
+#: backend/src/jacara/modules/hub/service.py:222
+#: backend/src/jacara/modules/templates/service.py:675
+msgid "文件是空的"
+msgstr "The file is empty"
+
+#: backend/src/jacara/modules/documents/service.py:217
+#: backend/src/jacara/modules/documents/service.py:862
+#: backend/src/jacara/modules/documents/service.py:891
+#: backend/src/jacara/modules/hub/service.py:405
+#: backend/src/jacara/modules/hub/service.py:421
+#: backend/src/jacara/modules/hub/service.py:461
+#: backend/src/jacara/modules/ocr_samples/det.py:441
+#: backend/src/jacara/modules/ocr_samples/service.py:410
+#: backend/src/jacara/modules/ocr_samples/service.py:1070
+#: backend/src/jacara/modules/templates/service.py:693
+#: backend/src/jacara/modules/templates/service.py:771
+msgid "对象存储暂时不可用，请稍后再试"
+msgstr "Object storage is temporarily unavailable; please try again later"
+
+#: backend/src/jacara/modules/documents/service.py:256
+#: backend/src/jacara/modules/documents/service.py:278
+msgid "这个文档没有保存原始文件（命令行导入的），无法处理"
+msgstr "This document has no stored original file (imported from the command line) and cannot be processed"
+
+#: backend/src/jacara/modules/documents/service.py:259
+#, python-brace-format
+msgid "文档状态是 {status}，不能重新处理"
+msgstr "The document status is {status}; it cannot be reprocessed"
+
+#: backend/src/jacara/modules/documents/service.py:265
+#: backend/src/jacara/modules/documents/service.py:334
+#: backend/src/jacara/modules/hub/service.py:517
+msgid "任务队列暂时不可用，请稍后再试"
+msgstr "The task queue is temporarily unavailable; please try again later"
+
+#: backend/src/jacara/modules/documents/service.py:281
+#, python-brace-format
+msgid "文档状态是 {status}，现在不能重新处理"
+msgstr "The document status is {status}; it cannot be reprocessed now"
+
+#: backend/src/jacara/modules/documents/service.py:285
+#: backend/src/jacara/modules/documents/service.py:356
+msgid "原因选了\"其他\"，请写一句说明"
+msgstr "\"Other\" was selected; add a short explanation"
+
+#: backend/src/jacara/modules/documents/service.py:315
+#, python-brace-format
+msgid "{label}：{note}"
+msgstr "{label}: {note}"
+
+#: backend/src/jacara/modules/documents/service.py:344
+#, python-brace-format
+msgid "文档状态是 {status}，不在审核"
+msgstr "The document status is {status}; it is not under review"
+
+#: backend/src/jacara/modules/documents/service.py:368
+msgid "正在排队"
+msgstr "Queued"
+
+#: backend/src/jacara/modules/documents/service.py:368
+msgid "正在处理"
+msgstr "Processing"
+
+#: backend/src/jacara/modules/documents/service.py:374
+#, python-brace-format
+msgid "{filename}：{state}"
+msgstr "{filename}: {state}"
+
+#: backend/src/jacara/modules/documents/service.py:387
+#, python-brace-format
+msgid "{name}：{message}"
+msgstr "{name}: {message}"
+
+#: backend/src/jacara/modules/documents/service.py:399
+#: backend/src/jacara/modules/fields/service.py:77
+#: backend/src/jacara/modules/fields/service.py:183
+#: backend/src/jacara/modules/fields/service.py:398
+#, python-brace-format
+msgid "文档状态是 {status}，处理完成后才能审核"
+msgstr "The document status is {status}; it can be reviewed once processing finishes"
+
+#: backend/src/jacara/modules/documents/service.py:407
+#, python-brace-format
+msgid "沿用第 {run} 轮的审核"
+msgstr "Review carried over from run {run}"
+
+#: backend/src/jacara/modules/documents/service.py:457
+#, python-brace-format
+msgid "{filename}：正在处理，等处理完再删"
+msgstr "{filename}: being processed; delete it after processing finishes"
+
+#: backend/src/jacara/modules/documents/service.py:567
+#, python-brace-format
+msgid "这个文档没有第 {viewing} 轮的结果"
+msgstr "This document has no results for run {viewing}"
+
+#: backend/src/jacara/modules/documents/service.py:600
+msgid "找不到这次抽取"
+msgstr "Extraction not found"
+
+#: backend/src/jacara/modules/documents/service.py:603
+msgid "这次抽取没有记下发给模型的文字（更新之前处理的）"
+msgstr "This extraction did not record the text sent to the model (processed before an update)"
+
+#: backend/src/jacara/modules/documents/service.py:617
+#: backend/src/jacara/modules/documents/service.py:635
+#, python-brace-format
+msgid "第 {page} 页没有抽取结果"
+msgstr "Page {page} has no extraction result"
+
+#: backend/src/jacara/modules/documents/service.py:646
+#, python-brace-format
+msgid "文档状态是 {status}，处理完成（done）后才能完成审核"
+msgstr "The document status is {status}; the review can be completed once processing is done"
+
+#: backend/src/jacara/modules/documents/service.py:650
+#, python-brace-format
+msgid "还有 {pending} 个字段等待确认"
+msgstr "{pending} fields still await confirmation"
+
+#: backend/src/jacara/modules/documents/service.py:663
+msgid "只有处理完、还没完成审核的文档可以跳过"
+msgstr "Only processed documents whose review is not complete can be skipped"
+
+#: backend/src/jacara/modules/documents/service.py:701
+#, python-brace-format, python-format
+msgid "{stem}-{day:%Y%m%d}-{n}份.xlsx"
+msgstr "{stem}-{day:%Y%m%d}-{n}docs.xlsx"
+
+#: backend/src/jacara/modules/documents/service.py:707
+#, python-brace-format, python-format
+msgid "jacara-{day:%Y%m%d}-{n}份.xlsx"
+msgstr "jacara-{day:%Y%m%d}-{n}docs.xlsx"
+
+#: backend/src/jacara/modules/documents/service.py:728
+#, python-brace-format, python-format
+msgid "jacara-{day:%Y%m%d}-{n}份.zip"
+msgstr "jacara-{day:%Y%m%d}-{n}docs.zip"
+
+#: backend/src/jacara/modules/documents/service.py:746
+#: backend/src/jacara/modules/documents/service.py:786
+#, python-brace-format, python-format
+msgid "jacara-{day:%Y%m%d}-{n}份"
+msgstr "jacara-{day:%Y%m%d}-{n}docs"
+
+#: backend/src/jacara/modules/documents/service.py:806
+#, python-brace-format, python-format
+msgid "{day:%Y-%m-%d} 导出"
+msgstr "Exported {day:%Y-%m-%d}"
+
+#: backend/src/jacara/modules/documents/service.py:816
+msgid "请至少选择一个文档"
+msgstr "Select at least one document"
+
+#: backend/src/jacara/modules/documents/service.py:818
+#, python-brace-format
+msgid "一次最多导出 {limit} 个文档"
+msgstr "At most {limit} documents can be exported at once"
+
+#: backend/src/jacara/modules/documents/service.py:824
+#, python-brace-format
+msgid "找不到文档：{documents}"
+msgstr "Documents not found: {documents}"
+
+#: backend/src/jacara/modules/documents/service.py:831
+#, python-brace-format
+msgid "这些文档还没处理完，不能导出：{documents}"
+msgstr "These documents are not processed yet and cannot be exported: {documents}"
+
+#: backend/src/jacara/modules/documents/service.py:858
+#: backend/src/jacara/modules/documents/service.py:878
+msgid "这个文档没有保存原始文件（命令行导入的）"
+msgstr "This document has no stored original file (imported from the command line)"
+
+#: backend/src/jacara/modules/documents/service.py:871
+#: backend/src/jacara/modules/documents/service.py:965
+msgid "这个文件打不开，可能已损坏"
+msgstr "This file cannot be opened; it may be damaged"
+
+#: backend/src/jacara/modules/documents/service.py:883
+#, python-brace-format
+msgid "这个文档只有 {page_count} 页，没有第 {page} 页"
+msgstr "This document has only {page_count} pages; there is no page {page}"
+
+#: backend/src/jacara/modules/documents/service.py:976
+msgid "OCR 引擎没有准备好"
+msgstr "The OCR engine is not ready"
+
+#: backend/src/jacara/modules/documents/service.py:994
+msgid "模型现在不能看图：把视觉模型 mmproj-F16.gguf 放进 models/，重新 jacara start"
+msgstr "The model cannot see images now: put the vision model mmproj-F16.gguf into models/ and run jacara start again"
+
+#: backend/src/jacara/modules/documents/service.py:1030
+msgid "后面"
+msgstr "after"
+
+#: backend/src/jacara/modules/documents/service.py:1031
+#: backend/src/jacara/modules/documents/service.py:1032
+#: backend/src/jacara/modules/documents/service.py:1036
+msgid "右边"
+msgstr "to the right of"
+
+#: backend/src/jacara/modules/documents/service.py:1033
+msgid "这一行右边"
+msgstr "to the right, on the same line, of"
+
+#: backend/src/jacara/modules/documents/service.py:1034
+#: backend/src/jacara/modules/documents/service.py:1035
+msgid "下面"
+msgstr "below"
+
+#: backend/src/jacara/modules/documents/service.py:1224
+#: backend/src/jacara/modules/insights/service.py:107
+#: backend/src/jacara/modules/ocr_samples/service.py:127
+msgid "抽取所有键值对"
+msgstr "Extract all key-value pairs"
+
+#: backend/src/jacara/modules/documents/service.py:1280
+#, python-brace-format
+msgid "第 {page} 页：{note}"
+msgstr "Page {page}: {note}"
+
+#: backend/src/jacara/modules/documents/service.py:1321
+msgid "PDF 文件打不开，可能已损坏"
+msgstr "The PDF file cannot be opened; it may be damaged"
+
+#: backend/src/jacara/modules/exports/service.py:101
+msgid "找不到这条导出记录"
+msgstr "Export record not found"
+
+#: backend/src/jacara/modules/exports/service.py:104
+msgid "这次导出的文件当时没能保存，不能重新下载"
+msgstr "The file of this export could not be saved at the time and cannot be downloaded again"
+
+#: backend/src/jacara/modules/exports/service.py:108
+msgid "对象存储里取不到这个文件"
+msgstr "The file cannot be retrieved from object storage"
+
+#: backend/src/jacara/modules/fields/service.py:81
+msgid "这一行已经删除了，要改的话先恢复这一行"
+msgstr "This row was deleted; restore it before editing"
+
+#: backend/src/jacara/modules/fields/service.py:85
+msgid "从原文选取和框选只能用一种"
+msgstr "Use either selection from the source text or a drawn region, not both"
+
+#: backend/src/jacara/modules/fields/service.py:90
+msgid "图中原文要对应原图上的一块原文或一个框"
+msgstr "The transcription must belong to one source block or one drawn region"
+
+#: backend/src/jacara/modules/fields/service.py:98
+msgid "框里没有要填的值，请框住要识别的文字"
+msgstr "There is no value in the region; draw the region around the text to recognize"
+
+#: backend/src/jacara/modules/fields/service.py:115
+msgid "框选重新识别"
+msgstr "Re-recognized from a drawn region"
+
+#: backend/src/jacara/modules/fields/service.py:128
+msgid "从原文选取"
+msgstr "Selected from the source text"
+
+#: backend/src/jacara/modules/fields/service.py:133
+msgid "修改时请写明原因，以后查记录时能看懂"
+msgstr "State the reason for the change, so the history remains understandable"
+
+#: backend/src/jacara/modules/fields/service.py:136
+msgid "新值和当前值一样。如果值是对的，请用 confirm（确认）"
+msgstr "The new value equals the current value. If the value is correct, use confirm"
+
+#: backend/src/jacara/modules/fields/service.py:186
+msgid "批量确认"
+msgstr "Batch confirmation"
+
+#: backend/src/jacara/modules/fields/service.py:218
+#, python-brace-format
+msgid "表格 {table} 里没有第 {after} 行"
+msgstr "Table {table} has no row {after}"
+
+#: backend/src/jacara/modules/fields/service.py:238
+msgid "审核时人工增加的行"
+msgstr "Row added manually during review"
+
+#: backend/src/jacara/modules/fields/service.py:238
+#: backend/src/jacara/plugins/exporters/excel.py:56
+msgid "按公式算"
+msgstr "Computed"
+
+#: backend/src/jacara/modules/fields/service.py:286
+#, python-brace-format
+msgid "表格 {table} 里没有第 {index} 行"
+msgstr "Table {table} has no row {index}"
+
+#: backend/src/jacara/modules/fields/service.py:292
+msgid "删除一行时请写明原因，以后查记录时能看懂"
+msgstr "State the reason for deleting the row, so the history remains understandable"
+
+#: backend/src/jacara/modules/fields/service.py:294
+msgid "恢复一行时请写明原因，以后查记录时能看懂"
+msgstr "State the reason for restoring the row, so the history remains understandable"
+
+#: backend/src/jacara/modules/fields/service.py:298
+msgid "这一行已经删除了"
+msgstr "This row is already deleted"
+
+#: backend/src/jacara/modules/fields/service.py:300
+msgid "这一行没有被删除"
+msgstr "This row is not deleted"
+
+#: backend/src/jacara/modules/fields/service.py:342
+msgid "这个字段刚被别人审核过，请刷新后再试"
+msgstr "Someone else just reviewed this field; refresh and try again"
+
+#: backend/src/jacara/modules/fields/service.py:405
+msgid "找不到这一页的抽取结果"
+msgstr "Extraction result for this page not found"
+
+#: backend/src/jacara/modules/fields/service.py:413
+#, python-brace-format
+msgid "第 {page} 页不属于这张单据"
+msgstr "Page {page} does not belong to this document"
+
+#: backend/src/jacara/modules/fields/service.py:425
+msgid "这一页没有保存 OCR 结果（新功能上线前处理的），不能从原文选取"
+msgstr "This page has no stored OCR result (processed before this feature existed); source text cannot be selected"
+
+#: backend/src/jacara/modules/fields/service.py:428
+msgid "请至少选一块文字"
+msgstr "Select at least one text block"
+
+#: backend/src/jacara/modules/fields/service.py:430
+msgid "选的文字块不存在，请刷新后再试"
+msgstr "The selected text blocks do not exist; refresh and try again"
+
+#: backend/src/jacara/modules/fields/service.py:436
+msgid "找不到这个字段"
+msgstr "Field not found"
+
+#: backend/src/jacara/modules/fields/service.py:447
+#, python-brace-format
+msgid "这是第 {run} 轮的旧结果，只能查看；现在用的是第 {current} 轮"
+msgstr "These are old results of run {run} and are read-only; the current run is {current}"
+
+#: backend/src/jacara/modules/fields/service.py:464
+#, python-brace-format
+msgid "{text} 不是数字"
+msgstr "{text} is not a number"
+
+#: backend/src/jacara/modules/fields/service.py:466
+#, python-brace-format
+msgid "{text} 不是有效的数字"
+msgstr "{text} is not a valid number"
+
+#: backend/src/jacara/modules/fields/service.py:478
+#, python-brace-format
+msgid "{text} 读不出日期，请写成 2018-12-25 这样的格式"
+msgstr "Cannot read a date from {text}; write it like 2018-12-25"
+
+#: backend/src/jacara/modules/fields/service.py:489
+#, python-brace-format
+msgid "选的文字「{text}」里没有数字"
+msgstr "The selected text \"{text}\" contains no number"
+
+#: backend/src/jacara/modules/fields/service.py:494
+#, python-brace-format
+msgid "选的文字「{text}」读不出日期，请手动填写"
+msgstr "Cannot read a date from the selected text \"{text}\"; enter it manually"
+
+#: backend/src/jacara/modules/fields/service.py:533
+#, python-brace-format
+msgid "这一页没有叫 {table} 的表格"
+msgstr "This page has no table named {table}"
+
+#: backend/src/jacara/modules/hub/datasets.py:123
+#, python-brace-format
+msgid "zip 里文件太多（超过 {limit} 个）"
+msgstr "Too many files in the zip (more than {limit})"
+
+#: backend/src/jacara/modules/hub/datasets.py:131
+#, python-brace-format
+msgid "zip 里有不安全的路径：{filename}"
+msgstr "Unsafe path in the zip: {filename}"
+
+#: backend/src/jacara/modules/hub/datasets.py:137
+#, python-brace-format
+msgid "zip 里 {filename} 的压缩比异常，可能是 zip 炸弹"
+msgstr "Abnormal compression ratio of {filename} in the zip; possibly a zip bomb"
+
+#: backend/src/jacara/modules/hub/datasets.py:143
+msgid "zip 解压后太大（超过 4 GB）"
+msgstr "The zip is too large when extracted (more than 4 GB)"
+
+#: backend/src/jacara/modules/hub/datasets.py:220
+#, python-brace-format
+msgid "不认识的数据集种类：{kind}"
+msgstr "Unknown dataset kind: {kind}"
+
+#: backend/src/jacara/modules/hub/datasets.py:225
+msgid "不是 zip 文件"
+msgstr "Not a zip file"
+
+#: backend/src/jacara/modules/hub/datasets.py:231
+#, python-brace-format
+msgid "zip 里没找到标注文件（{names}）"
+msgstr "No label file found in the zip ({names})"
+
+#: backend/src/jacara/modules/hub/datasets.py:243
+msgid "不是用 Tab 分开的"
+msgstr "Not separated by a Tab"
+
+#: backend/src/jacara/modules/hub/datasets.py:247
+msgid "图片在 zip 里找不到"
+msgstr "Image not found in the zip"
+
+#: backend/src/jacara/modules/hub/datasets.py:250
+msgid "同一张图在同一边出现了两次（只留第一次）"
+msgstr "The same image appears twice in the same split (only the first is kept)"
+
+#: backend/src/jacara/modules/hub/datasets.py:253
+msgid "图片打不开"
+msgstr "The image cannot be opened"
+
+#: backend/src/jacara/modules/hub/datasets.py:257
+msgid "文字是空的或带 Tab"
+msgstr "The text is empty or contains a Tab"
+
+#: backend/src/jacara/modules/hub/datasets.py:263
+msgid "框的格式不对"
+msgstr "Invalid box format"
+
+#: backend/src/jacara/modules/hub/datasets.py:270
+#, python-brace-format
+msgid "{reason} {n} 行"
+msgstr "{reason}: {n} lines"
+
+#: backend/src/jacara/modules/hub/datasets.py:274
+#, python-brace-format
+msgid "一条能用的都没有：{reasons}"
+msgstr "No usable entries: {reasons}"
+
+#: backend/src/jacara/modules/hub/datasets.py:276
+msgid "没有内容"
+msgstr "No content"
+
+#: backend/src/jacara/modules/hub/evals.py:49
+msgid "上次评测跑到一半中断了（worker 停了），请重新开始"
+msgstr "The previous evaluation was interrupted halfway (the worker stopped); please start again"
+
+#: backend/src/jacara/modules/hub/evals.py:82
+#, python-brace-format
+msgid "{kind}: {detail}"
+msgstr "{kind}: {detail}"
+
+#: backend/src/jacara/modules/hub/registry.py:29
+#: backend/src/jacara/modules/model_admin/service.py:29
+msgid "大模型"
+msgstr "Large language model"
+
+#: backend/src/jacara/modules/hub/registry.py:30
+#: backend/src/jacara/modules/model_admin/service.py:30
+msgid "视觉模型"
+msgstr "Vision model"
+
+#: backend/src/jacara/modules/hub/registry.py:31
+#: backend/src/jacara/modules/model_admin/service.py:31
+msgid "OCR 文字检测"
+msgstr "OCR text detection"
+
+#: backend/src/jacara/modules/hub/registry.py:32
+#: backend/src/jacara/modules/model_admin/service.py:32
+msgid "OCR 文字识别"
+msgstr "OCR text recognition"
+
+#: backend/src/jacara/modules/hub/registry.py:33
+#: backend/src/jacara/modules/model_admin/service.py:34
+msgid "表格结构模型"
+msgstr "Table structure model"
+
+#: backend/src/jacara/modules/hub/registry.py:166
+msgid "没有这个模型"
+msgstr "No such model"
+
+#: backend/src/jacara/modules/hub/registry.py:169
+#, python-brace-format
+msgid "没有 {name} 的第 {version} 版"
+msgstr "{name} has no version {version}"
+
+#: backend/src/jacara/modules/hub/registry.py:210
+#, python-brace-format
+msgid "磁盘空间不够：要 {needed:.1f} GB，只剩 {free:.1f} GB"
+msgstr "Not enough disk space: {needed:.1f} GB needed, only {free:.1f} GB left"
+
+#: backend/src/jacara/modules/hub/registry.py:223
+msgid "不是 GGUF 文件（开头不是 GGUF）"
+msgstr "Not a GGUF file (it does not start with GGUF)"
+
+#: backend/src/jacara/modules/hub/registry.py:228
+msgid "GGUF 版本号不认识，文件可能坏了"
+msgstr "Unknown GGUF version; the file may be damaged"
+
+#: backend/src/jacara/modules/hub/registry.py:252
+#, python-brace-format
+msgid "onnxruntime 打不开这个文件：{detail}"
+msgstr "onnxruntime cannot open this file: {detail}"
+
+#: backend/src/jacara/modules/hub/registry.py:259
+msgid "输入不是 4 维图片（批量、通道、高、宽），不像 OCR 或表格模型"
+msgstr "The input is not a 4-dimensional image (batch, channels, height, width); this does not look like an OCR or table model"
+
+#: backend/src/jacara/modules/hub/registry.py:264
+msgid "这个文件的输出是 4 维，像是检测模型，不是识别模型"
+msgstr "This file has 4-dimensional output, like a detection model, not a recognition model"
+
+#: backend/src/jacara/modules/hub/registry.py:266
+msgid "这个文件的输出是 3 维，像是识别模型，不是检测模型"
+msgstr "This file has 3-dimensional output, like a recognition model, not a detection model"
+
+#: backend/src/jacara/modules/hub/registry.py:274
+msgid "模型自带字符表，RapidOCR 只用自带的，传的字典不会生效"
+msgstr "The model has a built-in character table; RapidOCR uses only that, so the uploaded dictionary has no effect"
+
+#: backend/src/jacara/modules/hub/registry.py:282
+msgid "这个识别模型没有自带字符表，要一起传字典（.txt）。不传的话 RapidOCR 会去网上下载字典，离线用不了"
+msgstr "This recognition model has no built-in character table; upload a dictionary (.txt) with it. Without one, RapidOCR downloads a dictionary from the internet, which fails offline"
+
+#: backend/src/jacara/modules/hub/registry.py:294
+#, python-brace-format
+msgid "字典和模型对不上：模型有 {classes} 类，字典 {n} 个字（应该是 {expected} 个：RapidOCR 会再加 blank 和空格两类）"
+msgstr "The dictionary does not match the model: the model has {classes} classes, the dictionary {n} characters (it should be {expected}: RapidOCR adds two classes, blank and space)"
+
+#: backend/src/jacara/modules/hub/registry.py:316
+#, python-brace-format
+msgid "文件名只能用字母、数字和 ._-()+，并且以 {suffix} 结尾：{filename}"
+msgstr "File names may only contain letters, digits and ._-()+ and must end with {suffix}: {filename}"
+
+#: backend/src/jacara/modules/hub/registry.py:338
+msgid "模型名只能用字母、数字和 ._-，字母或数字开头，最多 64 个字"
+msgstr "Model names may only contain letters, digits and ._-, must start with a letter or digit, and have at most 64 characters"
+
+#: backend/src/jacara/modules/hub/registry.py:341
+#, python-brace-format
+msgid "不认识的种类：{kind}"
+msgstr "Unknown kind: {kind}"
+
+#: backend/src/jacara/modules/hub/registry.py:343
+msgid "只有识别模型要字典"
+msgstr "Only recognition models take a dictionary"
+
+#: backend/src/jacara/modules/hub/registry.py:345
+msgid "字典和模型不能是同一个文件"
+msgstr "The dictionary and the model cannot be the same file"
+
+#: backend/src/jacara/modules/hub/registry.py:351
+#, python-brace-format
+msgid "{name} 已经是{kind}了，新版本要是同一种；别的种类换个名字"
+msgstr "{name} is already a {kind}; new versions must be the same kind. Use another name for other kinds"
+
+#: backend/src/jacara/modules/hub/registry.py:427
+msgid "zip 里没有模型卡 README.md，不是模型库导出的"
+msgstr "The zip has no model card README.md; it was not exported from the model library"
+
+#: backend/src/jacara/modules/hub/registry.py:437
+msgid "模型卡里没写权重文件"
+msgstr "The model card names no weight file"
+
+#: backend/src/jacara/modules/hub/registry.py:442
+#, python-brace-format
+msgid "zip 里缺文件或文件名不对：{filename}"
+msgstr "File missing or misnamed in the zip: {filename}"
+
+#: backend/src/jacara/modules/hub/registry.py:449
+#, python-brace-format
+msgid "{filename} 的 SHA-256 和模型卡上的不一样，文件可能坏了"
+msgstr "The SHA-256 of {filename} differs from the model card; the file may be damaged"
+
+#: backend/src/jacara/modules/hub/schemas.py:53
+msgid "换了以后要 jacara stop、jacara start 才生效"
+msgstr "Changes take effect after jacara stop and jacara start"
+
+#: backend/src/jacara/modules/hub/service.py:96
+#, python-brace-format
+msgid "不认识的种类：{kind}，可选：{kinds}"
+msgstr "Unknown kind: {kind}; available: {kinds}"
+
+#: backend/src/jacara/modules/hub/service.py:131
+msgid "个人模式"
+msgstr "Personal mode"
+
+#: backend/src/jacara/modules/hub/service.py:178
+msgid "没有这次上传"
+msgstr "No such upload"
+
+#: backend/src/jacara/modules/hub/service.py:181
+msgid "没有这次上传（可能已经完成、取消或过期了）"
+msgstr "No such upload (it may have been completed, canceled or expired)"
+
+#: backend/src/jacara/modules/hub/service.py:204
+msgid "只收 .gguf、.onnx、识别字典 .txt，或模型库导出的 .zip"
+msgstr "Only .gguf, .onnx, recognition dictionaries (.txt) or .zip files exported from the model library are accepted"
+
+#: backend/src/jacara/modules/hub/service.py:242
+#, python-brace-format
+msgid "还没传 {archive}"
+msgstr "{archive} has not been uploaded yet"
+
+#: backend/src/jacara/modules/hub/service.py:251
+msgid "要选种类和权重文件"
+msgstr "Choose a kind and a weight file"
+
+#: backend/src/jacara/modules/hub/service.py:255
+#, python-brace-format
+msgid "还没传 {name}"
+msgstr "{name} has not been uploaded yet"
+
+#: backend/src/jacara/modules/hub/service.py:260
+#, python-brace-format
+msgid "{kind}要 {suffix} 文件"
+msgstr "A {kind} needs a {suffix} file"
+
+#: backend/src/jacara/modules/hub/service.py:263
+msgid "字典要 .txt 文件"
+msgstr "A dictionary must be a .txt file"
+
+#: backend/src/jacara/modules/hub/service.py:311
+#, python-brace-format
+msgid "{kind}由 .env 指定，网页上换不了"
+msgstr "The {kind} is set in .env and cannot be changed in the web UI"
+
+#: backend/src/jacara/modules/hub/service.py:328
+msgid "这个版本正在用，先换成别的再删"
+msgstr "This version is in use; switch to another one before deleting it"
+
+#: backend/src/jacara/modules/hub/service.py:380
+msgid "没有这个数据集"
+msgstr "No such dataset"
+
+#: backend/src/jacara/modules/hub/service.py:386
+msgid "数据集 zip 最大 1 GB"
+msgstr "Dataset zips are limited to 1 GB"
+
+#: backend/src/jacara/modules/hub/service.py:403
+msgid "名字要 1～64 个字，不能有 /"
+msgstr "Names must have 1 to 64 characters and no /"
+
+#: backend/src/jacara/modules/hub/service.py:465
+msgid "对象存储里取不到这个数据集"
+msgstr "The dataset cannot be retrieved from object storage"
+
+#: backend/src/jacara/modules/hub/service.py:478
+msgid "这个数据集有评测正在跑，等它跑完再删"
+msgstr "An evaluation is running on this dataset; delete it after the evaluation finishes"
+
+#: backend/src/jacara/modules/hub/service.py:506
+#, python-brace-format
+msgid "这个数据集没有 {split} 这一边"
+msgstr "This dataset has no {split} split"
+
+#: backend/src/jacara/modules/hub/service.py:515
+msgid "两边是同一个模型，没什么可比的"
+msgstr "Both sides are the same model; there is nothing to compare"
+
+#: backend/src/jacara/modules/hub/service.py:545
+msgid "任务队列（Valkey）连不上，没有开始"
+msgstr "Cannot reach the task queue (Valkey); not started"
+
+#: backend/src/jacara/modules/hub/service.py:548
+msgid "任务队列（Valkey）连不上，请确认 jacara start 在运行"
+msgstr "Cannot reach the task queue (Valkey); make sure jacara start is running"
+
+#: backend/src/jacara/modules/hub/service.py:557
+msgid "（已删除）"
+msgstr "(deleted)"
+
+#: backend/src/jacara/modules/hub/service.py:583
+msgid "没有这次评测"
+msgstr "No such evaluation"
+
+#: backend/src/jacara/modules/hub/service.py:594
+msgid "这次评测还没有逐条结果"
+msgstr "This evaluation has no per-line results yet"
+
+#: backend/src/jacara/modules/hub/service.py:598
+msgid "对象存储里取不到逐条结果"
+msgstr "The per-line results cannot be retrieved from object storage"
+
+#: backend/src/jacara/modules/hub/service.py:599
+#, python-brace-format
+msgid "OCR评测-{run}.jsonl"
+msgstr "ocr-eval-{run}.jsonl"
+
+#: backend/src/jacara/modules/hub/service.py:610
+msgid "现在用的"
+msgstr "In use"
+
+#: backend/src/jacara/modules/hub/service.py:612
+msgid "RapidOCR 自带的"
+msgstr "Bundled with RapidOCR"
+
+#: backend/src/jacara/modules/hub/service.py:615
+msgid "要选模型库里的模型和版本"
+msgstr "Choose a model and version from the model library"
+
+#: backend/src/jacara/modules/hub/service.py:621
+#, python-brace-format
+msgid "{name} 是{kind}，这个数据集要比{wanted}"
+msgstr "{name} is a {kind}; this dataset compares {wanted} models"
+
+#: backend/src/jacara/modules/insights/attribution.py:44
+msgid "OCR 认错了字"
+msgstr "OCR misread"
+
+#: backend/src/jacara/modules/insights/attribution.py:45
+msgid "OCR 没认出这块"
+msgstr "OCR missed this region"
+
+#: backend/src/jacara/modules/insights/attribution.py:46
+msgid "模型取错或漏取"
+msgstr "Model chose wrong value or missed it"
+
+#: backend/src/jacara/modules/insights/attribution.py:47
+msgid "标准化或出处匹配"
+msgstr "Normalization or evidence matching"
+
+#: backend/src/jacara/modules/insights/attribution.py:48
+msgid "模板或规则"
+msgstr "Template or rules"
+
+#: backend/src/jacara/modules/insights/attribution.py:49
+msgid "几处都有问题"
+msgstr "Several stages"
+
+#: backend/src/jacara/modules/insights/attribution.py:50
+msgid "证据不够"
+msgstr "Insufficient evidence"
+
+#: backend/src/jacara/modules/insights/attribution.py:54
+msgid "模型给的值是对的，但出处核对没找到，被丢掉了"
+msgstr "The model's value was correct, but no evidence was found when checking, so it was dropped"
+
+#: backend/src/jacara/modules/insights/attribution.py:55
+msgid "模型给的值意思一样，只是写法不同"
+msgstr "The model's value means the same thing, only written differently"
+
+#: backend/src/jacara/modules/insights/attribution.py:56
+msgid "人在原图上转写的和 OCR 读的不一样（OCR 样本）"
+msgstr "The reviewer's transcription from the image differs from what OCR read (OCR sample)"
+
+#: backend/src/jacara/modules/insights/attribution.py:57
+msgid "人框的地方 OCR 没有认出文字（OCR 样本）"
+msgstr "OCR recognized no text where the reviewer drew a region (OCR sample)"
+
+#: backend/src/jacara/modules/insights/attribution.py:58
+msgid "人点的那块原文，OCR 读出来不是人填的值"
+msgstr "For the source block the reviewer clicked, OCR did not read the value the reviewer entered"
+
+#: backend/src/jacara/modules/insights/attribution.py:59
+msgid "人框住的那块，OCR 当时读出来不是人填的值"
+msgstr "For the region the reviewer drew, OCR did not read the value the reviewer entered at the time"
+
+#: backend/src/jacara/modules/insights/attribution.py:60
+msgid "人框的地方 OCR 当时一个字都没有"
+msgstr "OCR had no text at all where the reviewer drew a region at the time"
+
+#: backend/src/jacara/modules/insights/attribution.py:61
+msgid "人填的值在发给模型的文字里，模型没取"
+msgstr "The value entered by the reviewer was in the text sent to the model, but the model did not take it"
+
+#: backend/src/jacara/modules/insights/attribution.py:62
+msgid "人填的值在发给模型的文字里，模型取了别的"
+msgstr "The value entered by the reviewer was in the text sent to the model, but the model took something else"
+
+#: backend/src/jacara/modules/insights/attribution.py:63
+msgid "模板定的日月顺序和这张单据不一样，日期读反了"
+msgstr "The day/month order set in the template differs from this document; the date was read reversed"
+
+#: backend/src/jacara/modules/insights/attribution.py:64
+msgid "模型把日期的日和月读反了，原文里有对的写法"
+msgstr "The model swapped the day and month of the date; the source text has the correct form"
+
+#: backend/src/jacara/modules/insights/attribution.py:65
+msgid "几处都有证据，见下面"
+msgstr "Evidence for several stages; see below"
+
+#: backend/src/jacara/modules/insights/attribution.py:66
+msgid "值太短（一位数、一个字），在文字里找到也可能是碰巧，不下结论"
+msgstr "The value is too short (one digit or character); finding it in the text may be a coincidence, so no conclusion"
+
+#: backend/src/jacara/modules/insights/attribution.py:67
+msgid "人填的值不在 OCR 文字里，也没有样本或框，分不清是 OCR 漏了还是人算出来的"
+msgstr "The value entered is not in the OCR text and there is no sample or region; cannot tell whether OCR missed it or the reviewer computed it"
+
+#: backend/src/jacara/modules/insights/attribution.py:68
+msgid "没有能下结论的证据"
+msgstr "No conclusive evidence"
+
+#: backend/src/jacara/modules/insights/kinds.py:36
+msgid "模型漏了"
+msgstr "Missed by the model"
+
+#: backend/src/jacara/modules/insights/kinds.py:37
+msgid "原文没有却给了"
+msgstr "Given although absent from the source"
+
+#: backend/src/jacara/modules/insights/kinds.py:38
+msgid "小数点"
+msgstr "Decimal point"
+
+#: backend/src/jacara/modules/insights/kinds.py:39
+msgid "正负号"
+msgstr "Sign"
+
+#: backend/src/jacara/modules/insights/kinds.py:40
+msgid "数字认错"
+msgstr "Misread digits"
+
+#: backend/src/jacara/modules/insights/kinds.py:41
+msgid "日月颠倒"
+msgstr "Day and month swapped"
+
+#: backend/src/jacara/modules/insights/kinds.py:42
+msgid "年份不对"
+msgstr "Wrong year"
+
+#: backend/src/jacara/modules/insights/kinds.py:43
+msgid "日期认错"
+msgstr "Misread date"
+
+#: backend/src/jacara/modules/insights/kinds.py:44
+msgid "空格、标点、大小写"
+msgstr "Spaces, punctuation, case"
+
+#: backend/src/jacara/modules/insights/kinds.py:45
+msgid "个别字认错"
+msgstr "A few misread characters"
+
+#: backend/src/jacara/modules/insights/kinds.py:46
+msgid "整个不一样"
+msgstr "Completely different"
+
+#: backend/src/jacara/modules/insights/service.py:55
+msgid "（敏感字段，不显示）"
+msgstr "(sensitive field, hidden)"
+
+#: backend/src/jacara/modules/insights/service.py:72
+#, python-brace-format
+msgid "人改判：{override_note}"
+msgstr "Overridden by a reviewer: {override_note}"
+
+#: backend/src/jacara/modules/insights/service.py:74
+msgid "人改判"
+msgstr "Overridden by a reviewer"
+
+#: backend/src/jacara/modules/insights/service.py:325
+msgid "找不到这条归因"
+msgstr "Attribution not found"
+
+#: backend/src/jacara/modules/insights/service.py:328
+#, python-brace-format
+msgid "阶段只能是：{stages}"
+msgstr "The stage must be one of: {stages}"
+
+#: backend/src/jacara/modules/insights/service.py:367
+msgid "# 成对测评清单：jacara eval pairs --manifest 这个文件"
+msgstr "# Paired evaluation manifest: jacara eval pairs --manifest THIS_FILE"
+
+#: backend/src/jacara/modules/insights/service.py:368
+msgid "# 标准答案是审核完成后的当前值；照片和 PDF 成对的，自己加上 photo = \"...\""
+msgstr "# The ground truth is the current value after review; for photo and PDF pairs, add photo = \"...\" yourself"
+
+#: backend/src/jacara/modules/insights/service.py:444
+#, python-brace-format
+msgid "共 {count} 张单据，含敏感字段。"
+msgstr "{count} documents, including sensitive fields."
+
+#: backend/src/jacara/modules/insights/service.py:446
+#, python-brace-format
+msgid "共 {count} 张单据，不含敏感字段。"
+msgstr "{count} documents, without sensitive fields."
+
+#: backend/src/jacara/modules/insights/service.py:461
+#, python-brace-format
+msgid "审核数据-{stamp}.zip"
+msgstr "reviewed-data-{stamp}.zip"
+
+#: backend/src/jacara/modules/insights/service.py:464
+#, python-brace-format
+msgid ""
+"审核过的单据导出（JacarandaParse）\n"
+"\n"
+"{summary}\n"
+"\n"
+"- files/：原文件。\n"
+"- train.jsonl：一行一张单据：OCR 文字（ocr_text）、模型的回答（model_answer）、\n"
+"  人审核后的值（truth）、人改了哪些（corrections，含错误类型）、用的模型和提示词版本。\n"
+"  可以拿来评测，也可以整理成微调数据。\n"
+"- pairs.toml：成对测评清单，放进 data/eval/ 后运行\n"
+"  uv run jacara eval pairs --manifest data/eval/这个文件夹/pairs.toml\n"
+"  我的模板的定义在 templates/ 里。只占一页的单据才列进去。\n"
+"\n"
+"这些是你自己的业务数据，请按你们的数据管理规定保存，不要放进代码仓库。\n"
+msgstr ""
+"Export of reviewed documents (JacarandaParse)\n"
+"\n"
+"{summary}\n"
+"\n"
+"- files/: original files.\n"
+"- train.jsonl: one document per line: OCR text (ocr_text), the model's answer (model_answer),\n"
+"  the reviewed values (truth), what reviewers changed (corrections, with error types), and the model and prompt version used.\n"
+"  Use it for evaluation or prepare fine-tuning data from it.\n"
+"- pairs.toml: paired evaluation manifest; put it into data/eval/ and run\n"
+"  uv run jacara eval pairs --manifest data/eval/THIS_FOLDER/pairs.toml\n"
+"  Definitions of my templates are in templates/. Only single-page documents are listed.\n"
+"\n"
+"This is your own business data. Store it according to your data management rules and do not put it into a code repository.\n"
+
+#: backend/src/jacara/modules/model_admin/service.py:33
+msgid "OCR 识别字典"
+msgstr "OCR recognition dictionary"
+
+#: backend/src/jacara/modules/model_admin/service.py:145
+#, python-brace-format
+msgid "{name} v{version}（模型库）"
+msgstr "{name} v{version} (model library)"
+
+#: backend/src/jacara/modules/model_admin/service.py:226
+#, python-brace-format
+msgid "{slot}只能选 models/ 里已有的文件，没有 {file}"
+msgstr "{slot} can only be a file already in models/; {file} does not exist"
+
+#: backend/src/jacara/modules/model_admin/service.py:232
+msgid "大模型不能不用"
+msgstr "The large language model cannot be disabled"
+
+#: backend/src/jacara/modules/ocr_samples/crop.py:23
+msgid "认错字"
+msgstr "Misread"
+
+#: backend/src/jacara/modules/ocr_samples/crop.py:24
+msgid "认对的行"
+msgstr "Correct line"
+
+#: backend/src/jacara/modules/ocr_samples/crop.py:25
+msgid "漏认（人工补框）"
+msgstr "Missed (region drawn by a reviewer)"
+
+#: backend/src/jacara/modules/ocr_samples/crop.py:26
+msgid "原因未确定"
+msgstr "Cause undetermined"
+
+#: backend/src/jacara/modules/ocr_samples/crop.py:31
+msgid "字认错"
+msgstr "Wrong character"
+
+#: backend/src/jacara/modules/ocr_samples/crop.py:32
+msgid "漏字"
+msgstr "Missing character"
+
+#: backend/src/jacara/modules/ocr_samples/crop.py:33
+msgid "多字"
+msgstr "Extra character"
+
+#: backend/src/jacara/modules/ocr_samples/crop.py:34
+msgid "空格、大小写、全角半角"
+msgstr "Whitespace, case, full/half width"
+
+#: backend/src/jacara/modules/ocr_samples/crop.py:35
+msgid "整行没认出"
+msgstr "Line not recognized"
+
+#: backend/src/jacara/modules/ocr_samples/crop.py:52
+msgid "要四个角"
+msgstr "Four corners are required"
+
+#: backend/src/jacara/modules/ocr_samples/crop.py:56
+msgid "框太小了"
+msgstr "The region is too small"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:153
+#, python-brace-format
+msgid "一页最多 {limit} 个框"
+msgstr "At most {limit} boxes per page"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:162
+#, python-brace-format
+msgid "第 {n} 个框的四个角不对（交叉了或太小）"
+msgstr "The four corners of box {n} are invalid (crossed or too small)"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:165
+#, python-brace-format
+msgid "第 {n} 个框没有文字：填上图上的字，或勾“看不清”"
+msgstr "Box {n} has no text: enter the text on the image, or tick \"Illegible\""
+
+#: backend/src/jacara/modules/ocr_samples/det.py:167
+#, python-brace-format
+msgid "第 {n} 个框的文字里有 Tab 或换行"
+msgstr "The text of box {n} contains a Tab or line break"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:180
+msgid "这一页一个能用的框都没有，不能确认；不要这一页就点“不用这一页”"
+msgstr "This page has no usable box and cannot be confirmed; if you do not want this page, click \"Exclude page\""
+
+#: backend/src/jacara/modules/ocr_samples/det.py:245
+msgid "没有这个文档"
+msgstr "No such document"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:247
+msgid "审核完成的单据才能做检测样本"
+msgstr "Only reviewed documents can provide detection samples"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:253
+msgid "这一页上有敏感字段，整页图会把它带出去，不能做检测样本"
+msgstr "This page has sensitive fields; the full-page image would expose them, so it cannot be a detection sample"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:256
+msgid "这一页没有 OCR 结果（PDF 自带文字的页不做检测样本）"
+msgstr "This page has no OCR result (pages with embedded PDF text are not used for detection samples)"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:329
+msgid "这一页刚被别人改过，请刷新后再改"
+msgstr "Someone else just changed this page; refresh and edit again"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:392
+msgid "还没确认"
+msgstr "Not confirmed yet"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:392
+msgid "标了不用"
+msgstr "Excluded"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:401
+#: backend/src/jacara/modules/ocr_samples/service.py:982
+msgid "所在的组被隔离了（合并或拆开时发现已经导出过）"
+msgstr "Its group is quarantined (found to be already exported when merging or splitting)"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:403
+#: backend/src/jacara/modules/ocr_samples/service.py:984
+msgid "锁定测试集（单独导出）"
+msgstr "Locked test set (exported separately)"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:444
+msgid "没有确认过、能导出的页"
+msgstr "No confirmed pages to export"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:464
+msgid "原文件找不到或打不开"
+msgstr "Original file not found or cannot be opened"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:506
+msgid "这些页的原文件都找不到了"
+msgstr "The original files of these pages are all missing"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:541
+#, python-brace-format
+msgid "检测样本测试集-{stamp}.zip"
+msgstr "detection-samples-test-{stamp}.zip"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:543
+#, python-brace-format
+msgid "检测样本-{stamp}.zip"
+msgstr "detection-samples-{stamp}.zip"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:556
+#: backend/src/jacara/modules/ocr_samples/groups.py:44
+#: backend/src/jacara/modules/ocr_samples/service.py:1240
+msgid "训练集"
+msgstr "Training set"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:556
+#: backend/src/jacara/modules/ocr_samples/groups.py:45
+#: backend/src/jacara/modules/ocr_samples/service.py:1240
+msgid "验证集"
+msgstr "Validation set"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:556
+#: backend/src/jacara/modules/ocr_samples/groups.py:46
+#: backend/src/jacara/modules/ocr_samples/service.py:1240
+msgid "锁定测试集"
+msgstr "Locked test set"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:560
+msgid "# JacarandaParse 检测样本（锁定测试集）"
+msgstr "# JacarandaParse detection samples (locked test set)"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:562
+msgid "# JacarandaParse 检测样本"
+msgstr "# JacarandaParse detection samples"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:565
+#, python-brace-format, python-format
+msgid "划分版本 {version}，导出时间 {time:%Y-%m-%d %H:%M}。{n} 页、{boxes} 个框（看不清的 {ignored} 个，文字是 ###）。"
+msgstr "Split version {version}, exported {time:%Y-%m-%d %H:%M}. {n} pages, {boxes} boxes ({ignored} illegible, text ###)."
+
+#: backend/src/jacara/modules/ocr_samples/det.py:573
+msgid "这是你自己的业务数据（整页单据图），不要放进代码仓库、不要上传到公开的地方。"
+msgstr "This is your own business data (full-page document images). Do not put it into a code repository or upload it anywhere public."
+
+#: backend/src/jacara/modules/ocr_samples/det.py:575
+#: backend/src/jacara/modules/ocr_samples/service.py:1256
+msgid "## 划分"
+msgstr "## Splits"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:579
+#, python-brace-format
+msgid "- {name}：{groups} 组（独立的业务单据）、{rows} 页（`det_gt_{split}.txt`）"
+msgstr "- {name}: {groups} groups (independent business documents), {rows} pages (`det_gt_{split}.txt`)"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:589
+msgid "按业务单据分组：同一张单据的页全在同一边，和识别样本用同一套分组。"
+msgstr "Grouped by business document: all pages of one document are in the same split, using the same grouping as recognition samples."
+
+#: backend/src/jacara/modules/ocr_samples/det.py:591
+#: backend/src/jacara/modules/ocr_samples/service.py:1281
+msgid "## 文件"
+msgstr "## Files"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:593
+msgid "- `images/`：整页图（PDF 按 216 DPI 画、照片按 EXIF 转正），文件名只是编号。"
+msgstr "- `images/`: full-page images (PDFs rendered at 216 DPI, photos rotated by EXIF); file names are only numbers."
+
+#: backend/src/jacara/modules/ocr_samples/det.py:595
+#, python-brace-format
+msgid "- `det_gt_*.txt`：每行一页，图片路径、一个 Tab、这页所有框的 JSON：`[{\"transcription\": \"图上的字\", \"points\": [[x, y], [x, y], [x, y], [x, y]]}]`，四个角从左上开始顺时针，`###` 是看不清、不参与训练的框。"
+msgstr "- `det_gt_*.txt`: one page per line: image path, a Tab, and the JSON of all boxes on the page: `[{\"transcription\": \"text on the image\", \"points\": [[x, y], [x, y], [x, y], [x, y]]}]`, corners clockwise from the top left; `###` marks illegible boxes excluded from training."
+
+#: backend/src/jacara/modules/ocr_samples/det.py:597
+msgid "- `manifest.jsonl`：每页的组号、分在哪边、修订号、框数、来源、预标注用的 OCR 版本。"
+msgstr "- `manifest.jsonl`: per page: group id, split, revision, box count, source, and the OCR version used for pre-annotation."
+
+#: backend/src/jacara/modules/ocr_samples/det.py:599
+msgid "## 在 PaddleOCR 里训练检测模型"
+msgstr "## Training a detection model with PaddleOCR"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:601
+msgid "1. 解压到一个文件夹，例如 `/data/jacara_det`。"
+msgstr "1. Extract into a folder, for example `/data/jacara_det`."
+
+#: backend/src/jacara/modules/ocr_samples/det.py:603
+msgid "2. 检测训练配置里：`Train.dataset.data_dir`、`Eval.dataset.data_dir` 写这个文件夹，`Train.dataset.label_file_list` 写 `det_gt_train.txt`，`Eval.dataset.label_file_list` 写 `det_gt_val.txt`。用 PaddleX 训练时，按 PaddleX 文档把它们改名成 `train.txt`、`val.txt`，图片文件夹叫 `images`。"
+msgstr "2. In the detection training configuration, set `Train.dataset.data_dir` and `Eval.dataset.data_dir` to this folder, `Train.dataset.label_file_list` to `det_gt_train.txt` and `Eval.dataset.label_file_list` to `det_gt_val.txt`. When training with PaddleX, rename them to `train.txt` and `val.txt` as described in the PaddleX documentation; the image folder is `images`."
+
+#: backend/src/jacara/modules/ocr_samples/det.py:606
+msgid "3. 用和系统现在用的检测模型同一系列的配置和预训练权重微调；训练好后导出推理模型，用 `paddlex --paddle2onnx` 转成 ONNX，在“模型和数据集”页导入（种类选“OCR 文字检测”）。"
+msgstr "3. Fine-tune with the configuration and pretrained weights of the same series as the detection model currently in use; after training, export the inference model, convert it to ONNX with `paddlex --paddle2onnx`, and import it on the \"Models and datasets\" page (kind \"OCR text detection\")."
+
+#: backend/src/jacara/modules/ocr_samples/det.py:608
+msgid "4. 换上去之前，先在数据集库里用验证集或锁定测试集评测，和现在用的比一比。"
+msgstr "4. Before switching, evaluate it in the dataset library on the validation or locked test set and compare it with the current model."
+
+#: backend/src/jacara/modules/ocr_samples/det.py:613
+#: backend/src/jacara/modules/ocr_samples/service.py:1333
+msgid "## 没有导出的"
+msgstr "## Not exported"
+
+#: backend/src/jacara/modules/ocr_samples/det.py:615
+#, python-brace-format
+msgid "- {reason}：{n} 页"
+msgstr "- {reason}: {n} pages"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:47
+msgid "隔离"
+msgstr "Quarantined"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:152
+msgid "第一次进数据集时按哈希分"
+msgstr "Assigned by hash when first added to a dataset"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:293
+msgid "合并的两组里有一组本来就被隔离"
+msgstr "One of the merged groups was already quarantined"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:298
+msgid "合并：有一组是锁定测试集"
+msgstr "Merged: one group is in the locked test set"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:301
+#, python-brace-format
+msgid "合并：按保留那一组（{split}）"
+msgstr "Merged: kept the split of the remaining group ({split})"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:305
+#, python-brace-format
+msgid "确认是同一张单据时，两组已经导出过、分在不同边（{first}、{second}）：可能一份训练、一份验证"
+msgstr "When confirmed as the same document, the two groups had already been exported to different splits ({first}, {second}): one copy may be in training and the other in validation"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:321
+#: backend/src/jacara/modules/ocr_samples/service.py:839
+msgid "找不到这张单据"
+msgstr "Document not found"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:327
+msgid "这一组只有这一张单据，不用拆"
+msgstr "This group has only this document; there is nothing to split"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:333
+msgid "拆开配错的单据时，原来的组已经导出过：拆出来的这张可能在另一边也出现过"
+msgstr "When the mismatched documents were split, the original group had already been exported: the split-off document may also appear in the other split"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:350
+#, python-brace-format
+msgid "没有这种划分：{split}"
+msgstr "No such split: {split}"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:356
+msgid "找不到这一组"
+msgstr "Group not found"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:362
+msgid "这一组已经导出进训练集，不能再当验证集或测试集"
+msgstr "This group has been exported to the training set and can no longer be validation or test"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:364
+msgid "锁定测试集只能用从没导出过的组（测试集要独立、没人看过）"
+msgstr "The locked test set can only use groups never exported (the test set must stay independent and unseen)"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:370
+msgid "这一组从验证集改到训练集：之前用它算的验证成绩以后不再独立"
+msgstr "This group moved from validation to training: validation scores computed with it are no longer independent"
+
+#: backend/src/jacara/modules/ocr_samples/groups.py:373
+msgid "管理员手动改的"
+msgstr "Changed manually by an administrator"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:214
+msgid "这个文档没有保存原始文件"
+msgstr "This document has no stored original file"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:242
+msgid "对象存储暂时不可用"
+msgstr "Object storage is temporarily unavailable"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:399
+msgid "找不到这条样本"
+msgstr "Sample not found"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:406
+msgid "这条样本没有裁图（裁图失败了，可以重试）"
+msgstr "This sample has no crop (cropping failed; you can retry)"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:419
+msgid "图中原文不能是空的，也不能有 Tab、换行"
+msgstr "The transcription cannot be empty or contain a Tab or line break"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:434
+msgid "裁图失败的样本先重试"
+msgstr "Retry samples whose cropping failed first"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:476
+msgid "已经有样本了"
+msgstr "Already has a sample"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:522
+msgid "已经收过了"
+msgstr "Already collected"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:540
+msgid "没有值"
+msgstr "No value"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:542
+msgid "人改过（这是错例，用补收）"
+msgstr "Changed by a reviewer (a misread case; use backfill)"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:544
+#: backend/src/jacara/modules/ocr_samples/service.py:622
+#: backend/src/jacara/pipeline/process.py:100
+msgid "没有原始文件"
+msgstr "No original file"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:547
+msgid "没有出处"
+msgstr "No evidence"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:551
+#: backend/src/jacara/modules/ocr_samples/service.py:626
+msgid "这一页的字是 PDF 自带的，不是 OCR 认的"
+msgstr "The text on this page comes from the PDF itself, not from OCR"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:555
+#: backend/src/jacara/modules/ocr_samples/service.py:630
+msgid "敏感字段不收"
+msgstr "Sensitive fields are not collected"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:559
+msgid "出处不是正好一整块原文"
+msgstr "The evidence is not exactly one whole source block"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:562
+msgid "这一块里除了值还有别的字"
+msgstr "This block contains other text besides the value"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:618
+msgid "手打的值（没点原文、没框），不知道在图上哪里"
+msgstr "Typed by hand (no source text clicked, no region drawn); its position on the image is unknown"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:649
+msgid "没有能当原文的文字"
+msgstr "No text usable as a transcription"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:690
+msgid "这条样本没有失败，不用重试"
+msgstr "This sample did not fail; no retry needed"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:693
+msgid "找不到原来的文档"
+msgstr "The original document cannot be found"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:697
+#, python-brace-format
+msgid "还是没裁出来：{error}"
+msgstr "Still not cropped: {error}"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:835
+msgid "两边是同一张单据"
+msgstr "Both sides are the same document"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:844
+#, python-brace-format
+msgid "{filename} 没有从第 {page} 页开始的单据"
+msgstr "{filename} has no document starting on page {page}"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:868
+msgid "已记下：不是同一张，不再提名"
+msgstr "Noted: not the same document; it will not be suggested again"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:883
+#, python-brace-format
+msgid "已合并。两组以前导出过、分在不同边，整组隔离，{affected_exports} 次导出受影响"
+msgstr "Merged. Both groups had been exported to different splits, so the whole group is quarantined; {affected_exports} exports affected"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:887
+#, python-brace-format
+msgid "已合并成一组（{split}）"
+msgstr "Merged into one group ({split})"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:919
+#, python-brace-format
+msgid "已拆开。原来的组导出过，两边都隔离，{affected_exports} 次导出受影响"
+msgstr "Split. The original group had been exported, so both are quarantined; {affected_exports} exports affected"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:923
+msgid "已拆开"
+msgstr "Split"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:974
+msgid "撤回了"
+msgstr "Withdrawn"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:976
+msgid "补收的，还没复核"
+msgstr "Backfilled, not yet verified"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:978
+msgid "裁图失败，没有图"
+msgstr "Cropping failed; no image"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:980
+msgid "图中原文是空的或有 Tab、换行"
+msgstr "The transcription is empty or contains a Tab or line break"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:997
+msgid "同一张图有两种写法"
+msgstr "The same image has two different transcriptions"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1001
+msgid "同一张图重复，只留一份"
+msgstr "Duplicate image; only one kept"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1073
+msgid "没有能导出的样本"
+msgstr "No exportable samples"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1089
+msgid "图片找不到或打不开"
+msgstr "Image not found or cannot be opened"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1128
+msgid "样本的图片都找不到了"
+msgstr "The images of all samples are missing"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1183
+#, python-brace-format
+msgid "OCR样本测试集-{stamp}.zip"
+msgstr "ocr-samples-test-{stamp}.zip"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1185
+#, python-brace-format
+msgid "OCR样本-{stamp}.zip"
+msgstr "ocr-samples-{stamp}.zip"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1219
+msgid "这次没有验证集（组太少，或都分进了训练集）"
+msgstr "No validation set this time (too few groups, or all assigned to training)"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1220
+#, python-brace-format
+msgid "验证集 {groups} 组、{rows} 行"
+msgstr "Validation set: {groups} groups, {rows} lines"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1223
+#, python-brace-format
+msgid "{where}：只能检查流程，不能说明模型好坏"
+msgstr "{where}: only checks the workflow; says nothing about model quality"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1226
+#, python-brace-format
+msgid "{where}：可以看整体趋势"
+msgstr "{where}: shows the overall trend"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1227
+#, python-brace-format
+msgid "{where}：偏少，趋势仅供参考"
+msgstr "{where}: rather few; treat the trend as indicative only"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1242
+msgid "# JacarandaParse OCR 样本（锁定测试集）"
+msgstr "# JacarandaParse OCR samples (locked test set)"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1244
+msgid "# JacarandaParse OCR 样本"
+msgstr "# JacarandaParse OCR samples"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1247
+#, python-brace-format, python-format
+msgid "格式版本 {format_version}，划分版本 {version}，导出时间 {time:%Y-%m-%d %H:%M}。"
+msgstr "Format version {format_version}, split version {version}, exported {time:%Y-%m-%d %H:%M}."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1252
+#, python-brace-format
+msgid "一共 {n} 条。"
+msgstr "{n} samples in total."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1254
+msgid "这是你自己的业务数据，不要放进代码仓库、不要上传到公开的地方。"
+msgstr "This is your own business data. Do not put it into a code repository or upload it anywhere public."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1260
+#, python-brace-format
+msgid "- {name}：{groups} 组（独立的业务单据）、{rows} 行（`rec_gt_{split}.txt`）"
+msgstr "- {name}: {groups} groups (independent business documents), {rows} lines (`rec_gt_{split}.txt`)"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1276
+msgid "按单据分组：同一张单据（重新处理的几轮、PDF 和照片、重复上传的同一个文件）的样本全在同一边，多次导出始终在同一边（`document_group` 是稳定的组号，不含业务信息）。80/20 是按组的目标比例，组少时行数比例会偏。`rec_gt.txt` 是训练集和验证集合起来。锁定测试集不在这里，单独导出。"
+msgstr "Grouped by document: all samples of one document (several runs, PDF and photo, repeated uploads of the same file) are in the same split, and stay there across exports (`document_group` is a stable group id without business information). 80/20 is the target ratio by group; with few groups the line ratio may deviate. `rec_gt.txt` combines training and validation. The locked test set is not included; export it separately."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1283
+msgid "- `crop_img/`：每条一张单行小图，文件名只是编号。"
+msgstr "- `crop_img/`: one single-line image per sample; file names are only numbers."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1284
+msgid "- `rec_gt_*.txt`：每行一条，图片路径、一个 Tab、图上原样的文字（UTF-8，无 BOM）。"
+msgstr "- `rec_gt_*.txt`: one sample per line: image path, a Tab, and the text exactly as on the image (UTF-8, no BOM)."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1286
+msgid "- `manifest.jsonl`：每行一条的详细信息：OCR 当时读成什么（`ocr_text`）、分类、错误标签、模板、字段、组号、分在哪边（`split`）、划分版本、标签修订号（`sample_revision`）、来源、首轮 OCR 的版本。"
+msgstr "- `manifest.jsonl`: details per sample: what OCR read at the time (`ocr_text`), category, error tags, template, field, group id, split (`split`), split version, label revision (`sample_revision`), source, and the OCR version of the first run."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1289
+msgid "## 分类"
+msgstr "## Categories"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1293
+#, python-brace-format
+msgid "- {name}（`{category}`）：{n} 条"
+msgstr "- {name} (`{category}`): {n} samples"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1302
+msgid "认错字、漏认是错例；认对的行是审核时核对过、OCR 本来就读对的。微调时错例和认对的行一起用，只用错例模型会把原来认得好的字\"忘掉\"。原因未确定的：图和首轮识别时的不完全一样，看过再决定用不用。"
+msgstr "Misread and missed text are error cases; correct lines were checked during review and OCR read them correctly. Fine-tune with error cases and correct lines together; with error cases only, the model \"forgets\" text it used to read well. Undetermined cases: the image differs from the first OCR run; inspect them before deciding whether to use them."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1309
+#, python-brace-format
+msgid "错误标签：{tags}"
+msgstr "Error tags: {tags}"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1318
+msgid "模板"
+msgstr "Template"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1318
+msgid "分类"
+msgstr "Category"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1318
+#: backend/src/jacara/plugins/exporters/csv_files.py:19
+#: backend/src/jacara/plugins/exporters/excel.py:328
+#: backend/src/jacara/plugins/exporters/excel.py:335
+msgid "来源"
+msgstr "Source"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1319
+msgid "## 分布（只报告，不为凑比例挪组）"
+msgstr "## Distribution (reported only; groups are not moved to balance ratios)"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1325
+#, python-brace-format
+msgid "- {title}：{items}"
+msgstr "- {title}: {items}"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1335
+#, python-brace-format
+msgid "- {reason}：{n} 条"
+msgstr "- {reason}: {n} samples"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1339
+msgid "## 在 PaddleOCR 里训练识别模型"
+msgstr "## Training a recognition model with PaddleOCR"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1341
+msgid "1. 解压到一个文件夹，例如 `/data/jacara_ocr`。"
+msgstr "1. Extract into a folder, for example `/data/jacara_ocr`."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1343
+msgid "2. 识别训练配置里：`Train.dataset.data_dir` 和 `Eval.dataset.data_dir` 写这个文件夹，`Train.dataset.label_file_list` 写 `rec_gt_train.txt`，`Eval.dataset.label_file_list` 写 `rec_gt_val.txt`（`SimpleDataSet` 直接能读）。"
+msgstr "2. In the recognition training configuration, set `Train.dataset.data_dir` and `Eval.dataset.data_dir` to this folder, `Train.dataset.label_file_list` to `rec_gt_train.txt` and `Eval.dataset.label_file_list` to `rec_gt_val.txt` (`SimpleDataSet` reads them directly)."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1346
+msgid "3. 用和系统现在用的识别模型同一系列的配置、字典和预训练权重做微调；字典里没有的字训练时会被跳过，最好先检查一遍。"
+msgstr "3. Fine-tune with the configuration, dictionary and pretrained weights of the same series as the recognition model currently in use; characters missing from the dictionary are skipped during training, so check first."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1349
+msgid "4. 训练好后导出推理模型、转成 ONNX，放进项目的 `models/ocr/`（文件名带 rec），在系统信息页\"换模型\"里选上，jacara stop、jacara start 后生效。"
+msgstr "4. After training, export the inference model, convert it to ONNX, put it into the project's `models/ocr/` (with rec in the file name), select it under \"Change model\" on the system information page; it takes effect after jacara stop and jacara start."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1353
+msgid "反复看验证集的结果来调训练，验证集会慢慢\"被调过\"；正式验收用锁定测试集，或者新进的单据。"
+msgstr "Tuning training by repeatedly looking at validation results gradually \"overfits\" the validation set; use the locked test set or newly arriving documents for final acceptance."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1356
+msgid "## 数量和配比（PaddleOCR 微调文档的建议）"
+msgstr "## Amounts and mixing ratios (recommendations from the PaddleOCR fine-tuning documentation)"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1359
+#, python-brace-format
+msgid "- 不改字典时，识别数据建议至少 {minimum} 行；这次 {n} 行，还不够，先攒或按下面合成补。"
+msgstr "- Without changing the dictionary, at least {minimum} lines of recognition data are recommended; this export has {n}, which is not enough yet: collect more or synthesize as described below."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1365
+#, python-brace-format
+msgid "- 不改字典时，识别数据建议至少 {minimum} 行；这次 {n} 行。"
+msgstr "- Without changing the dictionary, at least {minimum} lines of recognition data are recommended; this export has {n}."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1370
+msgid "- 这些场景数据和通用的真实数据（例如 LSVT、RCTW、MTWI）每轮大约 1:1 混着训练，用 `Train.dataset.ratio_list` 调（例如场景 1.0、通用 0.1），免得只认得这一种单据。"
+msgstr "- Mix this scenario data with general real-world data (for example LSVT, RCTW, MTWI) at about 1:1 per epoch, adjusted with `Train.dataset.ratio_list` (for example scenario 1.0, general 0.1), so the model does not recognize only this kind of document."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1373
+msgid "- 某些字老认错时，用 TextRenderer 这类工具合成补充：语料用 `corpus/real_text.txt`（图上原样的文字），重点合成 `corpus/hard_chars.txt` 里的字；原有数据和合成数据的比例 10:1 到 5:1，学习率调小。"
+msgstr "- When certain characters are misread repeatedly, synthesize more with tools such as TextRenderer: use `corpus/real_text.txt` (text exactly as on the images) as the corpus and focus on the characters in `corpus/hard_chars.txt`; keep the ratio of real to synthetic data between 10:1 and 5:1 and lower the learning rate."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1375
+msgid "- 训练出来的模型先用回放（jacara eval replay）和锁定测试集比过，再换上去。"
+msgstr "- Compare the trained model with replay (jacara eval replay) and on the locked test set before switching to it."
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1405
+msgid "照片"
+msgstr "Photo"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1408
+#, python-brace-format
+msgid "{key} 训练 {train} / 验证 {val}"
+msgstr "{key} training {train} / validation {val}"
+
+#: backend/src/jacara/modules/system/service.py:57
+msgid "正常"
+msgstr "OK"
+
+#: backend/src/jacara/modules/system/service.py:57
+msgid "连不上，请找管理员"
+msgstr "Unreachable; contact your administrator"
+
+#: backend/src/jacara/modules/system/service.py:70
+msgid "pp_layout_cdla（rapid-layout 自带）"
+msgstr "pp_layout_cdla (bundled with rapid-layout)"
+
+#: backend/src/jacara/modules/templates/boxes.py:92
+msgid "左上角"
+msgstr "top left corner"
+
+#: backend/src/jacara/modules/templates/boxes.py:92
+msgid "上方中间"
+msgstr "top center"
+
+#: backend/src/jacara/modules/templates/boxes.py:92
+msgid "右上角"
+msgstr "top right corner"
+
+#: backend/src/jacara/modules/templates/boxes.py:93
+msgid "左边中间"
+msgstr "middle left"
+
+#: backend/src/jacara/modules/templates/boxes.py:93
+msgid "中间"
+msgstr "center"
+
+#: backend/src/jacara/modules/templates/boxes.py:93
+msgid "右边中间"
+msgstr "middle right"
+
+#: backend/src/jacara/modules/templates/boxes.py:94
+msgid "左下角"
+msgstr "bottom left corner"
+
+#: backend/src/jacara/modules/templates/boxes.py:94
+msgid "下方中间"
+msgstr "bottom center"
+
+#: backend/src/jacara/modules/templates/boxes.py:94
+msgid "右下角"
+msgstr "bottom right corner"
+
+#: backend/src/jacara/modules/templates/boxes.py:128
+#, python-brace-format
+msgid "在单据{where}，「{label}」{side}"
+msgstr "In the {where} of the document, {side} \"{label}\""
+
+#: backend/src/jacara/modules/templates/boxes.py:129
+#, python-brace-format
+msgid "在单据{where}"
+msgstr "In the {where} of the document"
+
+#: backend/src/jacara/modules/templates/service.py:355
+#: backend/src/jacara/modules/templates/service.py:1114
+msgid "这个操作要数据库会话"
+msgstr "This operation requires a database session"
+
+#: backend/src/jacara/modules/templates/service.py:388
+#, python-brace-format
+msgid "没有叫 {row} 的表"
+msgstr "No table named {row}"
+
+#: backend/src/jacara/modules/templates/service.py:428
+#: backend/src/jacara/modules/templates/service.py:1178
+msgid "找不到这个模板"
+msgstr "Template not found"
+
+#: backend/src/jacara/modules/templates/service.py:452
+#, python-brace-format
+msgid "这个模板没有第 {version} 版"
+msgstr "This template has no version {version}"
+
+#: backend/src/jacara/modules/templates/service.py:462
+#: backend/src/jacara/modules/templates/service.py:724
+#, python-brace-format
+msgid "没有叫 {starter} 的起步模板"
+msgstr "No starter template named {starter}"
+
+#: backend/src/jacara/modules/templates/service.py:471
+msgid "请选择要复制的模板"
+msgstr "Choose the template to copy"
+
+#: backend/src/jacara/modules/templates/service.py:475
+#, python-brace-format
+msgid "{title}（副本）"
+msgstr "{title} (copy)"
+
+#: backend/src/jacara/modules/templates/service.py:487
+msgid "空白模板要先填好内容再保存"
+msgstr "Fill in a blank template before saving it"
+
+#: backend/src/jacara/modules/templates/service.py:489
+msgid "新建"
+msgstr "Created"
+
+#: backend/src/jacara/modules/templates/service.py:551
+#: backend/src/jacara/templates/__init__.py:754
+#, python-brace-format
+msgid "模板「{title}」"
+msgstr "Template \"{title}\""
+
+#: backend/src/jacara/modules/templates/service.py:553
+#: backend/src/jacara/templates/__init__.py:861
+#: backend/src/jacara/workbook/standard.py:72
+msgid "功能领域"
+msgstr "Domains"
+
+#: backend/src/jacara/modules/templates/service.py:555
+#: backend/src/jacara/workbook/standard.py:74
+msgid "自定义标签"
+msgstr "Custom tags"
+
+#: backend/src/jacara/modules/templates/service.py:654
+#, python-brace-format
+msgid "导入（导出时是第 {version} 版）"
+msgstr "Imported (version {version} at export)"
+
+#: backend/src/jacara/modules/templates/service.py:677
+#, python-brace-format
+msgid "Excel 超过 {limit} MB"
+msgstr "The Excel file exceeds {limit} MB"
+
+#: backend/src/jacara/modules/templates/service.py:737
+#, python-brace-format
+msgid "从 Excel 建：{filename}"
+msgstr "Created from Excel: {filename}"
+
+#: backend/src/jacara/modules/templates/service.py:763
+msgid "找不到上传的 Excel，请重新上传"
+msgstr "The uploaded Excel file cannot be found; upload it again"
+
+#: backend/src/jacara/modules/templates/service.py:776
+msgid "对象存储没有准备好"
+msgstr "Object storage is not ready"
+
+#: backend/src/jacara/modules/templates/service.py:815
+msgid "请选择我的模板，或者\"抽取所有键值对\""
+msgstr "Choose one of my templates, or \"Extract all key-value pairs\""
+
+#: backend/src/jacara/modules/templates/service.py:819
+#, python-brace-format
+msgid "模板「{title}」已经归档了，不能再用来上传"
+msgstr "Template \"{title}\" is archived and can no longer be used for uploads"
+
+#: backend/src/jacara/modules/templates/service.py:827
+msgid "这份文档用的模板已经删除了，请选一个模板再重新处理"
+msgstr "The template used by this document has been deleted; choose a template and reprocess"
+
+#: backend/src/jacara/modules/templates/service.py:866
+msgid "这份文档没有存 OCR 结果（更新前处理的），请先重新处理一次再试跑"
+msgstr "This document has no stored OCR result (processed before an update); reprocess it once before a trial run"
+
+#: backend/src/jacara/modules/templates/service.py:869
+msgid "模型服务没有准备好"
+msgstr "The model server is not ready"
+
+#: backend/src/jacara/modules/templates/service.py:940
+msgid "这份文档不是\"抽取所有键值对\"处理的，不能当样例"
+msgstr "This document was not processed with \"Extract all key-value pairs\" and cannot serve as a sample"
+
+#: backend/src/jacara/modules/templates/service.py:947
+#, python-brace-format
+msgid "样例里没有 {source}"
+msgstr "The sample has no {source}"
+
+#: backend/src/jacara/modules/templates/service.py:959
+msgid "用样例建模板"
+msgstr "Created from a sample"
+
+#: backend/src/jacara/modules/templates/service.py:981
+msgid "在样例上框选建模板"
+msgstr "Create a template from regions on a sample"
+
+#: backend/src/jacara/modules/templates/service.py:1010
+msgid "用样例建模板：选中的键值对搬过来，不重新抽取"
+msgstr "Created from a sample: the selected key-value pairs were copied without extracting again"
+
+#: backend/src/jacara/modules/templates/service.py:1188
+msgid "这份文档还没处理完"
+msgstr "This document has not finished processing"
+
+#: backend/src/jacara/pipeline/backfill.py:75
+#, python-brace-format
+msgid "{filename}：第 {page} 页在文件里找不到"
+msgstr "{filename}: page {page} not found in the file"
+
+#: backend/src/jacara/pipeline/classify.py:136
+msgid "还没有自己的模板，抽出了所有键值对"
+msgstr "No templates of your own yet; all key-value pairs were extracted"
+
+#: backend/src/jacara/pipeline/classify.py:148
+msgid "模型认为都不合适"
+msgstr "The model found none suitable"
+
+#: backend/src/jacara/pipeline/classify.py:148
+msgid "模型选的"
+msgstr "Chosen by the model"
+
+#: backend/src/jacara/pipeline/classify.py:156
+#, python-brace-format
+msgid "按关键字选的：单据上对上了约 {hits} 个字段名"
+msgstr "Chosen by keywords: about {hits} field names match the document"
+
+#: backend/src/jacara/pipeline/classify.py:161
+msgid "按关键字找不到合适的模板，抽出了所有键值对"
+msgstr "No suitable template found by keywords; all key-value pairs were extracted"
+
+#: backend/src/jacara/pipeline/compute.py:79
+#, python-brace-format
+msgid "按公式算：{readable} = {value:g}"
+msgstr "Computed by formula: {readable} = {value:g}"
+
+#: backend/src/jacara/pipeline/compute.py:87
+#: backend/src/jacara/templates/__init__.py:362
+#: backend/src/jacara/templates/__init__.py:977
+#, python-brace-format
+msgid "{table}的{column}"
+msgstr "{column} of {table}"
+
+#: backend/src/jacara/pipeline/compute.py:91
+#, python-brace-format
+msgid "「{missing}」没有值"
+msgstr "\"{missing}\" has no value"
+
+#: backend/src/jacara/pipeline/compute.py:93
+msgid "算不出来"
+msgstr "Cannot be computed"
+
+#: backend/src/jacara/pipeline/compute.py:97
+#, python-brace-format
+msgid "按公式算（{readable}），但{reason}，算不出来"
+msgstr "By formula ({readable}), but {reason}, so it cannot be computed"
+
+#: backend/src/jacara/pipeline/current.py:212
+#, python-brace-format
+msgid "{places} 等 {n} 处"
+msgstr "{places} and {n} places in total"
+
+#: backend/src/jacara/pipeline/current.py:216
+msgid "可能重复报销"
+msgstr "Possible duplicate claim"
+
+#: backend/src/jacara/pipeline/current.py:218
+#, python-brace-format
+msgid "{label}「{value}」和{places}一样，请确认是不是同一张单据传了两次"
+msgstr "{label} \"{value}\" is the same as {places}; check whether the same document was uploaded twice"
+
+#: backend/src/jacara/pipeline/current.py:242
+#, python-brace-format
+msgid "这个文件的{pages}"
+msgstr "{pages} of this file"
+
+#: backend/src/jacara/pipeline/current.py:245
+#, python-brace-format
+msgid "《{filename}》{pages}（{day} 上传）"
+msgstr "\"{filename}\" {pages} (uploaded {day})"
+
+#: backend/src/jacara/pipeline/current.py:256
+#: backend/src/jacara/plugins/exporters/base.py:131
+#, python-brace-format
+msgid "第 {page} 页"
+msgstr "page {page}"
+
+#: backend/src/jacara/pipeline/current.py:258
+#: backend/src/jacara/plugins/exporters/base.py:133
+#, python-brace-format
+msgid "第 {first}–{last} 页"
+msgstr "pages {first}–{last}"
+
+#: backend/src/jacara/pipeline/entities.py:79
+#, python-brace-format
+msgid "《{filename}》写的是「{value}」"
+msgstr "\"{filename}\" has \"{value}\""
+
+#: backend/src/jacara/pipeline/entities.py:83
+#, python-brace-format
+msgid "{documents} 等 {n} 份"
+msgstr "{documents} and {n} documents in total"
+
+#: backend/src/jacara/pipeline/entities.py:87
+#, python-brace-format
+msgid "{label}：和别的单据不一致"
+msgstr "{label}: inconsistent with other documents"
+
+#: backend/src/jacara/pipeline/entities.py:89
+#, python-brace-format
+msgid "同一个{key_label}「{key}」，{documents}，这里是「{value}」"
+msgstr "For the same {key_label} \"{key}\", {documents}; here it is \"{value}\""
+
+#: backend/src/jacara/pipeline/fieldcheck.py:124
+#, python-brace-format
+msgid "PDF 文字层这里有好几行字（「{text}」），对不上是哪一行，没法核对"
+msgstr "The PDF text layer has several lines here (\"{text}\"); cannot tell which line applies, so it cannot be checked"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:144
+#, python-brace-format
+msgid "PDF 文字层和 OCR 这里都是「{text}」，和现在的值「{value}」对不上"
+msgstr "The PDF text layer and OCR both read \"{text}\" here, which does not match the current value \"{value}\""
+
+#: backend/src/jacara/pipeline/fieldcheck.py:150
+#, python-brace-format
+msgid "PDF 文字层这里写的是「{text}」，和 OCR 读的「{ocr}」不一样"
+msgstr "The PDF text layer has \"{text}\" here, which differs from what OCR read, \"{ocr}\""
+
+#: backend/src/jacara/pipeline/fieldcheck.py:162
+#, python-brace-format
+msgid "{how}读成「{text}」，和现在的值一致"
+msgstr "{how} read \"{text}\", which matches the current value"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:166
+#, python-brace-format
+msgid "{how}读成「{text}」，和文字层、OCR 一致"
+msgstr "{how} read \"{text}\", which matches the text layer and OCR"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:168
+#, python-brace-format
+msgid "{how}读成「{text}」，和文字层一致"
+msgstr "{how} read \"{text}\", which matches the text layer"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:171
+#, python-brace-format
+msgid "{how}读成「{text}」，和 OCR 一致"
+msgstr "{how} read \"{text}\", which matches OCR"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:174
+#, python-brace-format
+msgid "{how}读成「{text}」，和前两处也不一样"
+msgstr "{how} read \"{text}\", which also differs from both"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:176
+#, python-brace-format
+msgid "{how}读成「{text}」，三处都不一样"
+msgstr "{how} read \"{text}\"; all three differ"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:190
+#, python-brace-format
+msgid "{note}，请核对"
+msgstr "{note}; please check"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:234
+msgid "模板要求填写，原文里没找到这个字段的标签，留空待审"
+msgstr "Required by the template, but no label for this field was found in the source text; left empty for review"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:306
+#, python-brace-format
+msgid "「{text}」（{source}）"
+msgstr "\"{text}\" ({source})"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:310
+#, python-brace-format
+msgid "模型没有给出「{label}」；在原文「{line}」旁边找到 {found}，请核对后采用"
+msgstr "The model gave no \"{label}\"; found {found} next to \"{line}\" in the source text. Check before accepting"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:317
+#, python-brace-format
+msgid "模板要求填写；原文有「{line}」，旁边没读到值，留空待审"
+msgstr "Required by the template; the source text has \"{line}\" but no value was read next to it; left empty for review"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:430
+#, python-brace-format
+msgid "PDF 表单字段「{name}」里存着「{value}」（{shown}），请核对后采用"
+msgstr "The PDF form field \"{name}\" holds \"{value}\" ({shown}); check before accepting"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:437
+#, python-brace-format
+msgid "PDF 表单字段「{name}」存的是「{value}」（{shown}），和现在的值不一样，请核对"
+msgstr "The PDF form field \"{name}\" holds \"{value}\" ({shown}), which differs from the current value; please check"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:471
+msgid "页面上能看到"
+msgstr "visible on the page"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:471
+msgid "页面不可见"
+msgstr "not visible on the page"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:471
+msgid "可见性待确认"
+msgstr "visibility unconfirmed"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:480
+#: backend/src/jacara/plugins/ocr/loader.py:203
+msgid "PDF 文字层"
+msgstr "PDF text layer"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:481
+msgid "局部放大再识别"
+msgstr "Zoomed re-recognition"
+
+#: backend/src/jacara/pipeline/fieldcheck.py:482
+msgid "表单字段"
+msgstr "Form field"
+
+#: backend/src/jacara/pipeline/handoff.py:68
+#, python-brace-format
+msgid "交接文件的版本是 {found}，这里只认 {expected}"
+msgstr "The hand-off file has version {found}; only {expected} is supported"
+
+#: backend/src/jacara/pipeline/process.py:172
+msgid "保存结果"
+msgstr "Saving results"
+
+#: backend/src/jacara/pipeline/process.py:228
+#: backend/src/jacara/pipeline/process.py:273
+#: backend/src/jacara/pipeline/run.py:315
+msgid "识别文字"
+msgstr "Recognizing text"
+
+#: backend/src/jacara/pipeline/process.py:283
+msgid "文字已认好，排队等模型"
+msgstr "Text recognized; queued for the model"
+
+#: backend/src/jacara/pipeline/process.py:431
+msgid "准备处理"
+msgstr "Preparing"
+
+#: backend/src/jacara/pipeline/process.py:449
+msgid "处理到一半时 worker 被关闭了，请重新处理"
+msgstr "The worker was shut down during processing; please reprocess"
+
+#: backend/src/jacara/pipeline/process.py:464
+msgid "对象存储里取不到原始文件"
+msgstr "The original file cannot be retrieved from object storage"
+
+#: backend/src/jacara/pipeline/process.py:465
+#, python-brace-format
+msgid "处理时出现意外错误（{kind}），详情见 worker 日志"
+msgstr "Unexpected error during processing ({kind}); see the worker log for details"
+
+#: backend/src/jacara/pipeline/region.py:40
+msgid "框太小了，请框住要识别的文字"
+msgstr "The region is too small; draw it around the text to recognize"
+
+#: backend/src/jacara/pipeline/run.py:133
+msgid "看了原图"
+msgstr "Read the page image"
+
+#: backend/src/jacara/pipeline/run.py:325
+#, python-brace-format
+msgid "判断第 {k} / {n} 页是不是新的一张单据"
+msgstr "Checking whether page {k} of {n} starts a new document"
+
+#: backend/src/jacara/pipeline/run.py:333
+#, python-brace-format
+msgid "第 {a} 页"
+msgstr "page {a}"
+
+#: backend/src/jacara/pipeline/run.py:333
+#, python-brace-format
+msgid "第 {a}–{b} 页"
+msgstr "pages {a}–{b}"
+
+#: backend/src/jacara/pipeline/run.py:335
+#, python-brace-format
+msgid "第 {n} / {count} 张单据（{where}）"
+msgstr "document {n} of {count} ({where})"
+
+#: backend/src/jacara/pipeline/run.py:339
+#, python-brace-format
+msgid "分析{which}的版面"
+msgstr "Analyzing the layout of {which}"
+
+#: backend/src/jacara/pipeline/run.py:348
+#, python-brace-format
+msgid "选模板、抽取{which}"
+msgstr "Choosing a template and extracting {which}"
+
+#: backend/src/jacara/pipeline/run.py:350
+#, python-brace-format
+msgid "抽取{which}"
+msgstr "Extracting {which}"
+
+#: backend/src/jacara/pipeline/run.py:407
+#, python-brace-format
+msgid "，大约还要 {left} 秒"
+msgstr ", about {left} s left"
+
+#: backend/src/jacara/pipeline/run.py:407
+msgid "，快写完了"
+msgstr ", almost done"
+
+#: backend/src/jacara/pipeline/run.py:409
+#, python-brace-format
+msgid "抽取{which}：模型已写 {share:.0%}{hint}"
+msgstr "Extracting {which}: the model has written {share:.0%}{hint}"
+
+#: backend/src/jacara/pipeline/run.py:422
+#, python-brace-format
+msgid "{name} 第 {first} 页"
+msgstr "{name} page {first}"
+
+#: backend/src/jacara/pipeline/run.py:424
+#, python-brace-format
+msgid "{name} 第 {first}–{last} 页"
+msgstr "{name} pages {first}–{last}"
+
+#: backend/src/jacara/pipeline/segment.py:44
+#, python-brace-format
+msgid "页码写得不对：「{piece}」，例如 1-2, 3, 4-6"
+msgstr "Invalid page numbers: \"{piece}\"; for example 1-2, 3, 4-6"
+
+#: backend/src/jacara/pipeline/segment.py:51
+#, python-brace-format
+msgid "页码要从 1 开始、按顺序、不重叠：「{piece}」应该从第 {expected} 页开始"
+msgstr "Page numbers must start at 1, be in order and not overlap: \"{piece}\" should start at page {expected}"
+
+#: backend/src/jacara/pipeline/segment.py:58
+msgid "没有写页码"
+msgstr "No page numbers given"
+
+#: backend/src/jacara/pipeline/vision.py:48
+#, python-brace-format
+msgid "只认出 {n} 块文字"
+msgstr "Only {n} text blocks recognized"
+
+#: backend/src/jacara/pipeline/vision.py:53
+#, python-brace-format
+msgid "OCR 平均置信度只有 {mean:.2f}"
+msgstr "Average OCR confidence is only {mean:.2f}"
+
+#: backend/src/jacara/pipeline/vision.py:55
+#, python-brace-format
+msgid "{low:.0%} 的文字块 OCR 没认清"
+msgstr "OCR could not read {low:.0%} of the text blocks clearly"
+
+#: backend/src/jacara/pipeline/vision.py:64
+msgid "设置成每张都看原图"
+msgstr "Set to show every page image"
+
+#: backend/src/jacara/pipeline/vision.py:69
+#, python-brace-format
+msgid "第 {number} 页"
+msgstr "page {number}"
+
+#: backend/src/jacara/pipeline/vision.py:69
+msgid "这张单据"
+msgstr "this document"
+
+#: backend/src/jacara/pipeline/vision.py:71
+#, python-brace-format
+msgid "{where}是照片或扫描件，{weak}"
+msgstr "The image of {where} is a photo or scan: {weak}"
+
+#: backend/src/jacara/pipeline/zoom.py:72
+#, python-brace-format
+msgid "局部放大到 {dpi} DPI 再识别"
+msgstr "Re-recognized zoomed to {dpi} DPI"
+
+#: backend/src/jacara/pipeline/zoom.py:74
+msgid "用原图局部再识别"
+msgstr "Re-recognized from a crop of the original image"
+
+#: backend/src/jacara/plugins/aligners/blocks.py:77
+#: backend/src/jacara/plugins/aligners/text_match.py:104
+msgid "模型说原文里没有这个字段"
+msgstr "The model says this field is absent from the source text"
+
+#: backend/src/jacara/plugins/aligners/blocks.py:100
+#, python-brace-format
+msgid "模型说值在 {cited}，那几块里没有这个值；在别处找到了"
+msgstr "The model said the value is in {cited}, but those blocks do not contain it; found elsewhere"
+
+#: backend/src/jacara/plugins/aligners/blocks.py:104
+msgid "模型没说值在哪几块；按文字在原文里找到了"
+msgstr "The model did not say which blocks hold the value; found by text in the source"
+
+#: backend/src/jacara/plugins/aligners/blocks.py:113
+#, python-brace-format
+msgid "模型给了「{shown}」，但它说的文字块 {cited} 里没有、原文里找不到，按规则没有填（核对原文后可以采用）"
+msgstr "The model gave \"{shown}\", but it is not in the blocks it cited ({cited}) nor anywhere in the source text, so it was not filled by rule (accept it after checking the source)"
+
+#: backend/src/jacara/plugins/aligners/blocks.py:120
+#, python-brace-format
+msgid "模型给了「{shown}」，但原文里找不到，按规则没有填（核对原文后可以采用）"
+msgstr "The model gave \"{shown}\", but it is not in the source text, so it was not filled by rule (accept it after checking the source)"
+
+#: backend/src/jacara/plugins/aligners/blocks.py:144
+#, python-brace-format
+msgid "模型说值在 {cited}，那几块里没有；在别处找到了"
+msgstr "The model said the value is in {cited}, but those blocks do not contain it; found elsewhere"
+
+#: backend/src/jacara/plugins/aligners/blocks.py:150
+#: backend/src/jacara/plugins/aligners/blocks.py:250
+#: backend/src/jacara/plugins/aligners/text_match.py:141
+#, python-brace-format
+msgid "原文里只有相似的文字（相似度 {similarity:.2f}）"
+msgstr "The source text only has similar text (similarity {similarity:.2f})"
+
+#: backend/src/jacara/plugins/aligners/blocks.py:156
+#: backend/src/jacara/plugins/aligners/blocks.py:256
+#: backend/src/jacara/plugins/aligners/text_match.py:159
+#, python-brace-format
+msgid "原文这里 OCR 置信度只有 {confidence:.2f}"
+msgstr "OCR confidence of the source text here is only {confidence:.2f}"
+
+#: backend/src/jacara/plugins/aligners/blocks.py:180
+#, python-brace-format
+msgid "看原图读的：OCR 认成「{ocr}」，模型在图上看到的是「{shown}」，请核对原图"
+msgstr "Read from the image: OCR read \"{ocr}\", the model saw \"{shown}\" on the image; check the image"
+
+#: backend/src/jacara/plugins/aligners/blocks.py:186
+#, python-brace-format
+msgid "看原图读的：OCR 文字里没有「{shown}」（可能是手写、印章或没认出来），请核对原图"
+msgstr "Read from the image: the OCR text has no \"{shown}\" (possibly handwriting, a stamp, or unrecognized); check the image"
+
+#: backend/src/jacara/plugins/aligners/crosscheck.py:66
+#, python-brace-format
+msgid "原文「{text}」"
+msgstr "Source text \"{text}\""
+
+#: backend/src/jacara/plugins/aligners/crosscheck.py:73
+#, python-brace-format
+msgid "{shown}系统读不出数字，模型读成 {value}，请看一眼"
+msgstr "{shown}: the system cannot read a number; the model read {value}; please take a look"
+
+#: backend/src/jacara/plugins/aligners/crosscheck.py:85
+#, python-brace-format
+msgid "{shown}没有小数点，模型读成 {value}，多半是小数点没认出来，请核对原图"
+msgstr "{shown} has no decimal point; the model read {value}; the decimal point was probably not recognized; check the image"
+
+#: backend/src/jacara/plugins/aligners/crosscheck.py:92
+#: backend/src/jacara/plugins/aligners/crosscheck.py:156
+#, python-brace-format
+msgid "{shown}和模型给的 {value} 对不上，请核对"
+msgstr "{shown} does not match the model's {value}; please check"
+
+#: backend/src/jacara/plugins/aligners/crosscheck.py:100
+#, python-brace-format
+msgid "{shown}，模型给的 {value} 不是日期，请核对"
+msgstr "{shown}: the model's {value} is not a date; please check"
+
+#: backend/src/jacara/plugins/aligners/crosscheck.py:107
+#, python-brace-format
+msgid "{shown}系统读不出日期，模型读成 {wanted}，请看一眼"
+msgstr "{shown}: the system cannot read a date; the model read {wanted}; please take a look"
+
+#: backend/src/jacara/plugins/aligners/crosscheck.py:113
+#, python-brace-format
+msgid "{shown}和模型给的 {wanted} 对不上，请核对"
+msgstr "{shown} does not match the model's {wanted}; please check"
+
+#: backend/src/jacara/plugins/aligners/crosscheck.py:119
+#, python-brace-format
+msgid "{shown}分不清哪个是日、哪个是月（模板没选国家），模型读成 {wanted}，请确认"
+msgstr "{shown}: cannot tell which part is the day and which the month (the template has no country); the model read {wanted}; please confirm"
+
+#: backend/src/jacara/plugins/aligners/crosscheck.py:132
+#, python-brace-format
+msgid "{shown}，模型给的 {value} 读不出开始和结束，请核对"
+msgstr "{shown}: the model's {value} cannot be split into start and end; please check"
+
+#: backend/src/jacara/plugins/aligners/crosscheck.py:139
+#, python-brace-format
+msgid "{shown}系统读不出开始和结束，模型读成 {value}，请看一眼"
+msgstr "{shown}: the system cannot split it into start and end; the model read {value}; please take a look"
+
+#: backend/src/jacara/plugins/aligners/crosscheck.py:149
+#: backend/src/jacara/plugins/aligners/crosscheck.py:162
+#, python-brace-format
+msgid "{shown}分不清日月，模型读成 {value}，请确认"
+msgstr "{shown}: cannot tell day from month; the model read {value}; please confirm"
+
+#: backend/src/jacara/plugins/aligners/text_match.py:134
+msgid "原文里找不到这个值，可能是模型编的或改写了"
+msgstr "The value is not in the source text; the model may have invented or rewritten it"
+
+#: backend/src/jacara/plugins/aligners/text_match.py:150
+#, python-brace-format
+msgid "第 {row}～{last} 行"
+msgstr "lines {row}–{last}"
+
+#: backend/src/jacara/plugins/aligners/text_match.py:152
+#, python-brace-format
+msgid "第 {row} 行"
+msgstr "line {row}"
+
+#: backend/src/jacara/plugins/aligners/text_match.py:155
+#, python-brace-format
+msgid "模型说在{where}，实际在第 {row} 行"
+msgstr "The model said {where}, but it is on line {row}"
+
+#: backend/src/jacara/plugins/aligners/text_match.py:249
+#, python-brace-format
+msgid "原文是 {value}（负数，多半是折扣），值却是正的"
+msgstr "The source text is {value} (negative, probably a discount), but the value is positive"
+
+#: backend/src/jacara/plugins/aligners/text_match.py:251
+#, python-brace-format
+msgid "原文是 {value:.2f}（正数），值却是负的"
+msgstr "The source text is {value:.2f} (positive), but the value is negative"
+
+#: backend/src/jacara/plugins/exporters/__init__.py:28
+#, python-brace-format
+msgid "未知的导出格式：{name}，可用的有：{available}"
+msgstr "Unknown export format: {name}; available: {available}"
+
+#: backend/src/jacara/plugins/exporters/csv_files.py:19
+#: backend/src/jacara/plugins/exporters/excel.py:322
+#: backend/src/jacara/plugins/exporters/excel.py:328
+msgid "明细"
+msgstr "Line items"
+
+#: backend/src/jacara/plugins/exporters/excel.py:51
+msgid "有出处"
+msgstr "Evidence found"
+
+#: backend/src/jacara/plugins/exporters/excel.py:52
+msgid "相似"
+msgstr "Similar"
+
+#: backend/src/jacara/plugins/exporters/excel.py:53
+msgid "找不到出处"
+msgstr "No evidence"
+
+#: backend/src/jacara/plugins/exporters/excel.py:54
+msgid "原文没有"
+msgstr "Absent from source"
+
+#: backend/src/jacara/plugins/exporters/excel.py:55
+msgid "原文里对不上，没有填"
+msgstr "Not found in the source text; not filled"
+
+#: backend/src/jacara/plugins/exporters/excel.py:57
+msgid "看原图读的"
+msgstr "Read from image"
+
+#: backend/src/jacara/plugins/exporters/excel.py:61
+msgid "人工修改"
+msgstr "Edited by a reviewer"
+
+#: backend/src/jacara/plugins/exporters/excel.py:62
+msgid "人工确认"
+msgstr "Confirmed by a reviewer"
+
+#: backend/src/jacara/plugins/exporters/excel.py:63
+msgid "恢复这一行"
+msgstr "Restore row"
+
+#: backend/src/jacara/plugins/exporters/excel.py:64
+msgid "按公式重算"
+msgstr "Recompute by formula"
+
+#: backend/src/jacara/plugins/exporters/excel.py:147
+#, python-brace-format
+msgid "开始 {start}，结束 {end}"
+msgstr "Start {start}, end {end}"
+
+#: backend/src/jacara/plugins/exporters/excel.py:149
+msgid "拆不开"
+msgstr "Cannot be split"
+
+#: backend/src/jacara/plugins/exporters/excel.py:151
+#, python-brace-format
+msgid "（{problem}）"
+msgstr " ({problem})"
+
+#: backend/src/jacara/plugins/exporters/excel.py:153
+#, python-brace-format
+msgid ""
+"原文：{quote}\n"
+"{split}{problem}"
+msgstr ""
+"Source text: {quote}\n"
+"{split}{problem}"
+
+#: backend/src/jacara/plugins/exporters/excel.py:162
+#, python-brace-format
+msgid "第 {row} 行 ({x0},{y0})-({x1},{y1})"
+msgstr "Line {row} ({x0},{y0})-({x1},{y1})"
+
+#: backend/src/jacara/plugins/exporters/excel.py:187
+#: backend/src/jacara/plugins/exporters/excel.py:188
+#: backend/src/jacara/plugins/exporters/excel.py:191
+msgid "（空）"
+msgstr "(empty)"
+
+#: backend/src/jacara/plugins/exporters/excel.py:189
+#, python-brace-format
+msgid "人工修改：原值 {old} → {new}"
+msgstr "Edited by a reviewer: {old} → {new}"
+
+#: backend/src/jacara/plugins/exporters/excel.py:192
+#, python-brace-format
+msgid "参与计算的值改了，按公式重算 → {new}"
+msgstr "An input of the formula changed; recomputed → {new}"
+
+#: backend/src/jacara/plugins/exporters/excel.py:194
+msgid "恢复了删掉的行"
+msgstr "Restored a deleted row"
+
+#: backend/src/jacara/plugins/exporters/excel.py:196
+msgid "人工确认：值无误"
+msgstr "Confirmed by a reviewer: value correct"
+
+#: backend/src/jacara/plugins/exporters/excel.py:198
+#, python-brace-format
+msgid ""
+"\n"
+"原因：{reason}"
+msgstr ""
+"\n"
+"Reason: {reason}"
+
+#: backend/src/jacara/plugins/exporters/excel.py:281
+#, python-brace-format
+msgid "{table} 第 {row} 行 {column}"
+msgstr "{table} row {row} {column}"
+
+#: backend/src/jacara/plugins/exporters/excel.py:290
+#: backend/src/jacara/structure/engines.py:34
+#: backend/src/jacara/structure/engines.py:43
+msgid "表格"
+msgstr "Tables"
+
+#: backend/src/jacara/plugins/exporters/excel.py:321
+#: backend/src/jacara/plugins/exporters/excel.py:328
+msgid "汇总"
+msgstr "Summary"
+
+#: backend/src/jacara/plugins/exporters/excel.py:328
+#: backend/src/jacara/plugins/exporters/excel.py:334
+msgid "键值对"
+msgstr "Key-value pairs"
+
+#: backend/src/jacara/plugins/exporters/excel.py:330
+msgid "商品明细"
+msgstr "Line items"
+
+#: backend/src/jacara/plugins/exporters/excel.py:330
+#, python-brace-format
+msgid "表格 {table}"
+msgstr "Table {table}"
+
+#: backend/src/jacara/plugins/exporters/excel.py:358
+#, python-brace-format
+msgid "{label} 开始"
+msgstr "{label} start"
+
+#: backend/src/jacara/plugins/exporters/excel.py:360
+#, python-brace-format
+msgid "{label} 结束"
+msgstr "{label} end"
+
+#: backend/src/jacara/plugins/exporters/excel.py:363
+#: backend/src/jacara/plugins/exporters/excel.py:395
+#: backend/src/jacara/plugins/exporters/excel.py:424
+#: backend/src/jacara/plugins/exporters/excel.py:475
+#: backend/src/jacara/plugins/exporters/excel.py:491
+msgid "文件"
+msgstr "File"
+
+#: backend/src/jacara/plugins/exporters/excel.py:363
+#: backend/src/jacara/plugins/exporters/excel.py:431
+msgid "需要确认"
+msgstr "Needs confirmation"
+
+#: backend/src/jacara/plugins/exporters/excel.py:395
+msgid "第几行"
+msgstr "Row"
+
+#: backend/src/jacara/plugins/exporters/excel.py:425
+msgid "字段"
+msgstr "Field"
+
+#: backend/src/jacara/plugins/exporters/excel.py:426
+#: backend/src/jacara/plugins/exporters/excel.py:475
+msgid "值"
+msgstr "Value"
+
+#: backend/src/jacara/plugins/exporters/excel.py:427
+msgid "原值"
+msgstr "Original value"
+
+#: backend/src/jacara/plugins/exporters/excel.py:428
+msgid "状态"
+msgstr "Status"
+
+#: backend/src/jacara/plugins/exporters/excel.py:429
+msgid "出处"
+msgstr "Evidence"
+
+#: backend/src/jacara/plugins/exporters/excel.py:430
+msgid "OCR 置信度"
+msgstr "OCR confidence"
+
+#: backend/src/jacara/plugins/exporters/excel.py:432
+msgid "原因"
+msgstr "Reason"
+
+#: backend/src/jacara/plugins/exporters/excel.py:433
+msgid "人工审核"
+msgstr "Review"
+
+#: backend/src/jacara/plugins/exporters/excel.py:434
+msgid "审核原因"
+msgstr "Review reason"
+
+#: backend/src/jacara/plugins/exporters/excel.py:452
+#: backend/src/jacara/workbook/standard.py:79
+msgid "是"
+msgstr "Yes"
+
+#: backend/src/jacara/plugins/exporters/excel.py:475
+#: backend/src/jacara/workbook/standard.py:54
+msgid "名称"
+msgstr "Name"
+
+#: backend/src/jacara/plugins/exporters/excel.py:492
+#: backend/src/jacara/templates/extras.py:47
+msgid "处理时间"
+msgstr "Processed at"
+
+#: backend/src/jacara/plugins/exporters/excel.py:494
+msgid "模型"
+msgstr "Model"
+
+#: backend/src/jacara/plugins/exporters/excel.py:495
+msgid "模型后端"
+msgstr "Model backend"
+
+#: backend/src/jacara/plugins/exporters/excel.py:496
+msgid "提示词版本"
+msgstr "Prompt version"
+
+#: backend/src/jacara/plugins/exporters/excel.py:497
+msgid "抽取用时（毫秒）"
+msgstr "Extraction time (ms)"
+
+#: backend/src/jacara/plugins/extractors/llm.py:353
+#: backend/src/jacara/plugins/extractors/llm.py:450
+#: backend/src/jacara/plugins/extractors/llm.py:525
+#, python-brace-format
+msgid "模型的回答不是合格的 JSON：{answer}"
+msgstr "The model's answer is not valid JSON: {answer}"
+
+#: backend/src/jacara/plugins/extractors/llm.py:357
+#: backend/src/jacara/plugins/extractors/llm.py:454
+#, python-brace-format
+msgid "模型的回答不是 JSON 对象：{answer}"
+msgstr "The model's answer is not a JSON object: {answer}"
+
+#: backend/src/jacara/plugins/extractors/llm.py:465
+#, python-brace-format
+msgid "模型的回答里 {name} 不是列表：{answer}"
+msgstr "In the model's answer, {name} is not a list: {answer}"
+
+#: backend/src/jacara/plugins/extractors/llm.py:473
+#, python-brace-format
+msgid "模型的回答里 {name} 有一行不是对象"
+msgstr "In the model's answer, a row of {name} is not an object"
+
+#: backend/src/jacara/plugins/extractors/llm.py:477
+#, python-brace-format
+msgid "模型的回答里 {name} 有一行缺了列：{row}"
+msgstr "In the model's answer, a row of {name} is missing columns: {row}"
+
+#: backend/src/jacara/plugins/extractors/llm.py:530
+#, python-brace-format
+msgid "模型的回答里没有 pairs 列表：{answer}"
+msgstr "The model's answer has no pairs list: {answer}"
+
+#: backend/src/jacara/plugins/extractors/llm.py:650
+#, python-brace-format
+msgid "模型的回答缺少字段 {name}：{answer}"
+msgstr "The model's answer is missing the field {name}: {answer}"
+
+#: backend/src/jacara/plugins/model_backends/__init__.py:38
+#, python-brace-format
+msgid "未知的模型后端：{backend}，可用的有：{available}"
+msgstr "Unknown model backend: {backend}; available: {available}"
+
+#: backend/src/jacara/plugins/model_backends/llama_server.py:24
+msgid "模型服务要密钥，但密钥不对。模型是 jacara start 启动的话，请重新运行 jacara start"
+msgstr "The model server requires a key, but the key is wrong. If the model was started by jacara start, run jacara start again"
+
+#: backend/src/jacara/plugins/model_backends/llama_server.py:106
+#: backend/src/jacara/plugins/model_backends/llama_server.py:211
+#, python-brace-format
+msgid "连不上模型服务 {base_url}。请先运行 `uv run jacara serve` 启动模型。"
+msgstr "Cannot reach the model server {base_url}. Start the model first with `uv run jacara serve`."
+
+#: backend/src/jacara/plugins/model_backends/llama_server.py:113
+#: backend/src/jacara/plugins/model_backends/llama_server.py:218
+#, python-brace-format
+msgid "模型超过 {timeout_s:.0f} 秒没有回答，可以调大 timeout_s。"
+msgstr "The model did not answer within {timeout_s:.0f} seconds; you can increase timeout_s."
+
+#: backend/src/jacara/plugins/model_backends/llama_server.py:124
+#: backend/src/jacara/plugins/model_backends/llama_server.py:185
+#, python-brace-format
+msgid "模型服务报错（{status_code}）：{detail}"
+msgstr "Model server error ({status_code}): {detail}"
+
+#: backend/src/jacara/plugins/model_backends/llama_server.py:136
+#, python-brace-format
+msgid "{max_tokens} 个 token"
+msgstr "{max_tokens} tokens"
+
+#: backend/src/jacara/plugins/model_backends/llama_server.py:138
+msgid "模型服务的上下文长度"
+msgstr "the context length of the model server"
+
+#: backend/src/jacara/plugins/model_backends/llama_server.py:142
+#, python-brace-format
+msgid "模型的回答太长，写到 {limit} 被截断了。可以调大上下文长度（jacara serve --context）后重试。"
+msgstr "The model's answer was too long and was cut off at {limit}. Increase the context length (jacara serve --context) and try again."
+
+#: backend/src/jacara/plugins/model_backends/llama_server.py:225
+msgid "模型的回答太长，写到模型服务的上下文长度被截断了。可以调大上下文长度（jacara serve --context）后重试。"
+msgstr "The model's answer was too long and was cut off at the model server's context length. Increase the context length (jacara serve --context) and try again."
+
+#: backend/src/jacara/plugins/model_backends/server.py:51
+msgid "找不到 llama-server。Mac 上请先运行：brew install llama.cpp"
+msgstr "llama-server not found. On a Mac, first run: brew install llama.cpp"
+
+#: backend/src/jacara/plugins/ocr/__init__.py:50
+#, python-brace-format
+msgid "未知的 OCR 引擎：{engine}，可用的有：{available}"
+msgstr "Unknown OCR engine: {engine}; available: {available}"
+
+#: backend/src/jacara/plugins/ocr/loader.py:97
+#, python-brace-format
+msgid "不支持的文件类型：{suffix}，支持图片和 PDF"
+msgstr "Unsupported file type: {suffix}; images and PDFs are supported"
+
+#: backend/src/jacara/plugins/ocr/loader.py:138
+msgid "PDF 每页画成图后 OCR，文字层只做核对"
+msgstr "Each PDF page rendered to an image for OCR; the text layer is only used for cross-checking"
+
+#: backend/src/jacara/plugins/ocr/loader.py:139
+msgid "没有"
+msgstr "none"
+
+#: backend/src/jacara/plugins/ocr/loader.py:143
+#, python-brace-format
+msgid "这一页的文字层里有 {hidden} 个看不见的字（多半是别的软件留下的旧 OCR），没有用"
+msgstr "The text layer of this page has {hidden} invisible characters (probably old OCR left by other software); not used"
+
+#: backend/src/jacara/plugins/ocr/loader.py:170
+#, python-brace-format
+msgid "PDF 文字层是乱码（{ratio:.0%} 的字认不出来），这一页改用 OCR"
+msgstr "The PDF text layer is garbled ({ratio:.0%} of the characters are unreadable); OCR used for this page"
+
+#: backend/src/jacara/plugins/ocr/rapid.py:60
+msgid "PP-OCRv6_det_small（默认）"
+msgstr "PP-OCRv6_det_small (default)"
+
+#: backend/src/jacara/plugins/ocr/rapid.py:61
+msgid "PP-OCRv6_rec_small（默认）"
+msgstr "PP-OCRv6_rec_small (default)"
+
+#: backend/src/jacara/plugins/ocr/rapid.py:62
+msgid "默认"
+msgstr "default"
+
+#: backend/src/jacara/plugins/ocr/rapid.py:64
+msgid "关闭"
+msgstr "off"
+
+#: backend/src/jacara/plugins/validators/countries.py:65
+#, python-brace-format
+msgid "{label}「{raw}」格式或校验位不对，可能有字认错了"
+msgstr "{label} \"{raw}\" has an invalid format or check digit; a character may have been misread"
+
+#: backend/src/jacara/plugins/validators/countries.py:82
+#, python-brace-format
+msgid "税率「{raw}」不是{place}现行的税率（{shown}）"
+msgstr "Tax rate \"{raw}\" is not a current rate in {place} ({shown})"
+
+#: backend/src/jacara/plugins/validators/countries.py:101
+#, python-brace-format
+msgid "税额 {paid:,.2f} 不等于 {amount:,.2f} × {rate:g}%（{expected:,.2f}）——{basis}"
+msgstr "Tax {paid:,.2f} is not {amount:,.2f} × {rate:g}% ({expected:,.2f}): {basis}"
+
+#: backend/src/jacara/plugins/validators/countries.py:127
+#, python-brace-format
+msgid "金额 {amount:,.2f} 超过 {limit:,.0f}，{reason}"
+msgstr "Amount {amount:,.2f} exceeds {limit:,.0f}: {reason}"
+
+#: backend/src/jacara/plugins/validators/countries.py:143
+#, python-brace-format
+msgid "单据标题是「{title}」，{reason}"
+msgstr "The document title is \"{title}\": {reason}"
+
+#: backend/src/jacara/plugins/validators/countries.py:174
+#, python-brace-format
+msgid "{rate}% 対象 {amount:,.0f} 円の消費税額 {tax:,.0f} 円（应约为 {excl:,.0f} 或 {incl:,.0f}）"
+msgstr "Consumption tax of {tax:,.0f} yen on {amount:,.0f} yen at {rate}% (should be about {excl:,.0f} or {incl:,.0f})"
+
+#: backend/src/jacara/plugins/validators/countries.py:256
+#, python-brace-format
+msgid "新加坡 {day} 适用的 GST 是 {rate:g}%"
+msgstr "GST in Singapore on {day} is {rate:g}%"
+
+#: backend/src/jacara/plugins/validators/countries.py:284
+#, python-brace-format
+msgid "发票号「{raw}」不符合印度 GST 规则第 46 条 (b)：最多 16 个字符，只能用字母、数字、- 和 /"
+msgstr "Invoice number \"{raw}\" does not meet rule 46(b) of the Indian GST rules: at most 16 characters, only letters, digits, - and /"
+
+#: backend/src/jacara/plugins/validators/countries.py:294
+msgid "同一张发票既有 IGST 又有 CGST/SGST：跨邦只收 IGST，邦内只收 CGST + SGST"
+msgstr "The same invoice has both IGST and CGST/SGST: inter-state supplies charge only IGST, intra-state supplies only CGST + SGST"
+
+#: backend/src/jacara/plugins/validators/countries.py:297
+#, python-brace-format
+msgid "CGST {cgst:,.2f} 和 SGST {sgst:,.2f} 应该相等（各占一半）"
+msgstr "CGST {cgst:,.2f} and SGST {sgst:,.2f} should be equal (half each)"
+
+#: backend/src/jacara/plugins/validators/countries.py:328
+#, python-brace-format
+msgid "GST {gst:,.2f} 比含税总额 {gross:,.2f} 的 3/23（{limit:,.2f}）还多（GST 15%）"
+msgstr "GST {gst:,.2f} exceeds 3/23 of the tax-inclusive total {gross:,.2f} ({limit:,.2f}) (GST 15%)"
+
+#: backend/src/jacara/plugins/validators/countries.py:376
+msgid "交易号"
+msgstr "transaction number"
+
+#: backend/src/jacara/plugins/validators/countries.py:377
+msgid "收银系统序列号"
+msgstr "cash register serial number"
+
+#: backend/src/jacara/plugins/validators/countries.py:378
+msgid "安全模块（TSE）序列号"
+msgstr "security module (TSE) serial number"
+
+#: backend/src/jacara/plugins/validators/countries.py:379
+msgid "校验值"
+msgstr "check value"
+
+#: backend/src/jacara/plugins/validators/countries.py:380
+msgid "签名计数器"
+msgstr "signature counter"
+
+#: backend/src/jacara/plugins/validators/countries.py:387
+#, python-brace-format
+msgid "德国收银条例（KassenSichV）第 6 条要求的{items}没读到；没有安全模块信息的小票可能不合规，请看一眼原件"
+msgstr "The {items} required by §6 of the German Cash Register Security Ordinance (KassenSichV) could not be read; receipts without security module information may not be compliant; please check the original"
+
+#: backend/src/jacara/plugins/validators/countries.py:396
+#, python-brace-format
+msgid "交易开始时间 {start} 晚于结束时间 {end}"
+msgstr "Transaction start time {start} is after the end time {end}"
+
+#: backend/src/jacara/plugins/validators/countries.py:418
+msgid "泰国增值税 7%"
+msgstr "Thai VAT 7%"
+
+#: backend/src/jacara/plugins/validators/countries.py:425
+msgid "写了买方税号，但没写买方是总店还是第几号分店（泰国税务厅公告第 199 号）"
+msgstr "The buyer's tax id is given, but not whether the buyer is the head office or which branch (Thai Revenue Department Notification No. 199)"
+
+#: backend/src/jacara/plugins/validators/countries.py:454
+#, python-brace-format
+msgid "增值税 {ppn:,.0f} 不等于 12% × 计税基础 {dpp:,.0f}（{expected:,.0f}）"
+msgstr "VAT {ppn:,.0f} is not 12% × tax base {dpp:,.0f} ({expected:,.0f})"
+
+#: backend/src/jacara/plugins/validators/countries.py:467
+#, python-brace-format
+msgid "计税基础 {dpp:,.0f} 既不是销售价 {price:,.0f}，也不是它的 11/12（{reduced:,.0f}）"
+msgstr "The tax base {dpp:,.0f} is neither the selling price {price:,.0f} nor 11/12 of it ({reduced:,.0f})"
+
+#: backend/src/jacara/plugins/validators/countries.py:626
+#, python-brace-format
+msgid "{day} 开的发票税率是 8%：越南国会第 204/2025 号决议的减税到 2026-12-31 为止"
+msgstr "The invoice issued on {day} uses 8%: the reduction under Resolution 204/2025 of the Vietnamese National Assembly ends on 2026-12-31"
+
+#: backend/src/jacara/plugins/validators/countries.py:649
+msgid "发票登记号是 T + 13 位数字"
+msgstr "Invoice registration number is T + 13 digits"
+
+#: backend/src/jacara/plugins/validators/countries.py:652
+msgid "发票登记号"
+msgstr "Invoice registration number"
+
+#: backend/src/jacara/plugins/validators/countries.py:656
+msgid "各税率的消费税额对得上（每张发票每个税率只进位一次）"
+msgstr "Consumption tax per rate adds up (rounded once per rate per invoice)"
+
+#: backend/src/jacara/plugins/validators/countries.py:665
+msgid "税率是 10% 或 8%"
+msgstr "Tax rate is 10% or 8%"
+
+#: backend/src/jacara/plugins/validators/countries.py:667
+msgid "日本"
+msgstr "Japan"
+
+#: backend/src/jacara/plugins/validators/countries.py:674
+msgid "供应方事业者登录号码校验位"
+msgstr "Supplier business registration number check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:677
+msgid "供应方事业者登录号码"
+msgstr "Supplier business registration number"
+
+#: backend/src/jacara/plugins/validators/countries.py:681
+msgid "接收方事业者登录号码校验位"
+msgstr "Recipient business registration number check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:684
+msgid "接收方事业者登录号码"
+msgstr "Recipient business registration number"
+
+#: backend/src/jacara/plugins/validators/countries.py:688
+msgid "附加价值税 = 供应价额 × 10%"
+msgstr "VAT = supply value × 10%"
+
+#: backend/src/jacara/plugins/validators/countries.py:690
+msgid "韩国附加价值税法第 30 条：税率 10%"
+msgstr "Korean VAT Act art. 30: rate 10%"
+
+#: backend/src/jacara/plugins/validators/countries.py:696
+msgid "卖方统一编号检查码"
+msgstr "Seller unified business number check code"
+
+#: backend/src/jacara/plugins/validators/countries.py:699
+msgid "卖方统一编号"
+msgstr "Seller unified business number"
+
+#: backend/src/jacara/plugins/validators/countries.py:703
+msgid "买受人统一编号检查码"
+msgstr "Buyer unified business number check code"
+
+#: backend/src/jacara/plugins/validators/countries.py:706
+msgid "买受人统一编号"
+msgstr "Buyer unified business number"
+
+#: backend/src/jacara/plugins/validators/countries.py:710
+msgid "发票号码是 2 个英文字母 + 8 位数字"
+msgstr "Invoice number is 2 letters + 8 digits"
+
+#: backend/src/jacara/plugins/validators/countries.py:713
+msgid "发票号码"
+msgstr "Invoice number"
+
+#: backend/src/jacara/plugins/validators/countries.py:717
+msgid "营业税 = 销售额 × 5%"
+msgstr "Business tax = sales × 5%"
+
+#: backend/src/jacara/plugins/validators/countries.py:719
+msgid "台湾营业税法第 10 条：税率 5%"
+msgstr "Taiwan Business Tax Act art. 10: rate 5%"
+
+#: backend/src/jacara/plugins/validators/countries.py:725
+msgid "GST 登记号格式"
+msgstr "GST registration number format"
+
+#: backend/src/jacara/plugins/validators/countries.py:728
+msgid "GST 登记号"
+msgstr "GST registration number"
+
+#: backend/src/jacara/plugins/validators/countries.py:732
+msgid "GST = 不含税金额 × 当时的税率（2024 年起 9%）"
+msgstr "GST = net amount × rate in force (9% since 2024)"
+
+#: backend/src/jacara/plugins/validators/countries.py:739
+msgid "超过 S$1,000 要有客户名称和地址"
+msgstr "Above S$1,000 the customer name and address are required"
+
+#: backend/src/jacara/plugins/validators/countries.py:745
+msgid "新加坡税务局规定：超过 S$1,000 不能用简易税务发票，要写客户名称和地址"
+msgstr "IRAS: above S$1,000 a simplified tax invoice cannot be used; the customer name and address are required"
+
+#: backend/src/jacara/plugins/validators/countries.py:753
+msgid "已经过马来西亚税务局（LHDN）验证（有唯一编号 UIN）"
+msgstr "Validated by the Malaysian tax authority (LHDN) (has a unique identifier, UIN)"
+
+#: backend/src/jacara/plugins/validators/countries.py:759
+msgid "没读到马来西亚税务局（LHDN）的唯一编号（UIN）：不是已验证的电子发票，或者二维码旁的编号没认出来"
+msgstr "No unique identifier (UIN) of the Malaysian tax authority (LHDN) was read: not a validated e-invoice, or the number next to the QR code was not recognized"
+
+#: backend/src/jacara/plugins/validators/countries.py:768
+msgid "卖方税号是 10 或 13 位"
+msgstr "Seller tax code has 10 or 13 digits"
+
+#: backend/src/jacara/plugins/validators/countries.py:771
+#: backend/src/jacara/plugins/validators/countries.py:934
+#: backend/src/jacara/plugins/validators/countries.py:1151
+msgid "卖方税号"
+msgstr "Seller tax code"
+
+#: backend/src/jacara/plugins/validators/countries.py:775
+msgid "买方税号是 10 或 13 位"
+msgstr "Buyer tax code has 10 or 13 digits"
+
+#: backend/src/jacara/plugins/validators/countries.py:778
+#: backend/src/jacara/plugins/validators/countries.py:941
+#: backend/src/jacara/plugins/validators/countries.py:1158
+msgid "买方税号"
+msgstr "Buyer tax code"
+
+#: backend/src/jacara/plugins/validators/countries.py:782
+msgid "增值税税率是 0%、5%、8% 或 10%"
+msgstr "VAT rate is 0%, 5%, 8% or 10%"
+
+#: backend/src/jacara/plugins/validators/countries.py:784
+msgid "越南"
+msgstr "Vietnam"
+
+#: backend/src/jacara/plugins/validators/countries.py:789
+msgid "8% 减税税率只到 2026-12-31"
+msgstr "The reduced 8% rate applies only until 2026-12-31"
+
+#: backend/src/jacara/plugins/validators/countries.py:797
+msgid "供应商 GSTIN 校验位"
+msgstr "Supplier GSTIN check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:800
+msgid "供应商 GSTIN"
+msgstr "Supplier GSTIN"
+
+#: backend/src/jacara/plugins/validators/countries.py:804
+msgid "收货方 GSTIN 校验位"
+msgstr "Recipient GSTIN check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:807
+msgid "收货方 GSTIN"
+msgstr "Recipient GSTIN"
+
+#: backend/src/jacara/plugins/validators/countries.py:811
+msgid "发票号不超过 16 个字符"
+msgstr "Invoice number has at most 16 characters"
+
+#: backend/src/jacara/plugins/validators/countries.py:818
+msgid "IGST 和 CGST、SGST 不同时出现，CGST = SGST"
+msgstr "IGST does not appear together with CGST and SGST; CGST = SGST"
+
+#: backend/src/jacara/plugins/validators/countries.py:828
+msgid "GST 号校验位"
+msgstr "GST number check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:831
+msgid "GST 号"
+msgstr "GST number"
+
+#: backend/src/jacara/plugins/validators/countries.py:835
+msgid "GST 不超过含税总额的 3/23（15%）"
+msgstr "GST is at most 3/23 of the tax-inclusive total (15%)"
+
+#: backend/src/jacara/plugins/validators/countries.py:842
+msgid "超过 $1,000 要写买方名称"
+msgstr "Above $1,000 the buyer name is required"
+
+#: backend/src/jacara/plugins/validators/countries.py:848
+msgid "新西兰商品及服务税法第 19K 条：超过 $1,000 要有买方名称和一项识别信息"
+msgstr "New Zealand GST Act s. 19K: above $1,000 the buyer name and one identifier are required"
+
+#: backend/src/jacara/plugins/validators/countries.py:856
+msgid "VAT 号校验位"
+msgstr "VAT number check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:859
+msgid "VAT 号"
+msgstr "VAT number"
+
+#: backend/src/jacara/plugins/validators/countries.py:863
+msgid "VAT 税率是 20%、5% 或 0%"
+msgstr "VAT rate is 20%, 5% or 0%"
+
+#: backend/src/jacara/plugins/validators/countries.py:865
+msgid "英国"
+msgstr "the United Kingdom"
+
+#: backend/src/jacara/plugins/validators/countries.py:871
+msgid "超过 £250 要有客户名称和地址"
+msgstr "Above £250 the customer name and address are required"
+
+#: backend/src/jacara/plugins/validators/countries.py:878
+msgid "英国税务海关总署规定（VAT Notice 700/21）：超过 £250 不能用简易发票，要写客户名称和地址"
+msgstr "HMRC (VAT Notice 700/21): above £250 a simplified invoice cannot be used; the customer name and address are required"
+
+#: backend/src/jacara/plugins/validators/countries.py:887
+msgid "增值税识别号（USt-IdNr.）校验位"
+msgstr "VAT identification number (USt-IdNr.) check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:890
+msgid "增值税识别号"
+msgstr "VAT identification number"
+
+#: backend/src/jacara/plugins/validators/countries.py:894
+msgid "增值税税率是 19%、7% 或 0%"
+msgstr "VAT rate is 19%, 7% or 0%"
+
+#: backend/src/jacara/plugins/validators/countries.py:896
+msgid "德国"
+msgstr "Germany"
+
+#: backend/src/jacara/plugins/validators/countries.py:902
+msgid "超过 250 € 要写收票方和发票号"
+msgstr "Above 250 € the recipient and invoice number are required"
+
+#: backend/src/jacara/plugins/validators/countries.py:908
+msgid "小额发票（德国增值税实施条例第 33 条）只到 250 €，超过要写收票方和发票号"
+msgstr "Small-amount invoices (§33 UStDV) are limited to 250 €; above that the recipient and invoice number are required"
+
+#: backend/src/jacara/plugins/validators/countries.py:915
+msgid "收银小票有 TSE 安全模块信息"
+msgstr "Cash register receipt has TSE security module information"
+
+#: backend/src/jacara/plugins/validators/countries.py:923
+msgid "交易开始时间不晚于结束时间"
+msgstr "Transaction start time is not after the end time"
+
+#: backend/src/jacara/plugins/validators/countries.py:931
+msgid "卖方 13 位税号校验位"
+msgstr "Seller 13-digit tax id check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:938
+msgid "买方 13 位税号校验位"
+msgstr "Buyer 13-digit tax id check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:945
+msgid "增值税 = 不含税金额 × 7%"
+msgstr "VAT = net amount × 7%"
+
+#: backend/src/jacara/plugins/validators/countries.py:952
+msgid "标题写明“税务发票”（ใบกำกับภาษี）"
+msgstr "Title states \"Tax Invoice\" (ใบกำกับภาษี)"
+
+#: backend/src/jacara/plugins/validators/countries.py:956
+msgid "泰国税法第 86/4 条要求在显眼处写明“税务发票”（ใบกำกับภาษี）"
+msgstr "Section 86/4 of the Thai Revenue Code requires \"Tax Invoice\" (ใบกำกับภาษี) in a prominent place"
+
+#: backend/src/jacara/plugins/validators/countries.py:962
+msgid "写了买方税号就要写买方总店或分店"
+msgstr "If the buyer's tax id is given, the head office or branch must be given too"
+
+#: backend/src/jacara/plugins/validators/countries.py:971
+msgid "卖方税号（NPWP）是 15 或 16 位"
+msgstr "Seller tax id (NPWP) has 15 or 16 digits"
+
+#: backend/src/jacara/plugins/validators/countries.py:974
+msgid "卖方税号（NPWP）"
+msgstr "Seller tax id (NPWP)"
+
+#: backend/src/jacara/plugins/validators/countries.py:978
+msgid "增值税发票编号是 16 或 17 位"
+msgstr "VAT invoice number has 16 or 17 digits"
+
+#: backend/src/jacara/plugins/validators/countries.py:981
+msgid "增值税发票编号"
+msgstr "VAT invoice number"
+
+#: backend/src/jacara/plugins/validators/countries.py:985
+msgid "增值税 = 12% × 计税基础，计税基础 = 销售价或其 11/12"
+msgstr "VAT = 12% × tax base, where the tax base is the selling price or 11/12 of it"
+
+#: backend/src/jacara/plugins/validators/countries.py:993
+msgid "卖方税号（TIN）加分支码格式"
+msgstr "Seller tax id (TIN) with branch code format"
+
+#: backend/src/jacara/plugins/validators/countries.py:996
+msgid "卖方税号（TIN）"
+msgstr "Seller tax id (TIN)"
+
+#: backend/src/jacara/plugins/validators/countries.py:1000
+msgid "增值税 = 应税销售额 × 12%"
+msgstr "VAT = taxable sales × 12%"
+
+#: backend/src/jacara/plugins/validators/countries.py:1002
+msgid "菲律宾国内税法第 106、108 条：增值税 12%"
+msgstr "Philippine National Internal Revenue Code sections 106 and 108: VAT 12%"
+
+#: backend/src/jacara/plugins/validators/countries.py:1007
+msgid "标题写明 Invoice"
+msgstr "Title states Invoice"
+
+#: backend/src/jacara/plugins/validators/countries.py:1011
+msgid "菲律宾税务局 2024 年第 7 号规定：主要凭证是 Invoice，标题要有 Invoice 字样"
+msgstr "BIR Revenue Regulations No. 7-2024: the primary document is the Invoice, and the title must contain the word Invoice"
+
+#: backend/src/jacara/plugins/validators/countries.py:1018
+msgid "卖方 SIREN / SIRET 校验位"
+msgstr "Seller SIREN / SIRET check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:1021
+msgid "卖方 SIREN / SIRET"
+msgstr "Seller SIREN / SIRET"
+
+#: backend/src/jacara/plugins/validators/countries.py:1025
+msgid "卖方欧盟增值税号校验码"
+msgstr "Seller EU VAT number check code"
+
+#: backend/src/jacara/plugins/validators/countries.py:1028
+msgid "卖方欧盟增值税号"
+msgstr "Seller EU VAT number"
+
+#: backend/src/jacara/plugins/validators/countries.py:1032
+msgid "增值税税率是 20%、10%、5.5% 或 2.1%"
+msgstr "VAT rate is 20%, 10%, 5.5% or 2.1%"
+
+#: backend/src/jacara/plugins/validators/countries.py:1034
+msgid "法国"
+msgstr "France"
+
+#: backend/src/jacara/plugins/validators/countries.py:1041
+msgid "卖方增值税号（Partita IVA）校验位"
+msgstr "Seller VAT number (Partita IVA) check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:1044
+msgid "卖方增值税号"
+msgstr "Seller VAT number"
+
+#: backend/src/jacara/plugins/validators/countries.py:1048
+msgid "买方增值税号（Partita IVA）校验位"
+msgstr "Buyer VAT number (Partita IVA) check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:1051
+msgid "买方增值税号"
+msgstr "Buyer VAT number"
+
+#: backend/src/jacara/plugins/validators/countries.py:1055
+msgid "增值税税率是 22%、10%、5% 或 4%"
+msgstr "VAT rate is 22%, 10%, 5% or 4%"
+
+#: backend/src/jacara/plugins/validators/countries.py:1057
+msgid "意大利"
+msgstr "Italy"
+
+#: backend/src/jacara/plugins/validators/countries.py:1063
+msgid "简易发票不超过 400 €"
+msgstr "Simplified invoice at most 400 €"
+
+#: backend/src/jacara/plugins/validators/countries.py:1067
+#, python-brace-format
+msgid "意大利简易发票的金额 {amount:,.2f} 超过 400 €（增值税法第 21-bis 条）"
+msgstr "The amount of the Italian simplified invoice, {amount:,.2f}, exceeds 400 € (art. 21-bis of the VAT decree)"
+
+#: backend/src/jacara/plugins/validators/countries.py:1080
+msgid "开票方税号（NIF）校验"
+msgstr "Issuer tax id (NIF) check"
+
+#: backend/src/jacara/plugins/validators/countries.py:1083
+msgid "开票方税号"
+msgstr "Issuer tax id"
+
+#: backend/src/jacara/plugins/validators/countries.py:1087
+msgid "收票方税号（NIF）校验"
+msgstr "Recipient tax id (NIF) check"
+
+#: backend/src/jacara/plugins/validators/countries.py:1090
+msgid "收票方税号"
+msgstr "Recipient tax id"
+
+#: backend/src/jacara/plugins/validators/countries.py:1094
+msgid "增值税税率是 21%、10% 或 4%"
+msgstr "VAT rate is 21%, 10% or 4%"
+
+#: backend/src/jacara/plugins/validators/countries.py:1096
+msgid "西班牙"
+msgstr "Spain"
+
+#: backend/src/jacara/plugins/validators/countries.py:1102
+msgid "简易发票不超过 400 €（零售、餐饮等行业 3,000 €）"
+msgstr "Simplified invoice at most 400 € (3,000 € for retail, catering and similar sectors)"
+
+#: backend/src/jacara/plugins/validators/countries.py:1106
+#, python-brace-format
+msgid "西班牙简易发票的金额 {amount:,.2f} 超过 400 €：只有开票条例第 4.1 条列的行业（零售、餐饮、客运等）能到 3,000 €"
+msgstr "The amount of the Spanish simplified invoice, {amount:,.2f}, exceeds 400 €: only the sectors listed in art. 4.1 of the invoicing regulation (retail, catering, passenger transport, etc.) may go up to 3,000 €"
+
+#: backend/src/jacara/plugins/validators/countries.py:1119
+msgid "增值税号（btw-id）校验"
+msgstr "VAT number (btw-id) check"
+
+#: backend/src/jacara/plugins/validators/countries.py:1122
+#: backend/src/jacara/plugins/validators/countries.py:1241
+msgid "增值税号"
+msgstr "VAT number"
+
+#: backend/src/jacara/plugins/validators/countries.py:1126
+msgid "增值税税率是 21%、9% 或 0%"
+msgstr "VAT rate is 21%, 9% or 0%"
+
+#: backend/src/jacara/plugins/validators/countries.py:1128
+msgid "荷兰"
+msgstr "the Netherlands"
+
+#: backend/src/jacara/plugins/validators/countries.py:1134
+msgid "超过 € 100 要有发票号、买方和卖方增值税号"
+msgstr "Above € 100 the invoice number and the buyer's and seller's VAT numbers are required"
+
+#: backend/src/jacara/plugins/validators/countries.py:1140
+msgid "荷兰简易发票只到 € 100，超过要写发票号、买方和卖方增值税号"
+msgstr "Dutch simplified invoices are limited to € 100; above that the invoice number and the buyer's and seller's VAT numbers are required"
+
+#: backend/src/jacara/plugins/validators/countries.py:1148
+msgid "卖方税号（NIP）校验位"
+msgstr "Seller tax id (NIP) check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:1155
+msgid "买方税号（NIP）校验位"
+msgstr "Buyer tax id (NIP) check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:1162
+msgid "增值税税率是 23%、8%、5% 或 0%"
+msgstr "VAT rate is 23%, 8%, 5% or 0%"
+
+#: backend/src/jacara/plugins/validators/countries.py:1164
+msgid "波兰"
+msgstr "Poland"
+
+#: backend/src/jacara/plugins/validators/countries.py:1171
+msgid "GST/HST 登记号（BN）校验位"
+msgstr "GST/HST registration number (BN) check digit"
+
+#: backend/src/jacara/plugins/validators/countries.py:1174
+msgid "GST/HST 登记号"
+msgstr "GST/HST registration number"
+
+#: backend/src/jacara/plugins/validators/countries.py:1178
+msgid "税率是 GST 5% 或 HST 13%、14%、15%"
+msgstr "Tax rate is GST 5% or HST 13%, 14% or 15%"
+
+#: backend/src/jacara/plugins/validators/countries.py:1180
+msgid "加拿大"
+msgstr "Canada"
+
+#: backend/src/jacara/plugins/validators/countries.py:1186
+msgid "$100 以上要写 GST/HST 登记号"
+msgstr "From $100 the GST/HST registration number is required"
+
+#: backend/src/jacara/plugins/validators/countries.py:1192
+msgid "加拿大进项税抵扣信息条例第 3 条 (b)：$100 及以上要有供应商的 GST/HST 登记号"
+msgstr "Canadian Input Tax Credit Information Regulations s. 3(b): from $100 the supplier's GST/HST registration number is required"
+
+#: backend/src/jacara/plugins/validators/countries.py:1199
+msgid "$500 以上要写买方和付款条件"
+msgstr "From $500 the buyer and the payment terms are required"
+
+#: backend/src/jacara/plugins/validators/countries.py:1205
+msgid "加拿大进项税抵扣信息条例第 3 条 (c)：$500 及以上要有买方名称和付款条件"
+msgstr "Canadian Input Tax Credit Information Regulations s. 3(c): from $500 the buyer name and the payment terms are required"
+
+#: backend/src/jacara/plugins/validators/countries.py:1213
+msgid "税号（TRN）是 15 位数字"
+msgstr "Tax registration number (TRN) has 15 digits"
+
+#: backend/src/jacara/plugins/validators/countries.py:1216
+msgid "税号（TRN）"
+msgstr "Tax registration number (TRN)"
+
+#: backend/src/jacara/plugins/validators/countries.py:1220
+msgid "增值税 = 不含税金额 × 5%"
+msgstr "VAT = net amount × 5%"
+
+#: backend/src/jacara/plugins/validators/countries.py:1222
+msgid "阿联酋增值税 5%"
+msgstr "UAE VAT 5%"
+
+#: backend/src/jacara/plugins/validators/countries.py:1227
+msgid "标题写明 Tax Invoice（税务发票）"
+msgstr "Title states Tax Invoice"
+
+#: backend/src/jacara/plugins/validators/countries.py:1231
+msgid "阿联酋增值税实施条例第 59 条要求写明 Tax Invoice（税务发票）"
+msgstr "Article 59 of the UAE VAT Executive Regulation requires the words Tax Invoice"
+
+#: backend/src/jacara/plugins/validators/countries.py:1238
+msgid "增值税号是 15 位数字"
+msgstr "VAT number has 15 digits"
+
+#: backend/src/jacara/plugins/validators/countries.py:1245
+msgid "增值税 = 不含税金额 × 15%"
+msgstr "VAT = net amount × 15%"
+
+#: backend/src/jacara/plugins/validators/countries.py:1247
+msgid "沙特增值税 15%"
+msgstr "Saudi VAT 15%"
+
+#: backend/src/jacara/plugins/validators/countries.py:1253
+msgid "CLIA 编号格式"
+msgstr "CLIA number format"
+
+#: backend/src/jacara/plugins/validators/countries.py:1256
+msgid "CLIA 编号"
+msgstr "CLIA number"
+
+#: backend/src/jacara/plugins/validators/rules.py:33
+#, python-brace-format
+msgid "字段 {name} 应该是数字，实际是 {value}"
+msgstr "Field {name} should be a number but is {value}"
+
+#: backend/src/jacara/plugins/validators/rules.py:48
+#, python-brace-format
+msgid "现金 {cash} − 总额 {total} = {expected}，但找零是 {change}"
+msgstr "Cash {cash} − total {total} = {expected}, but the change is {change}"
+
+#: backend/src/jacara/plugins/validators/rules.py:63
+#, python-brace-format
+msgid "小计 {subtotal} + 调整 {rounding} = {expected}，但总额是 {total}"
+msgstr "Subtotal {subtotal} + adjustment {rounding} = {expected}, but the total is {total}"
+
+#: backend/src/jacara/plugins/validators/rules.py:75
+#, python-brace-format
+msgid "现金 {cash} 比总额 {total} 还少"
+msgstr "Cash {cash} is less than the total {total}"
+
+#: backend/src/jacara/plugins/validators/rules.py:80
+#, python-brace-format
+msgid "总额是 {total}，应该大于 0"
+msgstr "The total is {total}; it should be greater than 0"
+
+#: backend/src/jacara/plugins/validators/rules.py:88
+#, python-brace-format
+msgid "日期 {value} 不存在"
+msgstr "Date {value} does not exist"
+
+#: backend/src/jacara/plugins/validators/rules.py:102
+#, python-brace-format
+msgid "日期 {day} 在今天之后"
+msgstr "Date {day} is in the future"
+
+#: backend/src/jacara/plugins/validators/rules.py:133
+msgid "小计"
+msgstr "subtotal"
+
+#: backend/src/jacara/plugins/validators/rules.py:133
+msgid "总额"
+msgstr "Total"
+
+#: backend/src/jacara/plugins/validators/rules.py:135
+#, python-brace-format
+msgid "{rows} 行商品金额加起来是 {added}，但{label}是 {expected}（可能漏了行、多了行，或者有税、折扣没算进去）"
+msgstr "The {rows} item amounts add up to {added}, but the {label} is {expected} (rows may be missing or extra, or taxes or discounts not included)"
+
+#: backend/src/jacara/plugins/validators/rules.py:153
+#, python-brace-format
+msgid "数量 {quantity:g} × 单价 {price} = {expected}，但金额是 {amount}"
+msgstr "Quantity {quantity:g} × unit price {price} = {expected}, but the amount is {amount}"
+
+#: backend/src/jacara/plugins/validators/rules.py:184
+#, python-brace-format
+msgid "发票号码 {number} 不是 20 位数字（数电发票的号码是 20 位）"
+msgstr "Invoice number {number} is not 20 digits (fully digital e-invoices have 20-digit numbers)"
+
+#: backend/src/jacara/plugins/validators/rules.py:193
+#, python-brace-format
+msgid "合计金额 {amount} + 合计税额 {tax} = {expected}，但价税合计是 {grand}"
+msgstr "Total amount {amount} + total tax {tax} = {expected}, but the total including tax is {grand}"
+
+#: backend/src/jacara/plugins/validators/rules.py:207
+#, python-brace-format
+msgid "{count} 行金额加起来是 {added}，但合计金额是 {expected}"
+msgstr "The {count} line amounts add up to {added}, but the total amount is {expected}"
+
+#: backend/src/jacara/plugins/validators/rules.py:221
+#, python-brace-format
+msgid "{count} 行税额加起来是 {added}，但合计税额是 {expected}"
+msgstr "The {count} line taxes add up to {added}, but the total tax is {expected}"
+
+#: backend/src/jacara/plugins/validators/rules.py:233
+#, python-brace-format
+msgid "大写金额「{words}」读不懂，可能识别错了字"
+msgstr "The amount in words \"{words}\" cannot be read; a character may have been misread"
+
+#: backend/src/jacara/plugins/validators/rules.py:237
+#, python-brace-format
+msgid "大写「{words}」是 {parsed}，但小写价税合计是 {grand}"
+msgstr "The amount in words \"{words}\" is {parsed}, but the total including tax in figures is {grand}"
+
+#: backend/src/jacara/plugins/validators/rules.py:254
+#, python-brace-format
+msgid "金额 {amount} + 税额 {tax} = {expected}，但票价是 {total}"
+msgstr "Amount {amount} + tax {tax} = {expected}, but the fare is {total}"
+
+#: backend/src/jacara/plugins/validators/rules.py:274
+#, python-brace-format
+msgid "票价 {fare} + 燃油附加费 {fuel} + 民航发展基金 {fund} + 其他税费 {other} = {expected}，但合计是 {total}"
+msgstr "Fare {fare} + fuel surcharge {fuel} + CAAC development fund {fund} + other taxes {other} = {expected}, but the total is {total}"
+
+#: backend/src/jacara/plugins/validators/rules.py:284
+#, python-brace-format
+msgid "票价 {fare} + 燃油附加费 {fuel} + 民航发展基金 {fund} = {expected}，但合计是 {total}"
+msgstr "Fare {fare} + fuel surcharge {fuel} + CAAC development fund {fund} = {expected}, but the total is {total}"
+
+#: backend/src/jacara/plugins/validators/rules.py:317
+#, python-brace-format
+msgid "(票价 {fare} + 燃油附加费 {fuel}) ÷ (1 + {rate:.0%}) × {rate:.0%} = {expected}，但增值税税额是 {vat}"
+msgstr "(Fare {fare} + fuel surcharge {fuel}) ÷ (1 + {rate:.0%}) × {rate:.0%} = {expected}, but the VAT is {vat}"
+
+#: backend/src/jacara/plugins/validators/rules.py:336
+#, python-brace-format
+msgid "{count} 行金额加起来是 {added}，但不含税合计是 {expected}"
+msgstr "The {count} line amounts add up to {added}, but the net total is {expected}"
+
+#: backend/src/jacara/plugins/validators/rules.py:352
+#, python-brace-format
+msgid "不含税合计 {net} + 税额 {tax} = {expected}，但含税合计是 {gross}"
+msgstr "Net total {net} + tax {tax} = {expected}, but the gross total is {gross}"
+
+#: backend/src/jacara/plugins/validators/rules.py:364
+#, python-brace-format
+msgid "应付金额 {due} 比含税合计 {gross} 还多"
+msgstr "The amount due {due} exceeds the gross total {gross}"
+
+#: backend/src/jacara/plugins/validators/rules.py:382
+#, python-brace-format
+msgid "ABN {text} 的校验位不对（可能识别错了一位数字）"
+msgstr "ABN {text} has an invalid check digit (a digit may have been misread)"
+
+#: backend/src/jacara/plugins/validators/rules.py:400
+#, python-brace-format
+msgid "含税合计 {gross} ≥ 1,000，澳洲税务发票要写买方名称或 ABN，这里没有"
+msgstr "Gross total {gross} ≥ 1,000: Australian tax invoices must show the buyer's name or ABN, which is missing here"
+
+#: backend/src/jacara/plugins/validators/rules.py:409
+#, python-brace-format
+msgid "单据标题是「{title}」，澳洲税务发票要写明 Tax invoice"
+msgstr "The document title is \"{title}\"; Australian tax invoices must state Tax invoice"
+
+#: backend/src/jacara/plugins/validators/rules.py:421
+#, python-brace-format
+msgid "GST {gst} 比含 GST 总额 {gross} 的 1/11（{limit}）还多"
+msgstr "GST {gst} exceeds 1/11 of the GST-inclusive total {gross} ({limit})"
+
+#: backend/src/jacara/plugins/validators/rules.py:437
+msgid "商家名称"
+msgstr "supplier name"
+
+#: backend/src/jacara/plugins/validators/rules.py:438
+#: backend/src/jacara/workbook/standard.py:31
+msgid "日期"
+msgstr "Date"
+
+#: backend/src/jacara/plugins/validators/rules.py:440
+msgid "买了什么（明细或描述）"
+msgstr "what was purchased (line items or description)"
+
+#: backend/src/jacara/plugins/validators/rules.py:448
+#, python-brace-format
+msgid "做报销凭证还缺：{missing}"
+msgstr "Missing for a valid receipt: {missing}"
+
+#: backend/src/jacara/plugins/validators/rules.py:460
+msgid "“Tax Invoice”字样"
+msgstr "the words \"Tax Invoice\""
+
+#: backend/src/jacara/plugins/validators/rules.py:461
+msgid "商家 ABN"
+msgstr "supplier ABN"
+
+#: backend/src/jacara/plugins/validators/rules.py:462
+msgid "GST 金额"
+msgstr "GST amount"
+
+#: backend/src/jacara/plugins/validators/rules.py:469
+#, python-brace-format
+msgid "总额 {total} 超过 82.50，要抵 GST 还缺：{missing}"
+msgstr "Total {total} exceeds 82.50; missing to claim GST: {missing}"
+
+#: backend/src/jacara/plugins/validators/rules.py:482
+#, python-brace-format
+msgid "GST {gst} 比总额 {total} 的 1/11（{limit}）还多"
+msgstr "GST {gst} exceeds 1/11 of the total {total} ({limit})"
+
+#: backend/src/jacara/plugins/validators/rules.py:498
+#, python-brace-format
+msgid "小计 {subtotal}"
+msgstr "Subtotal {subtotal}"
+
+#: backend/src/jacara/plugins/validators/rules.py:499
+#, python-brace-format
+msgid "− 折扣 {discount}"
+msgstr "− discount {discount}"
+
+#: backend/src/jacara/plugins/validators/rules.py:500
+#, python-brace-format
+msgid "+ 附加费 {surcharge}"
+msgstr "+ surcharge {surcharge}"
+
+#: backend/src/jacara/plugins/validators/rules.py:501
+#, python-brace-format
+msgid "+ 小费 {tip}"
+msgstr "+ tip {tip}"
+
+#: backend/src/jacara/plugins/validators/rules.py:502
+#, python-brace-format
+msgid "+ 调整 {rounding}"
+msgstr "+ adjustment {rounding}"
+
+#: backend/src/jacara/plugins/validators/rules.py:504
+#, python-brace-format
+msgid "{terms} = {expected}，但总额是 {total}"
+msgstr "{terms} = {expected}, but the total is {total}"
+
+#: backend/src/jacara/plugins/validators/rules.py:533
+#, python-brace-format
+msgid "离店 {check_out} 不在入住 {check_in} 之后"
+msgstr "Check-out {check_out} is not after check-in {check_in}"
+
+#: backend/src/jacara/plugins/validators/rules.py:542
+#, python-brace-format
+msgid "入住 {check_in} 到离店 {check_out} 是 {days} 晚，但写的是 {nights:g} 晚"
+msgstr "Check-in {check_in} to check-out {check_out} is {days} nights, but {nights:g} nights are stated"
+
+#: backend/src/jacara/plugins/validators/rules.py:551
+msgid "总额大于 0"
+msgstr "Total greater than 0"
+
+#: backend/src/jacara/plugins/validators/rules.py:552
+msgid "日期真实存在"
+msgstr "Date exists"
+
+#: backend/src/jacara/plugins/validators/rules.py:553
+msgid "日期不在未来"
+msgstr "Date not in the future"
+
+#: backend/src/jacara/plugins/validators/rules.py:554
+msgid "小计 + 调整 = 总额"
+msgstr "Subtotal + adjustment = total"
+
+#: backend/src/jacara/plugins/validators/rules.py:555
+msgid "现金不少于总额"
+msgstr "Cash not less than total"
+
+#: backend/src/jacara/plugins/validators/rules.py:556
+msgid "现金 − 总额 = 找零"
+msgstr "Cash − total = change"
+
+#: backend/src/jacara/plugins/validators/rules.py:559
+msgid "商品金额合计 = 小计或总额"
+msgstr "Sum of item amounts = subtotal or total"
+
+#: backend/src/jacara/plugins/validators/rules.py:570
+msgid "数量 × 单价 = 金额"
+msgstr "Quantity × unit price = amount"
+
+#: backend/src/jacara/plugins/validators/rules.py:578
+msgid "开票日期真实存在"
+msgstr "Issue date exists"
+
+#: backend/src/jacara/plugins/validators/rules.py:581
+msgid "开票日期不在未来"
+msgstr "Issue date not in the future"
+
+#: backend/src/jacara/plugins/validators/rules.py:586
+msgid "发票号码是 20 位数字"
+msgstr "Invoice number has 20 digits"
+
+#: backend/src/jacara/plugins/validators/rules.py:589
+msgid "合计金额 + 合计税额 = 价税合计"
+msgstr "Total amount + total tax = total including tax"
+
+#: backend/src/jacara/plugins/validators/rules.py:595
+msgid "明细金额合计 = 合计金额"
+msgstr "Sum of line amounts = total amount"
+
+#: backend/src/jacara/plugins/validators/rules.py:603
+msgid "明细税额合计 = 合计税额"
+msgstr "Sum of line taxes = total tax"
+
+#: backend/src/jacara/plugins/validators/rules.py:611
+msgid "大写金额 = 小写价税合计"
+msgstr "Amount in words = total including tax in figures"
+
+#: backend/src/jacara/plugins/validators/rules.py:617
+msgid "金额 + 税额 = 票价"
+msgstr "Amount + tax = fare"
+
+#: backend/src/jacara/plugins/validators/rules.py:623
+msgid "票价 + 燃油 + 民航发展基金 + 其他税费 = 合计"
+msgstr "Fare + fuel + CAAC development fund + other taxes = total"
+
+#: backend/src/jacara/plugins/validators/rules.py:630
+msgid "增值税税额 = (票价 + 燃油) ÷ (1 + 税率) × 税率"
+msgstr "VAT = (fare + fuel) ÷ (1 + rate) × rate"
+
+#: backend/src/jacara/plugins/validators/rules.py:637
+msgid "明细金额合计 = 不含税合计"
+msgstr "Sum of line amounts = net total"
+
+#: backend/src/jacara/plugins/validators/rules.py:645
+msgid "不含税合计 + 税额 = 含税合计"
+msgstr "Net total + tax = gross total"
+
+#: backend/src/jacara/plugins/validators/rules.py:651
+msgid "应付金额不超过含税合计"
+msgstr "Amount due not above gross total"
+
+#: backend/src/jacara/plugins/validators/rules.py:658
+msgid "1,000 澳元以上的税务发票写了买方"
+msgstr "Tax invoices of AUD 1,000 or more show the buyer"
+
+#: backend/src/jacara/plugins/validators/rules.py:664
+msgid "卖方 ABN 校验位正确"
+msgstr "Seller ABN check digit valid"
+
+#: backend/src/jacara/plugins/validators/rules.py:665
+msgid "买方 ABN 校验位正确"
+msgstr "Buyer ABN check digit valid"
+
+#: backend/src/jacara/plugins/validators/rules.py:668
+msgid "写明是税务发票（ATO）"
+msgstr "States it is a tax invoice (ATO)"
+
+#: backend/src/jacara/plugins/validators/rules.py:675
+msgid "GST 不超过含 GST 总额的 1/11"
+msgstr "GST at most 1/11 of the GST-inclusive total"
+
+#: backend/src/jacara/plugins/validators/rules.py:680
+msgid "商家 ABN 校验位正确"
+msgstr "Supplier ABN check digit valid"
+
+#: backend/src/jacara/plugins/validators/rules.py:683
+msgid "收据有商家、日期、内容、金额（ATO）"
+msgstr "Receipt shows supplier, date, items and amount (ATO)"
+
+#: backend/src/jacara/plugins/validators/rules.py:691
+msgid "超过 82.50 澳元是税务发票（ATO）"
+msgstr "Above AUD 82.50 it is a tax invoice (ATO)"
+
+#: backend/src/jacara/plugins/validators/rules.py:698
+msgid "GST 不超过总额的 1/11"
+msgstr "GST at most 1/11 of the total"
+
+#: backend/src/jacara/plugins/validators/rules.py:702
+msgid "小计 − 折扣 + 附加费 + 小费 + 调整 = 总额"
+msgstr "Subtotal − discount + surcharge + tip + adjustment = total"
+
+#: backend/src/jacara/plugins/validators/rules.py:708
+msgid "乘车日期真实存在"
+msgstr "Travel date exists"
+
+#: backend/src/jacara/plugins/validators/rules.py:710
+msgid "离店在入住之后"
+msgstr "Check-out after check-in"
+
+#: backend/src/jacara/plugins/validators/rules.py:713
+msgid "晚数 = 离店 − 入住"
+msgstr "Nights = check-out − check-in"
+
+#: backend/src/jacara/plugins/validators/rules.py:762
+#, python-brace-format
+msgid "结果 {value:g} 高于参考范围 {shown}，但没有标 ↑（偏高）"
+msgstr "Result {value:g} is above the reference range {shown} but not flagged ↑ (high)"
+
+#: backend/src/jacara/plugins/validators/rules.py:766
+#, python-brace-format
+msgid "结果 {value:g} 低于参考范围 {shown}，但没有标 ↓（偏低）"
+msgstr "Result {value:g} is below the reference range {shown} but not flagged ↓ (low)"
+
+#: backend/src/jacara/plugins/validators/rules.py:770
+#, python-brace-format
+msgid "结果 {value:g} 在参考范围 {shown} 内，却标了偏高"
+msgstr "Result {value:g} is within the reference range {shown} but flagged high"
+
+#: backend/src/jacara/plugins/validators/rules.py:772
+#, python-brace-format
+msgid "结果 {value:g} 在参考范围 {shown} 内，却标了偏低"
+msgstr "Result {value:g} is within the reference range {shown} but flagged low"
+
+#: backend/src/jacara/plugins/validators/rules.py:779
+msgid "超出参考范围的结果标了高低"
+msgstr "Results outside the reference range are flagged high or low"
+
+#: backend/src/jacara/plugins/validators/rules.py:811
+#, python-brace-format
+msgid "{rows} 行的{noun}加起来是 {added:g}，但合计写的是 {expected:g}（可能漏了行或多了行）"
+msgstr "The {noun} of {rows} rows adds up to {added:g}, but the total states {expected:g} (rows may be missing or extra)"
+
+#: backend/src/jacara/plugins/validators/rules.py:825
+#, python-brace-format
+msgid "净重 {net:g} 比毛重 {gross:g} 还大（毛重 = 净重 + 包装）"
+msgstr "Net weight {net:g} exceeds gross weight {gross:g} (gross weight = net weight + packaging)"
+
+#: backend/src/jacara/plugins/validators/rules.py:832
+#, python-brace-format
+msgid "总净重 {net:g} 比总毛重 {gross:g} 还大"
+msgstr "Total net weight {net:g} exceeds total gross weight {gross:g}"
+
+#: backend/src/jacara/plugins/validators/rules.py:863
+#, python-brace-format
+msgid "集装箱号「{raw}」格式不对（应是 4 个字母 + 7 位数字，如 MSKU1234565）"
+msgstr "Container number \"{raw}\" has an invalid format (4 letters + 7 digits, such as MSKU1234565)"
+
+#: backend/src/jacara/plugins/validators/rules.py:869
+#, python-brace-format
+msgid "集装箱号「{raw}」最后一位校验位应是 {expected}，可能有字认错了"
+msgstr "The check digit of container number \"{raw}\" should be {expected}; a character may have been misread"
+
+#: backend/src/jacara/plugins/validators/rules.py:883
+#, python-brace-format
+msgid "运单号「{raw}」格式不对（应是 3 位航空公司代码 + 8 位数字，如 176-12345675）"
+msgstr "Air waybill number \"{raw}\" has an invalid format (3-digit airline prefix + 8 digits, such as 176-12345675)"
+
+#: backend/src/jacara/plugins/validators/rules.py:889
+#, python-brace-format
+msgid "运单号「{raw}」的校验位应是 {expected}，可能有数字认错了"
+msgstr "The check digit of air waybill number \"{raw}\" should be {expected}; a digit may have been misread"
+
+#: backend/src/jacara/plugins/validators/rules.py:907
+#, python-brace-format
+msgid "计费重量 {weight:g} × 费率 {rate:g} = {expected}，但这一行运费是 {total}（如果是最低运费 M 类可以忽略）"
+msgstr "Chargeable weight {weight:g} × rate {rate:g} = {expected}, but this line's charge is {total} (ignore for minimum charges, class M)"
+
+#: backend/src/jacara/plugins/validators/rules.py:919
+msgid "运费"
+msgstr "Freight"
+
+#: backend/src/jacara/plugins/validators/rules.py:921
+msgid "保价费"
+msgstr "insurance fee"
+
+#: backend/src/jacara/plugins/validators/rules.py:922
+msgid "包装费"
+msgstr "packing fee"
+
+#: backend/src/jacara/plugins/validators/rules.py:923
+msgid "其他费用"
+msgstr "other charges"
+
+#: backend/src/jacara/plugins/validators/rules.py:933
+#, python-brace-format
+msgid "{shown} = {added}，但费用合计是 {total}"
+msgstr "{shown} = {added}, but the total charges are {total}"
+
+#: backend/src/jacara/plugins/validators/rules.py:945
+#, python-brace-format
+msgid "{label} {amount}"
+msgstr "{label} {amount}"
+
+#: backend/src/jacara/plugins/validators/rules.py:977
+#, python-brace-format
+msgid "有 {failed} 项判定不合格，结论却写的是合格"
+msgstr "{failed} items are judged nonconforming, but the conclusion says conforming"
+
+#: backend/src/jacara/plugins/validators/rules.py:980
+#, python-brace-format
+msgid "{verdicts} 项判定都合格，结论却写的是不合格（请看是否还有表外的项目）"
+msgstr "All {verdicts} items are judged conforming, but the conclusion says nonconforming (check for items outside the table)"
+
+#: backend/src/jacara/plugins/validators/rules.py:995
+#, python-brace-format
+msgid "{noun}：{a} 在 {b} 之后"
+msgstr "{noun}: {a} is after {b}"
+
+#: backend/src/jacara/plugins/validators/rules.py:1008
+#, python-brace-format
+msgid "资质认定证书编号「{raw}」应是 12 位数字，可能有字认错了"
+msgstr "Accreditation certificate number \"{raw}\" should be 12 digits; a character may have been misread"
+
+#: backend/src/jacara/plugins/validators/rules.py:1014
+msgid "每行件数加起来 = 总件数"
+msgstr "Sum of pieces per row = total pieces"
+
+#: backend/src/jacara/plugins/validators/rules.py:1016
+#: backend/src/jacara/plugins/validators/rules.py:1093
+#: backend/src/jacara/plugins/validators/rules.py:1125
+msgid "件数"
+msgstr "pieces"
+
+#: backend/src/jacara/plugins/validators/rules.py:1022
+msgid "每行数量加起来 = 总数量"
+msgstr "Sum of quantities per row = total quantity"
+
+#: backend/src/jacara/plugins/validators/rules.py:1024
+#: backend/src/jacara/plugins/validators/rules.py:1070
+msgid "数量"
+msgstr "quantity"
+
+#: backend/src/jacara/plugins/validators/rules.py:1030
+msgid "每行净重加起来 = 总净重"
+msgstr "Sum of net weights per row = total net weight"
+
+#: backend/src/jacara/plugins/validators/rules.py:1032
+msgid "净重"
+msgstr "net weight"
+
+#: backend/src/jacara/plugins/validators/rules.py:1038
+msgid "每行毛重加起来 = 总毛重"
+msgstr "Sum of gross weights per row = total gross weight"
+
+#: backend/src/jacara/plugins/validators/rules.py:1040
+#: backend/src/jacara/plugins/validators/rules.py:1101
+#: backend/src/jacara/plugins/validators/rules.py:1133
+msgid "毛重"
+msgstr "gross weight"
+
+#: backend/src/jacara/plugins/validators/rules.py:1046
+msgid "每行体积加起来 = 总体积"
+msgstr "Sum of volumes per row = total volume"
+
+#: backend/src/jacara/plugins/validators/rules.py:1048
+#: backend/src/jacara/plugins/validators/rules.py:1109
+msgid "体积"
+msgstr "volume"
+
+#: backend/src/jacara/plugins/validators/rules.py:1054
+msgid "净重不超过毛重（每一行）"
+msgstr "Net weight not above gross weight (per row)"
+
+#: backend/src/jacara/plugins/validators/rules.py:1062
+msgid "总净重不超过总毛重"
+msgstr "Total net weight not above total gross weight"
+
+#: backend/src/jacara/plugins/validators/rules.py:1068
+msgid "每行数量加起来 = 合计数量"
+msgstr "Sum of quantities per row = total quantity"
+
+#: backend/src/jacara/plugins/validators/rules.py:1076
+msgid "运费 + 保价费 + 包装费 + 其他 = 费用合计"
+msgstr "Freight + insurance + packing + other = total charges"
+
+#: backend/src/jacara/plugins/validators/rules.py:1083
+msgid "集装箱号校验位正确（ISO 6346）"
+msgstr "Container number check digit valid (ISO 6346)"
+
+#: backend/src/jacara/plugins/validators/rules.py:1091
+msgid "每个集装箱的件数加起来 = 总件数"
+msgstr "Sum of pieces per container = total pieces"
+
+#: backend/src/jacara/plugins/validators/rules.py:1099
+msgid "每个集装箱的毛重加起来 = 总毛重"
+msgstr "Sum of gross weights per container = total gross weight"
+
+#: backend/src/jacara/plugins/validators/rules.py:1107
+msgid "每个集装箱的体积加起来 = 总体积"
+msgstr "Sum of volumes per container = total volume"
+
+#: backend/src/jacara/plugins/validators/rules.py:1115
+msgid "装船日期不晚于签发日期"
+msgstr "Shipped-on-board date not after issue date"
+
+#: backend/src/jacara/plugins/validators/rules.py:1117
+msgid "装船日期晚于签发日期"
+msgstr "Shipped-on-board date is after the issue date"
+
+#: backend/src/jacara/plugins/validators/rules.py:1120
+msgid "航空运单号校验位正确（IATA）"
+msgstr "Air waybill number check digit valid (IATA)"
+
+#: backend/src/jacara/plugins/validators/rules.py:1123
+msgid "计费行件数加起来 = 总件数"
+msgstr "Sum of pieces of rate lines = total pieces"
+
+#: backend/src/jacara/plugins/validators/rules.py:1131
+msgid "计费行毛重加起来 = 总毛重"
+msgstr "Sum of gross weights of rate lines = total gross weight"
+
+#: backend/src/jacara/plugins/validators/rules.py:1139
+msgid "计费重量 × 费率 = 运费（每一行）"
+msgstr "Chargeable weight × rate = charge (per row)"
+
+#: backend/src/jacara/plugins/validators/rules.py:1147
+msgid "单项判定和检验结论一致"
+msgstr "Item verdicts agree with the test conclusion"
+
+#: backend/src/jacara/plugins/validators/rules.py:1155
+msgid "收样日期不晚于签发日期"
+msgstr "Sample receipt date not after issue date"
+
+#: backend/src/jacara/plugins/validators/rules.py:1157
+msgid "收样日期晚于签发日期"
+msgstr "Sample receipt date is after the issue date"
+
+#: backend/src/jacara/plugins/validators/rules.py:1162
+msgid "资质认定证书编号是 12 位数字（CMA）"
+msgstr "Accreditation certificate number has 12 digits (CMA)"
+
+#: backend/src/jacara/plugins/validators/rules.py:1169
+msgid "抽样日期不晚于签发日期"
+msgstr "Sampling date not after issue date"
+
+#: backend/src/jacara/plugins/validators/rules.py:1171
+msgid "抽样日期晚于签发日期"
+msgstr "Sampling date is after the issue date"
+
+#: backend/src/jacara/plugins/validators/rules.py:1287
+#, python-brace-format
+msgid "可选值：{label}"
+msgstr "Allowed values: {label}"
+
+#: backend/src/jacara/plugins/validators/rules.py:1288
+#, python-brace-format
+msgid "「{value}」不在可选值里（{listed}……）"
+msgstr "\"{value}\" is not an allowed value ({listed}…)"
+
+#: backend/src/jacara/plugins/validators/rules.py:1291
+#, python-brace-format
+msgid "「{value}」不在可选值里（{listed}）"
+msgstr "\"{value}\" is not an allowed value ({listed})"
+
+#: backend/src/jacara/plugins/validators/rules.py:1311
+#, python-brace-format
+msgid "参照表：{label}"
+msgstr "Reference table: {label}"
+
+#: backend/src/jacara/plugins/validators/rules.py:1313
+#, python-brace-format
+msgid "「{value}」在参照表《{label}》里找不到，对照不出编号"
+msgstr "\"{value}\" is not in the reference table \"{label}\"; no code can be matched"
+
+#: backend/src/jacara/plugins/validators/rules.py:1331
+#, python-brace-format
+msgid "必填：{label}"
+msgstr "Required: {label}"
+
+#: backend/src/jacara/plugins/validators/rules.py:1332
+#, python-brace-format
+msgid "必填字段「{label}」没有值"
+msgstr "Required field \"{label}\" has no value"
+
+#: backend/src/jacara/plugins/validators/rules.py:1371
+#, python-brace-format
+msgid "第 {index} 行：{message}"
+msgstr "Row {index}: {message}"
+
+#: backend/src/jacara/structure/analyze.py:185
+msgctxt "structure source"
+msgid "规则"
+msgstr "rule-based"
+
+#: backend/src/jacara/structure/engines.py:30
+msgid "正文"
+msgstr "Body text"
+
+#: backend/src/jacara/structure/engines.py:31
+msgid "标题"
+msgstr "Title"
+
+#: backend/src/jacara/structure/engines.py:32
+msgid "图"
+msgstr "Figure"
+
+#: backend/src/jacara/structure/engines.py:33
+msgid "图注"
+msgstr "Figure caption"
+
+#: backend/src/jacara/structure/engines.py:35
+msgid "表注"
+msgstr "Table caption"
+
+#: backend/src/jacara/structure/engines.py:36
+msgid "页眉"
+msgstr "Header"
+
+#: backend/src/jacara/structure/engines.py:37
+msgid "页脚"
+msgstr "Footer"
+
+#: backend/src/jacara/structure/engines.py:38
+msgid "参考文献"
+msgstr "References"
+
+#: backend/src/jacara/structure/engines.py:39
+msgid "公式"
+msgstr "Formula"
+
+#: backend/src/jacara/templates/__init__.py:79
+#, python-brace-format
+msgid "{where}：{what}应该是文字列表"
+msgstr "{where}: {what} must be a list of text"
+
+#: backend/src/jacara/templates/__init__.py:83
+#, python-brace-format
+msgid "{where}：{what}最多 {limit} 个"
+msgstr "{where}: at most {limit} {what}"
+
+#: backend/src/jacara/templates/__init__.py:90
+#: backend/src/jacara/workbook/standard.py:73
+msgid "国家和地区"
+msgstr "Countries and regions"
+
+#: backend/src/jacara/templates/__init__.py:95
+#, python-brace-format
+msgid "{where}：国家和地区要写两个字母的代码（如 CN、AU），不认识：{codes}"
+msgstr "{where}: countries and regions must be two-letter codes (such as CN, AU); unknown: {codes}"
+
+#: backend/src/jacara/templates/__init__.py:379
+#, python-brace-format
+msgid "{label}：{problem}，请核对开始和结束日期"
+msgstr "{label}: {problem}; check the start and end dates"
+
+#: backend/src/jacara/templates/__init__.py:389
+#, python-brace-format
+msgid "{label}：结束 {end} 早于开始 {start}"
+msgstr "{label}: end {end} is before start {start}"
+
+#: backend/src/jacara/templates/__init__.py:398
+#, python-brace-format
+msgid "{label}拆得开"
+msgstr "{label} can be split"
+
+#: backend/src/jacara/templates/__init__.py:408
+#, python-brace-format
+msgid "{label}结束不早于开始"
+msgstr "{label}: end not before start"
+
+#: backend/src/jacara/templates/__init__.py:457
+#, python-brace-format
+msgid "{left} 是 {left_value}，{right} 是 {right_value}，不满足 {condition}"
+msgstr "{left} is {left_value} and {right} is {right_value}, which does not satisfy {condition}"
+
+#: backend/src/jacara/templates/__init__.py:672
+#, python-brace-format
+msgid "没有叫 {name} 的起步模板，现有：{known}"
+msgstr "No starter template named {name}; available: {known}"
+
+#: backend/src/jacara/templates/__init__.py:679
+#, python-brace-format
+msgid "起步模板 {name}.toml 格式不对：{err}"
+msgstr "Starter template {name}.toml has an invalid format: {err}"
+
+#: backend/src/jacara/templates/__init__.py:738
+#, python-brace-format
+msgid "没有叫 {name} 的模板，现有：{known}"
+msgstr "No template named {name}; available: {known}"
+
+#: backend/src/jacara/templates/__init__.py:744
+#, python-brace-format
+msgid "模板 {name}.toml 格式不对：{err}"
+msgstr "Template {name}.toml has an invalid format: {err}"
+
+#: backend/src/jacara/templates/__init__.py:752
+#, python-brace-format
+msgid "模板 {name}"
+msgstr "Template {name}"
+
+#: backend/src/jacara/templates/__init__.py:757
+#, python-brace-format
+msgid "{where}：文件里的 name 应该是 {name}"
+msgstr "{where}: name in the file should be {name}"
+
+#: backend/src/jacara/templates/__init__.py:760
+#, python-brace-format
+msgid "{where}：version 应该是大于 0 的整数"
+msgstr "{where}: version must be an integer greater than 0"
+
+#: backend/src/jacara/templates/__init__.py:764
+#, python-brace-format
+msgid "{where}：至少要有一个字段"
+msgstr "{where}: at least one field is required"
+
+#: backend/src/jacara/templates/__init__.py:772
+#, python-brace-format
+msgid "{where}：第 {i} 张表的 name 只能用小写英文字母、数字和下划线"
+msgstr "{where}: the name of table {i} may only contain lowercase letters, digits and underscores"
+
+#: backend/src/jacara/templates/__init__.py:778
+#, python-brace-format
+msgid "{where}：表 {table_name} 和别的字段或表重名了"
+msgstr "{where}: table {table_name} has the same name as another field or table"
+
+#: backend/src/jacara/templates/__init__.py:785
+#, python-brace-format
+msgid "{where} 的表 {table_name}"
+msgstr "table {table_name} of {where}"
+
+#: backend/src/jacara/templates/__init__.py:789
+#, python-brace-format
+msgid "{where}：表 {table_name} 至少要有一列"
+msgstr "{where}: table {table_name} needs at least one column"
+
+#: backend/src/jacara/templates/__init__.py:794
+#, python-brace-format
+msgid "{where}：表 {table_name} 的列不能叫 row（留给行号用）"
+msgstr "{where}: a column of table {table_name} cannot be named row (reserved for row numbers)"
+
+#: backend/src/jacara/templates/__init__.py:808
+#, python-brace-format
+msgid "表 {table_name}"
+msgstr "table {table_name}"
+
+#: backend/src/jacara/templates/__init__.py:818
+#, python-brace-format
+msgid "{where}：没有编号为 {rule_id} 的规则，现有：{known}"
+msgstr "{where}: no rule with id {rule_id}; available: {known}"
+
+#: backend/src/jacara/templates/__init__.py:859
+#, python-brace-format
+msgid "{where}：region 写得不对"
+msgstr "{where}: invalid region"
+
+#: backend/src/jacara/templates/__init__.py:877
+#: backend/src/jacara/workbook/standard.py:70
+msgid "模板名"
+msgstr "Template name"
+
+#: backend/src/jacara/templates/__init__.py:884
+#, python-brace-format
+msgid "第 {i} 条"
+msgstr "rule {i}"
+
+#: backend/src/jacara/templates/__init__.py:886
+#, python-brace-format
+msgid "{where}：自定义规则「{name}」：{err}"
+msgstr "{where}: custom rule \"{name}\": {err}"
+
+#: backend/src/jacara/templates/__init__.py:899
+#, python-brace-format
+msgid "{where}：{what}的别的语言名字要写成 {{ en = \"...\", ja = \"...\" }}"
+msgstr "{where}: names of {what} in other languages must be written as {{ en = \"...\", ja = \"...\" }}"
+
+#: backend/src/jacara/templates/__init__.py:909
+#, python-brace-format
+msgid "{where}：{what}的语言代码「{lang}」不对，应该像 en、ja、zh-Hant"
+msgstr "{where}: language code \"{lang}\" of {what} is invalid; it should look like en, ja, zh-Hant"
+
+#: backend/src/jacara/templates/__init__.py:917
+#, python-brace-format
+msgid "{where}：{what}的 {lang} 名字应该是文字"
+msgstr "{where}: the {lang} name of {what} must be text"
+
+#: backend/src/jacara/templates/__init__.py:923
+#, python-brace-format
+msgid "{where}：{what}的 {lang} 名字太长了（最多 200 个字）"
+msgstr "{where}: the {lang} name of {what} is too long (at most 200 characters)"
+
+#: backend/src/jacara/templates/__init__.py:938
+#, python-brace-format
+msgid "{where}：custom_rules 应该是一个列表"
+msgstr "{where}: custom_rules must be a list"
+
+#: backend/src/jacara/templates/__init__.py:942
+#, python-brace-format
+msgid "{where}：第 {i} 条自定义规则写得不对"
+msgstr "{where}: custom rule {i} is invalid"
+
+#: backend/src/jacara/templates/__init__.py:945
+#, python-brace-format
+msgid "{where}：第 {i} 条自定义规则没写条件"
+msgstr "{where}: custom rule {i} has no condition"
+
+#: backend/src/jacara/templates/__init__.py:950
+#, python-brace-format
+msgid "{where}：第 {i} 条自定义规则的 severity 只能是 error 或 warning"
+msgstr "{where}: the severity of custom rule {i} must be error or warning"
+
+#: backend/src/jacara/templates/__init__.py:959
+#, python-brace-format
+msgid "{where}：第 {i} 条自定义规则的 per_row 不是这个模板里的表"
+msgstr "{where}: per_row of custom rule {i} is not a table of this template"
+
+#: backend/src/jacara/templates/__init__.py:989
+#, python-brace-format
+msgid "{where}：「{label}」的公式：{err}"
+msgstr "{where}: formula of \"{label}\": {err}"
+
+#: backend/src/jacara/templates/__init__.py:996
+#, python-brace-format
+msgid "{where}：「{label}」的公式不能用别的计算字段（只能用单据上抽的）"
+msgstr "{where}: the formula of \"{label}\" cannot use other computed fields (only fields extracted from the document)"
+
+#: backend/src/jacara/templates/__init__.py:1004
+#, python-brace-format
+msgid "{where}：{err}"
+msgstr "{where}: {err}"
+
+#: backend/src/jacara/templates/__init__.py:1015
+#, python-brace-format
+msgid "{where}：第 {i} 个字段的 name 只能用小写英文字母、数字和下划线"
+msgstr "{where}: the name of field {i} may only contain lowercase letters, digits and underscores"
+
+#: backend/src/jacara/templates/__init__.py:1023
+#, python-brace-format
+msgid "{where}：字段 {field_name} 的 type 只能是 string、number、date、date_range"
+msgstr "{where}: the type of field {field_name} must be string, number, date or date_range"
+
+#: backend/src/jacara/templates/__init__.py:1030
+#, python-brace-format
+msgid "{where}：字段 {field_name} 重复了"
+msgstr "{where}: field {field_name} is duplicated"
+
+#: backend/src/jacara/templates/__init__.py:1036
+#, python-brace-format
+msgid "{where}：字段 {field_name} 的 aliases 应该是文字列表"
+msgstr "{where}: aliases of field {field_name} must be a list of text"
+
+#: backend/src/jacara/templates/__init__.py:1046
+#, python-brace-format
+msgid "{where}：字段 {field_name} 的 options 应该是文字列表"
+msgstr "{where}: options of field {field_name} must be a list of text"
+
+#: backend/src/jacara/templates/__init__.py:1055
+#, python-brace-format
+msgid "{where}：字段 {field_name} 的 compute 应该是一条公式"
+msgstr "{where}: compute of field {field_name} must be a formula"
+
+#: backend/src/jacara/templates/__init__.py:1063
+#, python-brace-format
+msgid "{where}：字段 {field_name} 有公式，type 要是 number"
+msgstr "{where}: field {field_name} has a formula, so its type must be number"
+
+#: backend/src/jacara/templates/__init__.py:1072
+#, python-brace-format
+msgid "{where}：字段 {field_name} 的 range_export 只能是 normalized、original、columns"
+msgstr "{where}: range_export of field {field_name} must be normalized, original or columns"
+
+#: backend/src/jacara/templates/__init__.py:1082
+#, python-brace-format
+msgid "{where}：字段 {field_name} 的分隔符要写 1～10 个字"
+msgstr "{where}: the separator of field {field_name} must have 1 to 10 characters"
+
+#: backend/src/jacara/templates/__init__.py:1106
+#, python-brace-format
+msgid "字段 {field_name}"
+msgstr "field {field_name}"
+
+#: backend/src/jacara/templates/extras.py:33
+msgid "单据表"
+msgstr "Document sheet"
+
+#: backend/src/jacara/templates/extras.py:34
+msgid "明细表"
+msgstr "Line-item sheet"
+
+#: backend/src/jacara/templates/extras.py:35
+msgid "对象表"
+msgstr "Entity sheet"
+
+#: backend/src/jacara/templates/extras.py:36
+msgid "参照表"
+msgstr "Reference tables"
+
+#: backend/src/jacara/templates/extras.py:37
+msgid "说明 / 选项"
+msgstr "Instructions / options"
+
+#: backend/src/jacara/templates/extras.py:38
+msgid "不用"
+msgstr "Excluded"
+
+#: backend/src/jacara/templates/extras.py:42
+msgid "序号"
+msgstr "Sequence number"
+
+#: backend/src/jacara/templates/extras.py:43
+msgid "文件名"
+msgstr "File name"
+
+#: backend/src/jacara/templates/extras.py:44
+msgid "第几页"
+msgstr "Page"
+
+#: backend/src/jacara/templates/extras.py:45
+msgid "明细第几行"
+msgstr "Line item row"
+
+#: backend/src/jacara/templates/extras.py:46
+msgid "上传时间"
+msgstr "Uploaded"
+
+#: backend/src/jacara/templates/extras.py:48
+msgid "审核时间"
+msgstr "Reviewed at"
+
+#: backend/src/jacara/templates/extras.py:153
+#, python-brace-format
+msgid "{where}：第 {i} 个对象的 name 只能用小写英文字母、数字和下划线"
+msgstr "{where}: the name of entity {i} may only contain lowercase letters, digits and underscores"
+
+#: backend/src/jacara/templates/extras.py:163
+#, python-brace-format
+msgid "{where}：对象 {name} 的编号字段 {key} 不在模板的字段里"
+msgstr "{where}: the key field {key} of entity {name} is not a field of the template"
+
+#: backend/src/jacara/templates/extras.py:173
+#, python-brace-format
+msgid "{where}：对象 {name} 的字段 {fields} 不在模板的字段里"
+msgstr "{where}: fields {fields} of entity {name} are not fields of the template"
+
+#: backend/src/jacara/templates/extras.py:180
+#, python-brace-format
+msgid "{where}：对象 {name} 重复了"
+msgstr "{where}: entity {name} is duplicated"
+
+#: backend/src/jacara/templates/extras.py:201
+#, python-brace-format
+msgid "{where}：第 {i} 份参照表的 name 只能用小写英文字母、数字和下划线"
+msgstr "{where}: the name of reference table {i} may only contain lowercase letters, digits and underscores"
+
+#: backend/src/jacara/templates/extras.py:209
+#, python-brace-format
+msgid "{where}：参照表 {name} 的列名不能为空、不能重复"
+msgstr "{where}: column names of reference table {name} must not be empty or repeated"
+
+#: backend/src/jacara/templates/extras.py:215
+#, python-brace-format
+msgid "{where}：参照表 {name} 超过 {limit} 行"
+msgstr "{where}: reference table {name} has more than {limit} rows"
+
+#: backend/src/jacara/templates/extras.py:226
+#, python-brace-format
+msgid "{where}：参照表 {name} 要对照的字段 {match_field} 不在模板里"
+msgstr "{where}: the field {match_field} matched by reference table {name} is not in the template"
+
+#: backend/src/jacara/templates/extras.py:235
+#, python-brace-format
+msgid "{where}：参照表 {name} 没有叫 {match_column} 的列"
+msgstr "{where}: reference table {name} has no column named {match_column}"
+
+#: backend/src/jacara/templates/extras.py:243
+#, python-brace-format
+msgid "{where}：参照表 {name} 的对照字段和对照列要一起写"
+msgstr "{where}: the match field and match column of reference table {name} must be given together"
+
+#: backend/src/jacara/templates/extras.py:246
+#, python-brace-format
+msgid "{where}：参照表 {name} 重复了"
+msgstr "{where}: reference table {name} is duplicated"
+
+#: backend/src/jacara/templates/extras.py:278
+#, python-brace-format
+msgid "{where}：sheet「{name}」的角色 {role} 不认识"
+msgstr "{where}: unknown role {role} for sheet \"{name}\""
+
+#: backend/src/jacara/templates/extras.py:287
+#, python-brace-format
+msgid "{where}：sheet「{name}」的表头行要是正整数"
+msgstr "{where}: the header row of sheet \"{name}\" must be a positive integer"
+
+#: backend/src/jacara/templates/extras.py:295
+#, python-brace-format
+msgid "{where}：sheet「{name}」的列「{header}」要填的 {ref} 不认识"
+msgstr "{where}: sheet \"{name}\", column \"{header}\": unknown content {ref}"
+
+#: backend/src/jacara/templates/extras.py:307
+#, python-brace-format
+msgid "{where}：sheet「{name}」有列的位置不对"
+msgstr "{where}: sheet \"{name}\" has columns at invalid positions"
+
+#: backend/src/jacara/templates/extras.py:322
+#, python-brace-format
+msgid "{where}：明细表「{name}」对应的表格 {table} 不在模板里"
+msgstr "{where}: table {table} of line-item sheet \"{name}\" is not in the template"
+
+#: backend/src/jacara/templates/extras.py:331
+#, python-brace-format
+msgid "{where}：对象表「{name}」对应的对象 {entity} 不在模板里"
+msgstr "{where}: entity {entity} of entity sheet \"{name}\" is not in the template"
+
+#: backend/src/jacara/templates/extras.py:340
+#, python-brace-format
+msgid "{where}：参照表「{name}」对应的名单 {reference} 不在模板里"
+msgstr "{where}: list {reference} of reference sheet \"{name}\" is not in the template"
+
+#: backend/src/jacara/workbook/analyze.py:131
+msgid "打不开这个 Excel。只支持 .xlsx；老的 .xls 请先在 Excel 里另存为 .xlsx"
+msgstr "Cannot open this Excel file. Only .xlsx is supported; save old .xls files as .xlsx in Excel first"
+
+#: backend/src/jacara/workbook/analyze.py:274
+msgid "没找到表头（说明、备注之类）"
+msgstr "No header row found (instructions, notes or similar)"
+
+#: backend/src/jacara/workbook/analyze.py:369
+msgid "被下拉框引用（下拉选项）"
+msgstr "Referenced by a drop-down (drop-down options)"
+
+#: backend/src/jacara/workbook/analyze.py:373
+msgid "被下拉框引用，或者像选项、说明"
+msgstr "Referenced by a drop-down, or looks like options or instructions"
+
+#: backend/src/jacara/workbook/analyze.py:375
+msgid "名字像填表说明"
+msgstr "The name looks like filling instructions"
+
+#: backend/src/jacara/workbook/analyze.py:377
+msgid "名字像名单、字典、代码表"
+msgstr "The name looks like a list, dictionary or code table"
+
+#: backend/src/jacara/workbook/analyze.py:381
+msgid "隐藏的 sheet"
+msgstr "Hidden sheet"
+
+#: backend/src/jacara/workbook/analyze.py:391
+#, python-brace-format
+msgid "表头和「{name}」一样"
+msgstr "Same header as \"{name}\""
+
+#: backend/src/jacara/workbook/analyze.py:415
+#, python-brace-format
+msgid "「{name}」里同一个「{header}」出现好几次，这里一个一行"
+msgstr "The same \"{header}\" appears several times in \"{name}\"; one row each here"
+
+#: backend/src/jacara/workbook/analyze.py:422
+#, python-brace-format
+msgid "同一个「{header}」有好几行，连到「{name}」"
+msgstr "Several rows share the same \"{header}\"; linked to \"{name}\""
+
+#: backend/src/jacara/workbook/analyze.py:432
+msgid "一行对应一份单据（默认）"
+msgstr "One row per document (default)"
+
+#: backend/src/jacara/workbook/build.py:106
+#, python-brace-format
+msgid "「{header}」还没有字段 ID"
+msgstr "\"{header}\" has no field ID yet"
+
+#: backend/src/jacara/workbook/build.py:131
+#, python-brace-format
+msgid "「{name}」里的每一行"
+msgstr "Each row in \"{name}\""
+
+#: backend/src/jacara/workbook/build.py:139
+#, python-brace-format
+msgid "「{name}」的「{header}」还没有列 ID"
+msgstr "Column \"{header}\" of \"{name}\" has no column ID yet"
+
+#: backend/src/jacara/workbook/build.py:143
+#, python-brace-format
+msgid "「{name}」里列 ID {field} 重复了"
+msgstr "Column ID {field} is duplicated in \"{name}\""
+
+#: backend/src/jacara/workbook/build.py:155
+#, python-brace-format
+msgid "对象表「{name}」要选一列当编号（从单据抽或人工填的列）"
+msgstr "Entity sheet \"{name}\" needs a column as its key (extracted from documents or entered manually)"
+
+#: backend/src/jacara/workbook/build.py:186
+#, python-brace-format
+msgid "参照表「{name}」要对照的列「{column}」没有建成字段"
+msgstr "The column \"{column}\" matched by reference sheet \"{name}\" was not created as a field"
+
+#: backend/src/jacara/workbook/build.py:251
+msgid "没有任何字段：至少要有一张单据表或对象表，或者明细表里标一列“单据上的字段”"
+msgstr "No fields at all: at least one document or entity sheet is needed, or mark a column of a line-item sheet as \"Field on the document\""
+
+#: backend/src/jacara/workbook/fill.py:56
+msgid "这个模板没有工作簿样式"
+msgstr "This template has no workbook layout"
+
+#: backend/src/jacara/workbook/fill.py:125
+msgid "几份单据写的不一样：\n"
+msgstr "The documents disagree:\n"
+
+#: backend/src/jacara/workbook/fill.py:126
+#, python-brace-format
+msgid "{file}：{value}"
+msgstr "{file}: {value}"
+
+#: backend/src/jacara/workbook/standard.py:29
+msgid "文字"
+msgstr "Text"
+
+#: backend/src/jacara/workbook/standard.py:30
+msgid "数字"
+msgstr "Number"
+
+#: backend/src/jacara/workbook/standard.py:32
+msgid "日期范围"
+msgstr "Date range"
+
+#: backend/src/jacara/workbook/standard.py:35
+#: backend/src/jacara/workbook/standard.py:55
+#: backend/src/jacara/workbook/standard.py:56
+#: backend/src/jacara/workbook/standard.py:120
+#: backend/src/jacara/workbook/standard.py:347
+#: backend/src/jacara/workbook/standard.py:365
+#: backend/src/jacara/workbook/standard.py:408
+#: backend/src/jacara/workbook/standard.py:437
+msgid "中文名"
+msgstr "Display name"
+
+#: backend/src/jacara/workbook/standard.py:36
+#: backend/src/jacara/workbook/standard.py:120
+#: backend/src/jacara/workbook/standard.py:453
+msgid "字段ID"
+msgstr "Field ID"
+
+#: backend/src/jacara/workbook/standard.py:37
+#: backend/src/jacara/workbook/standard.py:71
+#: backend/src/jacara/workbook/standard.py:440
+msgid "类型"
+msgstr "Type"
+
+#: backend/src/jacara/workbook/standard.py:38
+#: backend/src/jacara/workbook/standard.py:456
+msgid "必填"
+msgstr "Required"
+
+#: backend/src/jacara/workbook/standard.py:39
+#: backend/src/jacara/workbook/standard.py:457
+msgid "从单据抽"
+msgstr "Extract"
+
+#: backend/src/jacara/workbook/standard.py:40
+#: backend/src/jacara/workbook/standard.py:458
+msgid "导出"
+msgstr "Export"
+
+#: backend/src/jacara/workbook/standard.py:41
+#: backend/src/jacara/workbook/standard.py:451
+msgid "敏感"
+msgstr "Sensitive"
+
+#: backend/src/jacara/workbook/standard.py:42
+#: backend/src/jacara/workbook/standard.py:460
+msgid "可选值"
+msgstr "Allowed values"
+
+#: backend/src/jacara/workbook/standard.py:43
+#: backend/src/jacara/workbook/standard.py:461
+msgid "别名"
+msgstr "Aliases"
+
+#: backend/src/jacara/workbook/standard.py:44
+#: backend/src/jacara/workbook/standard.py:75
+#: backend/src/jacara/workbook/standard.py:462
+msgid "说明"
+msgstr "Description"
+
+#: backend/src/jacara/workbook/standard.py:47
+#: backend/src/jacara/workbook/standard.py:322
+#: backend/src/jacara/workbook/standard.py:408
+msgid "表ID"
+msgstr "Table ID"
+
+#: backend/src/jacara/workbook/standard.py:48
+#: backend/src/jacara/workbook/standard.py:329
+msgid "表中文名"
+msgstr "Table display name"
+
+#: backend/src/jacara/workbook/standard.py:49
+#: backend/src/jacara/workbook/standard.py:330
+msgid "表说明"
+msgstr "Table description"
+
+#: backend/src/jacara/workbook/standard.py:50
+#: backend/src/jacara/workbook/standard.py:331
+msgid "至少一行"
+msgstr "At least one row"
+
+#: backend/src/jacara/workbook/standard.py:51
+#: backend/src/jacara/workbook/standard.py:332
+msgid "导出整张表"
+msgstr "Export whole table"
+
+#: backend/src/jacara/workbook/standard.py:54
+msgid "级别"
+msgstr "Severity"
+
+#: backend/src/jacara/workbook/standard.py:54
+#: backend/src/jacara/workbook/standard.py:340
+msgid "编号"
+msgstr "ID"
+
+#: backend/src/jacara/workbook/standard.py:54
+#: backend/src/jacara/workbook/standard.py:342
+msgid "用"
+msgstr "Use"
+
+#: backend/src/jacara/workbook/standard.py:55
+#: backend/src/jacara/workbook/standard.py:346
+msgid "对象ID"
+msgstr "Entity ID"
+
+#: backend/src/jacara/workbook/standard.py:55
+#: backend/src/jacara/workbook/standard.py:348
+msgid "编号字段"
+msgstr "Key field"
+
+#: backend/src/jacara/workbook/standard.py:55
+#: backend/src/jacara/workbook/standard.py:349
+msgid "包含的字段"
+msgstr "Fields included"
+
+#: backend/src/jacara/workbook/standard.py:56
+#: backend/src/jacara/workbook/standard.py:355
+msgid "数据在"
+msgstr "Data in"
+
+#: backend/src/jacara/workbook/standard.py:56
+#: backend/src/jacara/workbook/standard.py:364
+msgid "参照ID"
+msgstr "Reference ID"
+
+#: backend/src/jacara/workbook/standard.py:56
+#: backend/src/jacara/workbook/standard.py:366
+msgid "对照字段"
+msgstr "Match field"
+
+#: backend/src/jacara/workbook/standard.py:56
+#: backend/src/jacara/workbook/standard.py:367
+msgid "对照列"
+msgstr "Match column"
+
+#: backend/src/jacara/workbook/standard.py:57
+msgid "项目"
+msgstr "Item"
+
+#: backend/src/jacara/workbook/standard.py:57
+msgid "内容"
+msgstr "Value"
+
+#: backend/src/jacara/workbook/standard.py:59
+msgctxt "sheet"
+msgid "模板"
+msgstr "Template"
+
+#: backend/src/jacara/workbook/standard.py:60
+msgctxt "sheet"
+msgid "字段"
+msgstr "Fields"
+
+#: backend/src/jacara/workbook/standard.py:61
+msgctxt "sheet"
+msgid "表格"
+msgstr "Tables"
+
+#: backend/src/jacara/workbook/standard.py:62
+msgctxt "sheet"
+msgid "规则"
+msgstr "Rules"
+
+#: backend/src/jacara/workbook/standard.py:63
+msgctxt "sheet"
+msgid "对象"
+msgstr "Entities"
+
+#: backend/src/jacara/workbook/standard.py:64
+msgctxt "sheet"
+msgid "参照表"
+msgstr "Reference tables"
+
+#: backend/src/jacara/workbook/standard.py:68
+msgid "格式"
+msgstr "Format"
+
+#: backend/src/jacara/workbook/standard.py:69
+msgid "格式版本"
+msgstr "Format version"
+
+#: backend/src/jacara/workbook/standard.py:76
+msgid "导出时的版本"
+msgstr "Version at export"
+
+#: backend/src/jacara/workbook/standard.py:77
+msgid "提示"
+msgstr "Hint"
+
+#: backend/src/jacara/workbook/standard.py:79
+msgid "否"
+msgstr "No"
+
+#: backend/src/jacara/workbook/standard.py:80
+msgid "通用"
+msgstr "Generic"
+
+#: backend/src/jacara/workbook/standard.py:166
+msgid "改好之后在“模板”页点“导入模板”选这个文件。按原表导出的样式不在这里，要搬请用 JSON 导出。"
+msgstr "After editing, choose this file with \"Import template\" on the Templates page. The original-workbook export layout is not included; use the JSON export to move it."
+
+#: backend/src/jacara/workbook/standard.py:207
+msgid "错误"
+msgstr "Error"
+
+#: backend/src/jacara/workbook/standard.py:207
+msgid "警告"
+msgstr "Warning"
+
+#: backend/src/jacara/workbook/standard.py:222
+#, python-brace-format
+msgid "参照-{label}"
+msgstr "Reference-{label}"
+
+#: backend/src/jacara/workbook/standard.py:312
+msgid "“模板”表里没有写模板名"
+msgstr "The \"Template\" sheet has no template name"
+
+#: backend/src/jacara/workbook/standard.py:314
+msgid "字段表"
+msgstr "Fields sheet"
+
+#: backend/src/jacara/workbook/standard.py:319
+msgid "表格表"
+msgstr "Tables sheet"
+
+#: backend/src/jacara/workbook/standard.py:324
+#, python-brace-format
+msgid "表格表第 {n} 行：没有写表ID"
+msgstr "Tables sheet row {n}: no table ID"
+
+#: backend/src/jacara/workbook/standard.py:338
+msgid "规则表"
+msgstr "Rules sheet"
+
+#: backend/src/jacara/workbook/standard.py:358
+#, python-brace-format
+msgid "参照表第 {n} 行：找不到放数据的 sheet「{sheet}」"
+msgstr "Reference tables sheet row {n}: the data sheet \"{sheet}\" cannot be found"
+
+#: backend/src/jacara/workbook/standard.py:423
+#, python-brace-format
+msgid "“{sheet}”表缺少这几列：{columns}"
+msgstr "Sheet \"{sheet}\" is missing these columns: {columns}"
+
+#: backend/src/jacara/workbook/standard.py:439
+#, python-brace-format
+msgid "{sheet}第 {n} 行：没有写中文名"
+msgstr "{sheet} row {n}: no display name"
+
+#: backend/src/jacara/workbook/standard.py:445
+#, python-brace-format
+msgid "{sheet}第 {n} 行：类型只能填 {types}"
+msgstr "{sheet} row {n}: the type must be one of {types}"
+
+#: backend/src/jacara/workbook/standard.py:489
+#, python-brace-format
+msgid "{sheet}第 {n} 行：是/否 的格子写了「{value}」，只能填 {yes} 或 {no}"
+msgstr "{sheet} row {n}: a yes/no cell contains \"{value}\"; only {yes} or {no} is allowed"

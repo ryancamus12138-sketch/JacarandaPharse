@@ -1,10 +1,10 @@
-# JacarandaParse 项目配置
-# 产品代码在 backend/src/jacara，包名叫 jacara。
+# JacarandaParse project configuration.
+# Application code lives in backend/src/jacara (package name: jacara).
 
 [project]
 name = "jacara"
 version = "1.0.0"
-description = "JacarandaParse：完全离线的文档结构化与人工审核工具"
+description = "JacarandaParse: offline document extraction and human review"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 
@@ -45,11 +45,13 @@ dev = [
     "pyright[nodejs]>=1.1.400",
     "pre-commit>=4.3",
     "pytest>=9.2.0",
+    "babel>=2.17",
 ]
 
 [tool.uv]
-# rapid-layout、rapid-table 声明依赖 opencv-python（带图形界面的版本），rapidocr 用的是
-# opencv-python-headless。两个装在一起会互相覆盖 cv2；这里把 opencv-python 去掉，统一用 headless。
+# rapid-layout and rapid-table depend on opencv-python (GUI build) while rapidocr uses
+# opencv-python-headless. Installed together they overwrite each other's cv2, so opencv-python is
+# excluded and the headless build is used throughout.
 override-dependencies = ["opencv-python ; sys_platform == 'never'"]
 
 [build-system]
@@ -59,7 +61,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["backend/src/jacara"]
 
-# ---------- ruff：代码风格 + 常见错误检查 ----------
+# ---------- ruff: style and lint ----------
 [tool.ruff]
 line-length = 100
 target-version = "py312"
@@ -67,13 +69,13 @@ src = ["backend/src"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF"]
-ignore = ["RUF001", "RUF002", "RUF003"]  # 允许中文全角标点
+ignore = ["RUF001", "RUF002", "RUF003"]  # Allow full-width CJK punctuation in strings and comments
 
 [tool.ruff.lint.per-file-ignores]
-# S101：测试就是用 assert 写的；S105、S106：测试里的假密码不是真密钥
+# S101: tests use assert; S105, S106: fake passwords in tests are not real secrets
 "backend/tests/**" = ["S101", "S105", "S106"]
 
-# ---------- pyright：类型检查 ----------
+# ---------- pyright: type checking ----------
 [tool.pyright]
 include = ["backend/src", "backend/tests"]
 pythonVersion = "3.12"
@@ -81,11 +83,11 @@ typeCheckingMode = "standard"
 venvPath = "."
 venv = ".venv"
 
-# ---------- pytest：自动化测试 ----------
+# ---------- pytest ----------
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 addopts = "-q"
 filterwarnings = [
-    # Starlette 提示以后改用 httpx2；等 FastAPI 的 TestClient 跟进后删掉这一行
+    # Starlette deprecation notice for httpx; remove once FastAPI's TestClient migrates
     "ignore:Using `httpx` with `starlette.testclient` is deprecated",
 ]

@@ -1,4 +1,5 @@
-"""备份和恢复（ADR 0054）：完整备份一次，恢复到空环境，逐样打开。"""
+"""Backup and restore: a complete backup, restored into an empty environment, with every item
+opened."""
 
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ from jacara.models import Document, ExtractedValue, OcrSample, ValueRevision
 from jacara.ops.backup import BackupError, backup, check_archive, decode, encode, restore
 from jacara.ops.verify import verify
 
-from .conftest import MemoryStorage
+from .conftest import MemoryStorage, raises
 from .test_template_library import process
 
 
@@ -38,7 +39,8 @@ def empty():
 
 @pytest.fixture
 def filled(client, factory, storage, receipt_page):
-    """处理一份收据、改一个字段、收一条样本、头像、OCR 快照都有。"""
+    """Process a receipt, edit a field, collect a sample, set an avatar and store an OCR
+    snapshot."""
     response = client.post("/api/v1/documents", files={"file": ("r.png", png(), "image/png")})
     document_id = response.json()["id"]
     process(factory, storage, document_id, receipt_page)
@@ -119,18 +121,18 @@ def test_damaged_archive_is_refused_before_anything_changes(factory, storage, fi
             member.size = len(data)
             dst.addfile(member, io.BytesIO(data))
     engine, maker, target = empty()
-    with pytest.raises(BackupError, match="内容和备份时不一样"):
+    with raises(BackupError, "内容和备份时不一样"):
         restore(damaged, engine, target, lambda revision: None)
     assert count(maker, Document) == 0 and not target.files
 
 
 def test_restore_only_into_an_empty_environment(factory, storage, filled, tmp_path):
     archive = backup(factory.kw["bind"], storage, tmp_path, "test")
-    with pytest.raises(BackupError, match="只能恢复到空的环境"):
+    with raises(BackupError, "只能恢复到空的环境"):
         restore(archive, factory.kw["bind"], storage, lambda revision: None)
     engine, _, target = empty()
     target.put("something", b"x", "text/plain")
-    with pytest.raises(BackupError, match="对象存储里已经有文件"):
+    with raises(BackupError, "对象存储里已经有文件"):
         restore(archive, engine, target, lambda revision: None)
 
 

@@ -18,9 +18,10 @@ import { ApiError } from '../../api/client'
 import type { Box, FieldValue, PageOcr, PageStructure } from '../../api/types'
 import { boxColor, evidenceOf, fieldLabel, shownValue, splitCell } from './fields'
 import { usePageImage } from './usePageImage'
+import { useTranslation } from 'react-i18next'
 
 const ZOOMS = [0.5, 0.75, 1, 1.5, 2, 3]
-const PAD = 4 // 框比文字稍大一点，不压住字
+const PAD = 4 // Boxes slightly larger than the text so they do not cover it.
 const FRAME_PADDING = 16
 
 interface Props {
@@ -31,46 +32,48 @@ interface Props {
   hoveredId: string | null
   onSelect: (id: string) => void
   onHover: (id: string | null) => void
-  /** 这一页的 OCR 结果（"从原文选取"用）。还没取到是 undefined。 */
+  /** OCR result of this page (for "select from source text"). undefined until loaded. */
   ocr: PageOcr | undefined
-  /** 显示原文文字块：按住 Alt，或者点了工具栏的"原文文字"。 */
+  /** Show source text blocks: hold Alt, or toggle "Source text" in the toolbar. */
   showOcr: boolean
   onToggleOcr: () => void
-  /** 正在多选的文字块（按住 Shift 或 ⌘/Ctrl 点的）。 */
+  /** Text blocks being multi-selected (clicked with Shift or ⌘/Ctrl). */
   picked: number[]
-  /** 点了一个文字块。multi：按着 Shift 或 ⌘/Ctrl，是多选。 */
+  /** A text block was clicked. multi: Shift or ⌘/Ctrl was held (multi-select). */
   onPickLine: (index: number, multi: boolean) => void
-  /** 能不能框选（有"修改字段"权限）。 */
+  /** Whether regions can be selected (requires the edit-fields permission). */
   canDraw: boolean
-  /** 框选模式：在图上拖出一个框，或者拖动、拉伸选中字段的框。 */
+  /** Region mode: drag a box on the image, or move and resize the selected field's box. */
   drawOn: boolean
   onToggleDraw: () => void
-  /** 正在画、或者画好了还没用的框。 */
+  /** Box being drawn, or drawn but not yet used. */
   draft: Box | null
-  /** 拖动过程中框一直在变；null 是取消。 */
+  /** The box changes continuously while dragging; null cancels. */
   onDraft: (box: Box | null) => void
-  /** 松开鼠标，框画好了。 */
+  /** Mouse released: the box is complete. */
   onDraftDone: (box: Box) => void
-  /** 工具栏最前面多放的按钮（例如"确认"）。 */
+  /** Extra buttons at the start of the toolbar (for example "Confirm"). */
   extra?: ReactNode
-  /** 这一页的结构（版面区域、表格、标题 → 值）。还没取到是 undefined。 */
+  /** Structure of this page (layout regions, tables, label → value pairs). undefined until loaded. */
   structure?: PageStructure
-  /** 显示版面结构：看系统认出了哪些区域、表格的格子、标题和值。 */
+  /** Show the layout structure: regions, table cells, labels and values detected by the system. */
   showStructure?: boolean
   onToggleStructure?: () => void
 }
 
 type Handle = 'new' | 'move' | 'nw' | 'ne' | 'sw' | 'se'
 
-/** 把框整理成 左 < 右、上 < 下。 */
+/** Normalize a box so that left < right and top < bottom. */
 function normalize([x0, y0, x1, y1]: Box): Box {
-  const r = (v: number) => Math.round(v * 10) / 10 // 保留一位小数就够了
+  const r = (v: number) => Math.round(v * 10) / 10 // One decimal place is enough.
   return [r(Math.min(x0, x1)), r(Math.min(y0, y1)), r(Math.max(x0, x1)), r(Math.max(y0, y1))]
 }
 
 /**
- * 左边：页面原图，每个有出处的字段在上面画一个框。点框 = 选中右边对应的字段。
- * 显示原文文字块时，每块 OCR 认出的文字都有一个虚线框，点它 = 把这块的文字填进选中的字段。
+ * Left: the page image with a box for every field that has evidence. Clicking a box selects the corresponding
+ * field on the right.
+ * When source text blocks are shown, each OCR block has a dashed box; clicking one fills its text into the
+ * selected field.
  */
 export function PageViewer({
   documentId,
@@ -96,17 +99,20 @@ export function PageViewer({
   showStructure = false,
   onToggleStructure,
 }: Props) {
+  const { t } = useTranslation()
   const image = usePageImage(documentId, page)
   const [zoom, setZoom] = useState(1)
-  // 图片的真实像素大小。出处坐标就是按这个算的，SVG 用它当坐标系
+  // Natural pixel size of the image. Evidence coordinates refer to it, and the SVG uses it as its coordinate
+  // system.
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null)
   const boxes = useRef(new Map<string, SVGRectElement>())
   const svg = useRef<SVGSVGElement>(null)
-  // 正在拖的框：从哪里开始、拖的是哪个角（或整个框、或新画一个）、开始时框在哪
+  // Box being dragged: start point, the handle being dragged (a corner, the whole box, or a new box) and the
+  // box at the start.
   const drag = useRef<{ handle: Handle; x: number; y: number; base: Box } | null>(null)
   const latest = useRef<Box | null>(null)
 
-  /** 鼠标在屏幕上的位置 → 图片上的像素坐标（图片放大缩小了也对）。 */
+  /** Screen position of the pointer → pixel coordinates on the image (correct at any zoom). */
   function toImage(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const el = svg.current
     const matrix = el?.getScreenCTM()
@@ -155,12 +161,12 @@ export function PageViewer({
     if (box && box[2] - box[0] > 4 && box[3] - box[1] > 4) {
       onDraftDone(box)
     } else if (box) {
-      onDraft(null) // 只是点了一下，不算画框
+      onDraft(null) // A simple click, not a drawn box.
     }
   }
   const frame = useRef<HTMLDivElement>(null)
 
-  // 右边选中一个字段时，把左边对应的框滚到看得见的地方
+  // When a field is selected on the right, scroll its box on the left into view.
   useEffect(() => {
     if (selectedId) {
       boxes.current
@@ -170,8 +176,9 @@ export function PageViewer({
   }, [selectedId])
 
   const withBox = values.filter((v) => evidenceOf(v) && !v.deleted)
-  // 要画的框：普通字段全画；表格（商品明细）的格子太多，只画选中和鼠标停着的那一格，不然满屏都是框。
-  // 大框先画、小框后画：小框在上面，点得到
+  // Boxes to draw: all regular fields; table cells are too many, so only the selected and hovered cell, to
+  // avoid filling the screen with boxes.
+  // Large boxes first, small boxes last: small boxes stay on top and clickable.
   const area = (v: FieldValue) => {
     const [x0, y0, x1, y1] = evidenceOf(v)!.bbox
     return (x1 - x0) * (y1 - y0)
@@ -180,8 +187,8 @@ export function PageViewer({
     .filter((v) => splitCell(v.name) === null || v.id === selectedId || v.id === hoveredId)
     .sort((a, b) => area(b) - area(a))
   /**
-   * 原图上这一点是哪个字段的出处（包括商品明细里没画框的格子）：框住这一点的里面挑最小的。
-   * 点原图 = 选中右边对应的字段（"点框反选"）。
+   * The field whose evidence contains this point on the image (including line-item cells without drawn
+   * boxes): the smallest box containing it. Clicking the image selects the corresponding field on the right.
    */
   function fieldAt(e: { clientX: number; clientY: number }): string | null {
     const { x, y } = toImage(e)
@@ -193,16 +200,18 @@ export function PageViewer({
     return hits[0]?.id ?? null
   }
 
-  // 放大、缩小：跳到下一档。"整页"算出来的比例不在档位里，所以按大小找，不按位置找
+  // Zoom in and out by steps. The computed "fit page" ratio is not a step, so the next step is found by
+  // value, not index.
   const zoomIn = () => setZoom(ZOOMS.find((z) => z > zoom + 0.001) ?? ZOOMS[ZOOMS.length - 1])
   const zoomOut = () => setZoom([...ZOOMS].reverse().find((z) => z < zoom - 0.001) ?? ZOOMS[0])
 
-  // 框选时能拖的框：画好的框，或者选中字段现在的框
+  // Draggable box in region mode: the drawn box, or the selected field's current box.
   const selectedValue = values.find((v) => v.id === selectedId)
   const editable: Box | null =
     draft ?? (selectedValue && evidenceOf(selectedValue) ? evidenceOf(selectedValue)!.bbox : null)
 
-  // 整页：缩到整张图刚好放得下（细长的小票很需要）。zoom 是"图片宽 / 框宽"
+  // Fit page: scale so the whole image fits (essential for long narrow receipts). zoom is image width /
+  // container width.
   const fitPage = () => {
     const box = frame.current
     if (!box || !natural) {
@@ -216,21 +225,21 @@ export function PageViewer({
 
   return (
     <Flex vertical gap={8} style={{ height: '100%' }}>
-      <Flex justify="space-between" align="center">
-        <Typography.Text type="secondary">
+      <Flex justify="space-between" align="center" wrap gap={8}>
+        <Typography.Text type="secondary" style={{ flex: '1 1 200px', minWidth: 0 }}>
           {drawOn
-            ? '拖出新框，或拖动、拉伸橙色框'
+            ? t('拖出新框，或拖动、拉伸橙色框')
             : showOcr
-            ? '点文字块填入右边选中的字段；按住 Shift 或 ⌘/Ctrl 多选'
-            : `${withBox.length} 个值找到了出处`}
+            ? t('点文字块填入右边选中的字段；按住 Shift 或 ⌘/Ctrl 多选')
+            : t('{{length}} 个值找到了出处', { length: withBox.length })}
         </Typography.Text>
-        <Flex gap={4} align="center">
+        <Flex gap={4} align="center" wrap>
           {extra}
           <Tooltip
             title={
               ocr && !ocr.available
-                ? '这一页处理时还没保存 OCR 结果，重新上传后才能用'
-                : '显示 OCR 认出的每块文字（也可以按住 Alt / Option）。先在右边选中字段，再点文字填入；按住 Shift 或 ⌘/Ctrl 可以多选'
+                ? t('这一页处理时还没保存 OCR 结果，重新上传后才能用')
+                : t('显示 OCR 认出的每块文字（也可以按住 Alt / Option）。先在右边选中字段，再点文字填入；按住 Shift 或 ⌘/Ctrl 可以多选')
             }
           >
             <Button
@@ -240,15 +249,15 @@ export function PageViewer({
               onClick={onToggleOcr}
               disabled={!ocr?.available}
             >
-              原文文字
+              {t('原文文字')}
             </Button>
           </Tooltip>
           {onToggleStructure && (
             <Tooltip
               title={
                 structure && !structure.available
-                  ? '这一页是更新前处理的，没有版面结构；重新处理后才有'
-                  : '看系统认出了什么：版面区域（虚线）、表格的格子（紫色）、标题（橙色）→ 值（绿色）'
+                  ? t('这一页是更新前处理的，没有版面结构；重新处理后才有')
+                  : t('看系统认出了什么：版面区域（虚线）、表格的格子（紫色）、标题（橙色）→ 值（绿色）')
               }
             >
               <Button
@@ -258,24 +267,24 @@ export function PageViewer({
                 onClick={onToggleStructure}
                 disabled={!structure?.available}
               >
-                版面结构
+                {t('版面结构')}
               </Button>
             </Tooltip>
           )}
           {canDraw && (
-            <Tooltip title="在原图上拖出一个框，或者拖动、拉伸选中字段的框；然后用框里的文字，或者重新识别这块">
+            <Tooltip title={t('在原图上拖出一个框，或者拖动、拉伸选中字段的框；然后用框里的文字，或者重新识别这块')}>
               <Button
                 size="small"
                 icon={<SelectOutlined />}
                 type={drawOn ? 'primary' : 'default'}
                 onClick={onToggleDraw}
               >
-                框选
+                {t('框选')}
               </Button>
             </Tooltip>
           )}
           <Button size="small" icon={<ColumnHeightOutlined />} onClick={fitPage}>
-            整页
+            {t('整页')}
           </Button>
           <Button
             size="small"
@@ -287,7 +296,7 @@ export function PageViewer({
             size="small"
             onClick={() => setZoom(1)}
             style={{ width: 64 }}
-            title="点一下回到 100%（宽度占满）"
+            title={t('点一下回到 100%（宽度占满）')}
           >
             {Math.round(zoom * 100)}%
           </Button>
@@ -323,11 +332,12 @@ export function PageViewer({
           />
         )}
         {image.data && (
-          // 宽度按百分比缩放，SVG 盖在图片上、大小跟图片一样，框就跟着一起缩放
+          // Width scales by percentage and the SVG overlays the image at the same size, so boxes scale with
+          // it.
           <div style={{ position: 'relative', width: `${zoom * 100}%`, margin: '0 auto' }}>
             <img
               src={image.data}
-              alt={`第 ${page} 页`}
+              alt={t('第 {{page}} 页', { page })}
               draggable={false}
               onLoad={(e) =>
                 setNatural({
@@ -354,7 +364,7 @@ export function PageViewer({
                 onPointerUp={endDrag}
               >
                 {drawOn && (
-                  // 框选模式：在空白处按下就开始画新框
+                  // Region mode: pressing on empty space starts a new box.
                   <rect
                     width={natural.width}
                     height={natural.height}
@@ -363,7 +373,8 @@ export function PageViewer({
                   />
                 )}
                 {!drawOn && !showOcr && (
-                  // 平时：鼠标移到原文上，对应的字段（包括商品明细的格子）亮出框；点一下就选中它
+                  // Default: hovering over source text highlights the box of the corresponding field
+                  // (including line-item cells); clicking selects it.
                   <rect
                     width={natural.width}
                     height={natural.height}
@@ -403,8 +414,8 @@ export function PageViewer({
                       fillOpacity={active ? 0.25 : 0.08}
                       stroke={color}
                       strokeWidth={v.id === selectedId ? 3 : 2}
-                      vectorEffect="non-scaling-stroke" // 放大缩小时线的粗细不变
-                      // 显示原文文字块时，字段的框不挡着点文字
+                      vectorEffect="non-scaling-stroke" // Stroke width stays constant when zooming.
+                      // While source text blocks are shown, field boxes do not block clicks on the text.
                       style={{
                         cursor: 'pointer',
                         pointerEvents: showOcr || drawOn ? 'none' : 'auto',
@@ -413,12 +424,12 @@ export function PageViewer({
                       onMouseEnter={() => onHover(v.id)}
                       onMouseLeave={() => onHover(null)}
                     >
-                      <title>{`${fieldLabel(v.name)}：${shownValue(v) ?? ''}`}</title>
+                      <title>{t('{{fieldLabel}}：{{value}}', { fieldLabel: fieldLabel(v.name), value: shownValue(v) ?? '' })}</title>
                     </rect>
                   )
                 })}
                 {showStructure && structure?.available && (
-                  // 只是看，不能点：鼠标照样能点到下面的字段框
+                  // Display only, not clickable: clicks pass through to the field boxes below.
                   <g style={{ pointerEvents: 'none' }}>
                     {structure.regions.map((r, i) => (
                       <g key={`region-${i}`}>
@@ -438,8 +449,8 @@ export function PageViewer({
                         </text>
                       </g>
                     ))}
-                    {structure.tables.flatMap((t, ti) =>
-                      t.cells.map((c) => (
+                    {structure.tables.flatMap((item, ti) =>
+                      item.cells.map((c) => (
                         <rect
                           key={`cell-${ti}-${c.row}-${c.col}`}
                           x={c.box[0] - 2}
@@ -452,7 +463,7 @@ export function PageViewer({
                           strokeWidth={1}
                           vectorEffect="non-scaling-stroke"
                         >
-                          <title>{`第 ${c.row} 行第 ${c.col} 列：${c.text}`}</title>
+                          <title>{t('第 {{row}} 行第 {{col}} 列：{{text}}', { row: c.row, col: c.col, text: c.text })}</title>
                         </rect>
                       )),
                     )}
@@ -521,11 +532,11 @@ export function PageViewer({
                         strokeDasharray={on ? undefined : '4 3'}
                         vectorEffect="non-scaling-stroke"
                         style={{ cursor: 'copy' }}
-                        // 按着 Shift 点的时候，浏览器默认会去选中页面上的文字，这里不要
+                        // Shift-click would make the browser select page text by default; prevent that.
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={(e) => onPickLine(line.index, e.shiftKey || e.metaKey || e.ctrlKey)}
                       >
-                        <title>{`${line.text}（OCR 置信度 ${Math.round(line.confidence * 100)}%）`}</title>
+                        <title>{t('{{text}}（OCR 置信度 {{round}}%）', { text: line.text, round: Math.round(line.confidence * 100) })}</title>
                       </rect>
                     )
                   })}
@@ -552,7 +563,7 @@ export function PageViewer({
             {natural &&
               drawOn &&
               editable &&
-              // 拉伸用的四个小方块用 HTML 画：屏幕上一直是 10 像素大，放大到 300% 也不会变成大方块
+              // The four resize handles are HTML elements so they stay 10 pixels on screen even at 300% zoom.
               (['nw', 'ne', 'sw', 'se'] as const).map((corner) => (
                 <div
                   key={corner}

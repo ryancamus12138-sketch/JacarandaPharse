@@ -1,8 +1,9 @@
-"""备注：审核时留给同事的话（"这张要问财务"），挂在整份文档或某个字段上。
+"""Comments: notes left for colleagues during review ("Check with finance"), attached to a whole
+document or to a field.
 
-能看这份文档的人都能看、能写备注，也都能标"已解决"；只有写的人或管理员能删。
-审计日志只记"谁在哪份文档上写了 / 删了备注"，不记内容。
-"""
+Anyone who can view the document can read, write and resolve comments; only the author or an
+administrator can delete them. The audit log records only who added or deleted a comment on which
+document, never its content."""
 
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from jacara.core.i18n import tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.models import Comment, Document
@@ -40,13 +42,15 @@ class CommentService:
         document = self._document(document_id)
         body = data.body.strip()
         if not body:
-            raise CommentError("invalid", "备注不能是空的")
+            raise CommentError("invalid", tr("备注不能是空的"))
         field = (data.field_name or "").strip() or None
         page = data.page if field else None
         if field and page is None:
-            raise CommentError("invalid", "写在字段上的备注要说明是第几页")
+            raise CommentError("invalid", tr("写在字段上的备注要说明是第几页"))
         if page is not None and page > document.page_count:
-            raise CommentError("invalid", f"这份文档只有 {document.page_count} 页")
+            raise CommentError(
+                "invalid", tr("这份文档只有 {page_count} 页", page_count=document.page_count)
+            )
         comment = self.repo.add(
             Comment(
                 document_id=document.id,
@@ -91,7 +95,7 @@ class CommentService:
     def delete(self, comment_id: uuid.UUID) -> None:
         comment = self._find(comment_id)
         if comment.user_id != self.owner.user_id and self.owner.role != "admin":
-            raise CommentError("forbidden", "只有写这条备注的人或管理员能删")
+            raise CommentError("forbidden", tr("只有写这条备注的人或管理员能删"))
         record(
             self.session,
             self.owner,
@@ -102,19 +106,19 @@ class CommentService:
         )
         self.repo.delete(comment)
 
-    # ---- 内部 ----
+    # ---- Internal ----
 
     def _document(self, document_id: uuid.UUID) -> Document:
         document = self.session.get(Document, document_id)
         if document is None or document.team_id != self.owner.team_id:
-            raise CommentError("not_found", "找不到这个文档")
+            raise CommentError("not_found", tr("找不到这个文档"))
         require(self.owner, "document:read", document.team_id)
         return document
 
     def _find(self, comment_id: uuid.UUID) -> Comment:
         comment = self.repo.get(comment_id, self.owner.team_id)
         if comment is None:
-            raise CommentError("not_found", "找不到这条备注")
+            raise CommentError("not_found", tr("找不到这条备注"))
         require(self.owner, "document:read", comment.team_id)
         return comment
 
@@ -128,11 +132,11 @@ class CommentService:
                 page=c.page,
                 field_name=c.field_name,
                 body=c.body,
-                author=names.get(c.user_id, "本机用户"),
+                author=names.get(c.user_id, tr("本机用户")),
                 mine=c.user_id == self.owner.user_id,
                 created_at=c.created_at or datetime.now(UTC),
                 resolved_at=c.resolved_at,
-                resolved_by=names.get(c.resolved_by, "本机用户") if c.resolved_by else None,
+                resolved_by=names.get(c.resolved_by, tr("本机用户")) if c.resolved_by else None,
             )
             for c in comments
         ]

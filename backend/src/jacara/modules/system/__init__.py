@@ -1,1 +1,2 @@
-"""系统信息：版本、模型、OCR、模板、数据量、各服务状态（ADR 0029）。只读。"""
+"""System information: version, models, OCR, templates, data volume and service status.
+Read-only."""

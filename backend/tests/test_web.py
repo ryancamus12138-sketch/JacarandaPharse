@@ -1,7 +1,7 @@
-"""API 顺便提供网页：打包好的前端、刷新不 404、接口不被网页挡住、不能借网址读到别的文件。
+"""Frontend served by the API: built assets, no 404 on reload, API not shadowed by the frontend, no
+access to other files through URLs.
 
-这里不需要真的 npm run build：在临时文件夹里造一个假的 dist 就行。
-"""
+No real npm run build is needed: a fake dist is created in a temporary folder."""
 
 from __future__ import annotations
 
@@ -19,7 +19,8 @@ INDEX = "<!doctype html><title>JacarandaParse</title><div id=root></div>"
 
 @pytest.fixture
 def dist(tmp_path, monkeypatch) -> Path:
-    """一个假的 web/dist：index.html、一个带指纹的 js、一个图标。旁边放一个不该被读到的 .env。"""
+    """A fake web/dist: index.html, a fingerprinted js file and an icon, next to a .env that must
+    not be readable."""
     folder = tmp_path / "dist"
     (folder / "assets").mkdir(parents=True)
     (folder / "index.html").write_text(INDEX)
@@ -49,7 +50,8 @@ def test_home_page_is_the_web_app(web):
 
 
 def test_refreshing_a_page_still_gets_the_web_app(web):
-    """在 /documents/123 按刷新：浏览器直接问后端这个网址，要拿到 index.html，交给前端路由。"""
+    """Reloading /documents/123 asks the backend for that URL directly; it must return index.html
+    for the frontend router."""
     for path in ("/documents/123", "/admin/users", "/reset-password"):
         response = web.get(path)
         assert response.status_code == 200
@@ -87,7 +89,7 @@ def test_docs_can_be_turned_off(dist, monkeypatch):
     monkeypatch.setenv("JACARA_API_DOCS", "false")
     get_settings.cache_clear()
     for client in _client():
-        # 关掉后这两个网址不再是接口文档，落到网页上
+        # When disabled, these two URLs are no longer API docs and fall through to the frontend.
         assert client.get("/docs").text == INDEX
         assert "openapi" not in client.get("/openapi.json").text
         assert client.get("/api/v1/health").status_code == 200

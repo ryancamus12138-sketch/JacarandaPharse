@@ -1,17 +1,24 @@
-"""按模板字段逐一核对（ADR 0042）：PDF 文字层、表单字段、局部放大再识别，都只当作候选。
+"""Check each template field: the PDF text layer, form fields and zoomed re-recognition serve only
+as candidates.
 
-证据对齐（BlockAligner）已经在 OCR 结果里找到了出处。这里再做三件事：
-1. 有出处的值：和 PDF 文字层同一位置的字比（按字段类型比，一位不同就算不一样）。
-   一样 → 只记一笔"文字层也一致"；对不上（附近好几行字）→ 关键字段标黄；
-   不一样 → 局部放大再识别一次，所有不同的读法都留作候选，关键字段一律标黄等人确认。
-   文字层不会替换 OCR 的值：字体对照表错一位的 PDF，文字层写的 1234567898 和图上的
-   1234567890 整行相似度有 0.94，按相似度采用文字层就会把对的改成错的。
-2. 模型没给值的字段（按模板遍历，不只看模型的回答）：在原文里找这个字段的标签，
-   标签旁边有像值的字（OCR、文字层、局部放大再识别）就作为候选、标黄；找不到标签、
-   字段又是必填的，留空待审。整行漏掉的"合计"，只看模型的回答永远发现不了。
-3. PDF 表单字段存的值：和字段对上名字的，值不一样或模型没给时作为候选；
-   字段设了隐藏的标"页面不可见"，没隐藏但 OCR 没读到的标"可见性待确认"。
-"""
+Evidence alignment (BlockAligner) has already located evidence in the OCR result. This module
+then does three things:
+1. Values with evidence: compare with the text-layer characters at the same position (by field
+   type; a single differing digit counts as different). Equal → record "text layer agrees";
+   ambiguous (several nearby lines) → flag key fields; different → re-recognize the zoomed
+   region, keep every differing reading as a candidate, and always flag key fields for
+   confirmation. The text layer never replaces the OCR value: in a PDF whose font mapping is off
+   by one glyph, the text layer's 1234567898 and the image's 1234567890 have a line similarity of
+   0.94, so adopting the text layer by similarity would turn a correct value into a wrong one.
+2. Fields without a model value (iterating over the template, not just the model answer): look
+   for the field's label in the source; text next to it that looks like a value (OCR, text layer,
+   zoomed re-recognition) becomes a flagged candidate; if no label is found and the field is
+   required, it is left empty for review. A missing "Total" line can never be detected by looking
+   only at the model answer.
+3. Values stored in PDF form fields: for form fields whose name matches a field, the value
+   becomes a candidate when it differs or the model gave none; hidden form fields are marked "not
+   visible on the page", and visible ones that OCR did not read are marked "visibility
+   unconfirmed"."""
 
 from __future__ import annotations
 
@@ -23,6 +30,7 @@ from itertools import pairwise
 from jacara.core.cjk import plain_cjk
 from jacara.core.daterange import parse_date_range
 from jacara.core.dates import date_pattern
+from jacara.core.i18n import N_, join_items, join_notes, stored
 from jacara.core.numbers import number_pattern
 from jacara.core.textvalue import parse_date, parse_number
 from jacara.plugins.aligners.base import AlignedField, Candidate
@@ -38,20 +46,23 @@ from jacara.plugins.validators.base import Validator
 from jacara.templates import Template, TemplateField
 
 Zoomer = Callable[[Sequence[float]], Candidate | None]
-"""局部放大再识别：长页上的框 → 候选（没认出字是 None）。"""
+"""Zoomed re-recognition: box on the tall page → candidate (None when no text is recognized)."""
 
 KEY_TYPES = frozenset({"number", "date", "date_range"})
-"""关键字段：金额、数量、检验结果这些数字，日期、日期范围；还有模板里标了"不能重复"的（单号）。
-有冲突时第一版一律要人确认。"""
+"""Key fields: numbers such as amounts, quantities and test results; dates and date ranges; and
+fields marked "must be unique" in the template (document numbers). Conflicts on key fields always
+require confirmation."""
 
 OVERLAP = 0.5
-"""文字层的一段和出处框重叠的面积，占两者中小的那个的一半以上，才算同一个位置。"""
+"""A text-layer span is at the same position as the evidence box when their overlap exceeds half of
+the smaller one."""
 
 SIMILAR = 0.9
-"""非关键的文字字段（名称、地址）：文字层和值相似到这个程度就算一样（标点、空格常有出入）。"""
+"""Non-key text fields (names, addresses): a text layer this similar to the value counts as equal
+(punctuation and spacing often differ)."""
 
 NEAR = 12
-"""找漏读的值时，从标签往右最多看几个字高的宽度。"""
+"""When looking for missed values, how many character heights to scan to the right of the label."""
 
 
 def is_key(type_: str, spec: TemplateField | None) -> bool:
@@ -89,7 +100,7 @@ def check_fields(
     return tuple(done)
 
 
-# ---------- 1. 有出处的值：和文字层比 ----------
+# ---------- 1. Values with evidence: compare with the text layer ----------
 
 
 def _check_value(
@@ -109,12 +120,14 @@ def _check_value(
         return replace(a, layer="agree")
     ocr_text = " ".join(ln.text for ln in a.evidence.lines)
     if _rows(hits) > 1:
-        note = f"PDF 文字层这里有好几行字（「{layer_text}」），对不上是哪一行，没法核对"
+        note = stored(
+            "PDF 文字层这里有好几行字（「{text}」），对不上是哪一行，没法核对", text=layer_text
+        )
         return replace(
             a,
             layer="ambiguous",
             needs_review=a.needs_review or key,
-            note=_join(a.note, note + ("，请核对" if key else "")),
+            note=join_notes(a.note, _please_check(note) if key else note),
         )
     layer_box = _union([ln.bbox for ln in hits])
     candidates = [
@@ -122,13 +135,22 @@ def _check_value(
         Candidate("text_layer", layer_text, layer_box, None, _value(a.field.type, layer_text)),
     ]
     zoomed = zoom(_union([box, layer_box])) if zoom is not None else None
-    # 走到这里是"文字层里没有现在的值"，不一定是文字层和 OCR 不一样：
-    # 两边一样、只是和值对不上时要说清楚
+    # Reaching this point means the text layer does not contain the current value, which does not
+    # necessarily mean the text layer and OCR differ: when both agree but neither matches the value,
+    # say so explicitly.
     same = _squash(plain_cjk(layer_text)) == _squash(plain_cjk(ocr_text))
     if same:
-        note = f"PDF 文字层和 OCR 这里都是「{layer_text}」，和现在的值「{a.field.value}」对不上"
+        note = stored(
+            "PDF 文字层和 OCR 这里都是「{text}」，和现在的值「{value}」对不上",
+            text=layer_text,
+            value=a.field.value,
+        )
     else:
-        note = f"PDF 文字层这里写的是「{layer_text}」，和 OCR 读的「{ocr_text}」不一样"
+        note = stored(
+            "PDF 文字层这里写的是「{text}」，和 OCR 读的「{ocr}」不一样",
+            text=layer_text,
+            ocr=ocr_text,
+        )
     zoom_agrees = False
     if zoomed is not None:
         zoomed = replace(zoomed, value=_value(a.field.type, zoomed.text))
@@ -136,28 +158,43 @@ def _check_value(
         zoom_agrees = supports(a.field.type, a.field.value, zoomed.text, key, day_first)
         layer_value = _value(a.field.type, layer_text)
         if zoom_agrees:
-            verdict = "，和现在的值一致"
+            verdict = stored(
+                "{how}读成「{text}」，和现在的值一致", how=zoomed.note, text=zoomed.text
+            )
         elif supports(a.field.type, layer_value, zoomed.text, key, day_first):
-            verdict = "，和文字层、OCR 一致" if same else "，和文字层一致"
+            verdict = (
+                stored("{how}读成「{text}」，和文字层、OCR 一致", how=zoomed.note, text=zoomed.text)
+                if same
+                else stored("{how}读成「{text}」，和文字层一致", how=zoomed.note, text=zoomed.text)
+            )
         elif supports(a.field.type, _value(a.field.type, ocr_text), zoomed.text, key, day_first):
-            verdict = "，和 OCR 一致"
+            verdict = stored("{how}读成「{text}」，和 OCR 一致", how=zoomed.note, text=zoomed.text)
         else:
-            verdict = "，和前两处也不一样" if same else "，三处都不一样"
-        note += f"；{zoomed.note}读成「{zoomed.text}」{verdict}"
+            verdict = (
+                stored("{how}读成「{text}」，和前两处也不一样", how=zoomed.note, text=zoomed.text)
+                if same
+                else stored("{how}读成「{text}」，三处都不一样", how=zoomed.note, text=zoomed.text)
+            )
+        note = join_notes(note, verdict)
     review = key or not zoom_agrees
     return replace(
         a,
         layer="conflict",
         candidates=distinct(candidates),
         needs_review=a.needs_review or review,
-        note=_join(a.note, note + ("，请核对" if review else "")),
+        note=join_notes(a.note, _please_check(note) if review else note),
     )
+
+
+def _please_check(note: str) -> str:
+    return stored("{note}，请核对", note=note)
 
 
 def supports(
     type_: str, value: object, text: str, key: bool = True, day_first: bool | None = None
 ) -> bool:
-    """text 里有没有 value 这个值（按字段类型比）。比之前两边都先把部首码位换成平常的字。"""
+    """Whether text contains value (compared by field type). Radical code points are normalized on
+    both sides first."""
     if value is None or not text.strip():
         return False
     text = plain_cjk(text)
@@ -181,7 +218,7 @@ def supports(
     return not key and _best_similarity(wanted, have) >= SIMILAR
 
 
-# ---------- 2. 模型没给值的字段：按标签找 ----------
+# ---------- 2. Fields without a model value: search by label ----------
 
 
 def _missing(
@@ -194,14 +231,15 @@ def _missing(
     label = _find_label(spec, page.lines)
     if label is None:
         if spec.required:
-            note = "模板要求填写，原文里没找到这个字段的标签，留空待审"
-            return replace(a, needs_review=True, note=_join(a.note, note))
+            note = stored("模板要求填写，原文里没找到这个字段的标签，留空待审")
+            return replace(a, needs_review=True, note=join_notes(a.note, note))
         return a
     line, rest = label
     rest = _cut_at_labels(rest, labels)
     height = max(1.0, line.bbox[3] - line.bbox[1])
     x0, y0, x1, y1 = line.bbox
-    # 同一行往右一直到页边（两栏排版时值常常靠右对齐）；右边没有，再看标签正下方
+    # Along the same line to the right page edge (in two-column layouts values are often
+    # right-aligned); otherwise directly below the label.
     right = (x1, y0 - 0.3 * height, float(page.width), y1 + 0.3 * height)
     below = (x0 - height, y1, x0 + NEAR * height, y1 + 1.8 * height)
 
@@ -251,7 +289,8 @@ def _missing(
         )
     key = is_key(spec.type, spec)
     if zoom is not None and (ocr_hit is None or key):
-        # OCR 什么都没读到（字太小、太淡没检测出来），或者是关键字段：放大再认一次，多一个读法
+        # OCR read nothing (text too small or faint to be detected), or a key field: re-recognize
+        # zoomed for one more reading.
         if ocr_hit is not None and ocr_hit is not line:
             target: Sequence[float] = ocr_hit.bbox
         elif layer_hit is not None:
@@ -263,20 +302,30 @@ def _missing(
             candidates.append(replace(zoomed, value=_value(spec.type, zoomed.text)))
     found_all = distinct(candidates)
     if found_all:
-        found = "、".join(f"「{c.text}」（{SOURCE_NAMES[c.source]}）" for c in found_all)
-        note = f"模型没有给出「{spec.label}」；在原文「{line.text}」旁边找到 {found}，请核对后采用"
-        return replace(a, candidates=found_all, needs_review=True, note=_join(a.note, note))
+        found = join_items(
+            stored("「{text}」（{source}）", text=c.text, source=stored(SOURCE_NAMES[c.source]))
+            for c in found_all
+        )
+        note = stored(
+            "模型没有给出「{label}」；在原文「{line}」旁边找到 {found}，请核对后采用",
+            label=spec.label,
+            line=line.text,
+            found=found,
+        )
+        return replace(a, candidates=found_all, needs_review=True, note=join_notes(a.note, note))
     if spec.required:
-        note = f"模板要求填写；原文有「{line.text}」，旁边没读到值，留空待审"
-        return replace(a, needs_review=True, note=_join(a.note, note))
+        note = stored("模板要求填写；原文有「{line}」，旁边没读到值，留空待审", line=line.text)
+        return replace(a, needs_review=True, note=join_notes(a.note, note))
     return a
 
 
 def _find_label(spec: TemplateField, lines: Sequence[OcrLine]) -> tuple[OcrLine, str] | None:
-    """原文里这个字段的标签（名称或别名）在哪一块，以及这一块里标签后面的字。
+    """The source block containing this field's label (name or alias), and the text after the label
+    within the block.
 
-    整块就是标签（"Total :"）最好，其次是开头是标签（"Total: 9.00"），再次是包含标签；
-    一样好时：名称、别名按模板里的先后（Total 先于 Amount），再取短的那块。"""
+        A block that is exactly the label ("Total :") is best, then one starting with the label
+    ("Total: 9.00"), then one containing it; ties are broken by the order of name and aliases in
+    the template (Total before Amount), then by the shorter block."""
     names = [n for n in (spec.label, *spec.aliases) if n and len(_squash(n)) >= 2]
     best: tuple[tuple[int, int, int], OcrLine, str] | None = None
     for ln in lines:
@@ -301,7 +350,8 @@ def _find_label(spec: TemplateField, lines: Sequence[OcrLine]) -> tuple[OcrLine,
 
 
 def _after(text: str, wanted: str) -> str:
-    """text 开头是标签 wanted（已去掉空格、小写）：返回标签后面的字（去掉冒号）。"""
+    """If text starts with the label wanted (whitespace removed, lowercase), return the text after
+    the label (colon removed)."""
     wanted = wanted.rstrip(".:：")
     seen = ""
     for i, char in enumerate(text):
@@ -313,7 +363,8 @@ def _after(text: str, wanted: str) -> str:
 
 
 def _cut_at_labels(rest: str, labels: frozenset[str]) -> str:
-    """同一块里后面还跟着别的标签（"08:15 接收时间：08:42"）：只要第一个标签之前的。"""
+    """Another label follows within the same block ("08:15 接收时间：08:42"): keep only the text
+    before it."""
     lowered = plain_cjk(rest).lower()
     cut = len(rest)
     for label in labels:
@@ -324,7 +375,8 @@ def _cut_at_labels(rest: str, labels: frozenset[str]) -> str:
 
 
 def _is_label(text: str, labels: frozenset[str]) -> bool:
-    """这段字像是标签（"Invoice Date:"、别的字段的名称），不是值。"""
+    """Whether the text looks like a label ("Invoice Date:", another field's name) rather than a
+    value."""
     text = plain_cjk(text).strip()
     if text.endswith((":", "：")):
         return True
@@ -332,12 +384,13 @@ def _is_label(text: str, labels: frozenset[str]) -> bool:
 
 
 def _looks_like(type_: str, text: str) -> bool:
-    """这段字像不像这种字段的值。"""
+    """Whether the text looks like a value of this field type."""
     text = plain_cjk(text).strip()
     if not text:
         return False
     if type_ == "number":
-        # 整段基本就是一个数（可以带货币符号、单位），"AMOUNT DUE ON August 3" 这种不算
+        # The text is essentially one number (optionally with currency symbol or unit); "AMOUNT DUE
+        # ON August 3" does not qualify.
         return bool(_NUMBER_ONLY.fullmatch(text)) and parse_number(text) is not None
     if type_ == "date":
         return parse_date(text) is not None
@@ -351,7 +404,7 @@ _NUMBER_ONLY = re.compile(
 )
 
 
-# ---------- 3. PDF 表单字段 ----------
+# ---------- 3. PDF form fields ----------
 
 
 def _check_form(a: AlignedField, spec: TemplateField, page: OcrPage) -> AlignedField:
@@ -361,22 +414,36 @@ def _check_form(a: AlignedField, spec: TemplateField, page: OcrPage) -> AlignedF
     key = is_key(spec.type, spec)
     if a.field.value is not None and supports(spec.type, a.field.value, form.value, key):
         return a
-    shown = _visibility(form, page)
+    visible = _visibility(form, page)
+    shown = stored(VISIBILITY[visible])
     candidate = Candidate(
-        "form", form.value, form.box, None, _value(spec.type, form.value), note=shown
+        "form",
+        form.value,
+        form.box,
+        None,
+        _value(spec.type, form.value),
+        note=shown,
+        visible=visible,
     )
     if a.field.value is None:
-        note = f"PDF 表单字段「{form.name}」里存着「{form.value}」（{shown}），请核对后采用"
+        note = stored(
+            "PDF 表单字段「{name}」里存着「{value}」（{shown}），请核对后采用",
+            name=form.name,
+            value=form.value,
+            shown=shown,
+        )
     else:
-        note = (
-            f"PDF 表单字段「{form.name}」存的是「{form.value}」（{shown}），"
-            "和现在的值不一样，请核对"
+        note = stored(
+            "PDF 表单字段「{name}」存的是「{value}」（{shown}），和现在的值不一样，请核对",
+            name=form.name,
+            value=form.value,
+            shown=shown,
         )
     return replace(
         a,
         candidates=distinct((*a.candidates, candidate)),
         needs_review=True,
-        note=_join(a.note, note),
+        note=join_notes(a.note, note),
     )
 
 
@@ -389,29 +456,35 @@ def _form_for(spec: TemplateField, forms: Sequence[FormValue]) -> FormValue | No
     return None
 
 
-def _visibility(form: FormValue, page: OcrPage) -> str:
+def _visibility(form: FormValue, page: OcrPage) -> bool | None:
+    """Whether the form value is visible on the page: True when a source block at the same place
+    contains it, False when the field is hidden, None when this cannot be confirmed."""
     if form.hidden:
-        return "页面不可见"
+        return False
     wanted = _squash(form.value)
     for ln in page.lines:
         if overlap(ln.bbox, form.box) >= OVERLAP and wanted and wanted in _squash(ln.text):
-            return "页面上能看到"
-    return "可见性待确认"
+            return True
+    return None
 
 
-# ---------- 小工具 ----------
+VISIBILITY = {True: N_("页面上能看到"), False: N_("页面不可见"), None: N_("可见性待确认")}
+"""Note shown on a form-field candidate for each visibility state."""
+
+
+# ---------- Helpers ----------
 
 
 SOURCE_NAMES = {
     "ocr": "OCR",
-    "text_layer": "PDF 文字层",
-    "zoom": "局部放大再识别",
-    "form": "表单字段",
+    "text_layer": N_("PDF 文字层"),
+    "zoom": N_("局部放大再识别"),
+    "form": N_("表单字段"),
 }
 
 
 def overlap(a: Sequence[float], b: Sequence[float]) -> float:
-    """两个框重叠的面积占小的那个的多少（0～1）。"""
+    """Overlap of two boxes as a share of the smaller one (0–1)."""
     w = min(a[2], b[2]) - max(a[0], b[0])
     h = min(a[3], b[3]) - max(a[1], b[1])
     if w <= 0 or h <= 0:
@@ -430,7 +503,8 @@ def _union(boxes: Sequence[Sequence[float]]) -> tuple[float, float, float, float
 
 
 def _rows(lines: Sequence[OcrLine]) -> int:
-    """这几段字分成几行（按中线，离得比半个字高远就算另一行）。"""
+    """Number of lines formed by these spans (by center line; more than half a character height
+    apart starts a new line)."""
     middles = sorted((ln.bbox[1] + ln.bbox[3]) / 2 for ln in lines)
     height = min(ln.bbox[3] - ln.bbox[1] for ln in lines)
     rows = 1
@@ -441,7 +515,7 @@ def _rows(lines: Sequence[OcrLine]) -> int:
 
 
 def _value(type_: str, text: str) -> str | None:
-    """候选的文字 → 按字段类型整理过的值；整理不出来是 None。"""
+    """Candidate text → value normalized by field type; None if it cannot be normalized."""
     text = plain_cjk(text).strip()
     if type_ == "number":
         number = parse_number(text)
@@ -452,7 +526,7 @@ def _value(type_: str, text: str) -> str | None:
     if type_ == "date_range":
         found = parse_date_range(text).range
         return found.text(" ~ ") if found else None
-    # 前面带着标签（"Seller: Example Ltd"）就去掉标签；"08:15" 这种冒号不算
+    # Strip a leading label ("Seller: Example Ltd"); colons as in "08:15" do not count.
     labelled = re.match(r"^[^\d:：]{1,30}[:：]\s*(.+)$", text)
     return (labelled[1] if labelled else text).strip() or None
 
@@ -462,7 +536,8 @@ def _number(value: float) -> str:
 
 
 def distinct(candidates: Sequence[Candidate]) -> tuple[Candidate, ...]:
-    """同样的读法只留第一个（按整理过的值比，整理不出来按文字比）。"""
+    """Keep only the first of identical readings (compared by normalized value, or by text when not
+    normalizable)."""
     seen: set[str] = set()
     kept: list[Candidate] = []
     for c in candidates:
@@ -474,11 +549,7 @@ def distinct(candidates: Sequence[Candidate]) -> tuple[Candidate, ...]:
     return tuple(kept)
 
 
-def _join(*notes: str) -> str:
-    return "；".join(n for n in notes if n)
-
-
-# ---------- 规则提示：换成哪个候选，规则能通过 ----------
+# ---------- Rule hints: which candidate makes the rules pass ----------
 
 
 def rule_hints(
@@ -486,10 +557,12 @@ def rule_hints(
     fields: Sequence[ExtractedField],
     validator: Validator,
 ) -> tuple[AlignedField, ...]:
-    """有候选的字段：逐个换成候选值查一遍规则，记下和这个字段有关的规则过不过。
+    """For fields with candidates: re-run the rules with each candidate substituted and record
+    whether the rules involving this field pass.
 
-    只是提示（例如"明细加起来等于这个合计"），不自动采用：两个不同的金额可能都过得了格式检查。
-    所有候选结果都一样时（规则不管这个字段）不记。"""
+        Only a hint (for example "the line items add up to this total"); never applied
+    automatically, since two different amounts may both pass format checks. Not recorded when all
+    candidates give the same result (no rule involves the field)."""
     done: list[AlignedField] = []
     for a in aligned:
         if not a.candidates:

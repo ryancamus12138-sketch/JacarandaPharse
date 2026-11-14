@@ -1,4 +1,5 @@
-"""第一次安装（ADR 0064）：生成 .env、各步的结果和提示。不真的启动 Docker、不连数据库。"""
+"""First-time setup: .env generation and the result and hints of each step. Docker is not started
+and no database is contacted."""
 
 from __future__ import annotations
 
@@ -57,11 +58,11 @@ def test_env_is_created_once_and_private(project):
     step = ensure_env(project)
     env = project / ".env"
     assert step.ok and env.is_file()
-    assert stat.S_IMODE(env.stat().st_mode) == 0o600  # 只有自己能读
+    assert stat.S_IMODE(env.stat().st_mode) == 0o600  # Owner-readable only.
     first = env.read_text("utf-8")
     again = ensure_env(project)
     assert again.ok and "不动" in again.detail
-    assert env.read_text("utf-8") == first  # 已有的 .env 不覆盖
+    assert env.read_text("utf-8") == first  # An existing .env is not overwritten.
 
 
 def test_existing_env_with_placeholders_is_reported(project):
@@ -92,9 +93,9 @@ def test_run_setup_reports_each_step(project, monkeypatch):
         ],
     )
     code = run_setup(project, docker=False, out=lines.append)
-    assert code == 1  # 还差大模型
+    assert code == 1  # The LLM is still missing.
     text = "\n".join(lines)
     assert "✓ .env" in text and "✓ 建表" in text
     assert "✗ 大模型" in text and setup.MODEL_URL in text
-    assert "· 视觉模型" in text  # 可选的不算缺
+    assert "· 视觉模型" in text  # Optional items do not count as missing.
     assert "还差 1 步" in text

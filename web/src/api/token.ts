@@ -1,8 +1,10 @@
 /**
- * 登录 token 存在浏览器里（localStorage），刷新页面、开新标签页都还在。
- * token 12 小时后在后端过期，到时候请求会 401，自动回到登录页。
+ * The login token is kept in the browser (localStorage), so it survives reloads and new tabs.
+ * Tokens expire on the backend after 12 hours; requests then return 401 and the user is sent to the login
+ * page.
  *
- * 浏览器禁止存储时（比如某些隐私设置）读写会出错，这里吞掉错误，免得整个网页崩掉。
+ * When the browser forbids storage (some privacy settings), reads and writes throw; errors are swallowed here
+ * so the page does not crash.
  */
 
 const KEY = 'jacara.token'
@@ -19,7 +21,7 @@ export function setToken(token: string): void {
   try {
     localStorage.setItem(KEY, token)
   } catch {
-    // 存不了：这种浏览器设置很少见，登录会不生效
+    // Storage unavailable: a rare browser setting; login will not persist.
   }
 }
 
@@ -27,6 +29,6 @@ export function clearToken(): void {
   try {
     localStorage.removeItem(KEY)
   } catch {
-    // 同上
+    // Same as above.
   }
 }

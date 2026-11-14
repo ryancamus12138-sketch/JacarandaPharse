@@ -1,8 +1,8 @@
-"""Web 服务：把各模块的接口挂到 /api/v1 下面，其他网址交给打包好的网页（web/dist）。
+"""Web application: mounts module routers under /api/v1 and serves the built frontend (web/dist) for
+all other paths.
 
-启动：uv run jacara start（API 和后台任务一起），浏览器打开 http://127.0.0.1:8000
-接口文档：http://127.0.0.1:8000/docs（.env 里 JACARA_API_DOCS=false 可以关掉）
-"""
+Start: uv run jacara start (API and workers), then open http://127.0.0.1:8000
+API documentation: http://127.0.0.1:8000/docs (disable with JACARA_API_DOCS=false)"""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from fastapi_offline import FastAPIOffline
 
 from jacara import __version__
 from jacara.core.config import get_settings
+from jacara.core.i18n import LanguageMiddleware
 from jacara.core.permissions import PermissionDenied
 from jacara.core.web import mount_web
 from jacara.modules.app_settings.router import router as settings_router
@@ -31,7 +32,7 @@ from jacara.modules.system.router import router as system_router
 from jacara.modules.templates.router import router as templates_router
 
 API_PREFIX = "/api/v1"
-"""接口版本号（项目规则 9）：以后不兼容的改动放到 /api/v2，旧的继续能用。"""
+"""API version prefix. Incompatible changes go to /api/v2 while /api/v1 remains available."""
 
 TITLE = "JacarandaParse"
 ABOUT = "离线文档结构化：上传收据和发票，抽取字段并核对出处。"
@@ -40,10 +41,12 @@ ABOUT = "离线文档结构化：上传收据和发票，抽取字段并核对�
 def create_app() -> FastAPI:
     settings = get_settings()
     if settings.jacara_api_docs:
-        # FastAPIOffline：/docs 页面用的界面文件随安装包一起提供，不从网上下载（项目规则 1：离线）。
+        # FastAPIOffline serves the /docs assets from the installed package; nothing is fetched from
+        # the network.
         app = FastAPIOffline(redoc_url=None, title=TITLE, version=__version__, description=ABOUT)
     else:
-        # 关掉文档：/docs 和 /openapi.json 都不存在，这两个网址会显示前端的页面。
+        # Docs disabled: /docs and /openapi.json are not registered and fall through to the
+        # frontend.
         app = FastAPI(
             title=TITLE,
             version=__version__,
@@ -77,13 +80,15 @@ def create_app() -> FastAPI:
         return {"status": "ok", "version": __version__}
 
     app.include_router(api)
+    app.add_middleware(LanguageMiddleware)
 
     @app.exception_handler(PermissionDenied)
     def permission_denied(request: Request, err: PermissionDenied) -> JSONResponse:
-        """service 里 require() 不通过时抛出 PermissionDenied，这里统一变成 403。"""
+        """Map PermissionDenied raised by service-layer require() calls to HTTP 403."""
         return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content={"detail": str(err)})
 
-    # 一定放在最后：上面的接口和 /docs 先匹配，剩下的网址才交给网页。
+    # Must be registered last: API routes and /docs match first; remaining paths are served by the
+    # frontend.
     mount_web(app, settings.web_dist)
     return app
 

@@ -1,12 +1,13 @@
-"""SROIE 数据集：马来西亚的英文收据，每张有标准答案（商家、日期、地址、总额）。
+"""SROIE dataset: English-language receipts from Malaysia, each with ground truth (company, date,
+address, total).
 
-来源：ICDAR 2019 SROIE 比赛，这里用 GitHub 仓库 zzzDavid/ICDAR-2019-SROIE 整理过的版本（626 张）。
-没有写明授权，只用于内部评测，不进仓库、不随安装包分发。
+Source: the ICDAR 2019 SROIE competition, using the curated version in the GitHub repository
+zzzDavid/ICDAR-2019-SROIE (626 receipts). No license is stated, so it is used for internal
+evaluation only and is neither tracked in the repository nor shipped in the release package.
 
-放在项目根目录的 datasets/sroie/ 下（datasets/ 在 .gitignore 里）：
-    datasets/sroie/img/000.jpg     收据图片
-    datasets/sroie/key/000.json    标准答案 {"company", "date", "address", "total"}
-"""
+Location: datasets/sroie/ in the project root (datasets/ is git-ignored):
+    datasets/sroie/img/000.jpg     receipt image
+    datasets/sroie/key/000.json    ground truth {"company", "date", "address", "total"}"""
 
 from __future__ import annotations
 
@@ -20,12 +21,13 @@ from pathlib import Path
 REPO_URL = "https://github.com/zzzDavid/ICDAR-2019-SROIE.git"
 
 FIELD_MAP = {"merchant": "company", "date": "date", "total": "total"}
-"""我们的字段名 → SROIE 的字段名。SROIE 没有单号，地址不在常用 4 个字段里，所以只评这三个。"""
+"""Our field names → SROIE field names. SROIE has no document number and the address is not among
+the common fields, so only these three are evaluated."""
 
 
 @dataclass(frozen=True)
 class Sample:
-    """一张评测样本：图片和标准答案（已经换成我们的字段名）。"""
+    """One evaluation sample: image and ground truth (already mapped to our field names)."""
 
     sample_id: str
     image: Path
@@ -33,7 +35,7 @@ class Sample:
 
 
 def load_sroie(root: Path, limit: int | None = None) -> list[Sample]:
-    """读取样本，按编号排序。limit 只取前 N 张，先用少量样本试跑。"""
+    """Load samples sorted by id. limit takes only the first N, for quick trial runs."""
     key_dir, img_dir = root / "key", root / "img"
     if not key_dir.is_dir():
         raise FileNotFoundError(f"找不到 {key_dir}。先运行：uv run jacara eval download")
@@ -52,7 +54,8 @@ def load_sroie(root: Path, limit: int | None = None) -> list[Sample]:
 
 
 def download_sroie(dest: Path) -> int:
-    """从 GitHub 只下载图片和答案两个文件夹，返回样本数。要联网、要装 git，只在开发时用一次。"""
+    """Download only the image and answer directories from GitHub; return the number of samples.
+    Requires network access and git; development only, run once."""
     if (dest / "key").is_dir():
         return len(list((dest / "key").glob("*.json")))
     git = shutil.which("git")
@@ -60,7 +63,7 @@ def download_sroie(dest: Path) -> int:
         raise RuntimeError("要先安装 git 才能下载 SROIE")
 
     def run(*args: str, cwd: Path | None = None) -> None:
-        subprocess.run([git, *args], check=True, cwd=cwd)  # noqa: S603  参数都是写死的
+        subprocess.run([git, *args], check=True, cwd=cwd)  # noqa: S603  All arguments are fixed.
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "sroie"

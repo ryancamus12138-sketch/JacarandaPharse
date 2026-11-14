@@ -1,13 +1,13 @@
-"""OCR 插件登记表：按配置里的名字创建对应的 OCR 引擎。
+"""OCR plugin registry: create the OCR engine named in the configuration.
 
-新增一个引擎（例如 PaddleOCR 官方包）：
-1. 在本目录新建 paddle.py，写一个实现 OcrEngine 接口的类；
-2. 在下面的 _ENGINES 里加一行 "paddleocr": PaddleOcrEngine。
-调用方只写 create_ocr_engine(config)，永远不需要知道具体是哪个类。
-"""
+To add an engine (for example the official PaddleOCR package):
+1. Create paddle.py in this package with a class implementing OcrEngine;
+2. Add "paddleocr": PaddleOcrEngine to _ENGINES below.
+Callers only use create_ocr_engine(config) and never need the concrete class."""
 
 from collections.abc import Callable
 
+from jacara.core.i18n import join_items, stored
 from jacara.plugins.ocr.base import (
     Device,
     FormValue,
@@ -25,17 +25,18 @@ _ENGINES: dict[str, Callable[[OcrConfig], OcrEngine]] = {
 
 
 def available_engines() -> list[str]:
-    """列出所有登记过的 OCR 引擎名字（以后模型管理页面会用到）。"""
+    """Names of all registered OCR engines."""
     return sorted(_ENGINES)
 
 
 def create_ocr_engine(config: OcrConfig | None = None) -> OcrEngine:
-    """按配置创建 OCR 引擎。名字没登记过就报错，并列出可用的名字。"""
+    """Create an OCR engine from the configuration. Raises for unregistered names, listing the
+    available ones."""
     if config is None:
         from jacara.core.config import get_settings
 
         settings = get_settings()
-        own = settings.ocr_models()  # 自己的 OCR 模型（ADR 0046）
+        own = settings.ocr_models()  # Custom OCR models.
         config = OcrConfig(
             max_side=settings.jacara_ocr_max_side,
             det_model=own.get("det"),
@@ -44,7 +45,13 @@ def create_ocr_engine(config: OcrConfig | None = None) -> OcrEngine:
         )
     factory = _ENGINES.get(config.engine)
     if factory is None:
-        raise ValueError(f"未知的 OCR 引擎：{config.engine}，可用的有：{available_engines()}")
+        raise ValueError(
+            stored(
+                "未知的 OCR 引擎：{engine}，可用的有：{available}",
+                engine=config.engine,
+                available=join_items(available_engines()),
+            )
+        )
     return factory(config)
 
 

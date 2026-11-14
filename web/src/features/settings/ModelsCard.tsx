@@ -7,29 +7,33 @@ import { ApiError } from '../../api/client'
 import { chooseModels, getModels, type ModelSlot } from '../../api/models'
 import { useAuth } from '../../auth/useAuth'
 import { formatBytes } from '../../utils/format'
+import { useTranslation } from 'react-i18next'
+import { t } from '../../i18n'
 
 const SOURCE: Record<ModelSlot['source'], { text: string; color: string }> = {
-  env: { text: '.env 指定', color: 'blue' },
-  choice: { text: '网页上选的', color: 'purple' },
-  auto: { text: '自动找到', color: 'default' },
-  builtin: { text: 'RapidOCR 自带', color: 'default' },
-  none: { text: '没有', color: 'warning' },
+  env: { get text() { return t('.env 指定') }, color: 'blue' },
+  choice: { get text() { return t('网页上选的') }, color: 'purple' },
+  auto: { get text() { return t('自动找到') }, color: 'default' },
+  builtin: { get text() { return t('RapidOCR 自带') }, color: 'default' },
+  none: { get text() { return t('没有') }, color: 'warning' },
 }
 
-/** 每一项的"不用"选项怎么叫（大模型不能不用）。 */
+/** Label of the "none" option per slot (the LLM cannot be disabled). */
 const EMPTY: Partial<Record<ModelSlot['key'], string>> = {
-  mmproj: '不用视觉模型',
-  ocr_det: '用 RapidOCR 自带的',
-  ocr_rec: '用 RapidOCR 自带的',
-  ocr_dict: '用 RapidOCR 自带的',
-  table: '不用（按文字位置划分格子）',
+  get mmproj() { return t('不用视觉模型') },
+  get ocr_det() { return t('用 RapidOCR 自带的') },
+  get ocr_rec() { return t('用 RapidOCR 自带的') },
+  get ocr_dict() { return t('用 RapidOCR 自带的') },
+  get table() { return t('不用（按文字位置划分格子）') },
 }
 
 /**
- * 换模型（ADR 0046）：只能选 models/ 文件夹里已有的文件。放新模型：把文件拷进 models/（OCR 模型放
- * models/ocr/，表格模型放 models/table/），刷新这一页就能选。改完 jacara stop、jacara start 才生效。
+ * Model selection: only files already in models/ can be selected. To add a model, copy the file into models/
+ * (OCR models into models/ocr/, table models into models/table/) and reload this page. Changes take effect
+ * after `jacara stop` and `jacara start`.
  */
 export function ModelsCard() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const { can } = useAuth()
   const queryClient = useQueryClient()
@@ -40,7 +44,7 @@ export function ModelsCard() {
     onSuccess: (data) => {
       queryClient.setQueryData(['models'], data)
       setDraft({})
-      void message.success('已保存。在终端里 jacara stop、再 jacara start 后生效')
+      void message.success(t('已保存。在终端里 jacara stop、再 jacara start 后生效'))
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
@@ -50,17 +54,17 @@ export function ModelsCard() {
   const columns: TableProps<ModelSlot>['columns'] = [
     { title: '', dataIndex: 'label', width: 130 },
     {
-      title: '现在用的',
+      title: t('现在用的'),
       render: (_, s) => {
         const value = draft[s.key] ?? s.current ?? ''
         const options = [
           ...(EMPTY[s.key] !== undefined ? [{ value: '', label: EMPTY[s.key] }] : []),
-          ...s.files.map((f) => ({ value: f.path, label: `${f.name}（${formatBytes(f.size)}）` })),
+          ...s.files.map((f) => ({ value: f.path, label: t('{{name}}（{{formatBytes}}）', { name: f.name, formatBytes: formatBytes(f.size) }) })),
         ]
         if (!editable || s.source === 'env') {
           return (
             <Typography.Text>
-              {s.current ? s.current.split('/').pop() : (EMPTY[s.key] ?? '没有')}
+              {s.current ? s.current.split('/').pop() : (EMPTY[s.key] ?? t('没有'))}
             </Typography.Text>
           )
         }
@@ -69,17 +73,17 @@ export function ModelsCard() {
             style={{ width: '100%', maxWidth: 420 }}
             value={value}
             options={options}
-            placeholder={s.files.length ? '选一个文件' : 'models/ 里没有可选的文件'}
+            placeholder={s.files.length ? t('选一个文件') : t('models/ 里没有可选的文件')}
             onChange={(v: string) => setDraft((d) => ({ ...d, [s.key]: v }))}
           />
         )
       },
     },
     {
-      title: '谁定的',
+      title: t('谁定的'),
       width: 130,
       render: (_, s) => (
-        <Tag color={SOURCE[s.source].color} title={s.source === 'env' ? `在 .env 里改 ${s.env}` : undefined}>
+        <Tag color={SOURCE[s.source].color} title={s.source === 'env' ? t('在 .env 里改 {{env}}', { env: s.env }) : undefined}>
           {SOURCE[s.source].text}
         </Tag>
       ),
@@ -88,12 +92,12 @@ export function ModelsCard() {
 
   return (
     <Card
-      title="换模型"
+      title={t('换模型')}
       loading={models.isPending}
       extra={
         editable && (
           <Button type="primary" icon={<SwapOutlined />} disabled={!changed} loading={save.isPending} onClick={() => save.mutate()}>
-            保存
+            {t('保存')}
           </Button>
         )
       }
@@ -103,14 +107,12 @@ export function ModelsCard() {
           <Alert
             type="warning"
             showIcon
-            title={`选的大模型和正在用的（${models.data.loaded}）不一样：在终端里 jacara stop、再 jacara start 才会换过来`}
+            title={t('选的大模型和正在用的（{{loaded}}）不一样：在终端里 jacara stop、再 jacara start 才会换过来', { loaded: models.data.loaded })}
           />
         )}
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          只能选本机已有的文件（离线，不会下载）。最方便的是先在{' '}
-          <Link to="/hub">模型和数据集</Link> 里导入（会检查文件、记版本），导入的版本都会出现在下拉里，名字后面写着"（模型库）"。
-          手动放文件也行：大模型、视觉模型放 models/，OCR 模型放 models/ocr/（文件名里带 det、rec，字典是 .txt），表格模型放
-          models/table/。.env 里写了的优先，这里改不了。改完要 jacara stop、jacara start 才生效。
+          {t('只能选本机已有的文件（离线，不会下载）。最方便的是先在')}{' '}
+          <Link to="/hub">{t('模型和数据集')}</Link>{' '}{t('里导入（会检查文件、记版本），导入的版本都会出现在下拉里，名字后面写着"（模型库）"。 手动放文件也行：大模型、视觉模型放 models/，OCR 模型放 models/ocr/（文件名里带 det、rec，字典是 .txt），表格模型放 models/table/。.env 里写了的优先，这里改不了。改完要 jacara stop、jacara start 才生效。')}
         </Typography.Text>
         <Table rowKey="key" size="small" pagination={false} columns={columns} dataSource={models.data?.slots ?? []} />
       </Flex>

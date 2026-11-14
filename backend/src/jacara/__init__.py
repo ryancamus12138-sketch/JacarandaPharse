@@ -1,4 +1,4 @@
-"""JacarandaParse：完全离线的文档结构化与人工审核工具。"""
+"""JacarandaParse: offline document extraction and human review."""
 
 from importlib.metadata import version
 

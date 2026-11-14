@@ -1,9 +1,8 @@
-"""review time, OCR snapshots, model input, error attributions, sample origin (ADR 0053)
+"""review time, OCR snapshots, model input, error attributions, sample origin
 
 Revision ID: b6f1c3d8e2a5
 Revises: a4d8e1c6b9f2
-Create Date: 2026-11-22 12:00:00.000000
-"""
+Create Date: 2026-11-22 12:00:00.000000"""
 
 from collections.abc import Sequence
 
@@ -24,14 +23,14 @@ def _json() -> sa.types.TypeEngine:
 
 
 def upgrade() -> None:
-    # 人审核这份花了多少秒（审核页开着、人在操作的时间）
+    # Active review time in seconds (review page open and in use).
     op.add_column(
         "documents", sa.Column("review_seconds", sa.Integer(), server_default="0", nullable=False)
     )
-    # 每一轮发给模型的是什么、OCR 快照在哪里
+    # Model input of each run and the location of the OCR snapshot.
     op.add_column("extractions", sa.Column("model_input", _json(), nullable=True))
     op.add_column("extractions", sa.Column("ocr_snapshot", sa.String(512), nullable=True))
-    # 错误归因：改过的字段错在哪一步
+    # Error attribution: the pipeline stage responsible for each corrected value.
     op.create_table(
         "error_attributions",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -57,7 +56,7 @@ def upgrade() -> None:
             "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
     )
-    # 从以前的修改补收的 OCR 样本（要人复核）
+    # OCR samples backfilled from earlier corrections (require manual verification).
     op.add_column(
         "ocr_samples",
         sa.Column("origin", sa.String(12), server_default="review", nullable=False),

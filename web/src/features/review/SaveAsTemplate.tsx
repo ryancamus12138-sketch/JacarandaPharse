@@ -25,15 +25,19 @@ import {
   fieldsProblem,
   TYPE_OPTIONS,
 } from '../templates/templateFields'
+import { useTranslation } from 'react-i18next'
 
 interface Row extends SampleField {
   include: boolean
-  /** 单据上的原名（自己加的字段为空）。 */
+  /** Label on the document (empty for added fields). */
   original: string
   sample: string | null
 }
 
-/** 从单据上的名称猜一个字段 ID：英文就用它（Invoice No. → invoice_no），中文就编号。 */
+/**
+ * Guess a field ID from the label: English labels are converted (Invoice No. → invoice_no); others are
+ * numbered.
+ */
 function guessId(label: string, used: Set<string>, n: number): string {
   let id = label
     .toLowerCase()
@@ -63,8 +67,9 @@ function initialRows(doc: DocumentDetail): Row[] {
 }
 
 /**
- * 用样例建模板（ADR 0030）：这份文档抽出了所有键值对，勾选要的、起好中文名和字段 ID，
- * 还可以加单据上没有、要自己填的字段。保存后这份文档直接换成按新模板的结果。
+ * Create a template from a sample: this document has all key-value pairs extracted; select the ones needed,
+ * give them display names and field IDs, and optionally add fields not on the document for manual entry.
+ * After saving, the document is reprocessed with the new template.
  */
 export function SaveAsTemplate({
   doc,
@@ -75,19 +80,20 @@ export function SaveAsTemplate({
   open: boolean
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const [rows, setRows] = useState<Row[]>(() => initialRows(doc))
   const [title, setTitle] = useState(doc.filename.replace(/\.[^.]+$/, ''))
-  const [category, setCategory] = useState('其他')
+  const [category, setCategory] = useState(t('其他'))
   const [description, setDescription] = useState('')
   const update = (i: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)))
 
   const chosen = rows.filter((r) => r.include)
   const problem =
-    (!title.trim() ? '请给模板起个名字' : null) ??
-    (chosen.length === 0 ? '至少选一个字段' : null) ??
+    (!title.trim() ? t('请给模板起个名字') : null) ??
+    (chosen.length === 0 ? t('至少选一个字段') : null) ??
     fieldsProblem(chosen, '')
 
   const save = useMutation({
@@ -103,7 +109,7 @@ export function SaveAsTemplate({
     onSuccess: ({ template }) => {
       void queryClient.invalidateQueries({ queryKey: ['templates'] })
       void queryClient.invalidateQueries({ queryKey: ['document', doc.id] })
-      void message.success(`已存成模板「${template.title}」，这份文档已换成按新模板的结果`)
+      void message.success(t('已存成模板「{{title}}」，这份文档已换成按新模板的结果', { title: template.title }))
       onClose()
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
@@ -114,7 +120,7 @@ export function SaveAsTemplate({
       open={open}
       onClose={onClose}
       size={980}
-      title="存成模板"
+      title={t('存成模板')}
       extra={
         <Button
           type="primary"
@@ -123,18 +129,17 @@ export function SaveAsTemplate({
           loading={save.isPending}
           onClick={() => save.mutate()}
         >
-          保存模板（{chosen.length} 个字段）
+          {t('保存模板（{{length}} 个字段）', { length: chosen.length })}
         </Button>
       }
     >
       <Flex vertical gap={12}>
         <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
-          选中的值原样搬过去（值、出处、你改过的都在），不重新抽取。单据上的原名会记成别名，
-          以后同类单据模型更容易认出来。规则、表格以后在"模板"页里加。
+          {t('选中的值原样搬过去（值、出处、你改过的都在），不重新抽取。单据上的原名会记成别名， 以后同类单据模型更容易认出来。规则、表格以后在"模板"页里加。')}
         </Typography.Paragraph>
         {problem && <Alert type="warning" showIcon title={problem} />}
         <Flex gap={8} wrap>
-          <Input addonBefore="模板名" value={title} onChange={(e) => setTitle(e.target.value)} style={{ width: 300 }} />
+          <Input addonBefore={t('模板名')} value={title} onChange={(e) => setTitle(e.target.value)} style={{ width: 300 }} />
           <AutoComplete
             value={category}
             options={CATEGORIES.map((c) => ({ value: c }))}
@@ -142,7 +147,7 @@ export function SaveAsTemplate({
             style={{ width: 140 }}
           />
           <Input
-            placeholder="说明（可以不写）"
+            placeholder={t('说明（可以不写）')}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             style={{ flex: 1, minWidth: 200 }}
@@ -156,12 +161,12 @@ export function SaveAsTemplate({
           scroll={{ x: 900 }}
           columns={[
             {
-              title: '要',
+              title: t('要'),
               width: 48,
               render: (_, r, i) => <Checkbox checked={r.include} onChange={(e) => update(i, { include: e.target.checked })} />,
             },
             {
-              title: '单据上的名称 / 值',
+              title: t('单据上的名称 / 值'),
               width: 220,
               render: (_, r) =>
                 r.source ? (
@@ -170,22 +175,22 @@ export function SaveAsTemplate({
                       {r.original}
                     </Typography.Text>
                     <Typography.Text ellipsis style={{ maxWidth: 200 }}>
-                      {r.sample ?? '（空）'}
+                      {r.sample ?? t('（空）')}
                     </Typography.Text>
                   </Flex>
                 ) : (
-                  <Typography.Text type="secondary">自己加的（空，审核时填）</Typography.Text>
+                  <Typography.Text type="secondary">{t('自己加的（空，审核时填）')}</Typography.Text>
                 ),
             },
             {
-              title: '中文名',
+              title: t('中文名'),
               width: 160,
               render: (_, r, i) => (
                 <Input value={r.label} disabled={!r.include} onChange={(e) => update(i, { label: e.target.value })} />
               ),
             },
             {
-              title: '字段 ID',
+              title: t('字段 ID'),
               width: 160,
               render: (_, r, i) => (
                 <Input
@@ -197,7 +202,7 @@ export function SaveAsTemplate({
               ),
             },
             {
-              title: '类型',
+              title: t('类型'),
               width: 130,
               render: (_, r, i) => (
                 <Select
@@ -210,14 +215,14 @@ export function SaveAsTemplate({
               ),
             },
             {
-              title: '必填',
+              title: t('必填'),
               width: 60,
               render: (_, r, i) => (
                 <Switch size="small" checked={r.required} disabled={!r.include} onChange={(required) => update(i, { required })} />
               ),
             },
             {
-              title: '敏感',
+              title: t('敏感'),
               width: 60,
               render: (_, r, i) => (
                 <Switch
@@ -238,7 +243,7 @@ export function SaveAsTemplate({
                     type="text"
                     danger
                     icon={<DeleteOutlined />}
-                    aria-label="删除"
+                    aria-label={t('删除')}
                     onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
                   />
                 ),
@@ -255,7 +260,7 @@ export function SaveAsTemplate({
             ])
           }
         >
-          加一个自己的字段
+          {t('加一个自己的字段')}
         </Button>
       </Flex>
     </Drawer>

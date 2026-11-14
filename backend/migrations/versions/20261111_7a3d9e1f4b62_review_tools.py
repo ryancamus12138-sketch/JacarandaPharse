@@ -20,7 +20,8 @@ _JSON = sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgre
 
 
 def upgrade() -> None:
-    # 审核工具（ADR 0027）：从原文选取时记下新出处；表格可以增删行；保存 OCR 结果供点选
+    # Review tools: new evidence when selecting from source text, adding and removing table rows,
+    # and stored OCR results for selection.
     op.add_column("value_revisions", sa.Column("evidence", _JSON, nullable=True))
     op.add_column(
         "extracted_values",
@@ -29,7 +30,7 @@ def upgrade() -> None:
     op.add_column(
         "extracted_values", sa.Column("sort_key", sa.Float(), server_default="0", nullable=False)
     )
-    # 已有的字段：显示顺序就是抽取时的顺序
+    # Existing values: display order equals extraction order.
     op.execute("UPDATE extracted_values SET sort_key = position")
     op.add_column("extractions", sa.Column("ocr", _JSON, nullable=True))
 

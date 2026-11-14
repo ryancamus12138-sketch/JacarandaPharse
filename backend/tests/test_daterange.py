@@ -1,4 +1,5 @@
-"""日期范围（ADR 0039）：模型照抄原文，代码拆成开始、结束；核对、公式、规则、导出。"""
+"""Date ranges: the model copies the source text and code splits it into start and end;
+verification, formulas, rules, export."""
 
 from __future__ import annotations
 
@@ -9,9 +10,11 @@ import pytest
 from openpyxl import load_workbook
 
 from jacara.core.daterange import day_first_for, parse_date_range
+from jacara.core.i18n import render
 from jacara.formulas import FormulaError, Inputs, Scope, evaluate, parse_formula
 from jacara.templates import parse_template
 
+from .conftest import raises
 from .test_template_library import SchemaBackend, detail, process, upload
 
 
@@ -69,10 +72,13 @@ def test_formulas_use_start_end_days():
     gap = parse_formula("invoice_date - period.end", scope)
     inputs = Inputs({"period": "July 1 - July 31 , 2014", "invoice_date": "2014-08-03"}, {})
     assert evaluate(gap, inputs).value == 3
-    assert gap.readable({"period": "账期", "invoice_date": "发票日期"}) == "发票日期 − 账期的结束"
-    with pytest.raises(FormulaError, match=r"period\.start"):
+    assert (
+        render(gap.readable({"period": "账期", "invoice_date": "发票日期"}))
+        == "发票日期 − 账期的结束"
+    )
+    with raises(FormulaError, r"period\.start"):
         parse_formula("period + 1", scope)
-    with pytest.raises(FormulaError, match="只能取"):
+    with raises(FormulaError, "只能取"):
         parse_formula("period.month", scope)
 
 
@@ -188,7 +194,8 @@ def test_export_csv(client, factory, storage):
     assert row[header.index("总额")] == "4.11"
     assert "来源" not in text
 
-    # 还有别的表（这里是抽取所有键值对的"键值对"表）：每张表一个 .csv，打包成 zip
+    # Additional sheets (here the key-value sheet of key-value discovery): one .csv per sheet,
+    # packed into a zip.
     other = upload(client, "discover")
     pairs = [{"key": "Account", "value": "296664039561", "type": "string", "blocks": []}]
     assert process(factory, storage, other, bill_page(), SchemaBackend(pairs=pairs)) == "done"

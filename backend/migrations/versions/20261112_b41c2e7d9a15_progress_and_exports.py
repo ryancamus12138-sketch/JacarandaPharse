@@ -20,17 +20,18 @@ _JSON = sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgre
 
 
 def upgrade() -> None:
-    # 工作台（ADR 0029）：处理进度、处理完和审核完的时间
+    # Dashboard: processing progress and processing/review completion timestamps.
     op.add_column("documents", sa.Column("stage", sa.String(length=64), nullable=True))
     op.add_column("documents", sa.Column("progress", sa.Integer(), nullable=True))
     op.add_column("documents", sa.Column("processed_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("documents", sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True))
-    # 已经处理完的文档没有记时间：用上传时间代替，工作台的"今天"统计不会把它们算进去
+    # Documents processed before this migration have no timestamp: use the upload time so that they
+    # are not counted in today's statistics.
     op.execute(
         "UPDATE documents SET processed_at = created_at"
         " WHERE status IN ('done', 'failed', 'reviewed')"
     )
-    # 导出记录：每次导出的文件存进对象存储，可以重新下载
+    # Export records: each exported file is stored in object storage and can be downloaded again.
     op.create_table(
         "exports",
         sa.Column("id", sa.Uuid(), nullable=False),

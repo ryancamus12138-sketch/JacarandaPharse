@@ -1,8 +1,10 @@
-"""字段双维度状态（ADR 0028）：证据 × 校验 → 红黄灰绿；采用原文值。
+"""Two-dimensional field status: evidence × validation → red, yellow, grey, green; accepting source
+values.
 
-这张小收据上：商家名 OCR 读错了一个字（模型写对了，只能相似匹配）；DISC 1.00- 是折扣，
-模型却抽成了正的 1.0，所以商品金额加起来 10.00 和总额 8.00 对不上；现金 12.00 原文里没有。
-"""
+On this small receipt: OCR misread one letter of the merchant name (the model wrote it correctly,
+so only a fuzzy match is possible); DISC 1.00- is a discount, but the model extracted a positive
+1.0, so the line amounts sum to 10.00 against a total of 8.00; cash 12.00 does not appear in the
+source."""
 
 import uuid
 from datetime import datetime
@@ -78,13 +80,14 @@ def edit(client, value: dict, new: str, reason: str = "采用原文值"):
 def test_two_dimensions_and_colors(client, document_id):
     v = values(client, document_id)
     state = {name: (x["evidence_state"], x["check_state"], x["level"]) for name, x in v.items()}
-    assert state["merchant"] == ("pending", "ok", "yellow")  # 只是相似
-    assert state["store_name"] == ("empty", "ok", "grey")  # 原文没有
+    assert state["merchant"] == ("pending", "ok", "yellow")  # Fuzzy only.
+    assert state["store_name"] == ("empty", "ok", "grey")  # Absent from the source.
     assert state["date"] == ("verified", "ok", "green")
     assert state["total"] == ("verified", "ok", "green")
-    assert state["cash"] == ("missing", "ok", "red")  # 原文里找不到
-    assert state["items.1.amount"] == ("verified", "warn", "yellow")  # 合计对不上，金额都标出
-    # 1.00- 是负数，值却是正的：出处有疑点，同时合计对不上
+    assert state["cash"] == ("missing", "ok", "red")  # Not found in the source.
+    # Totals disagree; all amounts flagged.
+    assert state["items.1.amount"] == ("verified", "warn", "yellow")
+    # 1.00- is negative but the value is positive: doubtful evidence, and the totals disagree.
     assert state["items.2.amount"] == ("pending", "warn", "yellow")
 
 
@@ -92,7 +95,7 @@ def test_source_value_for_fuzzy_text_and_sign(client, document_id):
     v = values(client, document_id)
     assert v["merchant"]["source_value"] == "BOOK TA _K (TAMAN DAYA) SDN BHD"
     assert v["items.2.amount"]["source_value"] == "-1.0"
-    # 完全一致的、找不到的、日期都没有原文值
+    # Exact matches, missing values and dates have no source value.
     for name in ("date", "total", "cash", "items.1.amount", "items.1.name"):
         assert v[name]["source_value"] is None, name
 
@@ -100,7 +103,8 @@ def test_source_value_for_fuzzy_text_and_sign(client, document_id):
 def test_adopting_the_source_turns_things_green(client, document_id):
     edit(client, values(client, document_id)["items.2.amount"], "-1.0")
     v = values(client, document_id)
-    # 9.00 − 1.00 = 8.00，合计对上了：两格金额都变绿；采用过之后就不再提示原文值
+    # 9.00 − 1.00 = 8.00 and the totals agree: both amounts turn green, and the source value is no
+    # longer offered once accepted.
     assert v["items.1.amount"]["level"] == "green"
     assert v["items.2.amount"]["level"] == "green"
     assert v["items.2.amount"]["source_value"] is None
@@ -112,9 +116,9 @@ def test_confirming_does_not_hide_a_failing_rule(client, document_id):
         f"/api/v1/values/{v['items.1.amount']['id']}/revisions", json={"action": "confirm"}
     )
     assert response.status_code == 201
-    # 人确认了 9.00 是对的，可合计还是对不上：照样标黄
+    # The reviewer confirmed 9.00, but the totals still disagree: still yellow.
     assert values(client, document_id)["items.1.amount"]["level"] == "yellow"
-    # 找不到出处的值，人确认过就不再标红
+    # A value without evidence is no longer red once confirmed.
     client.post(f"/api/v1/values/{v['cash']['id']}/revisions", json={"action": "confirm"})
     assert values(client, document_id)["cash"]["level"] == "green"
 
@@ -143,7 +147,8 @@ def test_signed_number_only_takes_the_same_number():
 
 
 def test_old_documents_find_the_text_in_the_page_ocr(client, factory, document_id):
-    """更新前处理的文档出处里没存文字：用这一页的 OCR 结果按出处框找，数据库里的出处不改。"""
+    """Older documents store no evidence text: it is located with this page's OCR result via the
+    evidence box, without changing the stored evidence."""
     with session_scope(factory) as session:
         for value in session.query(ExtractedValue):
             if value.evidence:
@@ -158,7 +163,7 @@ def test_old_documents_find_the_text_in_the_page_ocr(client, factory, document_i
         lines = extraction.ocr["lines"]
         total = next(x for x in extraction.values if x.name == "total")
         assert evidence_text(total, lines) == "8.00"
-        assert evidence_text(total, None) is None  # 没存文字又没有 OCR 结果：不知道
+        assert evidence_text(total, None) is None  # No stored text and no OCR result: unknown.
 
 
 def test_new_evidence_keeps_the_text(factory, document_id):
@@ -166,4 +171,4 @@ def test_new_evidence_keeps_the_text(factory, document_id):
         total = session.query(ExtractedValue).filter_by(name="total").one()
         assert total.evidence is not None
         assert total.evidence["text"] == "8.00"
-        assert evidence_text(total, None) == "8.00"  # 新文档不用读 OCR 结果
+        assert evidence_text(total, None) == "8.00"  # New documents do not need the OCR result.

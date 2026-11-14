@@ -1,14 +1,15 @@
-"""每一轮的 OCR 快照（ADR 0053）：OCR 认出来的原样（四个角、置信度、引擎和模型、PDF 文字层、
-表单字段，一样不丢）存进对象存储，一轮一个文件。
+"""OCR snapshot of each run: the complete OCR output (four corners, confidence, engine and models,
+PDF text layer, form fields; nothing dropped) stored in object storage, one file per run.
 
-为什么要存：
-- 回放（jacara eval replay）：换了模型、提示词、模板，用同一份 OCR 结果再抽一次，
-  两边的差别只来自抽取，不混进 OCR 的变化；
-- 错误归因：值在不在 OCR 认出来的字里，看快照就知道，不用重新认。
+Why store it:
+- Replay (`jacara eval replay`): after changing model, prompt or template, extract again from the
+  same OCR output, so differences come only from extraction and not from OCR changes;
+- Error attribution: whether a value appears in the OCR text can be read from the snapshot
+  without re-running OCR.
 
-数据库里也存了 OCR 结果（Extraction.ocr），但那是给审核页用的，按单据切开、坐标换过；
-快照是整份文件、和刚认出来时一模一样的。
-"""
+The database also stores OCR results (Extraction.ocr), but those serve the review page and are
+split per document with converted coordinates; the snapshot covers the whole file exactly as
+recognized."""
 
 from __future__ import annotations
 
@@ -23,14 +24,15 @@ log = logging.getLogger(__name__)
 
 
 def snapshot_key(document_id: uuid.UUID, run: int) -> str:
-    """第几轮的 OCR 快照放在对象存储的哪里。"""
+    """Object storage key of the OCR snapshot of a run."""
     return f"ocr-snapshots/{document_id}/run-{run}.json"
 
 
 def save_snapshot(
     storage: ObjectStorage, document_id: uuid.UUID, run: int, pages: list[OcrPage]
 ) -> str | None:
-    """存下这一轮的 OCR 快照，返回存在哪里。存不进去只记日志、返回 None：不影响处理结果。"""
+    """Store this run's OCR snapshot and return its key. On failure, only log and return None:
+    processing results are unaffected."""
     key = snapshot_key(document_id, run)
     try:
         storage.put(key, dump_pages(pages), "application/json")
@@ -41,5 +43,5 @@ def save_snapshot(
 
 
 def load_snapshot(storage: ObjectStorage, key: str) -> list[OcrPage]:
-    """读回一轮的 OCR 快照，和刚认出来时一模一样。"""
+    """Read back a run's OCR snapshot, exactly as recognized."""
     return load_pages(storage.get(key))

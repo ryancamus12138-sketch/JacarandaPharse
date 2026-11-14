@@ -1,9 +1,8 @@
-"""ocr sample groups and splits (ADR 0052)
+"""ocr sample groups and splits
 
 Revision ID: a4d8e1c6b9f2
 Revises: f3c7a9e2d5b8
-Create Date: 2026-11-21 12:00:00.000000
-"""
+Create Date: 2026-11-21 12:00:00.000000"""
 
 from collections.abc import Sequence
 
@@ -33,14 +32,15 @@ def _owned() -> list[sa.Column]:
 
 
 def upgrade() -> None:
-    # 样本属于哪一张业务单据（文件 + 起始页），图中原文改了几次
+    # Business document of each sample (file and first page) and the number of transcription
+    # revisions.
     op.add_column(
         "ocr_samples", sa.Column("unit_page", sa.Integer(), server_default="1", nullable=False)
     )
     op.add_column(
         "ocr_samples", sa.Column("revision", sa.Integer(), server_default="1", nullable=False)
     )
-    # 业务单据 → 组
+    # Business document to group mapping.
     op.create_table(
         "doc_group_members",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -57,7 +57,7 @@ def upgrade() -> None:
     op.create_index("ix_doc_group_members_document_id", "doc_group_members", ["document_id"])
     op.create_index("ix_doc_group_members_user_id", "doc_group_members", ["user_id"])
     op.create_index("ix_doc_group_members_team_id", "doc_group_members", ["team_id"])
-    # 每组在某个划分版本里分在哪边
+    # Split of each group within a split version.
     op.create_table(
         "split_assignments",
         sa.Column("team_id", sa.Uuid(), nullable=False),
@@ -71,7 +71,7 @@ def upgrade() -> None:
         _created(),
         sa.PrimaryKeyConstraint("team_id", "version", "group_id"),
     )
-    # 两张单据是不是同一张（人确认过）
+    # Confirmed decisions on whether two documents are the same.
     op.create_table(
         "doc_pair_decisions",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -88,7 +88,7 @@ def upgrade() -> None:
     op.create_index("ix_doc_pair_decisions_b_document", "doc_pair_decisions", ["b_document"])
     op.create_index("ix_doc_pair_decisions_user_id", "doc_pair_decisions", ["user_id"])
     op.create_index("ix_doc_pair_decisions_team_id", "doc_pair_decisions", ["team_id"])
-    # 每次导出了哪些样本
+    # Samples included in each export.
     op.create_table(
         "ocr_sample_exports",
         sa.Column("id", sa.Uuid(), nullable=False),

@@ -1,4 +1,4 @@
-"""系统信息的对外格式。"""
+"""Public schemas of system information."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 
 class ServiceCheck(BaseModel):
-    """一个服务连不连得上（和 jacara doctor 一样的检查）。"""
+    """Reachability of one service (same check as `jacara doctor`)."""
 
     name: str
     ok: bool
@@ -16,29 +16,29 @@ class ServiceCheck(BaseModel):
 
 class ModelInfo(BaseModel):
     server: str
-    """模型服务地址。"""
+    """Model server address."""
     file: str | None
-    """jacara start 会用的模型文件名（models/ 里的或 JACARA_MODEL）。"""
+    """Model file name used by `jacara start` (from models/ or JACARA_MODEL)."""
     loaded: str | None
-    """模型服务现在加载的模型（问模型服务得到的；连不上就是空）。"""
+    """Model currently loaded by the model server (queried from it; empty if unreachable)."""
     context: int | None
-    """上下文长度（token）。"""
+    """Context length (tokens)."""
     vision_file: str | None = None
-    """jacara start 会一起加载的视觉模型文件（mmproj，ADR 0038）；没有是 null。"""
+    """Vision projector file (mmproj) loaded together by `jacara start`; null if none."""
     sees_images: bool = False
-    """模型服务现在能不能看图（加载了视觉模型）。"""
+    """Whether the model server can currently process images (vision projector loaded)."""
     vision_mode: str = "auto"
-    """什么时候看原图：auto、always、off（JACARA_VISION）。"""
+    """When the page image is shown to the model: auto, always, off (JACARA_VISION)."""
 
 
 class VisionInfo(BaseModel):
-    """模型能不能看图（ADR 0038）。"""
+    """Whether the model can process images."""
 
     sees_images: bool
     mode: str
-    """什么时候看原图：auto、always、off（JACARA_VISION）。"""
+    """When the page image is shown to the model: auto, always, off (JACARA_VISION)."""
     file: str | None
-    """视觉模型文件（mmproj）；没有是 null。"""
+    """Vision projector file (mmproj); null if none."""
 
 
 class OcrInfo(BaseModel):
@@ -47,12 +47,13 @@ class OcrInfo(BaseModel):
 
 
 class StructureInfo(BaseModel):
-    """页面结构分析用的模型（ADR 0034）。"""
+    """Models used for page structure analysis."""
 
     layout: str | None
-    """版面模型；关掉了（JACARA_LAYOUT=false）是 null。"""
+    """Layout model; null when disabled (JACARA_LAYOUT=false)."""
     table: str | None
-    """表格结构模型文件名；没有放模型是 null（表格的格子按文字位置划分）。"""
+    """Table structure model file name; null when no model is installed (table cells are derived
+    from text positions)."""
 
 
 class TemplateInfo(BaseModel):
@@ -66,23 +67,23 @@ class DataInfo(BaseModel):
     pages: int
     fields: int
     revisions: int
-    """人工审核记录的条数（修改、确认、增删行）。"""
+    """Number of manual review records (edits, confirmations, row additions and deletions)."""
     document_bytes: int
-    """上传的原始文件一共多大。"""
+    """Total size of uploaded originals."""
     exports: int
     export_bytes: int
-    """存下来的导出文件一共多大。"""
+    """Total size of stored export files."""
 
 
 class SystemInfo(BaseModel):
     version: str
     mode: str
-    """personal（个人模式）或 team（团队模式）。"""
+    """personal or team."""
     model: ModelInfo
     ocr: OcrInfo
     structure: StructureInfo | None = None
     watch_dir: str | None = None
-    """监视文件夹（ADR 0036）：放进去的文件自动导入；没设是 null。"""
+    """Watch folder whose files are imported automatically; null if not set."""
     templates: list[TemplateInfo]
     data: DataInfo
     services: list[ServiceCheck]

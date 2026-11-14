@@ -2,6 +2,7 @@ import { DownOutlined, ExclamationCircleOutlined, UpOutlined } from '@ant-design
 import { Alert, Button, Flex } from 'antd'
 import { useState } from 'react'
 import type { Checks } from '../../api/types'
+import { useTranslation } from 'react-i18next'
 
 const KEY = 'jacara.review.issues-open'
 
@@ -14,11 +15,13 @@ function remembered(): boolean {
 }
 
 /**
- * 需要核对的地方（规则没通过：超出参考范围、可能重复报销……）：平时收成一个感叹号按钮，写着几处；
- * 点开看每一处，再点收起。
- * 开着还是收着记在这个浏览器里。有"错误"级别的按钮是红的，只有"警告"是黄的。
+ * Items to check (failed rules: out of reference range, possible duplicate claim, …): normally collapsed into
+ * an exclamation button showing the count; click to expand each item, click again to collapse.
+ * The expanded state is remembered in this browser. The button is red when any error-level issue exists,
+ * yellow for warnings only.
  */
 export function IssueToggle({ checks }: { checks: Checks }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(remembered)
   const issues = checks.issues
   if (issues.length === 0) return null
@@ -30,7 +33,7 @@ export function IssueToggle({ checks }: { checks: Checks }) {
     try {
       localStorage.setItem(KEY, next ? '1' : '0')
     } catch {
-      // 存不了就算了
+      // Storage unavailable: ignore.
     }
   }
 
@@ -46,13 +49,13 @@ export function IssueToggle({ checks }: { checks: Checks }) {
           ...(errors > 0 ? {} : { color: '#d48806', borderColor: '#ffd666' }),
         }}
       >
-        {issues.length} 处需要核对{errors > 0 ? `（${errors} 处有错）` : ''}
+        {t('{{length}} 处需要核对', { length: issues.length })}{errors > 0 ? t('（{{errors}} 处有错）', { errors }) : ''}
         {open ? <UpOutlined /> : <DownOutlined />}
       </Button>
       {open &&
         issues.map((issue, i) => (
           <Alert
-            // 同一条规则可能报好几次（明细每一行单独检查）
+            // One rule may report several times (line items are checked per row).
             key={`${issue.rule}:${i}`}
             type={issue.severity === 'error' ? 'error' : 'warning'}
             showIcon

@@ -1,7 +1,8 @@
-"""jacara start：密钥没改不让启动；Ctrl + C 时把后台进程都停掉。
+"""jacara start: refuses to start with unchanged secrets; stops all background processes on Ctrl +
+C.
 
-不真的启动 API 和 worker：在启动之前就会被拦下来，或者用假的进程代替。
-"""
+API and worker are never actually started: either startup is refused first, or fake processes are
+used."""
 
 from __future__ import annotations
 
@@ -14,12 +15,13 @@ from jacara import cli
 from jacara.core.config import Settings, get_settings
 
 FAKE_KEY = "not-a-real-key"
-"""测试用的假密钥。故意写得一看就是假的，免得 gitleaks 当成真密钥拦下来。"""
+"""Fake secret for tests, deliberately obvious so that gitleaks does not flag it as real."""
 
 
 @pytest.fixture
 def secrets(tmp_path, monkeypatch):
-    """在空文件夹里运行（读不到你自己的 .env），密钥先都设成"不是 change-me"的值。"""
+    """Run in an empty folder (the local .env is not read), with all secrets set to values other
+    than change-me."""
     monkeypatch.chdir(tmp_path)
     for name in ("POSTGRES_PASSWORD", "S3_ACCESS_KEY", "S3_SECRET_KEY"):
         monkeypatch.setenv(name, FAKE_KEY)
@@ -32,7 +34,7 @@ def test_start_refuses_placeholder_secrets(secrets, monkeypatch, capsys):
     assert cli.main(["start"]) == 1
     output = capsys.readouterr().out
     assert "S3_SECRET_KEY" in output
-    assert FAKE_KEY not in output  # 只说名字，不把密钥打印出来
+    assert FAKE_KEY not in output  # Only the name is printed, never the secret.
 
 
 def test_start_refuses_missing_model(secrets, tmp_path, capsys):
@@ -60,7 +62,7 @@ def test_stop_ends_every_child():
 
 
 class FakeProcess:
-    """假的后台进程：一启动就算已经结束了。"""
+    """Fake background process that has already exited when started."""
 
     pid = 99999
 
@@ -76,10 +78,10 @@ class FakeProcess:
 
 @pytest.fixture
 def started(secrets, monkeypatch, tmp_path):
-    """不真的启动：后台进程、Web 服务、浏览器都换成假的，进程号文件写到临时文件夹。
+    """Nothing is actually started: background processes, the web service and the browser are fakes,
+    and the pid file is written to a temporary folder.
 
-    返回 Popen 收到的命令，看启动了哪些进程。
-    """
+        Returns the commands passed to Popen, to check which processes were started."""
     import uvicorn
 
     commands: list[list[str]] = []
@@ -95,8 +97,8 @@ def started(secrets, monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "_port_free", lambda port: True)
     monkeypatch.setattr(cli, "_wait_free", lambda port: True)
     monkeypatch.setattr(cli, "_infra_problems", lambda settings: [])
-    monkeypatch.setattr(cli, "_reset_interrupted", lambda: None)  # 不连数据库
-    # 模型密钥写到临时文件夹；环境变量测完恢复原样
+    monkeypatch.setattr(cli, "_reset_interrupted", lambda: None)  # No database connection.
+    # The model key is written to a temporary folder; environment variables are restored afterwards.
     from jacara.core import config
 
     monkeypatch.setattr(config, "MODEL_KEY_FILE", tmp_path / ".run" / "model-key")
@@ -105,11 +107,12 @@ def started(secrets, monkeypatch, tmp_path):
 
 
 def test_start_warns_when_there_is_no_model(started, capsys):
-    """没有模型、8080 上也没有模型服务：照样启动，但要提醒"上传的文件会处理失败"。"""
+    """No model and no model server on port 8080: start anyway, warning that uploads will fail to
+    process."""
     assert cli.main(["start", "--no-model", "--no-browser"]) == 0
     output = capsys.readouterr().out
     assert "没有模型服务" in output
-    # 只有后台任务：OCR 工位和模型工位（ADR 0051）
+    # Background tasks only: the OCR stage and the model stage.
     assert [c[-2:] for c in started] == [["--stage", "read"], ["--stage", "extract"]]
 
 
@@ -119,7 +122,7 @@ def test_start_one_worker_when_the_pipeline_is_off(started, monkeypatch):
 
     get_settings.cache_clear()
     assert cli.main(["start", "--no-model", "--no-browser"]) == 0
-    assert [c[-1] for c in started] == ["worker"]  # 一个进程从头做到尾
+    assert [c[-1] for c in started] == ["worker"]  # One process end to end.
 
 
 def test_start_is_quiet_when_a_model_is_already_running(started, monkeypatch, capsys):
@@ -129,7 +132,7 @@ def test_start_is_quiet_when_a_model_is_already_running(started, monkeypatch, ca
 
 
 def test_start_finds_the_model_by_itself(started, monkeypatch, tmp_path):
-    """不写 --model：用 models/ 里唯一的 .gguf，一个命令就能把模型一起启动。"""
+    """Without --model: the only .gguf in models/ is used, so one command starts the model too."""
     from jacara.plugins.model_backends import server
 
     model = tmp_path / "only.gguf"
@@ -141,7 +144,8 @@ def test_start_finds_the_model_by_itself(started, monkeypatch, tmp_path):
     monkeypatch.setattr(server, "server_env", lambda: {})
     assert cli.main(["start", "--no-browser"]) == 0
     assert started[0] == ["llama-server", str(model)]
-    # 每次启动生成密钥：只有自己能读的文件 + 传给 worker 的环境变量
+    # A key is generated on every start: an owner-readable file plus an environment variable passed
+    # to the worker.
     from jacara.core import config
 
     key = config.MODEL_KEY_FILE.read_text(encoding="utf-8")
@@ -157,11 +161,11 @@ def test_start_reuses_a_model_that_is_already_running(started, monkeypatch, tmp_
     monkeypatch.setattr(cli, "_answers", lambda url, loading_ok=False: True)
     assert cli.main(["start", "--model", str(model), "--no-browser"]) == 0
     assert "已经有模型服务" in capsys.readouterr().out
-    assert all("worker" in c for c in started)  # 没有再启动一个模型
+    assert all("worker" in c for c in started)  # No second model started.
 
 
 def test_second_start_just_opens_the_browser(secrets, monkeypatch, capsys):
-    """已经在运行了：不报错，告诉用户地址，并打开浏览器。"""
+    """Already running: no error; print the address and open the browser."""
     opened: list[str] = []
     monkeypatch.setattr(cli, "_port_free", lambda port: False)
     monkeypatch.setattr(cli, "_answers", lambda url, loading_ok=False: True)
@@ -183,14 +187,14 @@ def test_stop_without_a_running_start(monkeypatch, tmp_path, capsys):
 
 
 def finished_pid() -> int:
-    """一个已经结束的进程的进程号。"""
+    """Pid of a process that has already exited."""
     done = subprocess.Popen([sys.executable, "-c", "pass"])
     done.wait()
     return done.pid
 
 
 def test_stop_asks_start_like_ctrl_c(monkeypatch, tmp_path, capsys):
-    """jacara stop 给 start 发 SIGINT（和 Ctrl + C 一样），start 按正常流程收尾。"""
+    """jacara stop sends SIGINT to start (like Ctrl + C), and start shuts down normally."""
     import json
     import os
     import signal
@@ -205,7 +209,7 @@ def test_stop_asks_start_like_ctrl_c(monkeypatch, tmp_path, capsys):
             raise ProcessLookupError
         if sig != 0:
             sent.append((pid, sig))
-            alive.discard(pid)  # 假装 start 收到信号后正常退出了
+            alive.discard(pid)  # Simulate start exiting normally after the signal.
 
     monkeypatch.setattr(cli, "RUN_FILE", run_file)
     monkeypatch.setattr(os, "kill", fake_kill)
@@ -216,7 +220,7 @@ def test_stop_asks_start_like_ctrl_c(monkeypatch, tmp_path, capsys):
 
 
 def test_stop_cleans_up_children_left_behind(monkeypatch, tmp_path):
-    """start 被强制结束了，模型和 worker 还在：jacara stop 把它们也停掉。"""
+    """start was killed while the model and worker keep running: jacara stop stops them too."""
     import json
 
     run_file = tmp_path / "jacara.json"
@@ -229,13 +233,14 @@ def test_stop_cleans_up_children_left_behind(monkeypatch, tmp_path):
 
 
 def test_start_survives_sigterm_like_ctrl_c():
-    """SIGTERM 会变成 KeyboardInterrupt，start 的 finally 才能把子进程停掉。"""
+    """SIGTERM becomes KeyboardInterrupt so that start's finally block stops the child processes."""
     with pytest.raises(KeyboardInterrupt):
         cli._interrupt(15, None)
 
 
 def test_wait_free_gives_the_old_model_time_to_exit(monkeypatch):
-    """刚按了 Ctrl + C，上一次的模型还占着端口：等它几秒，空出来就继续启动。"""
+    """Just after Ctrl + C the previous model still holds the port: wait a few seconds and continue
+    once it is free."""
     answers = iter([False, False, True])
     monkeypatch.setattr(cli, "_port_free", lambda port: next(answers))
     monkeypatch.setattr("time.sleep", lambda s: None)
@@ -243,7 +248,8 @@ def test_wait_free_gives_the_old_model_time_to_exit(monkeypatch):
 
 
 def test_port_recently_closed_counts_as_free():
-    """服务刚停、端口还在 TIME_WAIT：算空闲。真的有程序在监听：算占用。"""
+    """A just-stopped service leaves the port in TIME_WAIT: free. A program actually listening: in
+    use."""
     import socket
 
     server = socket.socket()
@@ -253,15 +259,16 @@ def test_port_recently_closed_counts_as_free():
     port = server.getsockname()[1]
     client = socket.create_connection(("127.0.0.1", port))
     accepted, _ = server.accept()
-    assert cli._port_free(port) is False  # 正在监听
-    accepted.close()  # 服务端先关：这一端的连接进入 TIME_WAIT
+    assert cli._port_free(port) is False  # Listening.
+    accepted.close()  # The server closes first: this end of the connection enters TIME_WAIT.
     client.close()
     server.close()
     assert cli._port_free(port) is True
 
 
 def test_old_web_build_is_noticed(tmp_path):
-    """改了网页代码却没重新打包：jacara start 提醒，不然浏览器里还是旧页面。"""
+    """Frontend code changed without rebuilding: jacara start warns, since the browser would show
+    the old page."""
     import os
 
     from jacara.cli import _web_outdated
@@ -275,14 +282,15 @@ def test_old_web_build_is_noticed(tmp_path):
     index.write_text("x")
     os.utime(page, (1000, 1000))
     os.utime(index, (2000, 2000))
-    assert not _web_outdated(dist)  # 打包在改代码之后
+    assert not _web_outdated(dist)  # Build after the code change.
     os.utime(page, (3000, 3000))
-    assert _web_outdated(dist)  # 代码比打包的新
-    assert not _web_outdated(tmp_path / "nowhere")  # 没打包过：另有提醒
+    assert _web_outdated(dist)  # Code newer than the build.
+    assert not _web_outdated(tmp_path / "nowhere")  # Never built: a separate warning.
 
 
 def test_start_refuses_when_docker_is_not_running(secrets, monkeypatch, capsys):
-    """数据库、队列在 Docker 里：没开就直接说清楚怎么办，不要打开网页后才报错。"""
+    """Database and queue run in Docker: when it is not running, say how to fix it instead of
+    failing after the page opens."""
     from jacara.core.health import Check
 
     monkeypatch.setattr(cli, "_port_free", lambda port: True)

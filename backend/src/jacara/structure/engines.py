@@ -1,14 +1,17 @@
-"""版面模型和表格结构模型（ADR 0034）。都是本地 ONNX 模型，不联网。
+"""Layout and table structure models. Both are local ONNX models; no network access.
 
-- 版面：rapid-layout 自带的 pp_layout_cdla（PaddleOCR 的 PicoDet，在中文文档版面数据集 CDLA 上训练，
-  Apache-2.0），找出 正文、标题、图、图注、表格、表注、页眉、页脚、参考文献、公式 十类区域。
-  rapid-layout 还带 YOLOv8 的版面模型，那些权重是 AGPL 的，不能用，这里只用 pp_layout_cdla。
-- 表格：rapid-table + SLANet-plus（PaddleX，Apache-2.0）。给一张表格的图，
-  认出每个格子在第几行第几列、跨几行几列。模型文件放在 models/table/slanet-plus.onnx
-  （要自己下载一次，见 docs）；没有就不用，表格的格子按文字位置用规则划分（analyze.py）。
+- Layout: pp_layout_cdla bundled with rapid-layout (PaddleOCR PicoDet trained on the Chinese
+  document layout dataset CDLA, Apache-2.0), detecting ten region types: text, title, figure,
+  figure caption, table, table caption, header, footer, reference, equation. rapid-layout also
+  bundles YOLOv8 layout models whose weights are AGPL and cannot be used; only pp_layout_cdla is
+  used here.
+- Tables: rapid-table + SLANet-plus (PaddleX, Apache-2.0). Given a table image, it recognizes the
+  row and column of each cell and its spans. The model file goes in models/table/slanet-plus.onnx
+  (downloaded once by the user; see the documentation); without it, cells are derived from text
+  positions by rules (analyze.py).
 
-两个库默认会在找不到模型时从网上下载；这里都把模型路径写死成本地文件，找不到就不用，绝不联网。
-"""
+Both libraries download models from the internet by default when they are missing; here model
+paths are fixed to local files, and a missing model is simply not used. No network access ever."""
 
 from __future__ import annotations
 
@@ -20,28 +23,29 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from jacara.core.i18n import N_
 from jacara.structure.graph import Box
 
 LAYOUT_KINDS = {
-    "text": "正文",
-    "title": "标题",
-    "figure": "图",
-    "figure_caption": "图注",
-    "table": "表格",
-    "table_caption": "表注",
-    "header": "页眉",
-    "footer": "页脚",
-    "reference": "参考文献",
-    "equation": "公式",
+    "text": N_("正文"),
+    "title": N_("标题"),
+    "figure": N_("图"),
+    "figure_caption": N_("图注"),
+    "table": N_("表格"),
+    "table_caption": N_("表注"),
+    "header": N_("页眉"),
+    "footer": N_("页脚"),
+    "reference": N_("参考文献"),
+    "equation": N_("公式"),
 }
-"""版面模型的类别 → 中文名。"""
+"""Layout model class → display name."""
 
-TABLE = "表格"
+TABLE = N_("表格")
 
 
 @dataclass(frozen=True)
 class Region:
-    """版面模型找出的一个区域。"""
+    """A region detected by the layout model."""
 
     kind: str
     box: Box
@@ -50,8 +54,8 @@ class Region:
 
 @dataclass(frozen=True)
 class CellGuess:
-    """表格模型认出的一个格子：第 row～row_end 行、第 col～col_end 列（从 0 开始），
-    box 是格子里内容的框。"""
+    """A cell recognized by the table model: rows row–row_end, columns col–col_end (0-based); box is
+    the box of the cell content."""
 
     row: int
     row_end: int
@@ -74,19 +78,20 @@ class TableRecognizer(Protocol):
 
 @dataclass(frozen=True)
 class StructureEngines:
-    """分析页面结构用的模型。都可以是 None：没有版面模型就不找区域、不找表格；
-    没有表格模型，找到的表格按文字位置划分格子。"""
+    """Models for page structure analysis. Either may be None: without a layout model no regions or
+    tables are detected; without a table model, cells of detected tables are derived from text
+    positions."""
 
     layout: LayoutDetector | None = None
     table: TableRecognizer | None = None
 
 
 NO_MODELS = StructureEngines()
-"""不用任何模型（测试、试跑时只靠规则）。"""
+"""No models at all (tests and trial runs rely on rules only)."""
 
 
 def _quiet() -> None:
-    """两个库每次都打很多 INFO 日志，只留警告。"""
+    """Both libraries log many INFO messages on every call; keep only warnings."""
     for name in ("rapid_layout", "rapid_table"):
         logging.getLogger(name).setLevel(logging.WARNING)
         for child in list(logging.root.manager.loggerDict):
@@ -156,7 +161,8 @@ class RapidTableRecognizer:
 
 
 def _box(values: Any) -> Box:
-    """模型给的框：(x0, y0, x1, y1) 或者四个角的 8 个数，都变成 (x0, y0, x1, y1)。"""
+    """Model box: (x0, y0, x1, y1) or 8 numbers for four corners, both normalized to (x0, y0, x1,
+    y1)."""
     flat = [float(v) for v in np.asarray(values).reshape(-1)]
     xs, ys = flat[0::2], flat[1::2]
     return (min(xs), min(ys), max(xs), max(ys))
@@ -164,7 +170,8 @@ def _box(values: Any) -> Box:
 
 @lru_cache
 def default_engines() -> StructureEngines:
-    """后台处理和命令行用的模型：版面模型（JACARA_LAYOUT 关掉就不用）+ 表格模型（有文件才用）。"""
+    """Models for background processing and the CLI: the layout model (unless disabled with
+    JACARA_LAYOUT) + the table model (if its file exists)."""
     from jacara.core.config import get_settings
 
     settings = get_settings()

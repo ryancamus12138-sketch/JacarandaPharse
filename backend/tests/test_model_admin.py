@@ -1,4 +1,5 @@
-"""换模型（ADR 0046）：只能选 models/ 里的文件，.env 写了的优先，改完提醒重启。"""
+"""Model selection: only files in models/ can be selected, .env takes precedence, and a restart
+reminder follows changes."""
 
 from __future__ import annotations
 
@@ -36,7 +37,7 @@ def slots(client) -> dict[str, dict]:
 def test_lists_files_and_choices(client, models):
     found = slots(client)
     assert [f["name"] for f in found["model"]["files"]] == ["A-Q4.gguf", "B-Q8.gguf"]
-    assert found["model"]["source"] == "none"  # 两个大模型不猜
+    assert found["model"]["source"] == "none"  # Two LLMs: no guessing.
     assert found["mmproj"]["source"] == "auto"
     assert found["ocr_det"]["source"] == "builtin"
     response = client.put(
@@ -46,7 +47,7 @@ def test_lists_files_and_choices(client, models):
     assert response.status_code == 200, response.text
     found = {s["key"]: s for s in response.json()["slots"]}
     assert found["model"]["current"] == "models/B-Q8.gguf" and found["model"]["source"] == "choice"
-    assert found["mmproj"]["current"] is None  # 选了不用视觉模型
+    assert found["mmproj"]["current"] is None  # Vision projector disabled.
     assert found["ocr_det"]["current"] == "models/ocr/my_det.onnx"
     saved = json.loads((models / "models" / "selected.json").read_text())
     assert saved["model"] == "models/B-Q8.gguf"

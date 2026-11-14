@@ -1,7 +1,7 @@
-"""文档接口：/api/v1/documents。
+"""Documents API: /api/v1/documents.
 
-router 只做三件事：读请求、调用 service、把结果或错误变成 HTTP 响应。不碰数据库。
-"""
+The router only parses requests, calls the service and converts results or errors into HTTP
+responses. It never touches the database."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from jacara.core.deps import get_model, get_ocr, get_owner, get_queue, get_session, get_storage
+from jacara.core.i18n import render
 from jacara.core.owner import Owner
 from jacara.core.queue import TaskQueue
 from jacara.core.storage import ObjectStorage
@@ -84,16 +85,15 @@ Service = Annotated[DocumentService, Depends(get_service)]
 
 
 def _http_error(err: DocumentError) -> HTTPException:
-    return HTTPException(status_code=_STATUS.get(err.code, 400), detail=err.message)
+    return HTTPException(status_code=_STATUS.get(err.code, 400), detail=render(err.message))
 
 
 def attachment(filename: str, data: bytes, media_type: str) -> Response:
-    """让浏览器把响应当成文件下载，并用 filename 作为文件名。
+    """Make the browser download the response as a file named filename.
 
-    文件名可能有中文：filename* 按标准（RFC 6266）写成 UTF-8 编码；
-    filename 是给不认识 filename* 的老程序看的纯英文名字。
-    """
-    fallback = f"export{PurePath(filename).suffix}"  # 纯英文的备用名：export.xlsx、export.zip
+        File names may contain non-ASCII characters: filename* is UTF-8 encoded as specified by
+    RFC 6266; filename is an ASCII fallback for clients that do not understand filename*."""
+    fallback = f"export{PurePath(filename).suffix}"  # ASCII fallback name: export.xlsx, export.zip
     disposition = f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename)}"
     return Response(
         content=data, media_type=media_type, headers={"Content-Disposition": disposition}
@@ -109,15 +109,17 @@ def upload_document(
     split: Annotated[str, Form(max_length=200)] = "auto",
     skip_duplicate: Annotated[bool, Form()] = False,
 ) -> DocumentOut:
-    """上传一张图片或一个 PDF。文件存进对象存储，文档信息存进数据库，放进后台队列等待处理。
+    """Upload an image or a PDF. The file is stored in object storage, the document metadata in the
+    database, and the document is queued for processing.
 
-    template：我的模板的 id，或者 discover（不用模板，抽出所有键值对）。不写：用上一次用的。
-    马上返回，状态为 uploaded。之后用"文档详情"查看状态，变成 done 就有抽取结果了。
+        template: id of one of my templates, or discover (no template; extract all key-value
+    pairs). Defaults to the template used last. Returns immediately with status uploaded. Poll
+    the document details; once the status is done, extraction results are available.
 
-    批量导入（ADR 0036）：folder 是文件所在的文件夹（列表按它筛选）；split 是文件里有几张单据
-    （auto 自动判断、one 整个文件一张、pages 每页一张，或"1-2, 3, 4-6"）；
-    skip_duplicate=true 时，同一个文件之前传过就不新建，返回之前那份（duplicate_skipped=true）。
-    """
+        Batch import: folder is the source folder of the file (lists can filter by it); split is
+    the number of documents in the file (auto detects, one for the whole file, pages for one per
+    page, or "1-2, 3, 4-6"); with skip_duplicate=true, a file uploaded before is not created
+    again and the earlier document is returned (duplicate_skipped=true)."""
     data = file.file.read()
     try:
         return service.upload(
@@ -159,12 +161,14 @@ def list_documents(
         str | None, Query(max_length=255, description="批量导入的文件夹（含下面的子文件夹）")
     ] = None,
 ) -> DocumentPage:
-    """按上传时间倒序。limit 是每页几条，offset 是跳过几条（翻页用）。
+    """Ordered by upload time descending. limit is the page size, offset the number of rows to skip
+    (pagination).
 
-    筛选：`?status=done&status=failed&template=receipt&date_from=2026-11-01&q=costco&pending=true`。
-    按字段内容找：`?value_q=044031900111&field=invoice_no`（不填 field 就在所有字段里找）。
-    日期按这台电脑的时区算。
-    """
+        Filters:
+    `?status=done&status=failed&template=receipt&date_from=2026-11-01&q=costco&pending=true`.
+        Search field values: `?value_q=044031900111&field=invoice_no` (without field, all fields
+    are searched).
+        Dates use the time zone of this machine."""
     filters = DocumentFilter(
         statuses=tuple(status_ or ()),
         template=template or None,
@@ -182,7 +186,8 @@ def list_documents(
 
 @router.delete("/{document_id}", summary="删除一份文档")
 def delete_document(document_id: uuid.UUID, service: Service) -> DeleteOut:
-    """原始文件、处理结果、审核记录、备注都删掉，不能恢复。正在处理的不删。"""
+    """Delete the original file, results, review records and comments permanently. Documents being
+    processed are not deleted."""
     try:
         return service.delete([document_id])
     except DocumentError as err:
@@ -191,7 +196,8 @@ def delete_document(document_id: uuid.UUID, service: Service) -> DeleteOut:
 
 @router.post("/delete", summary="一次删除几份文档")
 def delete_documents(data: DeleteIn, service: Service) -> DeleteOut:
-    """勾选的几份一起删。正在处理的跳过，skipped 里说明。"""
+    """Delete the selected documents. Documents being processed are skipped and listed in
+    skipped."""
     try:
         return service.delete(data.ids)
     except DocumentError as err:
@@ -200,9 +206,10 @@ def delete_documents(data: DeleteIn, service: Service) -> DeleteOut:
 
 @router.post("/reprocess", status_code=status.HTTP_202_ACCEPTED, summary="一次重新处理几份")
 def reprocess_documents(data: ReprocessManyIn, service: Service) -> ReprocessManyOut:
-    """勾选的几份用同样的设置一起重新处理（模板、分单据、看原图、PDF 怎么读、原因）。
-    不写的设置：模板用各自的最新版，分单据和上次一样，看原图和 PDF 读法按系统设置。
-    正在处理、还在排队的跳过，skipped 里说明。"""
+    """Reprocess the selected documents with the same settings (template, document split, vision,
+    PDF read mode, reason). Omitted settings: each document's latest template version, the
+    previous split, and system defaults for vision and PDF read mode. Documents being processed
+    or still queued are skipped and listed in skipped."""
     try:
         return service.reprocess_many(data)
     except DocumentError as err:
@@ -211,13 +218,15 @@ def reprocess_documents(data: ReprocessManyIn, service: Service) -> ReprocessMan
 
 @router.get("/folders", summary="批量导入的文件夹")
 def list_folders(service: Service) -> list[FolderOut]:
-    """批量导入时的文件夹和每个文件夹里有几份文档（列表按文件夹筛选用）。"""
+    """Batch-import folders and the number of documents in each (for filtering the list by
+    folder)."""
     return service.folders()
 
 
 @dashboard_router.get("", summary="工作台")
 def dashboard(service: Service) -> Dashboard:
-    """首页的统计和待办：各状态多少份、今天处理和审核了多少、处理队列（带进度）、需要先处理的。"""
+    """Dashboard statistics and to-dos: counts per status, processed and reviewed today, processing
+    queue (with progress), documents needing attention first."""
     return service.dashboard()
 
 
@@ -229,10 +238,10 @@ def export_documents(
         str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
     ] = None,
 ) -> Response:
-    """把多个文档导出到一个 Excel：汇总表一行一张单据，方便对账。
+    """Export several documents to one Excel workbook: a summary sheet with one row per document,
+    for reconciliation.
 
-    写法：`/api/v1/documents/export.xlsx?ids=第一个id&ids=第二个id`
-    """
+        Usage: `/api/v1/documents/export.xlsx?ids=FIRST_ID&ids=SECOND_ID`"""
     try:
         filename, data = service.export(ids, lang)
     except DocumentError as err:
@@ -248,11 +257,11 @@ def export_documents_csv(
         str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
     ] = None,
 ) -> Response:
-    """导出 CSV（UTF-8），内容和汇总 Excel 一样：一行一张单据。
+    """Export CSV (UTF-8) with the same content as the Excel summary: one row per document.
 
-    只有汇总一张表时是一个 .csv；有明细表、键值对时每张表一个 .csv，打包成 zip。
-    写法：`/api/v1/documents/export.csv?ids=第一个id&ids=第二个id`
-    """
+        A single .csv when there is only the summary table; with line-item tables or key-value
+    pairs, one .csv per table packed into a zip.
+        Usage: `/api/v1/documents/export.csv?ids=FIRST_ID&ids=SECOND_ID`"""
     try:
         filename, data, kind = service.export_csv(ids, lang)
     except DocumentError as err:
@@ -268,11 +277,10 @@ def export_documents_json(
         str | None, Query(max_length=16, description="字段名（labels）用哪种语言；不写用中文")
     ] = None,
 ) -> Response:
-    """导出 JSON（UTF-8）给别的程序读：文档 → 每张单据 → 字段（fields）、表格（tables）、
-    字段名（labels）、还等人确认的（needs_review）。值和 Excel 一样是审核之后的。
+    """Export JSON (UTF-8) for other programs: document → each sub-document → fields, tables, labels
+    and needs_review. Values are post-review, as in Excel.
 
-    写法：`/api/v1/documents/export.json?ids=第一个id&ids=第二个id`
-    """
+        Usage: `/api/v1/documents/export.json?ids=FIRST_ID&ids=SECOND_ID`"""
     try:
         filename, data = service.export_json(ids, lang)
     except DocumentError as err:
@@ -288,10 +296,9 @@ def export_documents_zip(
         str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
     ] = None,
 ) -> Response:
-    """每个文档单独一个 Excel，打包成一个 zip 下载，解压后就是一个文件夹。
+    """One Excel workbook per document, packed into a zip that extracts to a folder.
 
-    写法：`/api/v1/documents/export.zip?ids=第一个id&ids=第二个id`
-    """
+    Usage: `/api/v1/documents/export.zip?ids=FIRST_ID&ids=SECOND_ID`"""
     try:
         filename, data = service.export_zip(ids, lang)
     except DocumentError as err:
@@ -305,10 +312,9 @@ def get_document(
     service: Service,
     run: Annotated[int | None, Query(ge=1)] = None,
 ) -> DocumentDetail:
-    """文档信息，加上每一页抽出的字段、出处和规则校验结果。
+    """Document metadata with the extracted fields, evidence and rule check results of each page.
 
-    run：看第几轮处理的结果（旧的几轮只能看）。不写就是现在用的这一轮。
-    """
+    run: which run to show (earlier runs are read-only). Defaults to the current run."""
     try:
         return service.get(document_id, run)
     except DocumentError as err:
@@ -317,7 +323,8 @@ def get_document(
 
 @router.get("/{document_id}/neighbors", summary="上一份、下一份")
 def document_neighbors(document_id: uuid.UUID, service: Service) -> DocumentNeighbors:
-    """按列表顺序（上传时间倒序），这份前后两份待审核的文档。审核完一份直接跳到下一份。"""
+    """The previous and next documents awaiting review in list order (upload time descending), for
+    moving straight to the next document after a review."""
     try:
         return service.neighbors(document_id)
     except DocumentError as err:
@@ -326,7 +333,7 @@ def document_neighbors(document_id: uuid.UUID, service: Service) -> DocumentNeig
 
 @router.get("/{document_id}/file", summary="下载原始文件", response_class=Response)
 def download_document(document_id: uuid.UUID, service: Service) -> Response:
-    """返回上传时的原文件。审核页面用它显示原图。"""
+    """The original uploaded file. The review page displays it."""
     try:
         document, data = service.download(document_id)
     except DocumentError as err:
@@ -338,15 +345,17 @@ def download_document(document_id: uuid.UUID, service: Service) -> Response:
 def page_image(
     document_id: uuid.UUID, page: Annotated[int, Path(ge=1)], service: Service
 ) -> Response:
-    """第 page 页（从 1 开始）画成 PNG。审核页面显示它，并按字段的 evidence.bbox 在上面画出处框。
+    """Page page (1-based) rendered as PNG. The review page displays it and draws evidence boxes
+    from each field's evidence.bbox.
 
-    PDF 按抽取时同样的倍数渲染，图片按原像素输出，所以坐标能对上。
-    """
+        PDFs are rendered at the same scale as during extraction and images at their original
+    pixel size, so coordinates match."""
     try:
         data = service.page_image(document_id, page)
     except DocumentError as err:
         raise _http_error(err) from err
-    # 同一页的图片不会变，浏览器可以缓存一小时；private：只存在自己的浏览器里
+    # The page image never changes, so browsers may cache it for an hour; private: cached only in
+    # the user's browser.
     return Response(
         content=data, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"}
     )
@@ -361,8 +370,8 @@ def page_crop(
     service: Service,
     box: Annotated[str, Query(pattern=r"^-?[\d.]+(,-?[\d.]+){3}$")],
 ) -> Response:
-    """box="x0,y0,x1,y1"（和页面图片一样的坐标）这一块放大后的 PNG（ADR 0042）。
-    审核页在候选值旁边显示，看清是哪个字。"""
+    """Zoomed PNG of box="x0,y0,x1,y1" (page image coordinates). Shown next to candidate values on
+    the review page to reveal the exact characters."""
     try:
         data = service.page_crop(document_id, page, [float(v) for v in box.split(",")])
     except DocumentError as err:
@@ -379,10 +388,10 @@ def page_structure(
     service: Service,
     run: Annotated[int | None, Query(ge=1)] = None,
 ) -> PageStructureOut:
-    """这一页认出的版面区域、表格的格子（第几行第几列）、"标题 → 值"（ADR 0034）。
+    """Layout regions, table cells (row and column) and label → value pairs detected on this page.
 
-    审核页"版面结构"在原图上画出来。2026-11-14 之前处理的文档 available 是 false。
-    """
+        Drawn over the page image in the layout view of the review page. available is false for
+    documents processed before 2026-11-14."""
     try:
         return service.page_structure(document_id, page, run)
     except DocumentError as err:
@@ -391,8 +400,9 @@ def page_structure(
 
 @router.get("/{document_id}/extractions/{extraction_id}/sent", summary="发给模型的文字")
 def sent_text(document_id: uuid.UUID, extraction_id: uuid.UUID, service: Service) -> SentText:
-    """这张单据这一轮发给模型的单据文字原文和文字块编号（ADR 0053）。
-    追查"模型为什么没取到"：值不在这里面，是 OCR 没认出来；在里面，是抽取漏了。"""
+    """Document text and text block indices sent to the model for this document in this run. To
+    diagnose a missed value: if the value is absent here, OCR did not recognize it; if present,
+    extraction missed it."""
     try:
         return service.sent_text(document_id, extraction_id)
     except DocumentError as err:
@@ -401,10 +411,11 @@ def sent_text(document_id: uuid.UUID, extraction_id: uuid.UUID, service: Service
 
 @router.get("/{document_id}/pages/{page}/ocr", summary="某一页的 OCR 结果")
 def page_ocr(document_id: uuid.UUID, page: Annotated[int, Path(ge=1)], service: Service) -> PageOcr:
-    """这一页 OCR 认出的每个文字块：文字、在图上的位置、置信度。坐标和页面图片一样。
+    """Every text block recognized on this page: text, position on the image and confidence, in page
+    image coordinates.
 
-    审核页面"从原文选取"用：点哪一块，就把它的编号（index）交给"审核字段"。
-    """
+        Used by "select from source text" on the review page: the index of the clicked block is
+    passed to field review."""
     try:
         return service.page_ocr(document_id, page)
     except DocumentError as err:
@@ -418,11 +429,12 @@ def ocr_region(
     region: RegionIn,
     service: Service,
 ) -> RegionOut:
-    """把这一页上的一块区域（box，像素坐标）裁下来、放大，重新做一次 OCR，返回认出的文字。
+    """Crop a region of this page (box, pixel coordinates), enlarge it, run OCR again and return the
+    recognized text.
 
-    审核时"框选 → 重新识别这块"用：原来 OCR 认错或漏认的地方，单独放大再认一次常常就对了。
-    只返回文字，不保存；确认后再用"审核字段"保存（带上 source_box）。
-    """
+        Used by "select region → re-recognize" during review: text that OCR misread or missed is
+    often recognized correctly when enlarged on its own. Returns text only and saves nothing;
+    after confirmation, save with field review (including source_box)."""
     try:
         return service.ocr_region(document_id, page, region.box)
     except DocumentError as err:
@@ -436,7 +448,8 @@ def describe_region(
     region: RegionIn,
     service: Service,
 ) -> RegionDescription:
-    """框选建模板（ADR 0047）：框里的值、旁边的标签、在页面哪里、像什么类型。只看不存。"""
+    """Template building by region selection: the value inside the box, the nearby label, its
+    position on the page and its likely type. Read-only."""
     try:
         return service.describe_region(document_id, page, region.box)
     except DocumentError as err:
@@ -450,11 +463,12 @@ def look_region(
     data: LookIn,
     service: Service,
 ) -> LookOut:
-    """把这一页上的一块区域裁下来交给视觉模型（ADR 0038），读出文字和要填的字段的值。
+    """Crop a region of this page and send it to the vision model to read the text and the value of
+    the target field.
 
-    手写、印章、被笔迹盖住的字 OCR 认不出时用。只返回结果，不保存；确认后用"审核字段"保存。
-    模型服务没加载视觉模型时返回 503。
-    """
+        For handwriting, stamps and text covered by pen marks that OCR cannot read. Returns the
+    result only and saves nothing; save with field review after confirmation. Returns 503 when
+    the model server has no vision projector loaded."""
     try:
         return service.look_region(document_id, page, data)
     except DocumentError as err:
@@ -469,7 +483,8 @@ def export_document(
         str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
     ] = None,
 ) -> Response:
-    """把一个文档导出成 Excel。格子里是审核之后的值，改过的标蓝，批注里有原值和原因。"""
+    """Export one document to Excel. Cells contain post-review values; edited cells are blue and
+    carry the original value and reason in a cell comment."""
     try:
         filename, data = service.export([document_id], lang)
     except DocumentError as err:
@@ -479,10 +494,9 @@ def export_document(
 
 @router.post("/{document_id}/review", summary="完成审核")
 def review_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
-    """所有标黄的字段都修改或确认过之后，把文档标记为已审核（reviewed）。
+    """Mark the document as reviewed once every flagged field has been edited or confirmed.
 
-    还有字段没处理时返回 409，并说明还剩几个。
-    """
+    Returns 409 with the number of remaining fields if any are still open."""
     try:
         return service.review(document_id)
     except DocumentError as err:
@@ -493,7 +507,8 @@ def review_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
     "/{document_id}/review-time", status_code=status.HTTP_204_NO_CONTENT, summary="记审核用时"
 )
 def add_review_time(document_id: uuid.UUID, data: ReviewTimeIn, service: Service) -> None:
-    """审核页报来的：这一段时间人在审核页上操作了几秒（页面在后台、人走开了不算）。"""
+    """Reported by the review page: seconds of active use of the review page in this interval (time
+    in a background tab or while idle is excluded)."""
     try:
         service.add_review_time(document_id, data.seconds)
     except DocumentError as err:
@@ -502,7 +517,8 @@ def add_review_time(document_id: uuid.UUID, data: ReviewTimeIn, service: Service
 
 @router.post("/{document_id}/skip", summary="先跳过")
 def skip_document(document_id: uuid.UUID, data: SkipIn, service: Service) -> DocumentOut:
-    """审核时拿不准的先跳过：不算进"下一份"，列表里用 `?skipped=true` 筛出来，过后再回来。"""
+    """Skip a document during review: it is excluded from "Next" and can be listed with
+    `?skipped=true` to return to later."""
     try:
         return service.skip(document_id, data)
     except DocumentError as err:
@@ -511,7 +527,8 @@ def skip_document(document_id: uuid.UUID, data: SkipIn, service: Service) -> Doc
 
 @router.post("/{document_id}/unskip", summary="取消跳过")
 def unskip_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
-    """回到待审核里。完成审核、重新处理时也会自动取消跳过。"""
+    """Return the document to the review queue. Completing review or reprocessing also clears the
+    skip."""
     try:
         return service.unskip(document_id)
     except DocumentError as err:
@@ -520,10 +537,9 @@ def unskip_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
 
 @router.post("/{document_id}/process", status_code=status.HTTP_202_ACCEPTED, summary="重新处理")
 def process_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
-    """把失败（failed）或还在排队（uploaded）的文档重新放进后台队列。
+    """Requeue a failed (failed) or still queued (uploaded) document.
 
-    202 的意思是"收到了，会去做"，不是"已经做完了"。
-    """
+    202 means accepted for processing, not completed."""
     try:
         return service.process(document_id)
     except DocumentError as err:
@@ -534,7 +550,8 @@ def process_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
     "/{document_id}/reprocess", status_code=status.HTTP_202_ACCEPTED, summary="换模板重新处理"
 )
 def reprocess_document(document_id: uuid.UUID, data: ReprocessIn, service: Service) -> DocumentOut:
-    """用选的模板（不选就是现在这个模板的最新版）跑新的一轮。旧结果留着，可以查看。"""
+    """Run a new pass with the selected template (default: the latest version of the current
+    template). Earlier results are kept for inspection."""
     try:
         return service.reprocess(document_id, data)
     except DocumentError as err:
@@ -543,7 +560,8 @@ def reprocess_document(document_id: uuid.UUID, data: ReprocessIn, service: Servi
 
 @router.post("/{document_id}/adopt-previous", summary="采纳上次的确认")
 def adopt_previous(document_id: uuid.UUID, service: Service) -> AdoptOut:
-    """重新处理之后：上一轮人审核过、这次值和位置都对得上的字段，一次沿用。"""
+    """After reprocessing: carry over fields reviewed in the previous run whose value and position
+    still match, in one step."""
     try:
         return service.adopt_previous(document_id)
     except DocumentError as err:

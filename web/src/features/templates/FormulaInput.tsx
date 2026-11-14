@@ -4,13 +4,17 @@ import { Button, Dropdown, Input, type InputRef, Space, Tooltip, Typography, typ
 import { useEffect, useRef, useState } from 'react'
 import { checkFormula } from '../../api/templates'
 import type { TemplateField, TemplateTable } from '../../api/types'
+import { useTranslation } from 'react-i18next'
 
 /**
- * 写公式或规则条件的输入框（ADR 0035）。
- * - 右边的按钮列出这个模板现在有哪些字段（中文名 + 字段 ID）、表格合计和函数，点一下插到光标处，不用记 ID；
- * - 边写边检查：下面一行显示换成中文名的样子（离店日期 − 入住日期），写错了说哪里错。
- * kind="formula" 是计算字段的公式；"condition" 是规则的条件（要有 == < > 这些比较）。
- * row 写表名：表格的列的公式、"每一行"的规则，名字按这张表的列找。
+ * Input for formulas and rule conditions.
+ * - The button on the right lists the template's current fields (display name + field ID), table totals and
+ *   functions; clicking inserts at the cursor, so IDs need not be memorized;
+ * - Live validation: the line below shows the formula with display names (Check-out date − Check-in date) and
+ *   explains errors.
+ * kind="formula" is a computed field formula; "condition" is a rule condition (requiring a comparison such as
+ * == < >). row is a table name: for table column formulas and per-row rules, names resolve to that table's
+ * columns.
  */
 export function FormulaInput({
   value,
@@ -30,13 +34,14 @@ export function FormulaInput({
   fields: TemplateField[]
   tables: TemplateTable[]
   row: string | null
-  /** 正在写公式的这个字段自己（不列出来，不能自己算自己）。 */
+  /** The field this formula belongs to (excluded from the list; a field cannot compute itself). */
   self?: string
   placeholder?: string
 }) {
+  const { t } = useTranslation()
   const input = useRef<InputRef>(null)
   const [text, setText] = useState(value)
-  // 停下来 0.4 秒再检查，不是每敲一个字就问一次
+  // Validate after a 0.4-second pause rather than on every keystroke.
   useEffect(() => {
     const timer = setTimeout(() => setText(value), 400)
     return () => clearTimeout(timer)
@@ -75,59 +80,59 @@ export function FormulaInput({
       </Space>
     ),
   })
-  const rowTable = tables.find((t) => t.name === row)
+  const rowTable = tables.find((tbl) => tbl.name === row)
   const groups: MenuProps['items'] = []
   if (rowTable) {
     groups.push({
       type: 'group',
-      label: `${rowTable.label}这一行的列`,
+      label: t('{{label}}这一行的列', { label: rowTable.label }),
       children: rowTable.columns.filter(usable).map((c) => item(c.name, c.label, c.name)),
     })
   }
   if (!rowTable || kind === 'formula') {
     groups.push({
       type: 'group',
-      label: '字段（只列数字和日期）',
+      label: t('字段（只列数字和日期）'),
       children: [
         ...fields.filter(usable).map((f) => item(f.name, f.label, f.name)),
-        // 日期范围（ADR 0039）：开始、结束是日期，天数是数字
+        // Date range: start and end are dates; days is a number.
         ...fields
           .filter((f) => f.type === 'date_range' && f.name !== self)
           .flatMap((f) => [
-            item(`${f.name}.start`, `${f.label}的开始`, `${f.name}.start`),
-            item(`${f.name}.end`, `${f.label}的结束`, `${f.name}.end`),
-            item(`${f.name}.days`, `${f.label}的天数`, `${f.name}.days`),
+            item(`${f.name}.start`, t('{{label}}的开始', { label: f.label }), `${f.name}.start`),
+            item(`${f.name}.end`, t('{{label}}的结束', { label: f.label }), `${f.name}.end`),
+            item(`${f.name}.days`, t('{{label}}的天数', { label: f.label }), `${f.name}.days`),
           ]),
       ],
     })
   }
   if (!rowTable) {
-    const sums = tables.flatMap((t) => [
-      ...t.columns
+    const sums = tables.flatMap((tbl) => [
+      ...tbl.columns
         .filter((c) => c.type === 'number')
-        .map((c) => item(`sum(${t.name}.${c.name})`, `${t.label}的${c.label}合计`, `sum(${t.name}.${c.name})`)),
-      item(`count(${t.name})`, `${t.label}有几行`, `count(${t.name})`),
+        .map((c) => item(`sum(${tbl.name}.${c.name})`, t('{{label}}的{{label2}}合计', { label: tbl.label, label2: c.label }), `sum(${tbl.name}.${c.name})`)),
+      item(`count(${tbl.name})`, t('{{label}}有几行', { label: tbl.label }), `count(${tbl.name})`),
     ])
-    if (sums.length) groups.push({ type: 'group', label: '表格', children: sums })
+    if (sums.length) groups.push({ type: 'group', label: t('表格'), children: sums })
   }
   groups.push({
     type: 'group',
-    label: '算式和函数',
+    label: t('算式和函数'),
     children: [
       ...(kind === 'condition'
         ? [
-            item('==', '等于', '=='),
-            item('<=', '不超过', '<='),
-            item('>=', '不少于', '>='),
-            item('>', '大于', '>'),
-            item('<', '小于', '<'),
-            item('!=', '不等于', '!='),
+            item('==', t('等于'), '=='),
+            item('<=', t('不超过'), '<='),
+            item('>=', t('不少于'), '>='),
+            item('>', t('大于'), '>'),
+            item('<', t('小于'), '<'),
+            item('!=', t('不等于'), '!='),
           ]
         : []),
-      item('round(', '四舍五入', 'round(x, 2)'),
-      item('abs(', '绝对值', 'abs(x)'),
-      item('min(', '取小的', 'min(a, b)'),
-      item('max(', '取大的', 'max(a, b)'),
+      item('round(', t('四舍五入'), 'round(x, 2)'),
+      item('abs(', t('绝对值'), 'abs(x)'),
+      item('min(', t('取小的'), 'min(a, b)'),
+      item('max(', t('取大的'), 'max(a, b)'),
     ],
   })
 
@@ -149,8 +154,8 @@ export function FormulaInput({
             trigger={['click']}
             menu={{ items: groups, onClick: ({ key }) => insert(key), style: { maxHeight: 360, overflowY: 'auto' } }}
           >
-            <Tooltip title="插入字段或函数：列出这个模板现在有哪些字段">
-              <Button icon={<FunctionOutlined />} aria-label="插入字段或函数" />
+            <Tooltip title={t('插入字段或函数：列出这个模板现在有哪些字段')}>
+              <Button icon={<FunctionOutlined />} aria-label={t('插入字段或函数')} />
             </Tooltip>
           </Dropdown>
         )}

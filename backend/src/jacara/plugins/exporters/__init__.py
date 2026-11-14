@@ -1,10 +1,11 @@
-"""导出插件登记表：按名字创建导出器。
+"""Exporter registry: create exporters by name.
 
-新增一种格式（例如 CSV）：在本目录新建 csv.py 实现 Exporter，再在 _EXPORTERS 里加一行。
-"""
+To add a format: implement Exporter in a new module in this package and add an entry to
+_EXPORTERS."""
 
 from collections.abc import Callable
 
+from jacara.core.i18n import join_items, stored
 from jacara.plugins.exporters.base import DocumentReport, Exporter, Review
 from jacara.plugins.exporters.excel import ExcelExporter
 
@@ -14,15 +15,21 @@ _EXPORTERS: dict[str, Callable[[], Exporter]] = {
 
 
 def available_exporters() -> list[str]:
-    """列出所有登记过的导出格式。"""
+    """All registered export formats."""
     return sorted(_EXPORTERS)
 
 
 def create_exporter(name: str) -> Exporter:
-    """按名字创建导出器。名字没登记过就报错，并列出可用的名字。"""
+    """Create an exporter by name. Raises for unregistered names, listing the available ones."""
     factory = _EXPORTERS.get(name)
     if factory is None:
-        raise ValueError(f"未知的导出格式：{name}，可用的有：{available_exporters()}")
+        raise ValueError(
+            stored(
+                "未知的导出格式：{name}，可用的有：{available}",
+                name=name,
+                available=join_items(available_exporters()),
+            )
+        )
     return factory()
 
 

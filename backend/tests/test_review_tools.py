@@ -1,8 +1,8 @@
-"""审核工具（ADR 0027）：从原文选取、表格增删行、规则按当前值重新检查、导出跟着变。
+"""Review tools: selecting from source text, adding and removing table rows, re-evaluating rules on
+current values, exports following suit.
 
-文档用 conftest 的 receipt_page（带 OCR 结果），总额 9.00，商品明细两行：
-第 1 行 PC 1 × 9.00 = 9.00（对的），第 2 行 BAG 金额 0.5（多出来的、要删掉的）。
-"""
+Uses receipt_page from conftest (with OCR result), total 9.00, two line items: row 1 PC 1 × 9.00
+= 9.00 (correct), row 2 BAG amount 0.5 (spurious, to be deleted)."""
 
 import dataclasses
 import io
@@ -13,6 +13,7 @@ import pytest
 from openpyxl import load_workbook
 
 from jacara.core.db import session_scope
+from jacara.core.i18n import render
 from jacara.models import Extraction
 from jacara.pipeline.store import save_document
 from jacara.plugins.aligners import TextMatchAligner
@@ -22,7 +23,7 @@ from jacara.plugins.extractors import ExtractionResult
 from jacara.plugins.validators import RuleValidator
 from jacara.templates import load_template
 
-DATE_LINE = 4  # receipt_page 里 "25/12/2018 8:13:39 PM" 是第 5 块（从 0 数）
+DATE_LINE = 4  # "25/12/2018 8:13:39 PM" is block 5 (0-based) in receipt_page.
 CHANGE_LINE = 13  # "100"
 CASH_LINE = 11  # "10.00"
 
@@ -71,7 +72,7 @@ def rows_url(client, document_id, *rest: str) -> str:
     return "/".join([f"/api/v1/extractions/{extraction_id}/tables/items/rows", *rest])
 
 
-# ---- OCR 结果 ----
+# ---- OCR results ----
 
 
 def test_page_ocr_lists_every_block(client, document_id):
@@ -81,7 +82,7 @@ def test_page_ocr_lists_every_block(client, document_id):
     assert line["index"] == DATE_LINE
     assert line["text"] == "25/12/2018 8:13:39 PM"
     assert line["box"] == [163, 369, 345, 390]
-    assert line["row"] == 4  # 和模型看到的行号一样
+    assert line["row"] == 4  # Same line numbers as the model saw.
 
 
 def test_old_documents_have_no_ocr(client, factory, document_id):
@@ -98,7 +99,7 @@ def test_old_documents_have_no_ocr(client, factory, document_id):
     assert "OCR" in response.json()["detail"]
 
 
-# ---- 从原文选取 ----
+# ---- Selecting from source text ----
 
 
 def pick(client, value: dict, *lines: int, **extra):
@@ -111,10 +112,10 @@ def test_pick_date_reads_the_text_and_moves_the_box(client, document_id):
     response = pick(client, date, DATE_LINE)
     assert response.status_code == 201
     picked = response.json()
-    assert picked["value"] is None  # 模型原值不变
-    assert picked["current_value"] == "2018-12-25"  # 从 "25/12/2018 8:13:39 PM" 读出
+    assert picked["value"] is None  # The model value is unchanged.
+    assert picked["current_value"] == "2018-12-25"  # Parsed from "25/12/2018 8:13:39 PM".
     assert picked["current_evidence"]["bbox"] == [163, 369, 345, 390]
-    assert picked["evidence"] is None  # 抽取时的出处不变
+    assert picked["evidence"] is None  # The extraction-time evidence is unchanged.
 
     history = client.get(f"/api/v1/values/{date['id']}/revisions").json()
     [revision] = history["revisions"]
@@ -126,14 +127,15 @@ def test_pick_number_and_several_blocks(client, document_id):
     values = by_name(client, document_id)
     total = pick(client, values["total"], CASH_LINE).json()
     assert total["current_value"] == "10.0"
-    merchant = pick(client, values["merchant"], 1, 2).json()  # 地址跨两块
+    merchant = pick(client, values["merchant"], 1, 2).json()  # The address spans two blocks.
     assert merchant["current_value"] == "NO.55 55,57 & 59, JALAN SAGU 18, TAMAN DAYA,"
 
 
 def test_pick_same_value_is_allowed_to_fix_the_box(client, document_id):
-    """值没变，只是出处换了（模型找错了位置）：也能保存。"""
+    """The value is unchanged and only the evidence changes (the model located the wrong position):
+    saving still works."""
     total = by_name(client, document_id)["total"]
-    response = pick(client, total, 9)  # 第二个 "9.00"，在 Total 那一行
+    response = pick(client, total, 9)  # The second "9.00", on the Total line.
     assert response.status_code == 201
     assert response.json()["current_value"] == "9.0"
 
@@ -150,7 +152,7 @@ def test_pick_with_a_wrong_block_number(client, document_id):
     assert pick(client, total, 999).status_code == 422
 
 
-# ---- 表格增删行 ----
+# ---- Adding and removing table rows ----
 
 
 def test_delete_row_clears_it_and_rechecks_rules(client, document_id):
@@ -164,8 +166,8 @@ def test_delete_row_clears_it_and_rechecks_rules(client, document_id):
     assert all(v["deleted"] for v in response.json())
 
     after = detail(client, document_id)
-    assert after["current_checks"]["issues"] == []  # 只剩 9.00，等于总额
-    assert after["checks"] == before["checks"]  # 抽取时的结果不变
+    assert after["current_checks"]["issues"] == []  # Only 9.00 remains, equal to the total.
+    assert after["checks"] == before["checks"]  # Extraction-time results unchanged.
     bag = next(v for v in after["values"] if v["name"] == "items.2.amount")
     assert bag["deleted"] and bag["current_value"] == "0.5"
 
@@ -212,11 +214,11 @@ def test_add_row_after_the_first(client, document_id):
         "items.3.quantity",
         "items.3.unit_price",
         "items.3.amount",
-    ]  # 新编号比现有的都大
+    ]  # The new number exceeds all existing ones.
     assert all(c["origin"] == "manual" and c["value"] is None for c in cells)
 
     names = [v["name"] for v in detail(client, document_id)["values"]]
-    # 显示顺序：插在第 1 行和第 2 行中间
+    # Display order: between rows 1 and 2.
     assert names.index("items.1.amount") < names.index("items.3.name")
     assert names.index("items.3.amount") < names.index("items.2.name")
 
@@ -229,7 +231,7 @@ def test_add_row_at_the_end_and_fill_it(client, document_id):
         json={"action": "edit", "value": "-0.5", "reason": "漏了折扣行"},
     )
     assert response.json()["current_value"] == "-0.5"
-    # 9.00 + 0.50 − 0.50 = 9.00，等于总额
+    # 9.00 + 0.50 − 0.50 = 9.00, equal to the total.
     assert detail(client, document_id)["current_checks"]["issues"] == []
     names = [v["name"] for v in detail(client, document_id)["values"]]
     assert names[-4:] == [c["name"] for c in cells]
@@ -239,7 +241,8 @@ def test_add_row_at_the_top(client, document_id):
     cells = client.post(rows_url(client, document_id), json={"after": 0}).json()
     names = [v["name"] for v in detail(client, document_id)["values"]]
     assert names.index(cells[-1]["name"]) < names.index("items.1.name")
-    assert names.index("total") < names.index(cells[0]["name"])  # 还在表格里，不跑到普通字段前面
+    # Still within the table, not before the regular fields.
+    assert names.index("total") < names.index(cells[0]["name"])
 
 
 def test_add_row_after_a_missing_row(client, document_id):
@@ -247,7 +250,7 @@ def test_add_row_after_a_missing_row(client, document_id):
 
 
 def test_rules_number_rows_as_shown(client, document_id):
-    """删掉一行之后，规则说的"第几行"和页面上的一致。"""
+    """After deleting a row, the row numbers in rule messages match the page."""
     client.post(rows_url(client, document_id, "1", "delete"), json={"reason": "重复"})
     price = by_name(client, document_id)["items.2.unit_price"]
     client.post(
@@ -261,8 +264,8 @@ def test_rules_number_rows_as_shown(client, document_id):
     )
     issues = detail(client, document_id)["current_checks"]["issues"]
     line = next(i for i in issues if i["rule"] == "item_line")
-    assert line["message"].startswith("第 1 行：")  # 第 1 行删了，BAG 现在是第 1 行
-    assert "items.2.amount" in line["fields"]  # 字段名还是真实的名字
+    assert line["message"].startswith("第 1 行：")  # Row 1 deleted; BAG is now row 1.
+    assert "items.2.amount" in line["fields"]  # Field names are still the real names.
 
 
 def test_audit_log_records_row_changes(client, document_id):
@@ -272,7 +275,7 @@ def test_audit_log_records_row_changes(client, document_id):
     assert "value:delete_row" in actions and "value:add_row" in actions
 
 
-# ---- 导出 ----
+# ---- Export ----
 
 
 def test_export_skips_deleted_rows_and_numbers_as_shown(client, document_id):
@@ -280,7 +283,7 @@ def test_export_skips_deleted_rows_and_numbers_as_shown(client, document_id):
     response = client.get(f"/api/v1/documents/{document_id}/export.xlsx")
     book = load_workbook(io.BytesIO(response.content))
     items = book["商品明细"]
-    assert items.max_row == 2  # 表头 + 剩下的一行
+    assert items.max_row == 2  # Header + the remaining row.
     assert [c.value for c in items[2]][:3] == ["receipt.jpg", 1, "BAG"]
 
 
@@ -289,12 +292,12 @@ def test_export_uses_the_picked_box(client, document_id):
     pick(client, date, DATE_LINE)
     response = client.get(f"/api/v1/documents/{document_id}/export.xlsx")
     details = load_workbook(io.BytesIO(response.content))["明细"]
-    row = next(r for r in details.iter_rows(values_only=True) if r[1] == "日期")  # 中文名
+    row = next(r for r in details.iter_rows(values_only=True) if r[1] == "日期")  # Display name.
     assert row[5] == "第 4 行 (163,369)-(345,390)"
 
 
 def test_report_without_ocr_still_saves(factory, report, tmp_path):
-    """命令行和旧代码造的报告没有 OCR 结果：照样能存。"""
+    """Reports built by the CLI and older code have no OCR result and can still be stored."""
     path = tmp_path / "r.jpg"
     path.write_bytes(b"x")
     with session_scope(factory) as session:
@@ -302,7 +305,7 @@ def test_report_without_ocr_still_saves(factory, report, tmp_path):
         assert document.extractions[0].ocr is None
 
 
-# ---- 框选、重新识别（5b） ----
+# ---- Region selection and re-recognition ----
 
 
 def png(width: int = 400, height: int = 300) -> bytes:
@@ -329,12 +332,14 @@ def test_region_is_cropped_enlarged_and_read(client, uploaded):
     )
     assert response.status_code == 200
     assert response.json() == {"text": "SUMMERINA 1.4KG 9.99", "confidence": 0.9}
-    # 四周各多留 8 像素：裁下 (92, 92)-(208, 128) = 116 × 36，太矮，放大到 96 高
+    # 8 pixels of padding on each side: crop (92, 92)-(208, 128) = 116 × 36, too short, upscaled to
+    # 96 tall.
     assert region_ocr.seen == [(309, 96)]
 
 
 def test_region_falls_back_to_reading_it_as_one_line(client, uploaded):
-    """检测一个字都没找到（字太小、贴着边）：整块当成一行直接识别。"""
+    """Detection finds no text (too small, touching the edge): the whole region is recognized as one
+    line."""
     from .conftest import region_ocr
 
     region_ocr.lines, region_ocr.line = [], ("84998650", 0.99)
@@ -371,7 +376,7 @@ def test_save_value_from_a_drawn_box(client, document_id):
     assert response.status_code == 201
     saved = response.json()
     assert saved["current_value"] == "9.99"
-    assert saved["current_evidence"]["bbox"] == [380, 640, 410, 660]  # 反着拖也行
+    assert saved["current_evidence"]["bbox"] == [380, 640, 410, 660]  # Reverse dragging works too.
     assert saved["current_evidence"]["drawn"] is True
     history = client.get(f"/api/v1/values/{total['id']}/revisions").json()
     assert history["revisions"][0]["reason"] == "框选重新识别"
@@ -395,7 +400,7 @@ def test_pick_and_box_together_is_an_error(client, document_id):
     assert response.status_code == 422
 
 
-# ---- 批量确认 ----
+# ---- Bulk confirmation ----
 
 
 def test_confirm_many_clears_the_yellow(client, document_id):
@@ -410,7 +415,7 @@ def test_confirm_many_clears_the_yellow(client, document_id):
     assert history["revisions"][0]["action"] == "confirm"
     assert history["revisions"][0]["reason"] == "批量确认"
     actions = [e["action"] for e in client.get("/api/v1/audit-logs").json()["items"]]
-    assert actions.count("value:confirm_many") == 1  # 审计日志只记一条
+    assert actions.count("value:confirm_many") == 1  # One audit log entry only.
 
 
 def test_confirm_many_skips_deleted_rows(client, document_id):
@@ -426,7 +431,7 @@ def test_confirm_many_unknown_id(client, document_id):
     assert response.status_code == 404
 
 
-# ---- 一次重新处理几份 ----
+# ---- Reprocessing several documents ----
 
 
 def test_reprocess_many_with_default_settings(
@@ -452,7 +457,7 @@ def test_reprocess_many_with_default_settings(
         with session_scope(factory) as session:
             document = save_document(session, path, [report])
             document.storage_key = f"documents/r{n}"
-            document.vision = "always"  # 上次手动选了"每张都看原图"
+            document.vision = "always"  # Last time "always show the image" was selected manually.
             ids.append(document.id)
     with session_scope(factory) as session:
         session.get_one(Document, ids[2]).status = "processing"
@@ -466,8 +471,8 @@ def test_reprocess_many_with_default_settings(
         for document_id in ids[:2]:
             document = session.get_one(Document, document_id)
             assert document.status == "uploaded"
-            assert document.vision is None  # 回到系统设置
-            assert document.run_reason == "批量重新处理"
+            assert document.vision is None  # Back to the system setting.
+            assert render(document.run_reason) == "批量重新处理"
 
 
 def test_reprocess_many_with_chosen_settings(client, factory, queue, document_id):
@@ -480,14 +485,14 @@ def test_reprocess_many_with_chosen_settings(client, factory, queue, document_id
         "template": "discover",
         "split": "pages",
         "vision": "off",
-        "pdf_read": None,  # 和上次一样
+        "pdf_read": None,  # Same as last time.
         "reason": "wrong_template",
     }
     assert client.post("/api/v1/documents/reprocess", json=body).status_code == 202
     with session_scope(factory) as session:
         document = session.get_one(Document, document_id)
         assert (document.discover, document.split, document.vision) == (True, "pages", "off")
-        assert document.run_reason == "选错了模板"
+        assert render(document.run_reason) == "选错了模板"
     other = {"ids": [str(document_id)], "reason": "other"}
     assert client.post("/api/v1/documents/reprocess", json=other).status_code == 422
     ranges = {"ids": [str(document_id)], "split": "1-2"}
@@ -503,11 +508,11 @@ def test_reprocess_many_needs_the_queue(client, factory, queue, document_id):
     response = client.post("/api/v1/documents/reprocess", json={"ids": [str(document_id)]})
     assert response.status_code == 503
     with session_scope(factory) as session:
-        # 和上传时队列没连上一样：排队中，列表上可以"重试"
+        # Same as an upload whose queue was unreachable: queued and retryable from the list.
         assert session.get_one(Document, document_id).status == "uploaded"
 
 
-# ---- 导出 JSON ----
+# ---- JSON export ----
 
 
 def test_export_json(client, document_id):
@@ -527,19 +532,20 @@ def test_export_json(client, document_id):
     assert document["filename"] == "receipt.jpg"
     [unit] = document["units"]
     assert unit["pages"] == [1, 1]
-    assert unit["fields"]["total"] == 9.5  # 审核之后的值，数字是数字
+    assert unit["fields"]["total"] == 9.5  # Post-review values; numbers are numbers.
     assert unit["fields"]["date"] is None
     assert [row["name"] for row in unit["tables"]["items"]] == ["PC", "BAG"]
     assert unit["tables"]["items"][0]["amount"] == 9.0
-    assert unit["labels"]["total"]  # 字段名
-    assert "total" not in unit["needs_review"]  # 人改过了，不算等人确认
+    assert unit["labels"]["total"]  # Field names.
+    # Edited by a person, so no longer awaiting confirmation.
+    assert "total" not in unit["needs_review"]
     assert isinstance(unit["issues"], list)
     exports = client.get("/api/v1/exports").json()["items"]
-    assert exports[0]["format"] == "json"  # 导出记录里也有
+    assert exports[0]["format"] == "json"  # Also in the export history.
 
 
 def test_sent_text_and_summary(client, factory, storage, receipt_page):
-    """审核页能看到这一轮发给模型的是哪些文字块（ADR 0053）。"""
+    """The review page shows which text blocks were sent to the model in this run."""
     from .test_template_library import process, upload
 
     document_id = upload(client)

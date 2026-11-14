@@ -1,4 +1,5 @@
-"""设置页（ADR 0063）：页面上改的设置、.env 优先、改完提醒重启；系统信息只给管理员看细节。"""
+"""Settings page: values changed on the page, .env precedence, restart reminders; only
+administrators see system details."""
 
 from __future__ import annotations
 
@@ -16,7 +17,8 @@ from jacara.models import AuditLog
 
 @pytest.fixture(autouse=True)
 def no_env_file(monkeypatch, tmp_path):
-    """在没有 .env 的文件夹里跑，你自己的 .env 写了什么都不影响；也清掉这几个环境变量。"""
+    """Run in a folder without .env so the local .env has no effect; also clear these environment
+    variables."""
     monkeypatch.chdir(tmp_path)
     for key in config.PAGE_EDITABLE:
         monkeypatch.delenv(key.upper(), raising=False)
@@ -45,12 +47,12 @@ def test_defaults_then_page_value_wins(client, factory):
     assert response.json()["restart_needed"] is True
     found = {i["key"]: i for i in response.json()["items"]}
     assert (found["jacara_vision"]["value"], found["jacara_vision"]["source"]) == ("always", "page")
-    assert get_settings().jacara_vision == "always"  # 改完 API 这边马上用新的
+    assert get_settings().jacara_vision == "always"  # The API uses the new value immediately.
     assert get_settings().jacara_ocr_max_side == 3000
     saved = json.loads(config.page_settings_path().read_text("utf-8"))
     assert saved["jacara_vision"] == "always"
 
-    # 写 null 改回默认
+    # null restores the default.
     client.put("/api/v1/settings", json={"values": {"jacara_vision": None}})
     assert items(client)["jacara_vision"]["source"] == "default"
     with session_scope(factory) as session:

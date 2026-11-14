@@ -1,10 +1,13 @@
-"""统计和数据导出（ADR 0044）。
+"""Statistics and data export.
 
-只看"完成审核"的单据、现在用的那一轮：人看过、确认过的值才能当标准答案。
-- 修改统计：每个字段人改了多少、改的是哪种错误、错了却没标黄的有几个，按模板、按字段汇总。
-- 数据导出：审核过的单据打包成 zip：原文件、成对测评清单（jacara eval pairs 直接能用）、
-  训练数据（每张单据的 OCR 文字、模型的回答、人改后的值、改了哪些）。敏感字段默认不导出。
-"""
+Only reviewed documents and their current run are considered: only values a person has seen and
+confirmed serve as ground truth.
+- Correction statistics: per template and field, how often values were corrected, the error
+  kinds, and how many wrong values were not flagged.
+- Data export: reviewed documents packaged as a zip with original files, a paired evaluation
+  manifest (usable directly by `jacara eval pairs`) and training data (OCR text, model answer,
+  corrected values and the list of corrections per document). Sensitive fields are excluded by
+  default."""
 
 from __future__ import annotations
 
@@ -21,6 +24,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from jacara.core.i18n import N_, join_items, tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.storage import ObjectStorage
@@ -46,9 +50,9 @@ from jacara.plugins.extractors.base import DISCOVER, split_cell_name
 from jacara.templates import STARTERS, Template
 
 RECENT = 30
-"""统计页列出最近多少次修改。"""
+"""Number of recent corrections listed on the statistics page."""
 
-HIDDEN = "（敏感字段，不显示）"
+HIDDEN = N_("（敏感字段，不显示）")
 
 
 @dataclass
@@ -63,13 +67,13 @@ def _stage_fields(a: ErrorAttribution, sensitive: bool) -> dict[str, Any]:
     return {
         "attribution_id": a.id,
         "stage": a.final_stage,
-        "stage_name": STAGES.get(a.final_stage, a.final_stage),
+        "stage_name": tr(STAGES.get(a.final_stage, a.final_stage)),
         "stage_reason": (
-            f"人改判：{a.override_note}"
+            tr("人改判：{override_note}", override_note=a.override_note)
             if a.override_stage and a.override_note
-            else "人改判"
+            else tr("人改判")
             if a.override_stage
-            else REASONS.get(a.reason_code, a.reason_code)
+            else tr(REASONS.get(a.reason_code, a.reason_code))
         ),
         "overridden": a.override_stage is not None,
         "auto_stage": a.stage,
@@ -100,7 +104,7 @@ def _generic(name: str) -> str:
 
 def _title(extraction: Extraction, template: Template | None) -> str:
     if extraction.template == DISCOVER:
-        return "抽取所有键值对"
+        return tr("抽取所有键值对")
     return template.title if template else extraction.template
 
 
@@ -149,7 +153,7 @@ class InsightsService:
                 title = _title(extraction, template)
                 for value in extraction.values:
                     if value.origin != "model" or value.deleted:
-                        continue  # 人工加的行、按公式算的不算模型的错
+                        continue  # Manually added rows and computed values are not model errors.
                     field = _generic(value.name)
                     rows.append(
                         _Row(
@@ -188,7 +192,7 @@ class InsightsService:
         def kind_counts(group: list[_Row]) -> list[KindCount]:
             counter = Counter(kinds[id(r)] for r in group if id(r) in edited_ids)
             return [
-                KindCount(kind=k, name=KIND_NAMES[k], count=n) for k, n in counter.most_common()
+                KindCount(kind=k, name=tr(KIND_NAMES[k]), count=n) for k, n in counter.most_common()
             ]
 
         templates = [
@@ -237,7 +241,7 @@ class InsightsService:
             timed_documents=len(timed),
             kinds=kind_counts(rows),
             stages=[
-                StageCount(stage=s, name=STAGES[s], count=stage_counts[s])
+                StageCount(stage=s, name=tr(STAGES[s]), count=stage_counts[s])
                 for s in STAGES
                 if stage_counts[s]
             ],
@@ -252,7 +256,7 @@ class InsightsService:
                     before=HIDDEN if r.sensitive else r.value.value,
                     after=HIDDEN if r.sensitive else r.value.current_value,
                     kind=kinds[id(r)],
-                    kind_name=KIND_NAMES[kinds[id(r)]],
+                    kind_name=tr(KIND_NAMES[kinds[id(r)]]),
                     flagged=r.value.needs_review,
                     reason=r.value.revisions[-1].reason,
                     at=r.value.revisions[-1].created_at,
@@ -262,10 +266,11 @@ class InsightsService:
             ],
         )
 
-    # ---------- 错误归因（ADR 0053） ----------
+    # ---------- Error attribution ----------
 
     def _attributions(self, edited: list[_Row]) -> dict[uuid.UUID, ErrorAttribution]:
-        """改过的字段错在哪一步：还没判断过的、又改过的、规则版本变了的重新判断（人改判的保留）。"""
+        """Stages at fault for corrected fields: attribute fields that are new, edited again, or
+        attributed with an older rule version (overrides are kept)."""
         ids = [r.value.id for r in edited]
         if not ids:
             return {}
@@ -313,13 +318,14 @@ class InsightsService:
         return found
 
     def override(self, attribution_id: uuid.UUID, data: AttributionIn) -> AttributionOut:
-        """人改判错在哪一步；stage 为空是撤销改判。改判的以后不会被自动判断覆盖。"""
+        """Override the stage at fault; an empty stage reverts the override. Overrides are never
+        replaced by automatic attribution."""
         found = self.session.get(ErrorAttribution, attribution_id)
         if found is None or found.team_id != self.owner.team_id:
-            raise InsightsError("not_found", "找不到这条归因")
+            raise InsightsError("not_found", tr("找不到这条归因"))
         require(self.owner, "document:review", found.team_id)
         if data.stage is not None and data.stage not in STAGES:
-            raise InsightsError("invalid", f"阶段只能是：{'、'.join(STAGES)}")
+            raise InsightsError("invalid", tr("阶段只能是：{stages}", stages=join_items(STAGES)))
         before = found.override_stage
         found.override_stage = data.stage
         found.override_note = data.note.strip() if data.stage else ""
@@ -344,22 +350,22 @@ class InsightsService:
             note=found.override_note,
         )
 
-    # ---------- 数据导出 ----------
+    # ---------- Data export ----------
 
     def dataset(
         self, template: str | None = None, sensitive: bool = False, files: bool = True
     ) -> tuple[str, bytes]:
-        """审核过的单据 → zip（文件名, 内容）。
+        """Reviewed documents → zip (file name, bytes).
 
-        要能导出文档（document:export），带原文件还要能下载（document:download）。"""
+        Requires document:export, and document:download when original files are included."""
         require(self.owner, "document:export")
         if files:
             require(self.owner, "document:download")
         documents = self._documents(template, None)
         out = io.BytesIO()
         manifest: list[str] = [
-            "# 成对测评清单（ADR 0042）：jacara eval pairs --manifest 这个文件",
-            '# 标准答案是审核完成后的当前值；照片和 PDF 成对的，自己加上 photo = "..."',
+            tr("# 成对测评清单：jacara eval pairs --manifest 这个文件"),
+            tr('# 标准答案是审核完成后的当前值；照片和 PDF 成对的，自己加上 photo = "..."'),
             "",
         ]
         templates: dict[str, dict[str, Any]] = {}
@@ -432,7 +438,13 @@ class InsightsService:
                     f"templates/{key}.json", json.dumps(data, ensure_ascii=False, indent=2)
                 )
             archive.writestr(
-                "README.txt", README.format(count=count, sensitive="含" if sensitive else "不含")
+                "README.txt",
+                tr(
+                    README,
+                    summary=tr("共 {count} 张单据，含敏感字段。", count=count)
+                    if sensitive
+                    else tr("共 {count} 张单据，不含敏感字段。", count=count),
+                ),
             )
         record(
             self.session,
@@ -446,12 +458,12 @@ class InsightsService:
             files=files,
         )
         stamp = datetime.now().strftime("%Y%m%d-%H%M")
-        return f"审核数据-{stamp}.zip", out.getvalue()
+        return tr("审核数据-{stamp}.zip", stamp=stamp), out.getvalue()
 
 
-README = """审核过的单据导出（JacarandaParse，ADR 0044）
+README = N_("""审核过的单据导出（JacarandaParse）
 
-共 {count} 张单据，{sensitive}敏感字段。
+{summary}
 
 - files/：原文件。
 - train.jsonl：一行一张单据：OCR 文字（ocr_text）、模型的回答（model_answer）、
@@ -462,7 +474,7 @@ README = """审核过的单据导出（JacarandaParse，ADR 0044）
   我的模板的定义在 templates/ 里。只占一页的单据才列进去。
 
 这些是你自己的业务数据，请按你们的数据管理规定保存，不要放进代码仓库。
-"""
+""")
 
 
 def _key(extraction: Extraction) -> str:

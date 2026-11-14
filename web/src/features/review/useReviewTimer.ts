@@ -2,17 +2,21 @@ import { useEffect } from 'react'
 
 import { getToken } from '../../api/token'
 
-/** 人多久没动鼠标、键盘就算走开了（秒）：走开的时间不算审核用时。 */
+/**
+ * Seconds without mouse or keyboard input after which the reviewer is considered away; that time is not
+ * counted.
+ */
 const IDLE_SECONDS = 60
-/** 多久报一次（秒）：报得勤一点，浏览器突然关掉也只丢这一小段。 */
+/** Report interval (seconds): frequent reports lose only a short span if the browser closes abruptly. */
 const FLUSH_SECONDS = 30
 
 /**
- * 审核用时：审核页开着、人在操作的秒数，攒着每半分钟报给后端一次，离开页面时再报一次。
+ * Review time: seconds with the review page open and in use, accumulated and reported to the backend every 30
+ * seconds and once more on leaving.
  *
- * - 页面切到后台（换了标签页、最小化）不算；
- * - 一分钟没动鼠标、键盘、滚轮也不算（人走开了）；
- * - 关页面时用 keepalive 发，浏览器关了也能发出去。
+ * - Time in a background tab or minimized window is excluded;
+ * - One minute without mouse, keyboard or wheel input is excluded (the reviewer is away);
+ * - Reports on close use keepalive so they are delivered even as the browser closes.
  */
 export function useReviewTimer(documentId: string | undefined, enabled: boolean): void {
   useEffect(() => {
@@ -33,7 +37,7 @@ export function useReviewTimer(documentId: string | undefined, enabled: boolean)
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ seconds: send }),
-      }).catch(() => undefined) // 记用时失败不打扰人审核
+      }).catch(() => undefined) // Failures to record time never interrupt the review.
     }
     const active = () => {
       lastActive = Date.now()

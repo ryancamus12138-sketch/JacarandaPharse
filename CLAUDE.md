@@ -204,8 +204,8 @@ API 在所有接口之后用 `core/web.py` 挂一条兜底路由提供 `web/dist
 
 Python 3.13（`.python-version`）、uv、FastAPI + fastapi-offline + uvicorn、Pydantic v2、SQLAlchemy 2、Alembic、
 Celery + Valkey、argon2-cffi（密码哈希）、PostgreSQL 18、SeaweedFS（只用 S3 接口，boto3）、pypdfium2 + pdfplumber、
-RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、openpyxl、pytest。
-前端：Node.js 26、npm、Vite、React、TypeScript、Ant Design、react-router、TanStack Query、oxlint。
+RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、openpyxl、pytest、Babel（只在开发时整理翻译）。
+前端：Node.js 26、npm、Vite、React、TypeScript、Ant Design、react-router、TanStack Query、i18next + react-i18next、oxlint。
 
 ## 工作方式
 
@@ -221,6 +221,14 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
   改了提示词、模型、对齐规则或模板，都要跑一次评测，结果记进 `docs/eval/README.md`；最看重“放行准确率”（没标黄的值有多准）。
 - 改了数据库表就生成一条迁移，检查后再提交；需要改已有数据时在迁移里手写 SQL。
 - 重要的技术选择写一条 ADR（`docs/adr/NNNN-标题.md`），格式参考 0002。
+- 代码注释（Python docstring、`#`、TS/TSX 的 `//` `/** */`、配置文件、脚本）一律用英文、工程化的写法；
+  注释里不写 ADR 编号（设计依据写在 ADR 里，代码只说明行为和原因）。
+- 界面有中文和英文两种语言（ADR 0065），中文原文就是翻译的键：
+  前端文字写 `t('中文')`（组件外的常量表用 `msg()` 或 getter），英文写进 `web/src/i18n/en.json`，`npm run i18n:check` 检查；
+  后端返回给网页的文字写 `tr('中文')`，worker 写进数据库、之后再显示的说明写 `stored('中文')`，
+  改完按 ADR 0065 跑 `pybabel extract` / `update`，在 `backend/src/jacara/locale/en/LC_MESSAGES/messages.po` 填英文，
+  再 `pybabel compile`（`.po`、`.mo` 都提交），`backend/tests/test_i18n.py` 会检查有没有漏。
+  模板内容（字段名、模板名）、命令行输出、提示词、认中文的正则不翻译。
 - 不提交 `.env`、数据集、模型文件、`node_modules/`、`web/dist/`。密钥只放在 `.env`。要提交 `web/package-lock.json`。
 - 前端调用后端只通过 `web/src/api/`，页面里不直接写 `fetch`。按钮显不显示看 `/auth/me` 的 `permissions`，但真正的权限检查在后端。
 - **npm 命令只在 `web/` 里运行。** 根目录不应该有 `package.json`、`package-lock.json`、`node_modules/`，
@@ -269,7 +277,7 @@ uv run jacara user password admin                          # 唯一的管理员�
 cd web && npm install                     # 第一次，或者 package.json 变了之后
 npm install 包名                          # 加新包：一定要在 web/ 里
 npm run dev -- --force                    # 装了新包后页面异常：清掉 Vite 缓存再启动
-npm run lint && npm run build             # 前端检查（提交前）；build 同时生成 dist/ 给 jacara start 用
+npm run lint && npm run i18n:check && npm run build   # 前端检查（提交前）；build 同时生成 dist/ 给 jacara start 用
 
 # 模型库和 OCR 模型评测（ADR 0059、0060）
 uv run jacara models list                                            # 模型库里的模型和版本

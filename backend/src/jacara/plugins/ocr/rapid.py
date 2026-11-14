@@ -1,8 +1,7 @@
-"""RapidOCR 插件：用 ONNX Runtime 在本机运行 PaddleOCR 的 PP-OCR 模型。
+"""RapidOCR plugin: runs PaddleOCR's PP-OCR models locally with ONNX Runtime.
 
-方案：用 PaddleOCR 训练和微调，用 RapidOCR 部署（见 docs/adr/0003）。
-自己微调的模型导出成 .onnx 后，在 OcrConfig 里填上路径即可使用，不用改这里的代码。
-"""
+Approach: train and fine-tune with PaddleOCR, deploy with RapidOCR. A custom fine-tuned model
+exported to .onnx is used by setting its path in OcrConfig; no code changes are needed here."""
 
 from __future__ import annotations
 
@@ -14,6 +13,7 @@ from typing import Any
 
 from PIL import Image, ImageOps
 
+from jacara.core.i18n import stored
 from jacara.plugins.ocr.base import OcrConfig, OcrLine, OcrPage, Point
 
 
@@ -22,14 +22,16 @@ class RapidOcrEngine:
 
     def __init__(self, config: OcrConfig | None = None) -> None:
         self.config = config or OcrConfig()
-        # 模型加载要一两秒，所以第一次用到时才加载，并且只加载一次。
+        # Loading models takes a second or two, so they are loaded lazily on first use, and only
+        # once.
         self._engine: Any = None
         self._lock = threading.Lock()
-        """网页服务里所有请求共用这一个引擎（在线程池里跑）。RapidOCR 会记住上一次的开关
-        （检测开没开），两个人同时"重新识别"会互相串，所以一次只让一个用。"""
+        """All requests of the web service share this engine (running in a thread pool). RapidOCR
+        remembers the previous switches (whether detection is enabled), so two concurrent
+        re-recognitions would interfere; only one caller may use it at a time."""
 
     def _params(self) -> dict[str, object]:
-        """把通用的 OcrConfig 翻译成 RapidOCR 自己的参数名。"""
+        """Translate the generic OcrConfig into RapidOCR parameter names."""
         c = self.config
         params: dict[str, object] = {
             "Global.log_level": "warning",
@@ -51,18 +53,20 @@ class RapidOcrEngine:
         return params
 
     def _models(self) -> dict[str, str]:
-        """记录这次用了哪些模型：自定义模型记文件名，否则记默认模型。"""
+        """Record the models used: file names for custom models, otherwise the default models."""
         c = self.config
         return {
             "engine": f"rapidocr {version('rapidocr')}",
-            "det": c.det_model.name if c.det_model else "PP-OCRv6_det_small（默认）",
-            "rec": c.rec_model.name if c.rec_model else "PP-OCRv6_rec_small（默认）",
-            "cls": (c.cls_model.name if c.cls_model else "默认") if c.use_angle_cls else "关闭",
+            "det": c.det_model.name if c.det_model else stored("PP-OCRv6_det_small（默认）"),
+            "rec": c.rec_model.name if c.rec_model else stored("PP-OCRv6_rec_small（默认）"),
+            "cls": (c.cls_model.name if c.cls_model else stored("默认"))
+            if c.use_angle_cls
+            else stored("关闭"),
             "device": c.device,
         }
 
     def _load(self) -> Any:
-        """调用方要拿着 self._lock。"""
+        """The caller must hold self._lock."""
         if self._engine is None:
             from rapidocr import RapidOCR
 
@@ -74,8 +78,9 @@ class RapidOcrEngine:
 
         started = time.perf_counter()
         with self._lock:
-            # 三个开关每次都写明：RapidOCR 会记住上一次传的值（read_line 关掉了检测），
-            # 不写的话，用过一次 read_line 之后，整页识别也不找字了
+            # Set all three switches every time: RapidOCR remembers the last values passed
+            # (read_line disables detection), so without this, full-page recognition would stop
+            # detecting text after one read_line call.
             result = self._load()(
                 str(image), use_det=True, use_cls=self.config.use_angle_cls, use_rec=True
             )
@@ -89,7 +94,7 @@ class RapidOcrEngine:
                     OcrLine(text=text, polygon=(p[0], p[1], p[2], p[3]), confidence=float(score))
                 )
 
-        # 按从上到下、从左到右排序，作为阅读顺序。
+        # Sort top to bottom, left to right as the reading order.
         lines.sort(key=lambda line: (round(line.bbox[1] / 10), line.bbox[0]))
 
         return OcrPage(
@@ -102,11 +107,12 @@ class RapidOcrEngine:
         )
 
     def read_line(self, image: Path) -> tuple[str, float] | None:
-        """整张图当成一行字直接识别，不先找文字在哪（跳过"检测"）。
+        """Recognize the whole image as a single line without locating text first (detection
+        skipped).
 
-        框选的小块图片，"检测"那一步有时一个字都找不到（字贴着边、太小），
-        直接识别反而能认出来。认不出返回 None。
-        """
+                For small selected regions, detection sometimes finds no text at all (text
+        touching the edge, or too small), while direct recognition succeeds. Returns None if
+        nothing is recognized."""
         with self._lock:
             result = self._load()(str(image), use_det=False, use_cls=False, use_rec=True)
         texts = [t for t in (result.txts or ()) if t and t.strip()]
@@ -115,7 +121,8 @@ class RapidOcrEngine:
         return " ".join(texts), float(min(result.scores or (0.0,)))
 
     def detect(self, image: Path) -> list[list[tuple[float, float]]]:
-        """只找字在哪（检测），不认字：每个框的四个角。OCR 模型评测（ADR 0060）用。"""
+        """Locate text only (detection), without recognizing it: the four corners of each box. Used
+        by OCR model evaluation."""
         with self._lock:
             result = self._load()(str(image), use_det=True, use_cls=False, use_rec=False)
         if result.boxes is None:
@@ -124,10 +131,10 @@ class RapidOcrEngine:
 
 
 def exif_size(image: Path) -> tuple[int, int]:
-    """图片转正之后的宽高。
+    """Width and height of the image after orientation correction.
 
-    RapidOCR 读图时会按 EXIF 方向转正（手机照片常常横着存、另记一个旋转标记），
-    识别出的坐标是转正之后的，所以宽高也要按转正之后的算。
-    """
+        RapidOCR rotates images by EXIF orientation when reading them (phone photos are often
+    stored sideways with a rotation tag), and recognized coordinates refer to the rotated image,
+    so width and height must too."""
     with Image.open(image) as img:
         return ImageOps.exif_transpose(img).size

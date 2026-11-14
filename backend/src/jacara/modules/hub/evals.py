@@ -1,8 +1,8 @@
-"""后台跑一次 OCR 模型评测（ADR 0060）：worker 的任务调这里。
+"""Run one OCR model evaluation in the background; called by the worker task.
 
-任务只传评测 id，这里自己去数据库和对象存储取（和处理文档一样）。按状态认领：不是 queued 的不跑；
-running 的是上次跑到一半 worker 断了（任务会重新投递），标成失败，让人重新点。
-"""
+The task carries only the evaluation id; data is loaded from the database and object storage here
+(as with document processing). Claimed by status: anything not queued is skipped; running means a
+worker died mid-run (the task is redelivered), so it is marked failed for the user to restart."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from jacara.core.i18n import is_stored, stored
 from jacara.core.storage import ObjectStorage
 from jacara.eval.ocr import EvalArm, EvalEngine, default_engine, lines_jsonl, run
 from jacara.modules.hub import datasets as dataset_files
@@ -45,7 +46,7 @@ def run_eval(
             return "missing"
         if found.status == "running":
             found.status = "failed"
-            found.error = "上次评测跑到一半中断了（worker 停了），请重新开始"
+            found.error = stored("上次评测跑到一半中断了（worker 停了），请重新开始")
             found.finished_at = datetime.now(UTC)
             session.commit()
             return "interrupted"
@@ -71,12 +72,17 @@ def run_eval(
         result = run(data, parsed, split, arms, engines, progress)
         lines_key = f"ocr-evals/{team}/{run_id}.jsonl"
         storage.put(lines_key, lines_jsonl(result), "application/x-ndjson")
-    except Exception as err:  # 一次评测出错不影响 worker，记下原因
+    except Exception as err:  # A failed evaluation does not affect the worker; record the cause.
         log.exception("OCR 评测 %s 出错", run_id)
         with factory() as session:
             failed = session.get_one(OcrEvalRun, run_id)
             failed.status = "failed"
-            failed.error = f"{type(err).__name__}: {str(err)[:300]}"
+            message = str(err)
+            failed.error = stored(
+                "{kind}: {detail}",
+                kind=type(err).__name__,
+                detail=message if is_stored(message) else message[:300],
+            )
             failed.finished_at = datetime.now(UTC)
             session.commit()
         return "failed"

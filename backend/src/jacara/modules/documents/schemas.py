@@ -1,17 +1,18 @@
-"""文档接口的对外格式（API 收什么、返回什么）。
+"""Public schemas of the documents API (request and response bodies).
 
-和 models.py 分开：数据库里有的列，不一定都要给前端看（例如 storage_key、user_id）；
-前端要的东西，也不一定是数据库里的一列（例如 review_count 是算出来的）。
-"""
+Kept separate from models.py: not every database column is exposed to the frontend (for example
+storage_key, user_id), and not everything the frontend needs is a column (for example
+review_count is computed)."""
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
+from jacara.core.i18n import N_, Rendered, render_checks, render_classified
 from jacara.modules.fields.schemas import ValueOut
 
 __all__ = [
@@ -25,34 +26,39 @@ __all__ = [
     "SentText",
     "ValueOut",
 ]
-"""ValueOut 搬到了 fields 模块；这里继续导出，原来从这里 import 的代码不用改。"""
+"""ValueOut moved to the fields module; re-exported here so existing imports keep working."""
 
 
 class DeleteIn(BaseModel):
-    """一次删除几份文档。"""
+    """Delete several documents at once."""
 
     ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
 
 
 class ReviewTimeIn(BaseModel):
-    """审核页报来的审核用时：这一段时间里人在操作的秒数（审核页每半分钟报一次，离开时再报一次）。"""
+    """Review time reported by the review page: active seconds in this interval (reported every 30
+    seconds and once more when leaving the page)."""
 
     seconds: int = Field(ge=1, le=600)
 
 
 class ReprocessManyIn(BaseModel):
-    """勾选的几份一起重新处理，每份用同样的设置。不写的项：和每份上次一样。"""
+    """Reprocess the selected documents with the same settings. Omitted settings keep each
+    document's previous value."""
 
     ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
     template: str | None = None
-    """我的模板的 id、discover 或 auto。
-    不写：每份用自己现在这个模板的最新版（自动判断的再判断一次）。"""
+    """Id of one of my templates, discover, or auto. Omitted: each document uses the latest version
+    of its current template (auto-selected documents are re-selected)."""
     split: Literal["auto", "one", "pages"] | None = None
-    """一个文件里几张单据。不写：每份和上次一样（几份一起改时不能写页码）。"""
+    """Number of documents per file. Omitted: same as last time (page ranges are not allowed for
+    multiple documents)."""
     vision: Literal["always", "off", "default"] | None = "default"
-    """看不看原图。default 按系统设置；不写（null）：和上次一样。"""
+    """Whether to show the page image to the model. default follows the system setting; omitted
+    (null): same as last time."""
     pdf_read: Literal["image", "text", "default"] | None = "default"
-    """PDF 怎么读（只对 PDF 有效）。default 按系统设置；不写（null）：和上次一样。"""
+    """How to read PDFs (PDF only). default follows the system setting; omitted (null): same as last
+    time."""
     reason: Literal[
         "template_changed", "wrong_template", "bad_result", "model_changed", "batch", "other"
     ] = "batch"
@@ -61,26 +67,27 @@ class ReprocessManyIn(BaseModel):
 
 class ReprocessManyOut(BaseModel):
     queued: int
-    """放进队列了几份。"""
+    """Number of documents queued."""
     skipped: list[str] = []
-    """没处理的（正在处理、还在排队、没有原文件），每份一句话：文件名 + 原因。"""
+    """Documents not processed (being processed, still queued, or missing the original file), one
+    line each: file name + reason."""
 
 
 class DeleteOut(BaseModel):
     deleted: int
     skipped: list[str] = []
-    """没删的（正在处理的），每份一句话：文件名 + 原因。"""
+    """Documents not deleted (being processed), one line each: file name + reason."""
 
 
 class FolderOut(BaseModel):
-    """批量导入的一个文件夹。"""
+    """A batch-import folder."""
 
     folder: str
     count: int
 
 
 class SameFile(BaseModel):
-    """内容一样的另一份文档。"""
+    """Another document with identical content."""
 
     id: uuid.UUID
     filename: str
@@ -88,7 +95,7 @@ class SameFile(BaseModel):
 
 
 class DocumentOut(BaseModel):
-    """文档列表里的一项。"""
+    """One item of the document list."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -98,66 +105,69 @@ class DocumentOut(BaseModel):
     size_bytes: int
     page_count: int
     status: str
-    """uploaded（排队中）→ processing（处理中）→ done（完成）/ failed（失败）；
-    done 之后人工审核完，点"完成审核"变成 reviewed。"""
-    error: str | None = None
-    """失败原因。只有 status 是 failed 时才有。"""
+    """uploaded (queued) → processing → done / failed; after manual review of a done document,
+    "Complete review" sets reviewed."""
+    error: Rendered | None = None
+    """Failure cause. Only when status is failed."""
     created_at: datetime
     review_count: int = 0
-    """还在等人确认的字段数（已经修改或确认过的不算）。"""
-    stage: str | None = None
-    """处理到哪一步，例如"抽取第 2 / 3 页"。只有处理中才有。"""
+    """Number of fields still awaiting confirmation (edited or confirmed fields excluded)."""
+    stage: Rendered | None = None
+    """Current step, for example "Extracting page 2 / 3". Only while processing."""
     progress: int | None = None
-    """处理进度 0～100。只有处理中才有。"""
+    """Processing progress 0–100. Only while processing."""
     processed_at: datetime | None = None
-    """处理完（成功或失败）的时间。"""
+    """Time processing finished (success or failure)."""
     reviewed_at: datetime | None = None
-    """完成审核的时间。"""
+    """Time review was completed."""
     current_run: int = 1
-    """现在用的是第几轮处理的结果。"""
+    """Run whose results are currently used."""
     discover: bool = False
-    """下一次（或这一次）处理不用模板，抽出所有键值对。"""
+    """The next (or current) run uses no template and extracts all key-value pairs."""
     auto: bool = False
-    """下一次（或这一次）处理自动判断用哪个模板（ADR 0038）。"""
+    """The next (or current) run selects the template automatically."""
     vision: str | None = None
-    """看不看原图：always、off；null 按系统设置（ADR 0038）。"""
+    """Whether the model sees the page image: always, off; null follows the system setting."""
     pdf_read: str | None = None
-    """PDF 怎么读：image 画成图做 OCR、text 只读文字层；null 按系统设置（ADR 0042）。"""
+    """How PDFs are read: image renders pages for OCR, text reads only the text layer; null follows
+    the system setting."""
     skipped_at: datetime | None = None
-    """审核时点了"先跳过"的时间；没跳过是 null。"""
+    """Time "Skip for now" was clicked during review; null if not skipped."""
     skip_reason: str | None = None
-    """跳过的原因（可以没有）。"""
+    """Reason for skipping (optional)."""
     open_comments: int = 0
-    """还没解决的备注有几条。"""
+    """Number of unresolved comments."""
     folder: str | None = None
-    """批量导入时所在的文件夹（ADR 0036）。"""
+    """Source folder in a batch import."""
     split: str = "auto"
-    """一个文件里有几张单据：auto、one、pages 或页码范围。"""
+    """Number of documents per file: auto, one, pages, or page ranges."""
     same_file: list[SameFile] = []
-    """同一个文件（内容完全一样）之前也传过：那几份文档（ADR 0036）。"""
+    """The same file (identical content) was uploaded before: those documents."""
     duplicate_skipped: bool = False
-    """批量导入时选了"跳过重复的文件"，这次没有新建，返回的是之前那份。"""
+    """"Skip duplicate files" was selected for the batch import; no new document was created and the
+    earlier one is returned."""
 
 
 class SentOut(BaseModel):
-    """这次发给模型的是什么（ADR 0053）的摘要。原文太长，不放进详情，要看用 /sent 接口。"""
+    """Summary of the model input of this run. The full text is too long for the details response;
+    use the /sent endpoint."""
 
     blocks: int
-    """发给模型的文字块有几个。"""
+    """Number of text blocks sent to the model."""
     total_blocks: int
-    """这一页（或几页拼成的单据）一共有几个文字块。"""
+    """Total number of text blocks on this page (or on the pages forming this document)."""
     chars: int
-    """发出去的单据文字有多少字。"""
+    """Number of characters of document text sent."""
     images: int
-    """附了几张原图。"""
+    """Number of page images attached."""
     lessons: int
-    """带了几个以前人改过的例子。"""
+    """Number of past correction examples included."""
     has_snapshot: bool
-    """这一轮的 OCR 快照存下来了没有（回放要用）。"""
+    """Whether the OCR snapshot of this run was stored (required for replay)."""
 
 
 class SentText(BaseModel):
-    """发给模型的单据文字原文和文字块编号（ADR 0053）。"""
+    """Document text and text block indices sent to the model."""
 
     blocks: list[int]
     text: str
@@ -169,223 +179,245 @@ class ExtractionOut(BaseModel):
 
     id: uuid.UUID
     page: int
-    """这张单据从第几页开始。"""
+    """First page of this document."""
     last_page: int | None = None
-    """到第几页结束（ADR 0036）；只占一页是 null。"""
+    """Last page of this document; null when it occupies a single page."""
     source_notes: list[str] = []
-    """读文字时的特别情况，例如"PDF 文字层是乱码，这一页改用 OCR"。"""
+    """Special conditions while reading text, for example "The PDF text layer is garbled; OCR used
+    for this page"."""
     source: str
     model: str
     prompt_version: str
     template: str
-    """内置模板的名字、我的模板的 id，或者 discover（没用模板，抽出所有键值对）。"""
+    """Built-in template name, id of one of my templates, or discover (no template; all key-value
+    pairs extracted)."""
     template_version: int
     template_title: str = ""
-    """模板的中文名。"""
-    classified: dict[str, Any] | None = None
-    """自动判断用哪个模板的经过（ADR 0038）：picked、reason、by、candidates。"""
-    vision: str | None = None
-    """给模型看了原图的原因（ADR 0038）；没看是 null。"""
+    """Template display name."""
+    classified: Annotated[dict[str, Any] | None, AfterValidator(render_classified)] = None
+    """How the template was selected automatically: picked, reason, by, candidates."""
+    vision: Rendered | None = None
+    """Why the model was shown the page image; null if it was not."""
     run: int = 1
-    run_reason: str | None = None
+    run_reason: Rendered | None = None
     labels: dict[str, str] = {}
-    """字段 ID → 中文名。表格的列写成 items.amount，表名写成 items。"""
+    """Field ID → display name. Table columns are written as items.amount and table names as
+    items."""
     languages: list[str] = []
-    """字段名能切换的语言（ADR 0048），第一个是默认的中文；模板只有中文时是空的。"""
+    """Languages available for field labels; the first is the default. Empty when the template has a
+    single language."""
     label_sets: dict[str, dict[str, str]] = {}
-    """别的语言的 labels：语言代码 → {字段 ID → 名字}，格式和 labels 一样（ADR 0048）。"""
-    checks: dict[str, Any]
-    """抽取时的规则结果，永远不变。"""
+    """Labels in other languages: language code → {field ID → name}, same format as labels."""
+    checks: Annotated[dict[str, Any], AfterValidator(render_checks)]
+    """Rule results at extraction time; never change."""
     current_checks: dict[str, Any] | None = None
-    """按审核之后的当前值重新检查的结果（删掉的行不算）。审核页面显示这个。"""
+    """Rule results re-evaluated on the current post-review values (deleted rows excluded). Shown on
+    the review page."""
     values: list[ValueOut]
     sent: SentOut | None = None
-    """这次发给模型的是什么（ADR 0053）。这次更新之前处理的是 null。"""
+    """Model input of this run. null for documents processed before this was recorded."""
 
 
 class RunOut(BaseModel):
-    """处理过的一轮。"""
+    """A processed run."""
 
     run: int
     template: str
     template_title: str
     template_version: int
-    reason: str | None
+    reason: Rendered | None
     created_at: datetime
     current: bool
 
 
 class DocumentDetail(DocumentOut):
-    """一个文档的全部信息：文档本身 + 每一页的抽取结果。"""
+    """Complete information of a document: the document itself plus the extraction result of each
+    page."""
 
     extractions: list[ExtractionOut]
     runs: list[RunOut] = []
-    """处理过的每一轮（新的在前）。只有一轮时也有一项。"""
+    """Every processed run (newest first). Contains one entry even when there is only one run."""
     viewing_run: int = 1
-    """extractions 是第几轮的。不是 current_run 时只能查看，不能审核。"""
+    """Run of extractions. When it is not current_run, the results are read-only and cannot be
+    reviewed."""
     suggestions: int = 0
-    """可以沿用上一轮审核的字段有几个（"采纳上次的确认"）。"""
+    """Number of fields whose review from the previous run can be carried over ("Accept previous
+    confirmations")."""
 
 
 REPROCESS_REASONS: dict[str, str] = {
-    "template_changed": "模板改了",
-    "wrong_template": "选错了模板",
-    "bad_result": "结果不好，再跑一次",
-    "model_changed": "换了模型或 OCR",
-    "batch": "批量重新处理",
-    "other": "其他",
+    "template_changed": N_("模板改了"),
+    "wrong_template": N_("选错了模板"),
+    "bad_result": N_("结果不好，再跑一次"),
+    "model_changed": N_("换了模型或 OCR"),
+    "batch": N_("批量重新处理"),
+    "other": N_("其他"),
 }
-"""重新处理的原因（审计和历史里显示中文）。"""
+"""Reprocessing reasons (display names shown in audit log and history)."""
 
 
 class ReprocessIn(BaseModel):
-    """重新处理：换模板（或用同一个模板的最新版）跑一轮新的。旧的结果留着可以查看。"""
+    """Reprocess: run a new pass with another template (or the latest version of the same template).
+    Earlier results are kept for inspection."""
 
     template: str | None = None
-    """我的模板的 id、discover 或 auto（自动判断，ADR 0038）。不写：用现在这个模板的最新版
-    （自动判断的再自动判断一次）。"""
+    """Id of one of my templates, discover, or auto (automatic selection). Omitted: the latest
+    version of the current template (auto-selected documents are re-selected)."""
     reason: Literal[
         "template_changed", "wrong_template", "bad_result", "model_changed", "batch", "other"
     ]
     note: str = Field(default="", max_length=500)
-    """补充说明。原因选"其他"时必须写。"""
+    """Additional explanation. Required when the reason is "other"."""
     split: str | None = Field(default=None, max_length=200)
-    """文件里有几张单据（ADR 0036）：auto、one、pages 或"1-2, 3, 4-6"。不写：和上次一样。"""
+    """Number of documents in the file: auto, one, pages or "1-2, 3, 4-6". Omitted: same as last
+    time."""
     vision: Literal["always", "off", "default"] | None = None
-    """看不看原图（ADR 0038）：always 每张都看、off 不看、default 按系统设置。不写：和上次一样。"""
+    """Whether the model sees the page image: always, off, or default (system setting). Omitted:
+    same as last time."""
     pdf_read: Literal["image", "text", "default"] | None = None
-    """PDF 怎么读（ADR 0042）：image 画成图做 OCR（文字层只核对）、text 只读文字层、
-    default 按系统设置。不写：和上次一样。"""
+    """How to read PDFs: image renders pages for OCR (the text layer is used only for
+    cross-checking), text reads only the text layer, default follows the system setting. Omitted:
+    same as last time."""
 
 
 class DocumentPage(BaseModel):
-    """分页的列表。total 是总数，前端用来显示"共 N 条"和翻页。"""
+    """Paginated list. total is the overall count, used by the frontend for "N items" and
+    pagination."""
 
     items: list[DocumentOut]
     total: int
 
 
 class OcrLineOut(BaseModel):
-    """原图上的一个文字块。index 是它在这一页里的编号，"从原文选取"时用。"""
+    """One text block on the page image. index is its number on this page, used by "select from
+    source text"."""
 
     index: int
     text: str
     box: list[float]
-    """外接框 [x0, y0, x1, y1]，像素，和页面图片一样的坐标。"""
+    """Bounding box [x0, y0, x1, y1] in pixels, in page image coordinates."""
     polygon: list[list[float]]
     confidence: float
     row: int | None = None
-    """在第几个视觉行（和模型看到的行号一样）。"""
+    """Visual line number (the same line numbers the model sees)."""
 
 
 class RegionIn(BaseModel):
-    """页面上的一块区域：[x0, y0, x1, y1]，和页面图片一样的像素坐标。"""
+    """A region of the page: [x0, y0, x1, y1] in page image pixel coordinates."""
 
     box: list[float] = Field(min_length=4, max_length=4)
 
 
 class LookIn(BaseModel):
-    """让模型看一块区域（ADR 0038）：框，和要填的字段（可以不写）。"""
+    """Ask the model about a region: the box and, optionally, the target field."""
 
     box: list[float] = Field(min_length=4, max_length=4)
     label: str | None = Field(default=None, max_length=100)
-    """要填的字段的中文名，例如"找零""第 2 行 金额"。"""
+    """Display name of the target field, for example "Change" or "Row 2 Amount"."""
     type: Literal["string", "number", "date"] | None = None
 
 
 class LookOut(BaseModel):
     text: str
-    """模型在图上读出的文字。"""
+    """Text read by the model from the image."""
     value: str | None
-    """要填的字段的值（数字只有数字、日期 YYYY-MM-DD）；没说字段或者图里没有是 null。"""
+    """Value of the target field (digits only for numbers, YYYY-MM-DD for dates); null when no field
+    was given or the image does not contain it."""
     model: str
 
 
 class RegionDescription(BaseModel):
-    """框选建模板（ADR 0047）：框里的值、旁边的标签、在页面哪里、像什么类型。"""
+    """Template building by region selection: the value inside the box, the nearby label, its
+    position on the page and its likely type."""
 
     text: str
     confidence: float | None
     label: str | None
-    """框左边（同一行）或上面最近的标签，去掉了冒号；没有是 null。"""
+    """Nearest label to the left of the box (same line) or above it, without the colon; null if
+    none."""
     side: str | None
-    """值在标签的"右边"还是"下面"。"""
+    """Whether the value is to the right of or below the label."""
     type: Literal["string", "number", "date", "date_range"]
     position: str
-    """在页面哪里：左上角、上方中间、右下角……"""
+    """Position on the page: top left, top center, bottom right, …"""
     name: str
-    """从标签猜的字段 ID（英文标签才猜得出，中文是 field_1 这种，要人改）。"""
+    """Field ID guessed from the label (only English labels can be guessed; otherwise field_1 and so
+    on, to be renamed)."""
     description: str
-    """给模型看的位置说明：在单据右上角，「Invoice No」右边。"""
+    """Position hint for the model, for example: top right of the document, right of "Invoice
+    No"."""
 
 
 class RegionOut(BaseModel):
-    """重新识别的结果。text 为空表示这块区域里没认出文字。"""
+    """Re-recognition result. An empty text means no text was recognized in the region."""
 
     text: str
     confidence: float | None
-    """认出的文字里最低的 OCR 置信度。"""
+    """Lowest OCR confidence among the recognized text."""
 
 
 class PageOcr(BaseModel):
-    """一页的 OCR 结果。available=false：这一页处理时还没保存 OCR 结果（重新处理后才有）。"""
+    """OCR result of one page. available=false: OCR results were not stored when this page was
+    processed (available after reprocessing)."""
 
     available: bool
     lines: list[OcrLineOut]
 
 
 class DocumentNeighbors(BaseModel):
-    """审核页面的"上一份 / 下一份"：按列表顺序，前后两份待审核的文档。没有就是 null。"""
+    """Previous / next on the review page: the adjacent documents awaiting review in list order;
+    null if none."""
 
     previous: uuid.UUID | None
     next: uuid.UUID | None
     remaining: int
-    """除了这一份，还有几份待审核。"""
+    """Number of other documents awaiting review."""
 
 
 class DashboardCounts(BaseModel):
     queued: int
-    """排队中（uploaded）"""
+    """Queued (uploaded)."""
     processing: int
     to_review: int
-    """处理完、待审核（done）"""
+    """Processed, awaiting review (done)."""
     failed: int
     reviewed: int
     total: int
     skipped: int = 0
-    """待审核里先跳过的有几份。"""
+    """Number of skipped documents awaiting review."""
     pending_fields: int
-    """待审核的文档里，一共还有多少字段等人确认。"""
+    """Total number of fields awaiting confirmation in documents awaiting review."""
     processed_today: int
     reviewed_today: int
     average_page_seconds: float | None
-    """最近 7 天每页平均处理用时（秒）。"""
+    """Average processing time per page over the last 7 days (seconds)."""
     stage_seconds: dict[str, float] | None = None
-    """最近 7 天每份平均各步用时（秒，ADR 0051）：read 认字、wait 排队等模型、extract 模型这边。"""
+    """Average seconds per step per document over the last 7 days: read (OCR), wait (queue for the
+    model), extract (model)."""
 
 
 class Dashboard(BaseModel):
-    """工作台：统计卡、处理队列、需要先处理。"""
+    """Dashboard: statistic cards, processing queue, items needing attention."""
 
     counts: DashboardCounts
     queue: list[DocumentOut]
-    """排队中和处理中的（处理中的在前，带进度）。"""
+    """Queued and processing documents (processing first, with progress)."""
     failed: list[DocumentOut]
-    """处理失败的（最新的几份）。"""
+    """Failed documents (most recent)."""
     to_review: list[DocumentOut]
-    """待审核里等人确认的字段最多的几份（review_count）。"""
+    """Documents awaiting review with the most fields awaiting confirmation (review_count)."""
 
 
 class SkipIn(BaseModel):
-    """先跳过这份：拿不准的先放一放，过后再回来。"""
+    """Skip this document for now and return to it later."""
 
     reason: str = Field(default="", max_length=500)
-    """为什么跳过，可以不填。"""
+    """Reason for skipping (optional)."""
 
 
 class StructureRegion(BaseModel):
     kind: str
-    """标题、正文、表格、页眉、页脚……"""
+    """Title, text, table, header, footer, …"""
     box: list[float]
 
 
@@ -403,7 +435,7 @@ class StructureTable(BaseModel):
     rows: int
     cols: int
     by: str
-    """model：表格结构模型认的；rule：按文字位置划分的。"""
+    """model: detected by the table structure model; rule: derived from text positions."""
     cells: list[StructureCell]
 
 
@@ -413,14 +445,16 @@ class StructurePair(BaseModel):
     value: str
     value_box: list[float]
     rule: str
-    """哪条规则找出来的：inline、colon、colon_below、header_above、two_column_table、label_left。"""
+    """Rule that found the pair: inline, colon, colon_below, header_above, two_column_table,
+    label_left."""
 
 
 class PageStructureOut(BaseModel):
-    """某一页的结构（ADR 0034）：审核页"版面结构"在原图上画出来，看系统认出了什么。"""
+    """Structure of one page, drawn over the page image in the layout view of the review page to
+    show what the system detected."""
 
     available: bool
-    """2026-11-14 之前处理的没有结构。"""
+    """Documents processed before 2026-11-14 have no structure."""
     sources: dict[str, str] = {}
     regions: list[StructureRegion] = []
     tables: list[StructureTable] = []

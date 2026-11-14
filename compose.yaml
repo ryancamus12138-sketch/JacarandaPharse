@@ -1,10 +1,10 @@
-# 开发用的基础设施：数据库、任务队列、对象存储。
-#   启动：docker compose up -d
-#   状态：docker compose ps
-#   停止：docker compose down          （数据保留在 volumes 里）
-#   清空：docker compose down -v       （连数据一起删掉，小心）
-# 密码等配置从项目根目录的 .env 读取（复制 .env.example 后修改）。
-# 端口只绑定 127.0.0.1：只有本机能连，同一网络里的其他电脑连不进来。
+# Infrastructure services: database, task queue, object storage.
+#   Start:  docker compose up -d
+#   Status: docker compose ps
+#   Stop:   docker compose down          (data is kept in volumes)
+#   Reset:  docker compose down -v       (deletes all data)
+# Credentials are read from .env in the project root (copied from .env.example).
+# Ports bind to 127.0.0.1 only, so other machines on the network cannot connect.
 
 name: jacara
 
@@ -13,7 +13,7 @@ services:
     image: postgres:18-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-jacara}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请先在 .env 里设置 POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-jacara}
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
@@ -40,12 +40,12 @@ services:
 
   seaweedfs:
     image: chrislusf/seaweedfs:4.52
-    # 一个容器里同时跑 master、volume、filer 和 S3 接口；只把 S3 端口开放给本机。
+    # One container runs master, volume, filer and the S3 gateway; only the S3 port is published, to localhost.
     command: ["server", "-dir=/data", "-ip.bind=0.0.0.0", "-s3", "-s3.port=8333"]
     environment:
-      # 设置了这两个变量，S3 接口就只接受这对密钥（不设置则任何密钥都能访问）。
-      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?请先在 .env 里设置 S3_ACCESS_KEY}
-      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?请先在 .env 里设置 S3_SECRET_KEY}
+      # With these two variables set, the S3 gateway accepts only this key pair (without them, any key is accepted).
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
     ports:
       - "127.0.0.1:${S3_PORT:-8333}:8333"
     volumes:

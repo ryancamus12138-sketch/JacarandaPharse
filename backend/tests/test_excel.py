@@ -1,4 +1,4 @@
-"""Excel 导出：写出来再读回去，检查颜色、批注和类型。"""
+"""Excel export: write, read back, and check colors, comments and types."""
 
 from dataclasses import replace
 from datetime import datetime
@@ -38,16 +38,17 @@ def test_excel_marks_problems(receipt_page, tmp_path):
     headers = [c.value for c in sheet[1]]
     row = {h: sheet.cell(row=2, column=i + 1) for i, h in enumerate(headers)}
 
-    assert row["date"].value == datetime(2018, 12, 25)  # 真正的日期，不是文字
-    assert row["fake"].fill.fgColor.rgb.endswith("FFC7CE")  # 找不到出处：红
-    assert row["change"].fill.fgColor.rgb.endswith("FFEB9C")  # 规则不通过：黄
+    assert row["date"].value == datetime(2018, 12, 25)  # A real date, not text.
+    assert row["fake"].fill.fgColor.rgb.endswith("FFC7CE")  # No evidence: red.
+    assert row["change"].fill.fgColor.rgb.endswith("FFEB9C")  # Rule failed: yellow.
     assert row["change"].comment is not None
     assert "100.00" in row["change"].comment.text
-    assert row["需要确认"].value == 4  # total、cash、change、fake
+    assert row["需要确认"].value == 4  # total, cash, change, fake
 
 
 def test_excel_uses_reviewed_values(report, tmp_path):
-    """有人工审核时：格子里写审核之后的值，改过的标蓝，批注写原值和原因；审核过的不算"需要确认"。"""
+    """With manual review: cells hold post-review values, edited cells are blue with the original
+    value and reason in a comment, and reviewed fields no longer need confirmation."""
     reviewed = replace(
         report,
         reviews={
@@ -63,15 +64,15 @@ def test_excel_uses_reviewed_values(report, tmp_path):
     headers = [c.value for c in sheet[1]]
     row = {h: sheet.cell(row=2, column=i + 1) for i, h in enumerate(headers)}
 
-    assert row["change"].value == 1.0  # 审核之后的值，而且是数字
-    assert row["change"].fill.fgColor.rgb.endswith("DDEBF7")  # 人工改过：蓝
+    assert row["change"].value == 1.0  # Post-review value, as a number.
+    assert row["change"].fill.fgColor.rgb.endswith("DDEBF7")  # Manually edited: blue.
     comment = row["change"].comment
     assert comment is not None
     assert "原值 100.0 → 1.0" in comment.text
     assert "OCR 把 1.00 读成了 100" in comment.text
-    assert row["total"].fill.fill_type is None  # 人工确认过：不再标黄
-    assert row["cash"].fill.fgColor.rgb.endswith("FFEB9C")  # 还没人看：仍然标黄
-    assert row["需要确认"].value == 1  # 只剩 cash
+    assert row["total"].fill.fill_type is None  # Manually confirmed: no longer yellow.
+    assert row["cash"].fill.fgColor.rgb.endswith("FFEB9C")  # Not yet reviewed: still yellow.
+    assert row["需要确认"].value == 1  # Only cash remains.
 
     details = book["明细"]
     columns = [c.value for c in details[1]]

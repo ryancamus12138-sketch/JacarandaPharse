@@ -1,4 +1,4 @@
-"""我的模板的数据库查询。"""
+"""Database queries for my templates."""
 
 from __future__ import annotations
 
@@ -50,9 +50,11 @@ class TemplateRepository:
         return next(v for v in record.versions if v.version == record.latest_version)
 
     def usage_stats(self, team_id: uuid.UUID) -> dict[uuid.UUID, tuple[int, datetime | None]]:
-        """每个模板：有几份文档用它、最近一份是什么时候传的（模板页排序、显示用）。
+        """Per template: number of documents using it and the upload time of the latest one (for
+        sorting and display on the templates page).
 
-        上传时选了这个模板的，加上自动判断选中它的（ADR 0038，记在每张单据上）。"""
+                Counts documents where the template was chosen at upload plus those where
+        automatic selection picked it (recorded per document)."""
         chosen = select(TemplateVersion.template_id, Document.id, Document.created_at).join(
             Document, Document.template_version_id == TemplateVersion.id
         )
@@ -74,7 +76,7 @@ class TemplateRepository:
         }
 
     def usage(self, template_id: uuid.UUID) -> int:
-        """有几份文档下次处理会用这个模板（任何版本）。"""
+        """Number of documents whose next run will use this template (any version)."""
         return (
             self.session.scalar(
                 select(func.count(Document.id))
@@ -85,7 +87,8 @@ class TemplateRepository:
         )
 
     def documents_using(self, template_id: uuid.UUID) -> int:
-        """有几份文档用过这个模板：处理结果（任何一轮）用过，或者正等着用它处理。"""
+        """Number of documents that have used this template: in processing results (any run) or
+        awaiting processing with it."""
         versions = select(TemplateVersion.id).where(TemplateVersion.template_id == template_id)
         processed = select(Extraction.document_id).where(
             Extraction.template_version_id.in_(versions)

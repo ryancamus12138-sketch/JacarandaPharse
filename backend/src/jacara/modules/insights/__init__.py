@@ -1,1 +1,2 @@
-"""统计和数据导出（ADR 0044）：人工改了多少、改了什么，审核过的单据导出成评测或训练数据。"""
+"""Statistics and data export: how often and how reviewers corrected values, and export of reviewed
+documents as evaluation or training data."""

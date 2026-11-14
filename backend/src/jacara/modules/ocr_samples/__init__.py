@@ -1,2 +1,2 @@
-"""OCR 纠错样本（ADR 0050）：审核时把 OCR 认错的地方存成"小图 + 图中原文"，
-导出给 PaddleOCR 训练识别模型。"""
+"""OCR correction samples: during review, regions OCR misread are stored as "line crop +
+transcription" and exported for training PaddleOCR recognition models."""

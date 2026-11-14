@@ -24,7 +24,8 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=16), server_default="uploaded", nullable=False),
     )
     # ### end Alembic commands ###
-    # 手动加的：以前用命令行 --save 存进来的文档已经处理完了，状态应该是 done，不是 uploaded。
+    # Data fix: documents saved earlier through the CLI (--save) are already processed; their status
+    # must be done, not uploaded.
     op.execute(
         "UPDATE documents SET status = 'done' WHERE id IN (SELECT document_id FROM extractions)"
     )

@@ -1,16 +1,21 @@
 import { Modal, Typography } from 'antd'
 import type { ResetCode } from '../../api/types'
 import { formatTime } from '../../utils/format'
+import { useTranslation } from 'react-i18next'
 
-/** 显示刚生成的重设码。关掉之后就再也看不到了（数据库里只有哈希）。 */
+/**
+ * Shows the newly generated reset code. Once closed it can never be shown again (the database stores only its
+ * hash).
+ */
 export function ResetCodeModal({ code, onClose }: { code: ResetCode | null; onClose: () => void }) {
+  const { t } = useTranslation()
   return (
     <Modal
-      title={`${code?.username ?? ''} 的重设码`}
+      title={t('{{value}} 的重设码', { value: code?.username ?? '' })}
       open={code !== null}
       onOk={onClose}
       onCancel={onClose}
-      okText="我已经告诉对方了"
+      okText={t('我已经告诉对方了')}
       cancelButtonProps={{ style: { display: 'none' } }}
     >
       <Typography.Title
@@ -21,15 +26,14 @@ export function ResetCodeModal({ code, onClose }: { code: ResetCode | null; onCl
         {code?.code}
       </Typography.Title>
       <Typography.Paragraph>
-        有效到 <strong>{code ? formatTime(code.expires_at) : ''}</strong>（15 分钟），只能用一次。
+        {t('有效到')}{' '}<strong>{code ? formatTime(code.expires_at) : ''}</strong>{t('（15 分钟），只能用一次。')}
       </Typography.Paragraph>
       <Typography.Paragraph>
-        <strong>这不是新密码，不能直接用来登录。</strong>
-        对方要在登录页点"<strong>用重设码设新密码</strong>"，输入用户名和这个码，再自己设一个新密码。
+        <strong>{t('这不是新密码，不能直接用来登录。')}</strong>
+        {t('对方要在登录页点"')}<strong>{t('用重设码设新密码')}</strong>{t('"，输入用户名和这个码，再自己设一个新密码。')}
       </Typography.Paragraph>
       <Typography.Paragraph type="secondary">
-        请当面或打电话告诉 {code?.username}，不要发到聊天群里。
-        这个码关掉后就看不到了；对方没用上的话，再生成一个就行（旧的会作废）。
+        {t('请当面或打电话告诉 {{username}}，不要发到聊天群里。 这个码关掉后就看不到了；对方没用上的话，再生成一个就行（旧的会作废）。', { username: code?.username })}
       </Typography.Paragraph>
     </Modal>
   )

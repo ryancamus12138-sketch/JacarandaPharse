@@ -1,7 +1,7 @@
-"""人工审核：修改、确认、修改历史、完成审核。
+"""Manual review: edit, confirm, history, review completion.
 
-用 conftest 里的 report（找零读成 100，total、cash、change 三个字段要人工确认）存一个处理完的文档。
-"""
+Stores a processed document from report in conftest (change read as 100; total, cash and change
+require confirmation)."""
 
 import uuid
 
@@ -24,7 +24,7 @@ def document_id(factory, report, tmp_path) -> uuid.UUID:
 
 @pytest.fixture
 def values(client, document_id) -> dict[str, dict]:
-    """文档里每个字段，按名字取：values["total"]["id"]。"""
+    """Every field of the document by name: values["total"]["id"]."""
     detail = client.get(f"/api/v1/documents/{document_id}").json()
     return {v["name"]: v for v in detail["extractions"][0]["values"]}
 
@@ -36,7 +36,7 @@ def revise(client, field: dict, **body):
 def test_new_values_show_current_and_pending(values):
     total = values["total"]
     assert total["current_value"] == total["value"] == "9.0"
-    assert total["pending_review"]  # 找零规则不通过，要人工确认
+    assert total["pending_review"]  # The change rule fails, so confirmation is required.
     assert not total["reviewed"]
     assert not values["merchant"]["pending_review"]
 
@@ -48,15 +48,15 @@ def test_edit_keeps_original_value(client, factory, values):
 
     assert response.status_code == 201
     change = response.json()
-    assert change["value"] == "100.0"  # 模型原值不变（项目规则 2）
-    assert change["current_value"] == "1.0"  # 整理成和原值一样的格式
+    assert change["value"] == "100.0"  # The model value is unchanged.
+    assert change["current_value"] == "1.0"  # Normalized to the same format as the original value.
     assert change["reviewed"] and not change["pending_review"]
 
     with session_scope(factory) as session:
         row = session.get_one(ExtractedValue, uuid.UUID(change["id"]))
-        assert row.value == "100.0"  # 数据库里的原值也没动
+        assert row.value == "100.0"  # The original value in the database is unchanged too.
         [revision] = row.revisions
-        assert revision.user_id == PERSONAL_OWNER.user_id  # 记下是谁改的
+        assert revision.user_id == PERSONAL_OWNER.user_id  # The actor is recorded.
 
 
 def test_edit_needs_a_reason(client, values):
@@ -123,7 +123,7 @@ def test_history_lists_every_revision_in_order(client, values):
 def test_review_count_goes_down(client, document_id, values):
     revise(client, values["total"], action="confirm")
     listed = client.get("/api/v1/documents").json()["items"][0]
-    assert listed["review_count"] == 2  # 原来 3 个，确认了 1 个
+    assert listed["review_count"] == 2  # Three originally, one confirmed.
 
 
 def test_finish_review(client, document_id, values):
@@ -164,7 +164,8 @@ def test_unknown_value_is_404(client):
 
 
 def test_same_seq_twice_is_rejected(factory, document_id, values):
-    """两个人同时审核同一个字段：seq 相同，数据库只接受一个。"""
+    """Two people reviewing the same field concurrently produce the same seq; the database accepts
+    only one."""
     value_id = uuid.UUID(values["total"]["id"])
     with pytest.raises(IntegrityError), session_scope(factory) as session:
         for _ in range(2):

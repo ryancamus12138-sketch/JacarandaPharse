@@ -1,11 +1,13 @@
 # ruff: noqa: E501
-"""检测样本（ADR 0061）：整页图和每一行字的框，人在系统里调好、确认后导出给检测（det）模型。
+"""Detection samples: full-page images with a box for every text line, adjusted and confirmed by a
+person in the system and exported for training detection (det) models.
 
-流程照 PaddleOCR 的标注工具 PPOCRLabel：先用现有 OCR 结果"自动标注"，人逐页调整（拖角、加框、删框、改字），
-"确认这一页"后才导出（PPOCRLabel 把确认过的记在 fileState.txt，只有它们进 Label.txt）。
-导出格式是 PaddleOCR 检测训练直接读的：每行 `图片路径<Tab>[{"transcription": …, "points": [[x, y] × 4]}]`，
-看不清的框文字写 ###（PaddleX 文档"文本检测/文本识别 标注"）。
-"""
+The workflow follows PaddleOCR's annotation tool PPOCRLabel: pre-annotate with existing OCR
+results, adjust page by page (drag corners, add, delete, edit text), and export only after
+"confirm page" (PPOCRLabel records confirmed files in fileState.txt and only those enter
+Label.txt). The export format is read directly by PaddleOCR detection training: one line per
+image, `image path<Tab>[{"transcription": …, "points": [[x, y] × 4]}]`, with ### as the text of
+illegible boxes (PaddleX documentation on text detection and recognition annotation)."""
 
 from __future__ import annotations
 
@@ -20,6 +22,7 @@ from typing import Any, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from jacara.core.i18n import tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.storage import ObjectStorage, StorageError
@@ -44,7 +47,8 @@ from jacara.pipeline.pages import pages_json
 IGNORE = "###"
 MAX_BOXES = 2000
 SAME_POINT = 1.0
-"""两个四边形每个角相差不超过 1 像素，算同一块（和样本页认"同一个框"一样）。"""
+"""Two quadrilaterals whose corresponding corners differ by at most 1 pixel are the same box (as for
+identifying the same box on the samples page)."""
 
 
 class DetError(Exception):
@@ -66,7 +70,8 @@ def _sensitive_fields(extraction: Extraction) -> set[str]:
 
 
 def sensitive_on_page(extraction: Extraction, page: int) -> bool:
-    """这一页上有没有敏感字段的值（整页图会把它带出去）。有值却不知道在哪一页的，也算有。"""
+    """Whether this page contains a value of a sensitive field (the full-page image would expose
+    it). Values whose page is unknown count as present."""
     names = _sensitive_fields(extraction)
     if not names:
         return False
@@ -81,7 +86,8 @@ def sensitive_on_page(extraction: Extraction, page: int) -> bool:
 
 
 def ocr_pages(extraction: Extraction) -> list[tuple[int, dict[str, Any]]]:
-    """这条抽取记录里 OCR 认的页（PDF 自带文字的页不要：框不是检测模型给的）。"""
+    """Pages of this extraction read by OCR (pages read from the PDF text layer are excluded: their
+    boxes do not come from a detection model)."""
     return [
         (page, ocr)
         for page, ocr in pages_json(extraction.ocr, extraction.page)
@@ -101,8 +107,9 @@ def _same(a: Any, b: Any) -> bool:
 
 
 def prefill(ocr: dict[str, Any], samples: list[OcrSample]) -> list[dict[str, Any]]:
-    """预标注：OCR 的每个文字块（四个角和文字）；人在审核时改对的原文（OCR 样本）替换同一块的文字；
-    框选的漏认样本加成新框。"""
+    """Pre-annotation: every OCR text block (four corners and text); transcriptions corrected during
+    review (OCR samples) replace the text of the same block; missed-text samples from region
+    selection are added as new boxes."""
     boxes: list[dict[str, Any]] = [
         {
             "points": [[float(x), float(y)] for x, y in line["polygon"]],
@@ -137,11 +144,13 @@ def prefill(ocr: dict[str, Any], samples: list[OcrSample]) -> list[dict[str, Any
 def check_boxes(
     boxes: list[DetBox], width: int, height: int, confirming: bool
 ) -> list[dict[str, Any]]:
-    """保存前检查：四个点、在图里、多边形合法（不自相交、有面积）；不是"看不清"的要有文字，不能带 Tab、换行。"""
+    """Validate before saving: four points, inside the image, a valid polygon (not
+    self-intersecting, non-zero area); boxes not marked illegible need text, without Tab or
+    newline."""
     from shapely.geometry import Polygon
 
     if len(boxes) > MAX_BOXES:
-        raise DetError("invalid", f"一页最多 {MAX_BOXES} 个框")
+        raise DetError("invalid", tr("一页最多 {limit} 个框", limit=MAX_BOXES))
     cleaned: list[dict[str, Any]] = []
     for n, box in enumerate(boxes, start=1):
         points = [
@@ -150,12 +159,12 @@ def check_boxes(
         ]
         polygon = Polygon(points)
         if not polygon.is_valid or polygon.area < 4:
-            raise DetError("invalid", f"第 {n} 个框的四个角不对（交叉了或太小）")
+            raise DetError("invalid", tr("第 {n} 个框的四个角不对（交叉了或太小）", n=n))
         text = box.text.strip()
         if not box.ignore and not text:
-            raise DetError("invalid", f"第 {n} 个框没有文字：填上图上的字，或勾“看不清”")
+            raise DetError("invalid", tr("第 {n} 个框没有文字：填上图上的字，或勾“看不清”", n=n))
         if any(c in text for c in BAD_CHARS):
-            raise DetError("invalid", f"第 {n} 个框的文字里有 Tab 或换行")
+            raise DetError("invalid", tr("第 {n} 个框的文字里有 Tab 或换行", n=n))
         if text == IGNORE:
             box = box.model_copy(update={"ignore": True})
         cleaned.append(
@@ -167,7 +176,9 @@ def check_boxes(
             }
         )
     if confirming and not any(not b["ignore"] for b in cleaned):
-        raise DetError("invalid", "这一页一个能用的框都没有，不能确认；不要这一页就点“不用这一页”")
+        raise DetError(
+            "invalid", tr("这一页一个能用的框都没有，不能确认；不要这一页就点“不用这一页”")
+        )
     return cleaned
 
 
@@ -189,7 +200,8 @@ class DetPageService:
     def candidates(
         self, status: str | None = None, offset: int = 0, limit: int = 50
     ) -> DetPageList:
-        """能做检测样本的页：审核完成的单据、OCR 认的页、这一页没有敏感字段。"""
+        """Pages eligible for detection samples: reviewed documents, pages read by OCR, no sensitive
+        fields on the page."""
         require(self.owner, "value:read")
         saved = {
             (p.document_id, p.page): p
@@ -230,18 +242,18 @@ class DetPageService:
     ) -> tuple[Document, Extraction, dict[str, Any]]:
         document = self.session.get(Document, document_id)
         if document is None or document.team_id != self.owner.team_id:
-            raise DetError("not_found", "没有这个文档")
+            raise DetError("not_found", tr("没有这个文档"))
         if document.status != "reviewed":
-            raise DetError("invalid", "审核完成的单据才能做检测样本")
+            raise DetError("invalid", tr("审核完成的单据才能做检测样本"))
         for extraction in document.extractions:
             for number, ocr in ocr_pages(extraction):
                 if number == page:
                     if sensitive_on_page(extraction, page):
                         raise DetError(
-                            "invalid", "这一页上有敏感字段，整页图会把它带出去，不能做检测样本"
+                            "invalid", tr("这一页上有敏感字段，整页图会把它带出去，不能做检测样本")
                         )
                     return document, extraction, ocr
-        raise DetError("not_found", "这一页没有 OCR 结果（PDF 自带文字的页不做检测样本）")
+        raise DetError("not_found", tr("这一页没有 OCR 结果（PDF 自带文字的页不做检测样本）"))
 
     def _saved(self, document_id: uuid.UUID, page: int) -> DetPage | None:
         return self.session.scalar(
@@ -272,7 +284,8 @@ class DetPageService:
         )
 
     def get(self, document_id: uuid.UUID, page: int) -> DetPageOut:
-        """打开一页：存过的照存的；没存过的给预标注（不写数据库，第一次保存时才存）。"""
+        """Open a page: saved boxes if any; otherwise pre-annotation (not written to the database
+        until the first save)."""
         require(self.owner, "value:read")
         document, extraction, ocr = self._locate(document_id, page)
         found = self._saved(document_id, page)
@@ -306,14 +319,14 @@ class DetPageService:
     def save(
         self, document_id: uuid.UUID, page: int, data: DetPageIn, status: str | None = None
     ) -> DetPageOut:
-        """保存框（status 给了就同时改状态：confirmed 确认、excluded 不用、draft 重新打开）。
-        修订号和存着的不一样（别人刚改过）就拒绝。"""
+        """Save boxes (and change the status when given: confirmed, excluded, draft to reopen).
+        Rejected when the revision differs from the stored one (someone just changed it)."""
         require(self.owner, "value:review")
         document, extraction, ocr = self._locate(document_id, page)
         found = self._saved(document_id, page)
         current = found.revision if found else 0
         if data.revision != current:
-            raise DetError("conflict", "这一页刚被别人改过，请刷新后再改")
+            raise DetError("conflict", tr("这一页刚被别人改过，请刷新后再改"))
         width = found.width if found else int(ocr.get("width") or 0)
         height = found.height if found else int(ocr.get("height") or 0)
         boxes = check_boxes(data.boxes, width, height, confirming=status == "confirmed")
@@ -363,7 +376,7 @@ class DetPageService:
         )
         return self._out(document, page, found, boxes, width, height, found.ocr_engine)
 
-    # ---- 导出 ----
+    # ---- Export ----
 
     def _selection(self, kind: str) -> tuple[list[tuple[DetPage, uuid.UUID, str]], Counter[str]]:
         team = self.owner.team_id
@@ -376,7 +389,7 @@ class DetPageService:
         )
         for p in pages:
             if p.status != "confirmed":
-                excluded["还没确认" if p.status == "draft" else "标了不用"] += 1
+                excluded[tr("还没确认") if p.status == "draft" else tr("标了不用")] += 1
                 continue
             group = members.get((p.document_id, p.unit_page))
             if group is None:
@@ -385,9 +398,9 @@ class DetPageService:
                 ).group_id
             split = (splits.get(group) or groups.ensure_split(self.session, team, group)).split
             if split == "quarantined":
-                excluded["所在的组被隔离了（合并或拆开时发现已经导出过）"] += 1
+                excluded[tr("所在的组被隔离了（合并或拆开时发现已经导出过）")] += 1
             elif kind == "train_val" and split == "test_locked":
-                excluded["锁定测试集（单独导出）"] += 1
+                excluded[tr("锁定测试集（单独导出）")] += 1
             elif kind == "test" and split != "test_locked":
                 continue
             else:
@@ -418,16 +431,17 @@ class DetPageService:
         )
 
     def export(self, kind: str = "train_val") -> tuple[str, bytes, uuid.UUID]:
-        """确认过的页 → zip：images/、det_gt_train.txt、det_gt_val.txt（或 det_gt_test.txt）、
-        manifest.jsonl、README.md。记一条导出记录（ADR 0052 的隔离规则要用）。返回 (文件名, 内容, 导出记录 id)。"""
+        """Confirmed pages → zip with images/, det_gt_train.txt, det_gt_val.txt (or
+        det_gt_test.txt), manifest.jsonl and README.md. Records an export (required for split
+        isolation). Returns (file name, bytes, export record id)."""
         from jacara.plugins.ocr.loader import page_png
 
         require(self.owner, "document:export")
         if self.storage is None:
-            raise DetError("storage", "对象存储暂时不可用，请稍后再试")
+            raise DetError("storage", tr("对象存储暂时不可用，请稍后再试"))
         kept, excluded = self._selection(kind)
         if not kept:
-            raise DetError("invalid", "没有确认过、能导出的页")
+            raise DetError("invalid", tr("没有确认过、能导出的页"))
         team = self.owner.team_id
         seed = groups.split_seed(self.session, team)
         version = groups.split_version(self.session, team)
@@ -447,7 +461,7 @@ class DetPageService:
                         originals[p.document_id], document.content_type == "application/pdf", p.page
                     )
                 except (StorageError, IndexError, ValueError, OSError):
-                    excluded["原文件找不到或打不开"] += 1
+                    excluded[tr("原文件找不到或打不开")] += 1
                     continue
                 number += 1
                 name = f"images/p_{number:04d}.png"
@@ -489,7 +503,7 @@ class DetPageService:
                     }
                 )
             if not items:
-                raise DetError("storage", "这些页的原文件都找不到了")
+                raise DetError("storage", tr("这些页的原文件都找不到了"))
             for part, rows in lists.items():
                 archive.writestr(f"det_gt_{part}.txt", "".join(rows).encode("utf-8"))
             archive.writestr("manifest.jsonl", "".join(manifest).encode("utf-8"))
@@ -524,7 +538,9 @@ class DetPageService:
         )
         stamp = datetime.now().strftime("%Y%m%d-%H%M")
         return (
-            f"检测样本{'测试集' if kind == 'test' else ''}-{stamp}.zip",
+            tr("检测样本测试集-{stamp}.zip", stamp=stamp)
+            if kind == "test"
+            else tr("检测样本-{stamp}.zip", stamp=stamp),
             out.getvalue(),
             export.id,
         )
@@ -537,44 +553,66 @@ def _readme(
     kind: str,
     version: int,
 ) -> str:
-    names = {"train": "训练集", "val": "验证集", "test": "锁定测试集"}
+    names = {"train": tr("训练集"), "val": tr("验证集"), "test": tr("锁定测试集")}
     boxes = sum(len(p.boxes) for p, _, _ in kept)
     ignored = sum(b["ignore"] for p, _, _ in kept for b in p.boxes)
     lines = [
-        "# JacarandaParse 检测样本" + ("（锁定测试集）" if kind == "test" else ""),
+        tr("# JacarandaParse 检测样本（锁定测试集）")
+        if kind == "test"
+        else tr("# JacarandaParse 检测样本"),
         "",
-        f"划分版本 {version}，导出时间 {datetime.now():%Y-%m-%d %H:%M}。{len(kept)} 页、{boxes} 个框（看不清的 {ignored} 个，文字是 ###）。",
-        "",
-        "这是你自己的业务数据（整页单据图），不要放进代码仓库、不要上传到公开的地方。",
-        "",
-        "## 划分",
-        "",
-        *(
-            f"- {names[k]}：{v.groups} 组（独立的业务单据）、{v.rows} 页（`det_gt_{k}.txt`）"
-            for k, v in splits.items()
+        tr(
+            "划分版本 {version}，导出时间 {time:%Y-%m-%d %H:%M}。{n} 页、{boxes} 个框（看不清的 {ignored} 个，文字是 ###）。",
+            version=version,
+            time=datetime.now(),
+            n=len(kept),
+            boxes=boxes,
+            ignored=ignored,
         ),
         "",
-        "按业务单据分组：同一张单据的页全在同一边，和识别样本用同一套分组（ADR 0052）。",
+        tr("这是你自己的业务数据（整页单据图），不要放进代码仓库、不要上传到公开的地方。"),
         "",
-        "## 文件",
+        tr("## 划分"),
         "",
-        "- `images/`：整页图（PDF 按 216 DPI 画、照片按 EXIF 转正），文件名只是编号。",
-        "- `det_gt_*.txt`：每行一页，图片路径、一个 Tab、这页所有框的 JSON："
-        '`[{"transcription": "图上的字", "points": [[x, y], [x, y], [x, y], [x, y]]}]`，'
-        "四个角从左上开始顺时针，`###` 是看不清、不参与训练的框。",
-        "- `manifest.jsonl`：每页的组号、分在哪边、修订号、框数、来源、预标注用的 OCR 版本。",
+        *(
+            tr(
+                "- {name}：{groups} 组（独立的业务单据）、{rows} 页（`det_gt_{split}.txt`）",
+                name=name,
+                groups=v.groups,
+                rows=v.rows,
+                split=k,
+            )
+            for k, v in splits.items()
+            for name in (names[k],)
+        ),
         "",
-        "## 在 PaddleOCR 里训练检测模型",
+        tr("按业务单据分组：同一张单据的页全在同一边，和识别样本用同一套分组。"),
         "",
-        "1. 解压到一个文件夹，例如 `/data/jacara_det`。",
-        "2. 检测训练配置里：`Train.dataset.data_dir`、`Eval.dataset.data_dir` 写这个文件夹，"
-        "`Train.dataset.label_file_list` 写 `det_gt_train.txt`，`Eval.dataset.label_file_list` 写 `det_gt_val.txt`。"
-        "用 PaddleX 训练时，按 PaddleX 文档把它们改名成 `train.txt`、`val.txt`，图片文件夹叫 `images`。",
-        "3. 用和系统现在用的检测模型同一系列的配置和预训练权重微调；训练好后导出推理模型，"
-        "用 `paddlex --paddle2onnx` 转成 ONNX，在“模型和数据集”页导入（种类选“OCR 文字检测”）。",
-        "4. 换上去之前，先在数据集库里用验证集或锁定测试集评测，和现在用的比一比（ADR 0060）。",
+        tr("## 文件"),
+        "",
+        tr("- `images/`：整页图（PDF 按 216 DPI 画、照片按 EXIF 转正），文件名只是编号。"),
+        tr(
+            '- `det_gt_*.txt`：每行一页，图片路径、一个 Tab、这页所有框的 JSON：`[{"transcription": "图上的字", "points": [[x, y], [x, y], [x, y], [x, y]]}]`，四个角从左上开始顺时针，`###` 是看不清、不参与训练的框。'
+        ),
+        tr("- `manifest.jsonl`：每页的组号、分在哪边、修订号、框数、来源、预标注用的 OCR 版本。"),
+        "",
+        tr("## 在 PaddleOCR 里训练检测模型"),
+        "",
+        tr("1. 解压到一个文件夹，例如 `/data/jacara_det`。"),
+        tr(
+            "2. 检测训练配置里：`Train.dataset.data_dir`、`Eval.dataset.data_dir` 写这个文件夹，`Train.dataset.label_file_list` 写 `det_gt_train.txt`，`Eval.dataset.label_file_list` 写 `det_gt_val.txt`。用 PaddleX 训练时，按 PaddleX 文档把它们改名成 `train.txt`、`val.txt`，图片文件夹叫 `images`。"
+        ),
+        tr(
+            "3. 用和系统现在用的检测模型同一系列的配置和预训练权重微调；训练好后导出推理模型，用 `paddlex --paddle2onnx` 转成 ONNX，在“模型和数据集”页导入（种类选“OCR 文字检测”）。"
+        ),
+        tr("4. 换上去之前，先在数据集库里用验证集或锁定测试集评测，和现在用的比一比。"),
         "",
     ]
     if excluded:
-        lines += ["## 没有导出的", "", *(f"- {r}：{n} 页" for r, n in excluded.most_common()), ""]
+        lines += [
+            tr("## 没有导出的"),
+            "",
+            *(tr("- {reason}：{n} 页", reason=r, n=n) for r, n in excluded.most_common()),
+            "",
+        ]
     return "\n".join(lines)

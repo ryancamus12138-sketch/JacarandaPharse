@@ -34,6 +34,7 @@ import {
   setGroupSplit,
 } from '../../api/ocrSamples'
 import { usePageImage } from '../review/usePageImage'
+import { useTranslation } from 'react-i18next'
 
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }
 const SPLIT_ORDER = Object.keys(SPLITS) as Split[]
@@ -42,8 +43,9 @@ function errorText(err: unknown): string {
   return err instanceof ApiError ? err.message : String(err)
 }
 
-/** 一张业务单据：原图（点开放大）、文件名、几个用来配对的值。 */
+/** A business document: page image (click to enlarge), file name and the values used for pairing. */
 function UnitSide({ unit }: { unit: Unit }) {
+  const { t } = useTranslation()
   const image = usePageImage(unit.document_id, unit.page)
   return (
     <Flex vertical gap={8} style={{ flex: 1, minWidth: 0 }}>
@@ -62,8 +64,8 @@ function UnitSide({ unit }: { unit: Unit }) {
         <Link to={`/documents/${unit.document_id}`}>{unit.filename}</Link>
       </Typography.Text>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {unit.page === unit.last_page ? `第 ${unit.page} 页` : `第 ${unit.page}–${unit.last_page} 页`} · {unit.template}
-        {unit.samples > 0 ? ` · ${unit.samples} 条样本` : ' · 还没有样本'}
+        {unit.page === unit.last_page ? t('第 {{page}} 页', { page: unit.page }) : t('第 {{page}}–{{last_page}} 页', { page: unit.page, last_page: unit.last_page })} · {unit.template}
+        {unit.samples > 0 ? t(' · {{samples}} 条样本', { samples: unit.samples }) : t(' · 还没有样本')}
       </Typography.Text>
       <Descriptions
         size="small"
@@ -74,7 +76,7 @@ function UnitSide({ unit }: { unit: Unit }) {
   )
 }
 
-/** 两张单据并排：人看原图确认是不是同一张。 */
+/** Two documents side by side, to confirm against the images whether they are the same. */
 function PairView({
   a,
   b,
@@ -86,6 +88,7 @@ function PairView({
   busy: boolean
   onDecide: (decision: 'same' | 'different') => void
 }) {
+  const { t } = useTranslation()
   return (
     <Flex vertical gap={12}>
       <Flex gap={16}>
@@ -94,18 +97,19 @@ function PairView({
       </Flex>
       <Flex gap={8} justify="flex-end">
         <Button onClick={() => onDecide('different')} disabled={busy}>
-          不是同一张
+          {t('不是同一张')}
         </Button>
         <Button type="primary" icon={<LinkOutlined />} loading={busy} onClick={() => onDecide('same')}>
-          是同一张单据
+          {t('是同一张单据')}
         </Button>
       </Flex>
     </Flex>
   )
 }
 
-/** 找一张业务单据（按文件名）。 */
+/** Find a business document by file name. */
 function UnitPicker({ value, onChange }: { value: Unit | null; onChange: (unit: Unit | null) => void }) {
+  const { t } = useTranslation()
   const [q, setQ] = useState('')
   const found = useQuery({
     queryKey: ['ocr-units', q],
@@ -114,7 +118,7 @@ function UnitPicker({ value, onChange }: { value: Unit | null; onChange: (unit: 
   })
   const options = (found.data ?? []).map((u) => ({
     value: `${u.document_id}:${u.page}`,
-    label: `${u.filename} · 第 ${u.page} 页 · ${u.template}`,
+    label: t('{{filename}} · 第 {{page}} 页 · {{template}}', { filename: u.filename, page: u.page, template: u.template }),
     unit: u,
   }))
   return (
@@ -122,20 +126,21 @@ function UnitPicker({ value, onChange }: { value: Unit | null; onChange: (unit: 
       showSearch
       allowClear
       style={{ width: '100%' }}
-      placeholder="输入文件名找单据"
+      placeholder={t('输入文件名找单据')}
       filterOption={false}
       onSearch={setQ}
       loading={found.isFetching}
       value={value ? `${value.document_id}:${value.page}` : undefined}
       onChange={(key) => onChange(options.find((o) => o.value === key)?.unit ?? null)}
       options={options}
-      notFoundContent={q ? '没有找到' : '输入文件名'}
+      notFoundContent={q ? t('没有找到') : t('输入文件名')}
     />
   )
 }
 
-/** 单据分组（ADR 0052）：可能是同一张的（PDF 和照片）等人确认；每一组分在哪边。 */
+/** Document groups: possible pairs (PDF and photo) awaiting confirmation, and the split of each group. */
 export function GroupsTab({ canChange, canReview }: { canChange: boolean; canReview: boolean }) {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const groups = useQuery({ queryKey: ['ocr-groups'], queryFn: listGroups })
@@ -173,7 +178,7 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
     mutationFn: ({ group, split }: { group: string; split: Split }) => setGroupSplit(group, split),
     onSuccess: () => {
       refresh()
-      void message.success('已改')
+      void message.success(t('已改'))
     },
     onError: (err) => void message.error(errorText(err)),
   })
@@ -181,7 +186,7 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
   const data = groups.data
   const columns: TableProps<SampleGroup>['columns'] = [
     {
-      title: '组号',
+      title: t('组号'),
       dataIndex: 'code',
       width: 150,
       render: (code: string) => (
@@ -191,7 +196,7 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
       ),
     },
     {
-      title: '分在',
+      title: t('分在'),
       key: 'split',
       width: 200,
       render: (_, g) => (
@@ -220,7 +225,7 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
       ),
     },
     {
-      title: '业务单据',
+      title: t('业务单据'),
       key: 'members',
       render: (_, g) => (
         <Flex vertical gap={2}>
@@ -228,16 +233,16 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
             <Flex key={m.id} gap={6} align="center" wrap>
               <Link to={`/documents/${m.document_id}`}>{m.filename}</Link>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                第 {m.first_page} 页起 · {m.source_format === 'pdf' ? 'PDF' : '照片'} · {m.samples} 条
+                {t('第 {{first_page}} 页起 · {{format}} · {{samples}} 条', { first_page: m.first_page, format: m.source_format === 'pdf' ? 'PDF' : t('照片'), samples: m.samples })}
               </Typography.Text>
               {canReview && g.members.length > 1 && (
                 <Popconfirm
-                  title="把这张从组里拆出来？"
-                  description="配错了才拆。这一组导出过的话，拆开后两边都会被隔离。"
+                  title={t('把这张从组里拆出来？')}
+                  description={t('配错了才拆。这一组导出过的话，拆开后两边都会被隔离。')}
                   onConfirm={() => detach.mutate(m.id)}
                 >
                   <Button size="small" type="link" icon={<DisconnectOutlined />}>
-                    拆开
+                    {t('拆开')}
                   </Button>
                 </Popconfirm>
               )}
@@ -246,14 +251,14 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
         </Flex>
       ),
     },
-    { title: '样本', dataIndex: 'samples', width: 70, align: 'right' },
+    { title: t('样本'), dataIndex: 'samples', width: 70, align: 'right' },
     {
-      title: '导出过',
+      title: t('导出过'),
       dataIndex: 'exported_as',
       width: 160,
       render: (parts: string[]) =>
         parts.length === 0 ? (
-          <Typography.Text type="secondary">没有</Typography.Text>
+          <Typography.Text type="secondary">{t('没有')}</Typography.Text>
         ) : (
           <Flex gap={4} wrap>
             {parts.map((p) => (
@@ -270,16 +275,16 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
         type="info"
         showIcon
         icon={<ApartmentOutlined />}
-        title="同一张单据的样本永远在同一边"
-        description="一张业务单据（文件里的一张单据：重新处理的几轮、每一页都算它）是一组。字节一样的文件自动同组；同一张单据的 PDF 和照片要人看原图确认后合并。第一次有样本时按哈希分边（约 80% 训练、20% 验证），之后不变。合并或拆开时如果已经导出过、可能一份训练一份验证，这一组会被隔离、不再导出，受影响的导出记录会记一笔。"
+        title={t('同一张单据的样本永远在同一边')}
+        description={t('一张业务单据（文件里的一张单据：重新处理的几轮、每一页都算它）是一组。字节一样的文件自动同组；同一张单据的 PDF 和照片要人看原图确认后合并。第一次有样本时按哈希分边（约 80% 训练、20% 验证），之后不变。合并或拆开时如果已经导出过、可能一份训练一份验证，这一组会被隔离、不再导出，受影响的导出记录会记一笔。')}
       />
       {(pairs.data?.length ?? 0) > 0 && (
         <Card
           size="small"
-          title={`可能是同一张单据（${pairs.data?.length}）`}
+          title={t('可能是同一张单据（{{length}}）', { length: pairs.data?.length })}
           extra={
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              单据类型、单号、日期、金额、币种、发单方对得上；看原图确认
+              {t('单据类型、单号、日期、金额、币种、发单方对得上；看原图确认')}
             </Typography.Text>
           }
         >
@@ -298,11 +303,11 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
         size="small"
         title={
           <Flex gap={12} align="center" wrap>
-            <span>分组</span>
+            <span>{t('分组')}</span>
             {data && (
               <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 'normal' }}>
-                划分版本 {data.split_version} ·{' '}
-                {SPLIT_ORDER.map((s) => `${SPLITS[s].name} ${data.counts[s] ?? 0} 组`).join(' · ')}
+                {t('划分版本 {{split_version}} ·', { split_version: data.split_version })}{' '}
+                {SPLIT_ORDER.map((s) => t('{{name}} {{value}} 组', { name: SPLITS[s].name, value: data.counts[s] ?? 0 })).join(' · ')}
               </Typography.Text>
             )}
           </Flex>
@@ -310,7 +315,7 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
         extra={
           canReview && (
             <Button size="small" icon={<LinkOutlined />} onClick={() => setManual(true)}>
-              手动配对
+              {t('手动配对')}
             </Button>
           )
         }
@@ -324,11 +329,11 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
           dataSource={data?.items ?? []}
           pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: true }}
           scroll={{ x: 900 }}
-          locale={{ emptyText: <Empty description="还没有样本，也就还没有分组" /> }}
+          locale={{ emptyText: <Empty description={t('还没有样本，也就还没有分组')} /> }}
         />
       </Card>
       <Modal
-        title="手动配对：这两张是同一张单据"
+        title={t('手动配对：这两张是同一张单据')}
         open={manual}
         onCancel={() => setManual(false)}
         width={880}
@@ -353,7 +358,7 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
             />
           ) : (
             <Typography.Text type="secondary">
-              两边各选一张单据（同一张单据的 PDF 和照片、重新扫描的……），并排看原图确认。
+              {t('两边各选一张单据（同一张单据的 PDF 和照片、重新扫描的……），并排看原图确认。')}
             </Typography.Text>
           )}
         </Flex>

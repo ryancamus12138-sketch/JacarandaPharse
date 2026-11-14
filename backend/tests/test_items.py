@@ -1,7 +1,6 @@
-"""商品明细（表格字段）：抽取、找出处、规则、存库读回、导出。
+"""Line items (table fields): extraction, evidence, rules, database round trip, export.
 
-表格的每一格都是一个普通字段，名字是 items.2.amount（第 2 行的金额）。
-"""
+Every table cell is a regular field named like items.2.amount (amount in row 2)."""
 
 import json
 from datetime import datetime
@@ -10,6 +9,7 @@ import pytest
 from openpyxl import load_workbook
 
 from jacara.core.db import session_scope
+from jacara.core.i18n import render
 from jacara.models import Document
 from jacara.pipeline.load import load_reports
 from jacara.pipeline.store import save_document
@@ -53,7 +53,7 @@ def cell(value: object, row: int | None = 5) -> dict[str, object]:
 
 
 def item(name: object, quantity: object, unit_price: object, amount: object, row=5) -> dict:
-    """表格的一行：行号只写一次，格子直接写值（提示词 v4）。"""
+    """A table row: the line number given once, cells as plain values (prompt v4)."""
     return {
         "row": row,
         "name": name,
@@ -75,9 +75,9 @@ def test_schema_has_a_list_for_each_table():
     assert schema["required"] == ["total", "items"]
     items = schema["properties"]["items"]  # type: ignore[index]
     assert items["type"] == "array"
-    assert "maxItems" not in items  # 行数不设上限：表格必须完整
+    assert "maxItems" not in items  # Unbounded rows: tables must be complete.
     assert items["items"]["required"] == ["name", "quantity", "unit_price", "amount"]
-    # 没有表格时和以前一模一样
+    # Without tables, identical to before.
     assert build_schema(TOTAL) == build_schema(TOTAL, ())
 
 
@@ -101,13 +101,14 @@ def test_rows_become_cells_and_empty_rows_are_dropped(receipt_page):
         "items.1.unit_price",
         "items.1.amount",
     ]
-    # 第 2 行全空，跳过；第 3 行变成 items.2
+    # Row 2 is entirely empty and skipped; row 3 becomes items.2.
     assert names[5:] == ["items.2.name", "items.2.quantity", "items.2.unit_price", "items.2.amount"]
     by_name = {f.name: f for f in result.fields}
-    assert by_name["items.1.quantity"].value == 1.0  # 整数也变成 float
-    assert by_name["items.1.amount"].row == 5  # 每一格都用这一行的行号
+    assert by_name["items.1.quantity"].value == 1.0  # Integers become floats too.
+    assert by_name["items.1.amount"].row == 5  # Every cell uses the row's line number.
     assert by_name["items.2.quantity"].value is None
-    assert "商品明细" not in backend.messages[1].content  # 给模型看的是说明，不是中文标签
+    # The model sees the description, not the display label.
+    assert "商品明细" not in backend.messages[1].content
     assert "items（表格" in backend.messages[1].content
     assert "  - amount（数字）" in backend.messages[1].content
 
@@ -147,14 +148,14 @@ def test_items_not_adding_up_flags_only_the_amounts():
     fields = [F("total", "number", 20.0), *rows(("A", 1.0, 10.0, 10.0), ("B", 1.0, 2.5, 2.5))]
     [issue] = RuleValidator().validate(fields).issues
     assert issue.rule == "items_sum" and issue.severity == "warning"
-    assert issue.fields == ("items.1.amount", "items.2.amount")  # 不标总额
-    assert "12.50" in issue.message and "总额是 20.00" in issue.message
+    assert issue.fields == ("items.1.amount", "items.2.amount")  # The total is not flagged.
+    assert "12.50" in render(issue.message) and "总额是 20.00" in render(issue.message)
 
 
 def test_items_compare_with_subtotal_when_there_is_one():
     fields = [
         F("subtotal", "number", 10.0),
-        F("total", "number", 10.6),  # 加了税
+        F("total", "number", 10.6),  # Tax added.
         *rows(("A", 2.0, 5.0, 10.0)),
     ]
     assert RuleValidator().validate(fields).issues == ()
@@ -163,10 +164,10 @@ def test_items_compare_with_subtotal_when_there_is_one():
 def test_wrong_line_is_flagged_row_by_row():
     fields = [
         F("total", "number", 23.0),
-        *rows(("A", 2.0, 5.0, 10.0), ("B", 3.0, 4.0, 13.0)),  # 3 × 4 = 12，不是 13
+        *rows(("A", 2.0, 5.0, 10.0), ("B", 3.0, 4.0, 13.0)),  # 3 × 4 = 12, not 13.
     ]
     [issue] = [i for i in RuleValidator().validate(fields).issues if i.rule == "item_line"]
-    assert issue.message.startswith("第 2 行：")
+    assert render(issue.message).startswith("第 2 行：")
     assert issue.fields == ("items.2.quantity", "items.2.unit_price", "items.2.amount")
 
 
@@ -226,7 +227,8 @@ def test_excel_has_an_items_sheet(receipt_page, tmp_path):
     assert book.sheetnames == ["汇总", "明细", "商品明细", "来源"]
 
     summary = book["汇总"]
-    assert [c.value for c in summary[1]] == ["文件", "total", "需要确认"]  # 格子不进汇总
+    # Cells are not part of the summary.
+    assert [c.value for c in summary[1]] == ["文件", "total", "需要确认"]
 
     items = book["商品明细"]
     assert [c.value for c in items[1]] == [
@@ -254,7 +256,7 @@ def test_table_spec_from_template():
 
 
 def test_discount_line_passes_the_line_rule():
-    """折扣行：3x 2.00，金额是 -6.00。"""
+    """Discount line: 3x 2.00, amount -6.00."""
     fields = [
         F("total", "number", 41.97),
         *rows(("WATERMELON", 3.0, 15.99, 47.97), ("TPD", 3.0, 2.0, -6.0)),
@@ -271,17 +273,19 @@ def test_discount_is_found_however_it_is_written():
 
 
 def test_cell_may_be_one_row_off(receipt_page):
-    """一样商品常占两行，模型只给一个行号：格子的出处差一行不算问题；普通字段要同一行。"""
+    """An item often spans two lines while the model gives one line number: cell evidence one line
+    off is acceptable; regular fields must be on the same line."""
     fields = (F("items.1.name", "string", "Date:", 5), F("merchant", "string", "Date:", 5))
     result = ExtractionResult(fields, "{}", "m", "fake", "v", 1)
     cell, plain = TextMatchAligner().align(receipt_page, result)
     assert cell.evidence is not None and cell.evidence.row == 4
     assert not cell.needs_review
-    assert plain.needs_review and "第 5 行" in plain.note
+    assert plain.needs_review and "第 5 行" in render(plain.note)
 
 
 def test_discount_written_as_positive_is_flagged():
-    """原文 "6.00-" 是折扣，模型给了正的 6.0：出处找得到，但要标黄说明正负号不对。"""
+    """The source "6.00-" is a discount but the model gave a positive 6.0: evidence is found, but
+    flagged for the wrong sign."""
     from tests.conftest import make_line, make_page
 
     page = make_page(

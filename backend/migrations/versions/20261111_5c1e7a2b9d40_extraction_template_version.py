@@ -17,7 +17,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # 已有的抽取结果都是按 v1 的字段清单抽的，记成第 1 版。
+    # Existing extractions were produced with the version 1 field list; record them as version 1.
     op.add_column(
         "extractions",
         sa.Column("template_version", sa.Integer(), server_default="1", nullable=False),

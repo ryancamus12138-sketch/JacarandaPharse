@@ -1,4 +1,4 @@
-"""统计和数据导出的接口数据（ADR 0044）。"""
+"""API schemas for statistics and data export."""
 
 from __future__ import annotations
 
@@ -12,23 +12,24 @@ from pydantic import BaseModel, Field
 class KindCount(BaseModel):
     kind: str
     name: str
-    """中文名：小数点、日月颠倒……"""
+    """Display name: decimal point, day/month swapped, …"""
     count: int
 
 
 class FieldStat(BaseModel):
-    """一个模板的一个字段（表格的列合在一起算，例如"商品明细 · 金额"）。"""
+    """One field of one template (table columns are aggregated, for example "Line items ·
+    Amount")."""
 
     template: str
     template_title: str
     field: str
     label: str
     total: int
-    """审核过的单据里，这个字段一共出现了几次。"""
+    """Occurrences of this field in reviewed documents."""
     edited: int
-    """人改了几次（值和模型给的不一样）。"""
+    """Number of corrections (value differs from the model value)."""
     silent: int
-    """改了，但抽取时没标黄（错了却没提醒）。"""
+    """Corrected but not flagged at extraction (wrong without a warning)."""
     rate: float
     kinds: list[KindCount]
 
@@ -44,7 +45,7 @@ class TemplateStat(BaseModel):
 
 
 class Correction(BaseModel):
-    """最近的一次人工修改。敏感字段不显示值。"""
+    """A recent manual correction. Values of sensitive fields are not shown."""
 
     document_id: uuid.UUID
     filename: str
@@ -55,21 +56,21 @@ class Correction(BaseModel):
     kind: str
     kind_name: str
     flagged: bool
-    """抽取时标黄了没有。"""
+    """Whether it was flagged at extraction."""
     reason: str
     at: datetime
     attribution_id: uuid.UUID | None = None
     stage: str | None = None
-    """错在哪一步（ADR 0053）：人改判过的用人改的。"""
+    """Stage at fault; a person's override takes precedence."""
     stage_name: str = ""
     stage_reason: str = ""
-    """为什么这么判断（一句话）。"""
+    """Reason for the attribution (one sentence)."""
     overridden: bool = False
-    """人改判过。"""
+    """Overridden by a person."""
     auto_stage: str | None = None
-    """自动判断的阶段（改判过的话和 stage 不一样）。"""
+    """Automatically determined stage (differs from stage when overridden)."""
     evidence: list[dict[str, Any]] = []
-    """证据（敏感字段不给）。"""
+    """Evidence (omitted for sensitive fields)."""
 
 
 class StageCount(BaseModel):
@@ -79,7 +80,7 @@ class StageCount(BaseModel):
 
 
 class AttributionIn(BaseModel):
-    """人改判：stage 是 null 表示撤销改判，用回自动判断的。"""
+    """Override: stage null reverts to the automatic attribution."""
 
     stage: str | None
     note: str = Field(default="", max_length=500)
@@ -95,20 +96,21 @@ class AttributionOut(BaseModel):
 
 class CorrectionStats(BaseModel):
     documents: int
-    """审核完成的单据数。"""
+    """Number of reviewed documents."""
     fields: int
     edited: int
     confirmed: int
     silent: int
     rate: float
-    """人工修改率 = edited / fields。"""
+    """Manual correction rate = edited / fields."""
     review_seconds: float | None = None
-    """平均每份审核用了几秒（只算记了用时的单据；审核页开着、人在操作的时间）。"""
+    """Average review seconds per document (only documents with recorded review time; time with the
+    review page open and in use)."""
     timed_documents: int = 0
-    """记了审核用时的有几份。"""
+    """Number of documents with recorded review time."""
     kinds: list[KindCount]
     stages: list[StageCount] = []
-    """改过的字段错在哪一步（ADR 0053）。"""
+    """Stages at fault for corrected fields."""
     templates: list[TemplateStat]
     by_field: list[FieldStat]
     recent: list[Correction]

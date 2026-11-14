@@ -1,11 +1,13 @@
-"""一次人工修改属于哪种错误（ADR 0044）。
+"""Classify a manual correction by error kind.
 
-只看"模型给的值"和"人改成的值"两个字符串，按字段类型分：
-- 补上漏的：模型没给，人填了；删掉多的：模型给了，人清空了。
-- 数字：小数点（数字一样、小数点位置不同，常见于 OCR 漏认小数点）、正负号、其他数字错。
-- 日期：日月颠倒（03/04 读成 4 月 3 日）、年份不对、其他日期错。
-- 文字：只差空格标点大小写、个别字（相似度 ≥ 0.8）、整个改了。
-"""
+Based only on the model value and the corrected value as strings, by field type:
+- Missing value added: the model gave none and the reviewer entered one; spurious value removed:
+  the model gave one and the reviewer cleared it.
+- Numbers: decimal point (same digits, different decimal position; common when OCR misses the
+  point), sign, other.
+- Dates: day and month swapped (03/04 read as 3 April), wrong year, other.
+- Text: whitespace, punctuation or case only; a few characters (similarity ≥ 0.8); rewritten
+  entirely."""
 
 from __future__ import annotations
 
@@ -13,6 +15,8 @@ import re
 from datetime import date
 from difflib import SequenceMatcher
 from typing import Literal
+
+from jacara.core.i18n import N_
 
 Kind = Literal[
     "missing",
@@ -29,17 +33,17 @@ Kind = Literal[
 ]
 
 KIND_NAMES: dict[str, str] = {
-    "missing": "模型漏了",
-    "extra": "原文没有却给了",
-    "decimal": "小数点",
-    "sign": "正负号",
-    "number": "数字认错",
-    "day_month": "日月颠倒",
-    "year": "年份不对",
-    "date": "日期认错",
-    "format": "空格、标点、大小写",
-    "chars": "个别字认错",
-    "rewrite": "整个不一样",
+    "missing": N_("模型漏了"),
+    "extra": N_("原文没有却给了"),
+    "decimal": N_("小数点"),
+    "sign": N_("正负号"),
+    "number": N_("数字认错"),
+    "day_month": N_("日月颠倒"),
+    "year": N_("年份不对"),
+    "date": N_("日期认错"),
+    "format": N_("空格、标点、大小写"),
+    "chars": N_("个别字认错"),
+    "rewrite": N_("整个不一样"),
 }
 
 
@@ -63,7 +67,7 @@ def _squash(text: str) -> str:
 
 
 def error_kind(type_: str, before: str | None, after: str | None) -> Kind:
-    """模型给的 before 被人改成 after，算哪种错误。两者一样时不要调用。"""
+    """Error kind of changing the model value before to after. Do not call when they are equal."""
     if before is None or not before.strip():
         return "missing"
     if after is None or not after.strip():

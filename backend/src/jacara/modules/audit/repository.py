@@ -1,4 +1,4 @@
-"""审计日志的数据库读写。只有 add 和查询，没有修改和删除（项目规则 3）。"""
+"""Audit log persistence. Only add and queries; no update or delete."""
 
 from __future__ import annotations
 
@@ -15,12 +15,12 @@ from jacara.models import AuditLog
 @dataclass(frozen=True)
 class AuditFilter:
     action: str | None = None
-    """按开头筛，例如 "auth:" 只看登录相关。"""
+    """Prefix filter, for example "auth:" for login-related events only."""
     user_id: uuid.UUID | None = None
-    """只看这个人做的。"""
+    """Only events by this actor."""
     since: datetime | None = None
     until: datetime | None = None
-    """时间范围：since ≤ 时间 < until（UTC）。"""
+    """Time range: since ≤ time < until (UTC)."""
 
 
 class AuditRepository:
@@ -33,7 +33,7 @@ class AuditRepository:
     def page(
         self, team_id: uuid.UUID, limit: int, offset: int, found: AuditFilter | None = None
     ) -> tuple[list[AuditLog], int]:
-        """一个团队的审计日志，最新的在前。"""
+        """Audit log of one team, newest first."""
         found = found or AuditFilter()
         where: list[ColumnElement[bool]] = [AuditLog.team_id == team_id]
         if found.action:

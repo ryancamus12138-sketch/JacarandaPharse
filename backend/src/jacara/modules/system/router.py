@@ -1,4 +1,4 @@
-"""系统信息接口：/api/v1/system。登录了就能看。"""
+"""System information API: /api/v1/system. Available to any logged-in user."""
 
 from __future__ import annotations
 
@@ -21,16 +21,18 @@ def system_info(
     session: Annotated[Session, Depends(get_session)],
     owner: Annotated[Owner, Depends(get_owner)],
 ) -> SystemInfo:
-    """版本、模型、OCR、模板、数据量，以及数据库、队列、对象存储、模型服务连不连得上。
+    """Version, models, OCR, templates, data volume, and reachability of the database, queue, object
+    storage and model server.
 
-    要问几个服务，可能要等几秒（连不上的服务最多等 3 秒）。
-    """
+        Queries several services and may take a few seconds (at most 3 seconds per unreachable
+    service)."""
     return SystemService(session, owner, get_settings()).info()
 
 
 @router.get("/vision", summary="模型能不能看图")
 def vision(owner: Annotated[Owner, Depends(get_owner)]) -> VisionInfo:
-    """模型服务有没有加载视觉模型（ADR 0038）。
+    """Whether the model server has a vision projector loaded.
 
-    审核页、重新处理用它决定显示哪些选项。要登录（owner），只问模型服务，很快。"""
+        Used by the review page and reprocessing to decide which options to show. Requires login
+    (owner); only queries the model server and is fast."""
     return vision_info(get_settings())

@@ -17,14 +17,14 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # 一张单据可以占好几页：到第几页结束（ADR 0036）
+    # A document may span several pages: last page of the document.
     op.add_column("extractions", sa.Column("last_page", sa.Integer(), nullable=True))
-    # 一个文件里有几张单据：auto、one、pages 或页码范围
+    # How a file is split into documents: auto, one, pages, or explicit page ranges.
     op.add_column(
         "documents",
         sa.Column("split", sa.String(length=200), server_default="auto", nullable=False),
     )
-    # 批量导入时文件所在的文件夹
+    # Source folder of the file in a batch import.
     op.add_column("documents", sa.Column("folder", sa.String(length=255), nullable=True))
     op.create_index("ix_documents_folder", "documents", ["folder"])
 

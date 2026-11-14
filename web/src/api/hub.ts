@@ -1,7 +1,8 @@
-/** 模型和数据集库：/api/v1/hub（ADR 0059）；OCR 模型评测（ADR 0060）。 */
+/** Model and dataset library (/api/v1/hub) and OCR model evaluation. */
 
 import { api, apiDownload, ApiError, type DownloadedFile } from './client'
 import { getToken } from './token'
+import { t, uiLanguage } from '../i18n'
 
 export type ModelKind = 'model' | 'mmproj' | 'ocr_det' | 'ocr_rec' | 'table'
 export type DatasetKind = 'ocr_rec' | 'ocr_det'
@@ -11,7 +12,7 @@ export interface ModelFile {
   name: string
   size: number
   sha256: string
-  /** weights（权重）或 dict（识别字典）。 */
+  /** weights or dict (recognition dictionary). */
   role: 'weights' | 'dict'
 }
 
@@ -19,7 +20,7 @@ export interface ModelVersion {
   version: number
   kind: ModelKind
   files: ModelFile[]
-  /** 权重文件相对项目根目录的路径。 */
+  /** Path of the weights file relative to the project root. */
   path: string
   base_model: string | null
   datasets: string[]
@@ -27,7 +28,7 @@ export interface ModelVersion {
   imported_at: string | null
   imported_by: string | null
   description: string
-  /** 导入时检查出来的：格式、形状、字符表几个字、类别数…… */
+  /** Results of import validation: format, shapes, dictionary size, class count, … */
   checks: Record<string, unknown>
   in_use: boolean
 }
@@ -42,7 +43,7 @@ export interface HubModel {
 export interface HubModels {
   models: HubModel[]
   kinds: Record<ModelKind, string>
-  /** .env 里写死了的槽位：网页上换不了。 */
+  /** Slots fixed in .env; these cannot be changed in the web UI. */
   env_locked: string[]
   restart_hint: string
 }
@@ -58,7 +59,7 @@ export interface FinishModel {
   kind?: ModelKind
   weights?: string
   dict_file?: string
-  /** 模型库导出的 zip：kind、weights、dict_file 从模型卡里读。 */
+  /** A zip exported from the library: kind, weights and dict_file are read from its model card. */
   archive?: string
   base_model?: string
   datasets?: string[]
@@ -71,7 +72,7 @@ export interface Dataset {
   name: string
   version: number
   kind: DatasetKind
-  /** samples（OCR 样本导出）、det_pages（检测样本）、upload（上传的）。 */
+  /** samples (OCR sample export), det_pages (detection samples), upload (uploaded). */
   source: 'samples' | 'det_pages' | 'upload'
   description: string
   sha256: string
@@ -157,16 +158,16 @@ export const KIND_SUFFIX: Record<ModelKind, string> = {
 }
 
 export const SPLIT_NAMES: Record<DatasetSplit, string> = {
-  train: '训练集',
-  val: '验证集',
-  test: '锁定测试集',
-  all: '不分边',
+  get train() { return t('训练集') },
+  get val() { return t('验证集') },
+  get test() { return t('锁定测试集') },
+  get all() { return t('不分边') },
 }
 
 export const SOURCE_NAMES: Record<Dataset['source'], string> = {
-  samples: 'OCR 样本',
-  det_pages: '检测样本',
-  upload: '上传的',
+  get samples() { return t('OCR 样本') },
+  get det_pages() { return t('检测样本') },
+  get upload() { return t('上传的') },
 }
 
 export function listModels(): Promise<HubModels> {
@@ -178,8 +179,8 @@ export function startModelUpload(): Promise<{ upload_id: string }> {
 }
 
 /**
- * 传一个模型文件。请求体就是文件本身（不经过 multipart），几个 GB 也行。
- * 用 XMLHttpRequest 而不是 fetch：fetch 拿不到上传进度。
+ * Upload one model file. The request body is the file itself (no multipart), so multi-gigabyte files work.
+ * Uses XMLHttpRequest rather than fetch because fetch cannot report upload progress.
  */
 export function uploadModelFile(
   uploadId: string,
@@ -194,6 +195,7 @@ export function uploadModelFile(
       xhr.setRequestHeader('Authorization', `Bearer ${token}`)
     }
     xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    xhr.setRequestHeader('Accept-Language', uiLanguage())
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
         onProgress(Math.round((e.loaded / e.total) * 100))
@@ -204,16 +206,16 @@ export function uploadModelFile(
       try {
         body = JSON.parse(xhr.responseText) as { detail?: unknown }
       } catch {
-        // 不是 JSON：用状态码说
+        // Not JSON: report the status code.
       }
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(body as unknown as UploadedFile)
       } else {
-        const detail = typeof body.detail === 'string' ? body.detail : `上传失败（${xhr.status}）`
+        const detail = typeof body.detail === 'string' ? body.detail : t('上传失败（{{status}}）', { status: xhr.status })
         reject(new ApiError(xhr.status, detail))
       }
     }
-    xhr.onerror = () => reject(new ApiError(0, '连不上后端，上传中断了'))
+    xhr.onerror = () => reject(new ApiError(0, t('连不上后端，上传中断了')))
     xhr.send(file)
   })
 }
@@ -279,5 +281,5 @@ export function createEval(data: { dataset_id: string; split: DatasetSplit; a: M
 }
 
 export function downloadEvalLines(id: string): Promise<DownloadedFile> {
-  return apiDownload(`/hub/evals/${id}/lines`, 'OCR评测.jsonl')
+  return apiDownload(`/hub/evals/${id}/lines`, t('OCR评测.jsonl'))
 }

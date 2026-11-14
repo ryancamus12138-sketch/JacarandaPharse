@@ -1,17 +1,23 @@
-"""Excel 导出器：给财务直接用的表格。
+"""Excel exporter: workbooks ready for accounting.
 
-四个工作表：
-- 汇总：一张单据一行、一个字段一列（不含表格）。还没确认的格子标黄或标红，人工改过的标蓝；
-  鼠标移上去能看到原因、出处，以及"原值 → 人工改为"。
-- 明细：一个字段一行，列出当前值、原值、状态、出处、OCR 置信度、原因和人工审核，方便筛选和审计。
-- 商品明细：一行商品一行，前面是文件名和第几行，格子的颜色和批注同"汇总"。没有表格就不建这张表。
-- 键值对：没用模板（"用样例建模板"第一步）的单据，一个键值对一行。没有这种单据就不建。
-- 来源：每张单据用的 OCR 引擎、模型、提示词版本、处理时间（项目规则：每次抽取都记录来源）。
+Sheets:
+- Summary: one row per document, one column per field (tables excluded). Unconfirmed cells are
+  yellow or red and manually edited cells blue; hovering shows the reason, the evidence and
+  "original → edited".
+- Details: one row per field with current value, original value, status, evidence, OCR
+  confidence, reason and manual review, for filtering and auditing.
+- Line items: one row per item, preceded by file name and row number; cell colors and comments as
+  in Summary. Omitted when there are no tables.
+- Key-value pairs: for documents processed without a template (the first step of creating a
+  template from a sample), one row per pair. Omitted when there are none.
+- Source: OCR engine, model, prompt version and processing time of each document (every
+  extraction records its provenance).
 
-列名用模板里的中文名（report.labels），顺序按模板；模板里设成"不导出"的字段不写（ADR 0030）。
+Column headers use the template display names (report.labels) in template order; fields set not
+to export in the template are omitted.
 
-有人工审核结果时（report.reviews），格子里写审核之后的值；原值在批注和"明细"里都能看到。
-"""
+With manual review results (report.reviews), cells contain post-review values; original values
+are visible in comments and in Details."""
 
 from __future__ import annotations
 
@@ -27,6 +33,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from jacara.core.daterange import parse_date_range
+from jacara.core.i18n import N_, render, tr
 from jacara.plugins.aligners.base import AlignedField
 from jacara.plugins.exporters.base import DocumentReport, RangeSetting, Review
 from jacara.plugins.extractors.base import split_cell_name
@@ -34,39 +41,41 @@ from jacara.plugins.extractors.base import split_cell_name
 RED = PatternFill("solid", fgColor="FFC7CE")
 YELLOW = PatternFill("solid", fgColor="FFEB9C")
 BLUE = PatternFill("solid", fgColor="DDEBF7")
-"""人工改过的值。"""
+"""A manually edited value."""
 BOLD = Font(bold=True)
 
 MONEY_FORMAT = "#,##0.00"
 DATE_FORMAT = "yyyy-mm-dd"
 
 _STATUS_NAMES = {
-    "matched": "有出处",
-    "fuzzy": "相似",
-    "not_found": "找不到出处",
-    "empty": "原文没有",
-    "rejected": "原文里对不上，没有填",
-    "computed": "按公式算",
-    "seen": "看原图读的",
+    "matched": N_("有出处"),
+    "fuzzy": N_("相似"),
+    "not_found": N_("找不到出处"),
+    "empty": N_("原文没有"),
+    "rejected": N_("原文里对不上，没有填"),
+    "computed": N_("按公式算"),
+    "seen": N_("看原图读的"),
 }
 
 _ACTION_NAMES = {
-    "edit": "人工修改",
-    "confirm": "人工确认",
-    "restore": "恢复这一行",
-    "compute": "按公式重算",
+    "edit": N_("人工修改"),
+    "confirm": N_("人工确认"),
+    "restore": N_("恢复这一行"),
+    "compute": N_("按公式重算"),
 }
 
 
 def typed(type_: str, value: str | float | None) -> str | float | date | None:
-    """把值变成 Excel 认识的类型：日期写成真正的日期，数字写成数字，Excel 里才能排序和计算。"""
+    """Convert values to Excel types: dates as real dates and numbers as numbers, so Excel can sort
+    and compute."""
     if value is None:
         return None
     if type_ == "date":
         try:
             return date.fromisoformat(str(value))
         except ValueError:
-            return str(value)  # 不存在的日期原样写出，规则校验已经标出来了
+            # Invalid dates are written as is; rule validation already flags them.
+            return str(value)
     if type_ == "number":
         try:
             return float(value)
@@ -78,8 +87,9 @@ def typed(type_: str, value: str | float | None) -> str | float | date | None:
 def cell_value(
     field: AlignedField, review: Review | None = None, report: DocumentReport | None = None
 ) -> str | float | date | None:
-    """格子里写的值：有人工审核就用审核之后的值，否则用模型抽出的值。
-    日期范围（ADR 0039）按模板的设置写统一格式或原文（拆成两列的在汇总表里另外处理）。"""
+    """Cell value: the post-review value if reviewed, otherwise the extracted value. Date ranges are
+    written in uniform format or as source text per the template setting (two-column ranges are
+    handled separately in the summary sheet)."""
     value = review.value if review is not None else field.field.value
     if field.field.type == "date_range":
         cells = range_cells(field, review, _setting(report, field.field.name))
@@ -104,15 +114,16 @@ def _joined(cells: list[str | date | None], setting: RangeSetting) -> str | None
 def range_cells(
     field: AlignedField, review: Review | None, setting: RangeSetting
 ) -> list[str | date | None]:
-    """日期范围写成几格（ADR 0039）：统一格式、原文各一格；拆成两列是开始、结束两格（真正的日期）。
-    拆不开时统一格式写原文，两列写空的（批注里有原文）。"""
+    """Cells for a date range: one cell each for uniform format and source text; two cells (real
+    dates) for start and end when split into columns. When it cannot be split, the uniform format
+    holds the source text and the two columns stay empty (the comment contains the source text)."""
     raw = review.value if review is not None else field.field.value
     columns = setting.export == "columns"
     if raw is None or str(raw).strip() == "":
         return [None, None] if columns else [None]
     text = " ".join(str(raw).split())
     if setting.export == "original":
-        # 原文：模型抄的写法（ADR 0040）；人改过值就用改过的
+        # Source text: as copied by the model; the edited value if a person changed it.
         edited = review is not None and review.action == "edit"
         return [field.field.text if field.field.text and not edited else text]
     found = parse_date_range(text, setting.day_first).range
@@ -124,7 +135,7 @@ def range_cells(
 
 
 def _range_note(field: AlignedField, report: DocumentReport) -> str:
-    """日期范围的批注：原文和拆开的开始、结束。"""
+    """Comment for a date range: source text plus the split start and end."""
     review = report.reviews.get(field.field.name)
     raw = review.value if review is not None else field.field.value
     if raw is None:
@@ -132,55 +143,64 @@ def _range_note(field: AlignedField, report: DocumentReport) -> str:
     setting = _setting(report, field.field.name)
     parsed = parse_date_range(str(raw), setting.day_first)
     found = parsed.range
-    split = f"开始 {found.start or '？'}，结束 {found.end or '？'}" if found else "拆不开"
-    problem = f"（{parsed.problem}）" if parsed.problem else ""
+    split = (
+        tr("开始 {start}，结束 {end}", start=found.start or "？", end=found.end or "？")
+        if found
+        else tr("拆不开")
+    )
+    problem = tr("（{problem}）", problem=tr(parsed.problem)) if parsed.problem else ""
     quote = field.field.text or " ".join(str(raw).split())
-    return f"原文：{quote}\n{split}{problem}"
+    return tr("原文：{quote}\n{split}{problem}", quote=quote, split=split, problem=problem)
 
 
 def _where(field: AlignedField) -> str:
-    """出处写成一句话：第几行、图上位置。"""
+    """Evidence as one sentence: line number and position on the image."""
     if field.evidence is None:
         return ""
     x0, y0, x1, y1 = (round(v) for v in field.evidence.bbox)
-    return f"第 {field.evidence.row} 行 ({x0},{y0})-({x1},{y1})"
+    return tr(
+        "第 {row} 行 ({x0},{y0})-({x1},{y1})", row=field.evidence.row, x0=x0, y0=y0, x1=x1, y1=y1
+    )
 
 
 def _reasons(field: AlignedField, report: DocumentReport) -> list[str]:
-    """这个字段为什么要人工确认：对齐的说明 + 没通过的规则。"""
-    reasons = [field.note] if field.needs_review else []
-    return reasons + [i.message for i in report.checks.issues if field.field.name in i.fields]
+    """Why this field requires manual confirmation: the alignment explanation plus failed rules."""
+    reasons = [render(field.note) or ""] if field.needs_review else []
+    return reasons + [
+        render(i.message) or "" for i in report.checks.issues if field.field.name in i.fields
+    ]
 
 
 def _local(moment: datetime) -> datetime:
-    """换成电脑所在时区的时间，并去掉时区标记（Excel 不支持带时区的时间）。
+    """Convert to the local time zone of this machine and drop the time zone (Excel does not support
+    time zones).
 
-    数据库里存的是 UTC（世界标准时间），直接写进去，悉尼的用户会看到差 11 个小时的时间。
-    """
+        The database stores UTC; writing it directly would show users in Sydney times 11 hours
+    off."""
     return moment.astimezone().replace(tzinfo=None)
 
 
 def _review_note(field: AlignedField, review: Review) -> str:
-    """批注里的审核记录：原值 → 新值、原因、时间。"""
+    """Review history in a comment: original → new value, reason, time."""
     when = _local(review.reviewed_at).strftime("%Y-%m-%d %H:%M")
     if review.action == "edit":
-        old = "（空）" if field.field.value is None else field.field.value
-        new = "（空）" if review.value is None else review.value
-        text = f"人工修改：原值 {old} → {new}"
+        old = tr("（空）") if field.field.value is None else field.field.value
+        new = tr("（空）") if review.value is None else review.value
+        text = tr("人工修改：原值 {old} → {new}", old=old, new=new)
     elif review.action == "compute":
-        new = "（空）" if review.value is None else review.value
-        text = f"参与计算的值改了，按公式重算 → {new}"
+        new = tr("（空）") if review.value is None else review.value
+        text = tr("参与计算的值改了，按公式重算 → {new}", new=new)
     elif review.action == "restore":
-        text = "恢复了删掉的行"
+        text = tr("恢复了删掉的行")
     else:
-        text = "人工确认：值无误"
+        text = tr("人工确认：值无误")
     if review.reason:
-        text += f"\n原因：{review.reason}"
+        text += tr("\n原因：{reason}", reason=render(review.reason))
     return f"{text}\n{when}"
 
 
 def _setup(sheet: Worksheet, headers: list[str], widths: list[int]) -> None:
-    """写表头，加粗、冻结首行、加筛选按钮、设置列宽。"""
+    """Write the header row: bold, frozen first row, filter buttons, column widths."""
     sheet.append(headers)
     for cell in sheet[1]:
         cell.font = BOLD
@@ -190,7 +210,8 @@ def _setup(sheet: Worksheet, headers: list[str], widths: list[int]) -> None:
 
 
 def _mark(cell: Cell | MergedCell, field: AlignedField, report: DocumentReport) -> None:
-    """一个格子的格式、颜色和批注：没确认的标黄（找不到出处标红），人工改过的标蓝。"""
+    """Format, color and comment of one cell: unconfirmed yellow (red without evidence), manually
+    edited blue."""
     if field.field.type == "number":
         cell.number_format = MONEY_FORMAT
     elif field.field.type == "date" or isinstance(cell.value, date):
@@ -200,7 +221,8 @@ def _mark(cell: Cell | MergedCell, field: AlignedField, report: DocumentReport) 
     reasons = _reasons(field, report)
     notes: list[str] = []
     if review is not None:
-        # 有人看过了：不再标黄标红；改过的标蓝，批注里写原值和原因
+        # Reviewed: no yellow or red; edited cells are blue with the original value and reason in a
+        # comment.
         if review.action == "edit":
             cell.fill = BLUE
         notes.append(_review_note(field, review))
@@ -227,7 +249,8 @@ DISCOVER = "discover"
 
 
 def _visible(report: DocumentReport, name: str) -> bool:
-    """这个字段要不要导出：模板里设成不导出的字段、表、表的列都不写。"""
+    """Whether this field is exported: fields, tables and table columns set not to export in the
+    template are omitted."""
     if name in report.hidden:
         return False
     cell = split_cell_name(name)
@@ -241,23 +264,30 @@ def _fields(report: DocumentReport) -> list[AlignedField]:
 
 
 def _label(reports: Sequence[DocumentReport], key: str, default: str | None = None) -> str:
-    """列名：第一份有中文名的单据里的名字；都没有就用字段 ID。"""
+    """Column header: the display name from the first document that has one; otherwise the field
+    ID."""
     return next((r.labels[key] for r in reports if key in r.labels), default or key)
 
 
 def _field_label(report: DocumentReport, name: str) -> str:
-    """明细表里的"字段"：中文名，表格的格子写成"商品明细 第 2 行 金额"。"""
+    """ "Field" in the details sheet: the display name; table cells are written as "Line items row 2
+    Amount"."""
     cell = split_cell_name(name)
     if cell is None:
         return report.labels.get(name, name)
     table = report.labels.get(cell[0], cell[0])
     column = report.labels.get(f"{cell[0]}.{cell[2]}", cell[2])
-    return f"{table} 第 {cell[1]} 行 {column}" if cell[0] in report.labels else name
+    return (
+        tr("{table} 第 {row} 行 {column}", table=table, row=cell[1], column=column)
+        if cell[0] in report.labels
+        else name
+    )
 
 
 def _sheet_title(title: str, used: set[str]) -> str:
-    """工作表名最多 31 个字，不能重名，不能有方括号、冒号、星号、问号、斜杠这些字符。"""
-    title = "".join(c for c in title if c not in "[]:*?/\\")[:28] or "表格"
+    """Sheet names are at most 31 characters, unique, and must not contain brackets, colons,
+    asterisks, question marks or slashes."""
+    title = "".join(c for c in title if c not in "[]:*?/\\")[:28] or tr("表格")
     candidate, n = title, 1
     while candidate in used:
         n += 1
@@ -267,7 +297,7 @@ def _sheet_title(title: str, used: set[str]) -> str:
 
 
 Rows = dict[int, dict[str, AlignedField]]
-"""表格的行号 → 列名 → 格子。"""
+"""Table row number → column name → cell."""
 
 
 def _table_rows(report: DocumentReport, table: str) -> Rows:
@@ -285,24 +315,24 @@ class ExcelExporter:
 
     def export(self, reports: Sequence[DocumentReport], path: Path) -> None:
         book = Workbook()
-        book.remove(book.worksheets[0])  # 去掉新建时自带的空白表
+        book.remove(book.worksheets[0])  # Remove the empty default sheet.
         templated = [r for r in reports if r.template != DISCOVER]
         discovered = [r for r in reports if r.template == DISCOVER]
-        self._summary(book.create_sheet("汇总"), templated)
-        self._details(book.create_sheet("明细"), reports)
+        self._summary(book.create_sheet(tr("汇总")), templated)
+        self._details(book.create_sheet(tr("明细")), reports)
         tables = list(
             dict.fromkeys(
                 c[0] for r in templated for a in _fields(r) if (c := split_cell_name(a.field.name))
             )
         )
-        used = {"汇总", "明细", "键值对", "来源"}
+        used = {tr("汇总"), tr("明细"), tr("键值对"), tr("来源")}
         for table in tables:
-            default = "商品明细" if table == "items" else f"表格 {table}"
+            default = tr("商品明细") if table == "items" else tr("表格 {table}", table=table)
             title = next((r.labels[table] for r in templated if table in r.labels), default)
             self._table(book.create_sheet(_sheet_title(title, used)), templated, table)
         if discovered:
-            self._pairs(book.create_sheet("键值对"), discovered)
-        self._sources(book.create_sheet("来源"), reports)
+            self._pairs(book.create_sheet(tr("键值对")), discovered)
+        self._sources(book.create_sheet(tr("来源")), reports)
         path.parent.mkdir(parents=True, exist_ok=True)
         book.save(path)
 
@@ -312,10 +342,10 @@ class ExcelExporter:
                 a.field.name
                 for r in reports
                 for a in _fields(r)
-                if split_cell_name(a.field.name) is None  # 表格的格子放在单独的表里
+                if split_cell_name(a.field.name) is None  # Table cells go to a separate sheet.
             )
         )
-        # 日期范围设成"拆成两列"的（ADR 0039）：开始、结束各一列
+        # Date ranges set to "two columns": one column each for start and end.
         split = {
             n
             for n in names
@@ -323,10 +353,14 @@ class ExcelExporter:
         }
         slots = [(n, part) for n in names for part in ((0, 1) if n in split else (None,))]
         headers = [
-            _label(reports, n) if part is None else f"{_label(reports, n)} {('开始', '结束')[part]}"
+            _label(reports, n)
+            if part is None
+            else tr("{label} 开始", label=_label(reports, n))
+            if part == 0
+            else tr("{label} 结束", label=_label(reports, n))
             for n, part in slots
         ]
-        _setup(sheet, ["文件", *headers, "需要确认"], [18] + [16] * len(slots) + [10])
+        _setup(sheet, [tr("文件"), *headers, tr("需要确认")], [18] + [16] * len(slots) + [10])
 
         for report in reports:
             by_name = {a.field.name: a for a in report.aligned}
@@ -351,14 +385,16 @@ class ExcelExporter:
         sheet.auto_filter.ref = sheet.dimensions
 
     def _table(self, sheet: Worksheet, reports: Sequence[DocumentReport], table: str) -> None:
-        """表格：一行商品一行。不同单据的列可能不一样（模板不同），按出现的顺序合在一起。"""
+        """Tables: one row per item. Columns may differ between documents (different templates);
+        they are merged in order of appearance."""
         per_report = [(r, _table_rows(r, table)) for r in reports]
         columns = list(
             dict.fromkeys(c for _, rows in per_report for cells in rows.values() for c in cells)
         )
         headers = [_label(reports, f"{table}.{c}", c) for c in columns]
-        _setup(sheet, ["文件", "第几行", *headers], [18, 8] + [16] * len(columns))
-        sheet.column_dimensions["C"].width = 36  # 第一列一般是商品名，长一些
+        _setup(sheet, [tr("文件"), tr("第几行"), *headers], [18, 8] + [16] * len(columns))
+        # The first column is usually the item name, so it is wider.
+        sheet.column_dimensions["C"].width = 36
         for report, rows in per_report:
             for index in sorted(rows):
                 cells = rows[index]
@@ -379,22 +415,23 @@ class ExcelExporter:
                         cell = sheet.cell(row=sheet.max_row, column=column)
                         _mark(cell, field, report)
                         if name == "quantity":
-                            cell.number_format = "0.###"  # 数量不是钱，不显示两位小数
+                            # Quantities are not money; no two-decimal format.
+                            cell.number_format = "0.###"
         sheet.auto_filter.ref = sheet.dimensions
 
     def _details(self, sheet: Worksheet, reports: Sequence[DocumentReport]) -> None:
         headers = [
-            "文件",
-            "字段",
-            "值",
-            "原值",
-            "状态",
-            "出处",
-            "OCR 置信度",
-            "需要确认",
-            "原因",
-            "人工审核",
-            "审核原因",
+            tr("文件"),
+            tr("字段"),
+            tr("值"),
+            tr("原值"),
+            tr("状态"),
+            tr("出处"),
+            tr("OCR 置信度"),
+            tr("需要确认"),
+            tr("原因"),
+            tr("人工审核"),
+            tr("审核原因"),
         ]
         _setup(sheet, headers, [18, 16, 40, 40, 12, 26, 11, 9, 60, 10, 40])
         for report in reports:
@@ -409,13 +446,13 @@ class ExcelExporter:
                         _field_label(report, field.field.name),
                         cell_value(field, review, report),
                         cell_value(field, None, report),
-                        _STATUS_NAMES[field.status],
+                        tr(_STATUS_NAMES[field.status]),
                         _where(field),
                         confidence,
-                        "是" if pending else "",
-                        "；".join(reasons),
-                        _ACTION_NAMES.get(review.action, review.action) if review else "",
-                        review.reason if review else "",
+                        tr("是") if pending else "",
+                        tr("；").join(reasons),
+                        tr(_ACTION_NAMES.get(review.action, review.action)) if review else "",
+                        render(review.reason) if review else "",
                     ]
                 )
                 if field.field.type == "date":
@@ -433,8 +470,9 @@ class ExcelExporter:
         sheet.auto_filter.ref = sheet.dimensions
 
     def _pairs(self, sheet: Worksheet, reports: Sequence[DocumentReport]) -> None:
-        """没用模板的单据：一个键值对一行（文件、单据上的名称、值）。"""
-        _setup(sheet, ["文件", "名称", "值"], [18, 28, 40])
+        """Documents without a template: one row per key-value pair (file, label on the document,
+        value)."""
+        _setup(sheet, [tr("文件"), tr("名称"), tr("值")], [18, 28, 40])
         for report in reports:
             for field in _fields(report):
                 review = report.reviews.get(field.field.name)
@@ -449,7 +487,15 @@ class ExcelExporter:
         sheet.auto_filter.ref = sheet.dimensions
 
     def _sources(self, sheet: Worksheet, reports: Sequence[DocumentReport]) -> None:
-        headers = ["文件", "处理时间", "OCR", "模型", "模型后端", "提示词版本", "抽取用时（毫秒）"]
+        headers = [
+            tr("文件"),
+            tr("处理时间"),
+            "OCR",
+            tr("模型"),
+            tr("模型后端"),
+            tr("提示词版本"),
+            tr("抽取用时（毫秒）"),
+        ]
         _setup(sheet, headers, [18, 20, 20, 24, 14, 12, 16])
         for report in reports:
             e = report.extraction

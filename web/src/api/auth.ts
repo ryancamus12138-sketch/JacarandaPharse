@@ -1,4 +1,4 @@
-/** 登录相关的接口：/api/v1/auth。 */
+/** Authentication API: /api/v1/auth. */
 
 import { api, apiBlob } from './client'
 import type { LoginOut, Me, Profile } from './types'
@@ -15,7 +15,10 @@ export function getMe(): Promise<Me> {
   return api<Me>('/auth/me')
 }
 
-/** 自己改密码：要先输原密码。别的设备上的登录会退出，当前这个不退出。 */
+/**
+ * Change one's own password; the current password is required. Other devices are logged out; the current
+ * session stays.
+ */
 export function changePassword(oldPassword: string, newPassword: string): Promise<void> {
   return api<void>('/auth/password', {
     method: 'POST',
@@ -23,7 +26,7 @@ export function changePassword(oldPassword: string, newPassword: string): Promis
   })
 }
 
-/** 忘记密码：用户名 + 管理员给的重设码 + 新密码。不用登录。 */
+/** Forgotten password: user name + reset code from an administrator + new password. No login required. */
 export function resetWithCode(username: string, code: string, password: string): Promise<void> {
   return api<void>('/auth/reset-password', {
     method: 'POST',
@@ -31,22 +34,22 @@ export function resetWithCode(username: string, code: string, password: string):
   })
 }
 
-/** 自己的个人资料。 */
+/** Own profile. */
 export function getProfile(): Promise<Profile> {
   return api<Profile>('/auth/profile')
 }
 
-/** 改昵称。空字符串 = 不用昵称（显示用户名）。 */
+/** Change the display name. An empty string removes it (the user name is shown). */
 export function updateProfile(displayName: string): Promise<Profile> {
   return api<Profile>('/auth/profile', { method: 'PATCH', json: { display_name: displayName } })
 }
 
-/** 自己的头像（256 × 256 PNG）。 */
+/** Own avatar (256 × 256 PNG). */
 export function getAvatar(): Promise<Blob> {
   return apiBlob('/auth/profile/avatar')
 }
 
-/** 换头像：PNG、JPG、WEBP，5 MB 以内。后端会裁成正方形。 */
+/** Change the avatar: PNG, JPG or WEBP, up to 5 MB. The backend crops it to a square. */
 export function uploadAvatar(file: File): Promise<Profile> {
   const form = new FormData()
   form.append('file', file)

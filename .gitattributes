@@ -1,4 +1,4 @@
-# 发布包（git archive，scripts/build_release.sh）里不放开发用的文件（ADR 0064）
+# Development-only files excluded from git archive
 .github export-ignore
 .pre-commit-config.yaml export-ignore
 CLAUDE.md export-ignore

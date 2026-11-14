@@ -1,8 +1,9 @@
-"""审核之后的"当前"结果：跳过删掉的行，表格按显示顺序重新编号，规则按当前值重新检查。
+"""Current post-review results: deleted rows skipped, tables renumbered in display order, rules
+re-evaluated on the current values.
 
-抽取时的规则结果（extractions.checks）存下来不改；审核时改了值、增删了行，
-"商品金额合计"这些规则要按现在的值再算一次，审核页面和导出看的都是这个。
-"""
+Rule results at extraction time (extractions.checks) are stored and never changed; when values
+are edited or rows added or removed during review, rules such as "line amounts add up" are
+re-evaluated on the current values. Both the review page and exports use these results."""
 
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ from contextlib import suppress
 from dataclasses import replace
 from typing import Any, Literal, cast
 
+from jacara.core.i18n import tr
 from jacara.core.textvalue import signed_number
 from jacara.models import ExtractedValue, Extraction, TemplateVersion
 from jacara.plugins.extractors.base import (
@@ -25,7 +27,8 @@ from jacara.templates import Template, TemplateError, from_definition, load_temp
 
 
 def template_from_version(version: TemplateVersion) -> Template:
-    """我的模板的一个版本 → Template。名字用模板的 id（存进 extractions.template）。"""
+    """A version of my template → Template. The name is the template id (stored in
+    extractions.template)."""
     record = version.template
     template = from_definition(
         version.definition,
@@ -35,7 +38,8 @@ def template_from_version(version: TemplateVersion) -> Template:
         record.category,
         record.description,
     )
-    # 标签记在模板上、不进版本（ADR 0037）；自动判断要用现在的领域和国家（ADR 0038）
+    # Tags live on the template, not in versions; automatic selection must use the current domains
+    # and country.
     return replace(
         template,
         domains=tuple(record.domains or template.domains),
@@ -44,12 +48,12 @@ def template_from_version(version: TemplateVersion) -> Template:
 
 
 def template_of(extraction: Extraction) -> Template | None:
-    """这一页抽取时用的模板（ADR 0030）。
+    """Template used for extracting this page.
 
-    - 我的模板：按记下的版本号还原，模板以后再改也不影响这份文档；
-    - 内置模板：按名字读 templates/*.toml；
-    - 键值对发现，或者模板文件找不到了（改名、删了）：None。
-    """
+    - My templates: restored from the recorded version, so later template changes do not
+      affect this document;
+    - Built-in templates: read from templates/*.toml by name;
+    - Key-value discovery, or the template file no longer exists (renamed or deleted): None."""
     if extraction.template_def is not None:
         return template_from_version(extraction.template_def)
     if extraction.template == DISCOVER:
@@ -61,11 +65,12 @@ def template_of(extraction: Extraction) -> Template | None:
 
 
 def labels_of(extraction: Extraction, language: str | None = None) -> dict[str, str]:
-    """字段 ID → 显示名（审核页面、导出用）。表格的格子按"表名.列名"找。
+    """Field ID → display name (for the review page and exports). Table cells are looked up as
+    "table.column".
 
-    默认中文；指定语言（ADR 0048）就用模板里那种语言的名字，没写的还是中文。
-    键值对发现的字段用单据上的原名。模板里没有的字段（模板文件找不到了）不在里面。
-    """
+        Uses the default language; with language set, the template's names in that language,
+    falling back to the default. Key-value discovery fields use the label on the document. Fields
+    absent from the template (template file missing) are omitted."""
     template = template_of(extraction)
     labels = template.labels(language) if template else {}
     labels.update({v.name: v.label for v in extraction.values if v.label})
@@ -73,7 +78,8 @@ def labels_of(extraction: Extraction, language: str | None = None) -> dict[str, 
 
 
 def label_for(labels: dict[str, str], name: str) -> str | None:
-    """一个字段的中文名：items.2.amount 找"items.amount"，再加上第几行。"""
+    """Display name of one field: items.2.amount looks up "items.amount" and appends the row
+    number."""
     if name in labels:
         return labels[name]
     cell = split_cell_name(name)
@@ -83,11 +89,12 @@ def label_for(labels: dict[str, str], name: str) -> str | None:
 
 
 def current_values(extraction: Extraction) -> list[tuple[ExtractedValue, str]]:
-    """当前的字段和它的显示名：按显示顺序，跳过删掉的行；表格的格子按显示顺序重新编号。
+    """Current fields with their display names: in display order, deleted rows skipped, table cells
+    renumbered in display order.
 
-    例如删掉第 2 行后，原来的 items.3.amount 显示名变成 items.2.amount；
-    插在第 1 行后面的新行（名字可能是 items.9.*）显示名是 items.2.*。
-    """
+        For example, after deleting row 2, the former items.3.amount is displayed as
+    items.2.amount; a new row inserted after row 1 (possibly named items.9.*) is displayed as
+    items.2.*."""
     numbering: dict[str, dict[int, int]] = {}
     result: list[tuple[ExtractedValue, str]] = []
     for value in sorted(extraction.values, key=lambda v: (v.sort_key, v.position)):
@@ -105,7 +112,7 @@ def current_values(extraction: Extraction) -> list[tuple[ExtractedValue, str]]:
 
 
 def typed_value(type_: str, raw: str | None) -> str | float | None:
-    """数据库里的值都是文字；数字还原成数字，规则才能计算。"""
+    """Values in the database are text; numbers are restored so rules can compute with them."""
     if type_ == "number" and raw is not None:
         with suppress(ValueError):
             return float(raw)
@@ -113,10 +120,11 @@ def typed_value(type_: str, raw: str | None) -> str | float | None:
 
 
 def current_checks(extraction: Extraction) -> ValidationResult:
-    """按当前值重新检查规则。字段名用显示名（第几行和页面上一致）。
+    """Re-evaluate rules on the current values. Fields use display names (row numbers match the
+    page).
 
-    键值对发现没有规则；模板文件找不到了（改名、删了），就用抽取时存下的结果。
-    """
+        Key-value discovery has no rules; if the template file no longer exists (renamed or
+    deleted), the results stored at extraction are used."""
     template = template_of(extraction)
     if template is None:
         from jacara.pipeline.load import stored_checks
@@ -138,20 +146,22 @@ def current_checks(extraction: Extraction) -> ValidationResult:
 
 
 DUPLICATE = "duplicate"
-"""重复检查的编号（ADR 0036）：模板里标了"不能重复"的字段，别的单据里有一样的值。"""
+"""Id of the duplicate check: a field marked "must be unique" in the template has the same value on
+another document."""
 
 
 def _same(text: str | None) -> str:
-    """比较用：去掉空格、不分大小写（"INV 001" 和 "inv001" 算一样）。"""
+    """Comparison key: whitespace removed, case-insensitive ("INV 001" equals "inv001")."""
     return "".join((text or "").split()).upper()
 
 
 def duplicate_issues(extraction: Extraction, template: Template) -> list[Issue]:
-    """可能重复报销（ADR 0036）：标了"不能重复"的字段（发票号码、账单号），
-    同一个团队里别的单据（别的文档，或者同一个文件里的别的单据）现在的值一样，就提醒。
+    """Possible duplicate claims: warn when a field marked "must be unique" (invoice number, bill
+    number) has the same current value on another document in the same team (another file, or
+    another document in the same file).
 
-    两边都有总额、而且总额不一样的不算（不同商家可能用到同样的编号）。删掉的行、旧的几轮不算。
-    """
+        Pairs where both documents have totals that differ are excluded (different merchants may
+    reuse numbers). Deleted rows and earlier runs are ignored."""
     from sqlalchemy import or_, select
     from sqlalchemy.orm import object_session
 
@@ -197,12 +207,19 @@ def duplicate_issues(extraction: Extraction, template: Template) -> list[Issue]:
             hits.append(_where(other.extraction, extraction))
         if hits:
             label = field.label
-            shown = "；".join(hits[:3]) + (f" 等 {len(hits)} 处" if len(hits) > 3 else "")
+            shown = tr("；").join(hits[:3])
+            if len(hits) > 3:
+                shown = tr("{places} 等 {n} 处", places=shown, n=len(hits))
             issues.append(
                 Issue(
                     DUPLICATE,
-                    "可能重复报销",
-                    f"{label}「{wanted}」和{shown}一样，请确认是不是同一张单据传了两次",
+                    tr("可能重复报销"),
+                    tr(
+                        "{label}「{value}」和{places}一样，请确认是不是同一张单据传了两次",
+                        label=label,
+                        value=wanted,
+                        places=shown,
+                    ),
                     (field.name,),
                     "warning",
                 )
@@ -218,24 +235,33 @@ def _differs(a: str, b: str) -> bool:
 
 
 def _where(other: Extraction, mine: Extraction) -> str:
-    """别的单据在哪里：同一个文件写"这个文件的第 n 页"，别的文件写文件名和上传日期。"""
+    """Location of the other document: "page n of this file" within the same file, otherwise file
+    name and upload date."""
     pages = page_range(other)
     if other.document_id == mine.document_id:
-        return f"这个文件的{pages}"
+        return tr("这个文件的{pages}", pages=pages)
     day = other.document.created_at.strftime("%Y-%m-%d")
-    return f"《{other.document.filename}》{pages}（{day} 上传）"
+    return tr(
+        "《{filename}》{pages}（{day} 上传）",
+        filename=other.document.filename,
+        pages=pages,
+        day=day,
+    )
 
 
 def page_range(extraction: Extraction) -> str:
-    """单据占哪几页："第 3 页""第 3–4 页"。"""
+    """Pages occupied by a document: "page 3", "pages 3–4"."""
     last = getattr(extraction, "last_page", None) or extraction.page
     return (
-        f"第 {extraction.page} 页" if last == extraction.page else f"第 {extraction.page}–{last} 页"
+        tr("第 {page} 页", page=extraction.page)
+        if last == extraction.page
+        else tr("第 {first}–{last} 页", first=extraction.page, last=last)
     )
 
 
 def current_checks_json(extraction: Extraction) -> dict[str, object]:
-    """给接口用：issues 里的字段名换回真实的字段名（前端按真实名字找到格子）。"""
+    """For the API: field names in issues are mapped back to real field names (the frontend locates
+    cells by real name)."""
     real = {name: v.name for v, name in current_values(extraction)}
     checks = current_checks(extraction)
     return {
@@ -258,20 +284,23 @@ def _issue_json(issue: Issue, real: dict[str, str]) -> dict[str, object]:
 CheckState = Literal["ok", "warn", "fail"]
 Level = Literal["red", "yellow", "grey", "green"]
 LEVEL_ORDER: dict[str, int] = {"red": 0, "yellow": 1, "grey": 2, "green": 3}
-"""审核页面"按状态排序"的顺序：先红、再黄、再灰、最后绿。"""
+"""Order of "sort by status" on the review page: red, yellow, grey, then green."""
 
 
 def level_of(value: ExtractedValue, check: CheckState) -> Level:
-    """字段的颜色（ADR 0028）：证据 × 校验，再看人审核过没有。
+    """Field color: evidence × validation, then whether a person has reviewed it.
 
-    - 红：当前值违反了"错误"级的规则；或者原文里找不到、还没人看过
-    - 黄：违反了"警告"级的规则；或者出处有疑点、还没人看过
-    - 灰：模型说原文没有、还没人看过（或者这一行删掉了）
-    - 绿：其他（原文里找到且一致，或者人确认、修改过）
+        - Red: the current value violates an error-level rule, or it was not found in the source
+          and nobody has reviewed it
+        - Yellow: violates a warning-level rule, or the evidence is doubtful and nobody has
+          reviewed it
+        - Grey: the model reported it absent and nobody has reviewed it (or the row was deleted)
+        - Green: everything else (found and consistent in the source, or confirmed or edited by a
+          person)
 
-    规则是按当前值重新算的，人确认过也照样标红：值对上了原文、规则却不通过，
-    说明单据本身对不上，要人知道。
-    """
+        Rules are re-evaluated on the current values, so a confirmed value can still be red: when
+    the value matches the source but a rule fails, the document itself is inconsistent and a
+    person should know."""
     if value.deleted:
         return "grey"
     if check == "fail":
@@ -289,7 +318,8 @@ def level_of(value: ExtractedValue, check: CheckState) -> Level:
 def field_states(
     extraction: Extraction, checks: dict[str, object]
 ) -> dict[uuid.UUID, tuple[CheckState, Level]]:
-    """每个字段的校验状态和颜色。checks 是 current_checks_json 的结果（真实字段名）。"""
+    """Validation status and color of each field. checks is the output of current_checks_json (real
+    field names)."""
     worst: dict[str, CheckState] = {}
     for issue in cast(list[dict[str, Any]], checks["issues"]):
         state: CheckState = "fail" if issue["severity"] == "error" else "warn"
@@ -304,8 +334,9 @@ def field_states(
 
 
 def evidence_text(value: ExtractedValue, ocr_lines: list[dict[str, Any]] | None) -> str | None:
-    """抽取时出处那几块文字。新处理的文档存在 evidence.text 里；更新前处理的没有存，
-    就用这一页的 OCR 结果，取中心点落在出处框里的文字块（不改数据库里的出处）。"""
+    """Text of the evidence blocks at extraction. Newer documents store it in evidence.text; for
+    older ones, the text blocks of this page's OCR result whose center lies inside the evidence
+    box are used (the stored evidence is not changed)."""
     evidence = value.evidence or {}
     if "text" in evidence:
         return cast(str | None, evidence["text"])
@@ -323,7 +354,8 @@ def evidence_text(value: ExtractedValue, ocr_lines: list[dict[str, Any]] | None)
 
 
 def wants_source(value: ExtractedValue) -> bool:
-    """这个字段可能有"原文值"：相似匹配的文字字段，或者找到了出处的数字。"""
+    """Whether this field can have a source value: fuzzy-matched text fields, or numbers with
+    evidence."""
     if value.deleted or value.value is None or value.evidence is None:
         return False
     return (value.type == "string" and value.status == "fuzzy") or (
@@ -332,13 +364,15 @@ def wants_source(value: ExtractedValue) -> bool:
 
 
 def source_value(value: ExtractedValue, text: str | None) -> str | None:
-    """原文值：按出处文字的写法得到的值，和当前值不一样时才有。审核时"采用原文值"用。
+    """Source value: the value as written in the evidence text, present only when it differs from
+    the current value. Used by "use source value" during review.
 
-    - 文字字段：只是相似匹配（fuzzy）时，原文那几块的文字。
-    - 数字：原文里同一个数字带着负号（折扣 6.00-），值却是正的；或者反过来。
-      不会拿同一行别的数字顶替（"2 @ 3.00 6.00" 里单价 3.0 不会变成 6.0）。
-    - 日期不给：25/03/18 是日/月/年还是月/日/年，单看原文判断不了。
-    """
+        - Text fields: the text of the source blocks, only for fuzzy matches.
+        - Numbers: the same number in the source carries a minus sign (discount 6.00-) while the
+          value is positive, or vice versa. Another number on the line is never substituted (in
+          "2 @ 3.00 6.00", the unit price 3.0 does not become 6.0).
+        - Dates are not offered: whether 25/03/18 is day/month/year or month/day/year cannot be
+          decided from the source alone."""
     if not text or not wants_source(value):
         return None
     candidate: str | None = None
@@ -354,11 +388,12 @@ def source_value(value: ExtractedValue, text: str | None) -> str | None:
 
 
 Suggestion = tuple[Literal["confirm", "edit"], str | None, int]
-"""（confirm 或 edit，建议的值，来自第几轮）。"""
+"""(confirm or edit, suggested value, source run)."""
 
 
 def previous_extraction(document: Any, extraction: Extraction) -> Extraction | None:
-    """同一页在上一轮（比现在这轮早、最近的一轮）的抽取结果。"""
+    """Extraction of the same page in the previous run (the most recent run before the current
+    one)."""
     earlier = [
         e for e in document.all_extractions if e.page == extraction.page and e.run < extraction.run
     ]
@@ -366,13 +401,14 @@ def previous_extraction(document: Any, extraction: Extraction) -> Extraction | N
 
 
 def suggestions(current: Extraction, previous: Extraction | None) -> dict[uuid.UUID, Suggestion]:
-    """重新处理之后，上一轮人审核过的字段能不能直接沿用（ADR 0030）。
+    """After reprocessing, whether fields reviewed in the previous run can be carried over.
 
-    同一个字段（字段 ID 一样）、出处在图上差不多同一个位置，而且：
-    - 这次抽出的值 = 上次审核后的值 → 建议"确认"；
-    - 这次抽出的值 = 上次模型抽错、被人改掉的那个值 → 建议"改成上次人改的值"。
-    其他情况（值不一样、位置不一样）不建议，要人重新看。
-    """
+        Same field (same field ID) with evidence at about the same position on the image, and:
+        - the new extracted value equals the previous post-review value → suggest "confirm";
+        - the new extracted value equals the value the model got wrong last time and a person
+          corrected → suggest "apply the previous correction".
+        Otherwise (different value or position) nothing is suggested and a person must look
+    again."""
     if previous is None:
         return {}
     before = {v.name: v for v in previous.values if v.reviewed and not v.deleted}
@@ -391,7 +427,8 @@ def suggestions(current: Extraction, previous: Extraction | None) -> dict[uuid.U
 
 
 def _near(a: dict[str, Any] | None, b: dict[str, Any] | None) -> bool:
-    """两个出处框的中心离得够近（不超过框高的两倍再加 10 像素）。都没有出处也算。"""
+    """Whether the centers of two evidence boxes are close enough (at most twice the box height plus
+    10 pixels). Also true when neither has evidence."""
     if a is None or b is None:
         return a is None and b is None
     ax0, ay0, ax1, ay1 = a["bbox"]

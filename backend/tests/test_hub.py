@@ -1,8 +1,7 @@
-"""模型和数据集库（ADR 0059）、OCR 模型评测（ADR 0060）。
+"""Model and dataset library, and OCR model evaluation.
 
-模型文件放在临时文件夹里的 models/hub/；
-ONNX 的检查用 RapidOCR 包里自带的模型（装依赖时就有，不用联网）。
-"""
+Model files are placed in models/hub/ in a temporary folder; ONNX checks use the models bundled
+with the RapidOCR package (installed with the dependencies; no network required)."""
 
 from __future__ import annotations
 
@@ -18,6 +17,7 @@ from PIL import Image
 
 from jacara.core import config
 from jacara.core.db import session_scope
+from jacara.core.i18n import render
 from jacara.eval.ocr import (
     EvalArm,
     evaluate_image,
@@ -31,6 +31,8 @@ from jacara.modules.hub.datasets import Box
 from jacara.modules.hub.evals import run_eval
 from jacara.modules.hub.registry import HubError
 from jacara.modules.model_admin import service as model_admin
+
+from .conftest import raises
 
 RAPID_MODELS = Path(__import__("rapidocr").__file__).parent / "models"
 
@@ -69,7 +71,7 @@ def upload(client, files: dict[str, bytes], **finish) -> dict:
     }
 
 
-# ---- 文件检查 ----
+# ---- File validation ----
 
 
 def test_gguf_header_is_checked(tmp_path):
@@ -78,7 +80,7 @@ def test_gguf_header_is_checked(tmp_path):
     assert registry.check_gguf(good) == {"format": "gguf", "gguf_version": 3}
     bad = tmp_path / "b.gguf"
     bad.write_bytes(b"PK\x03\x04" + b"\0" * 10)
-    with pytest.raises(HubError, match="不是 GGUF"):
+    with raises(HubError, "不是 GGUF"):
         registry.check_gguf(bad)
 
 
@@ -87,16 +89,16 @@ def test_onnx_rec_and_det_are_told_apart(tmp_path):
     rec = RAPID_MODELS / "PP-OCRv6_rec_small.onnx"
     det = RAPID_MODELS / "PP-OCRv6_det_small.onnx"
     info = registry.check_onnx(rec, "ocr_rec", None)
-    # 模型自带字符表：类别数 = 字数 + 2（RapidOCR 加 blank 和空格）
+    # Embedded character list: class count = characters + 2 (RapidOCR adds blank and space).
     assert info["dict_source"] == "model" and info["classes"] == info["characters"] + 2
-    with pytest.raises(HubError, match="像是检测模型"):
+    with raises(HubError, "像是检测模型"):
         registry.check_onnx(det, "ocr_rec", None)
-    with pytest.raises(HubError, match="像是识别模型"):
+    with raises(HubError, "像是识别模型"):
         registry.check_onnx(rec, "ocr_det", None)
     assert registry.check_onnx(det, "ocr_det", None)["format"] == "onnx"
     bad = tmp_path / "x.onnx"
     bad.write_bytes(b"not a model")
-    with pytest.raises(HubError, match="onnxruntime 打不开"):
+    with raises(HubError, "onnxruntime 打不开"):
         registry.check_onnx(bad, "ocr_det", None)
 
 
@@ -109,7 +111,7 @@ def test_model_card_round_trip(tmp_path):
     )
 
 
-# ---- 模型库接口 ----
+# ---- Model library API ----
 
 
 def test_upload_check_version_use_and_delete(client, factory, root):
@@ -132,7 +134,7 @@ def test_upload_check_version_use_and_delete(client, factory, root):
 
     listed = client.get("/api/v1/hub/models").json()
     assert [v["version"] for v in listed["models"][0]["versions"]] == [2, 1]
-    # 换模型页也能选到模型库里的版本
+    # Library versions are selectable on the model selection page too.
     names = [f["name"] for f in client.get("/api/v1/models").json()["slots"][0]["files"]]
     assert "qwen v1（模型库）" in names
 
@@ -181,7 +183,7 @@ def test_members_cannot_change_models(client, root, monkeypatch):
     from jacara.core import deps
     from jacara.core.owner import Owner
 
-    monkeypatch.setenv("JACARA_MODE", "team")  # 个人模式下权限检查总是通过
+    monkeypatch.setenv("JACARA_MODE", "team")  # Permission checks always pass in personal mode.
     config.get_settings.cache_clear()
     member = Owner(uuid.uuid4(), uuid.uuid4(), role="member")
     client.app.dependency_overrides[deps.get_owner] = lambda: member
@@ -200,16 +202,16 @@ def test_command_line_import(root, tmp_path):
     source.write_bytes(gguf())
     version = import_files("usb-model", "model", source, None, {"imported_by": "命令行"})
     assert (version.name, version.version) == ("usb-model", 1)
-    assert source.exists()  # 拷贝，不动原文件
+    assert source.exists()  # Copied; the original file is untouched.
     keys = tmp_path / "from-usb" / "keys.txt"
     keys.write_text("a\nb\n")
-    with pytest.raises(HubError, match="只有识别模型要字典"):
+    with raises(HubError, "只有识别模型要字典"):
         import_files("usb-model", "model", source, keys, {})
-    with pytest.raises(HubError, match="新版本要是同一种"):
+    with raises(HubError, "新版本要是同一种"):
         import_files("usb-model", "mmproj", source, None, {})
 
 
-# ---- 数据集 ----
+# ---- Datasets ----
 
 
 def png(color: str = "white", size: tuple[int, int] = (40, 12)) -> bytes:
@@ -231,7 +233,8 @@ def rec_zip(extra: dict[str, bytes] | None = None) -> bytes:
             "crop_img/s_0003.png\t25/12/2018\ncrop_img/s_0004.png\tCASH\n"
             "missing.png\tX\nbad line\n",
         )
-        archive.writestr("rec_gt.txt", "crop_img/s_0001.png\tTOTAL\n")  # 有分边的文件时不读
+        # Ignored when split files exist.
+        archive.writestr("rec_gt.txt", "crop_img/s_0001.png\tTOTAL\n")
         manifest = [
             {"image": "crop_img/s_0003.png", "document_group": "g_a"},
             {"image": "crop_img/s_0004.png", "document_group": "g_b"},
@@ -246,7 +249,10 @@ def test_rec_dataset_is_parsed_with_splits_groups_and_problems():
     parsed = dataset_files.parse(rec_zip(), "ocr_rec")
     assert parsed.counts == {"train": 2, "val": 2, "test": 0, "all": 0}
     assert parsed.groups == {"val": 2}
-    assert dict(parsed.problems) == {"图片在 zip 里找不到": 1, "不是用 Tab 分开的": 1}
+    assert {render(k): n for k, n in parsed.problems.items()} == {
+        "图片在 zip 里找不到": 1,
+        "不是用 Tab 分开的": 1,
+    }
     assert [i.text for i in parsed.split("val")] == ["25/12/2018", "CASH"]
 
 
@@ -262,11 +268,11 @@ def test_ppocrlabel_folder_paths_are_found():
 
 
 def test_unsafe_zips_are_refused():
-    with pytest.raises(HubError, match="不安全的路径"):
+    with raises(HubError, "不安全的路径"):
         dataset_files.parse(rec_zip({"../evil.txt": b"x"}), "ocr_rec")
-    with pytest.raises(HubError, match="没找到标注文件"):
+    with raises(HubError, "没找到标注文件"):
         dataset_files.parse(rec_zip(), "ocr_det")
-    with pytest.raises(HubError, match="不是 zip"):
+    with raises(HubError, "不是 zip"):
         dataset_files.parse(b"hello", "ocr_rec")
 
 
@@ -294,26 +300,26 @@ def test_dataset_upload_download_delete(client, factory, storage):
         assert session.query(Dataset).count() == 1
 
 
-# ---- 评测 ----
+# ---- Evaluation ----
 
 
 def test_text_metrics_follow_text_rec_metric():
     assert levenshtein("kitten", "sitting") == 3
     assert normalized_distance("9.00", "9.00") == 0.0
     assert normalized_distance("", "") == 0.0
-    assert normalized_distance("100", "1.00") == 0.25  # 漏了一个点：1 / 4
+    assert normalized_distance("100", "1.00") == 0.25  # One box missed: 1 / 4.
 
 
 def test_detection_iou_follows_paddleocr():
     gt = (
         Box(((0, 0), (100, 0), (100, 20), (0, 20)), "TOTAL"),
-        Box(((0, 50), (100, 50), (100, 70), (0, 70)), "###"),  # 看不清：不计
+        Box(((0, 50), (100, 50), (100, 70), (0, 70)), "###"),  # Illegible: not counted.
         Box(((0, 100), (100, 100), (100, 120), (0, 120)), "CASH"),
     )
     det = [
-        [(2, 1), (100, 1), (100, 21), (2, 21)],  # 配上第 1 个
-        [(0, 50), (90, 50), (90, 70), (0, 70)],  # 落在 ### 里：不计
-        [(0, 100), (30, 100), (30, 120), (0, 120)],  # IoU 0.3：没配上
+        [(2, 1), (100, 1), (100, 21), (2, 21)],  # Matches the first box.
+        [(0, 50), (90, 50), (90, 70), (0, 70)],  # Inside a ### box: not counted.
+        [(0, 100), (30, 100), (30, 120), (0, 120)],  # IoU 0.3: unmatched.
     ]
     result = evaluate_image(gt, det)
     assert (result.gt_care, result.det_care, result.matched) == (2, 2, 1)
@@ -335,7 +341,7 @@ class FakeEngine:
 
 
 def eval_zip() -> bytes:
-    """每张图大小不一样，假引擎按大小"认字"。"""
+    """Each image has a different size; the fake engine "recognizes" by size."""
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w") as archive:
         rows = []
@@ -390,12 +396,12 @@ def test_eval_run_compares_two_models(client, factory, storage, queue, root, mon
         return a if arm.name == "A" else b
 
     assert run_eval(run_id, factory, storage, engines) == "done"
-    assert run_eval(run_id, factory, storage, engines) == "skipped"  # 不重复跑
+    assert run_eval(run_id, factory, storage, engines) == "skipped"  # Not run twice.
     result = client.get(f"/api/v1/hub/evals/{run_id}").json()
     s = result["summary"]
     assert result["status"] == "done"
     assert (s["a"]["exact"], s["b"]["exact"]) == (2, 3)
-    assert s["a"]["format_only"] == 1  # cash 和 CASH 只差大小写
+    assert s["a"]["format_only"] == 1  # cash and CASH differ only in case.
     assert s["b"]["empty"] == 1
     assert (s["fixed"], s["broken"]) == (2, 1)
     assert s["evidence"] == "process" and s["grouped"] is False
@@ -412,7 +418,7 @@ def test_eval_run_compares_two_models(client, factory, storage, queue, root, mon
     }
     with session_scope(factory) as session:
         assert session.query(AuditLog).filter_by(action="hub:eval").count() == 1
-    # 有评测的数据集删掉时评测一起删
+    # Deleting a dataset deletes its evaluations too.
     assert client.delete(f"/api/v1/hub/datasets/{dataset['id']}").status_code == 204
     with session_scope(factory) as session:
         assert session.query(OcrEvalRun).count() == 0

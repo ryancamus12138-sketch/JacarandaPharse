@@ -1,4 +1,5 @@
-"""给更新前处理的文档补上 OCR 结果：抽取的值、审核记录不动，只补 extractions.ocr。"""
+"""Backfilling OCR results for documents processed by older versions: extracted values and revisions
+are untouched; only extractions.ocr is added."""
 
 from jacara.core.db import session_scope
 from jacara.models import Document, Extraction
@@ -7,7 +8,8 @@ from jacara.pipeline.store import save_document
 
 
 def make_old_document(factory, storage, report, tmp_path):
-    """一个"更新前"的文档：有抽取结果、没有 OCR 结果，原始文件在对象存储里。"""
+    """A document from an older version: extraction results without OCR results, original file in
+    object storage."""
     path = tmp_path / "receipt.jpg"
     path.write_bytes(b"jpeg")
     with session_scope(factory) as session:
@@ -39,7 +41,7 @@ def test_backfill_fills_only_the_ocr(factory, storage, report, receipt_page, tmp
         assert extraction.ocr is not None
         assert extraction.ocr["lines"][0]["text"] == "BOOK TA _K (TAMAN DAYA) SDN BHD"
         values = {v.name: v.value for v in extraction.values}
-        assert values["total"] == "9.0"  # 抽取结果不变
+        assert values["total"] == "9.0"  # Extraction results unchanged.
 
 
 def test_backfill_twice_does_nothing(factory, storage, report, receipt_page, tmp_path):
@@ -55,7 +57,8 @@ def test_documents_without_a_file_are_skipped(factory, report, tmp_path):
     path = tmp_path / "cli.jpg"
     path.write_bytes(b"x")
     with session_scope(factory) as session:
-        document = save_document(session, path, [report])  # 命令行存的，没有原始文件
+        # Saved by the CLI, without an original file.
+        document = save_document(session, path, [report])
         for extraction in document.extractions:
             extraction.ocr = None
     assert missing_ocr(factory) == []

@@ -33,7 +33,7 @@ def _owned() -> list[sa.Column]:
 
 
 def upgrade() -> None:
-    # 我的模板（ADR 0030）：模板 + 每个版本的定义
+    # Template library: templates and the definition of each version.
     op.create_table(
         "templates",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -70,7 +70,7 @@ def upgrade() -> None:
     op.create_index("ix_template_versions_user_id", "template_versions", ["user_id"])
     op.create_index("ix_template_versions_team_id", "template_versions", ["team_id"])
 
-    # 文档：下次处理用哪个模板；处理了几轮
+    # Documents: template for the next run, number of runs.
     op.add_column("documents", sa.Column("template_version_id", sa.Uuid(), nullable=True))
     op.add_column(
         "documents", sa.Column("discover", sa.Boolean(), server_default=sa.false(), nullable=False)
@@ -86,7 +86,7 @@ def upgrade() -> None:
         ["template_version_id"],
         ["id"],
     )
-    # 抽取：第几轮、为什么、用的模板版本
+    # Extractions: run number, reason, template version.
     op.add_column("extractions", sa.Column("run", sa.Integer(), server_default="1", nullable=False))
     op.add_column("extractions", sa.Column("run_reason", sa.Text(), nullable=True))
     op.add_column("extractions", sa.Column("template_version_id", sa.Uuid(), nullable=True))
@@ -98,7 +98,7 @@ def upgrade() -> None:
         ["id"],
     )
     op.create_index("ix_extractions_document_run", "extractions", ["document_id", "run"])
-    # 字段：单据上的原名（键值对发现）
+    # Values: original label on the document (key-value discovery).
     op.add_column("extracted_values", sa.Column("label", sa.String(length=200), nullable=True))
 
 

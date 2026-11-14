@@ -3,6 +3,7 @@ import { App } from 'antd'
 import { ApiError } from '../../api/client'
 import type { FieldValue } from '../../api/types'
 import { addRow, changeRow } from '../../api/values'
+import { useTranslation } from 'react-i18next'
 
 export type RowChange =
   | { kind: 'add'; extractionId: string; table: string; after: number | null }
@@ -14,8 +15,12 @@ export type RowChange =
       reason: string
     }
 
-/** 表格增删行。成功后重新取这个文档和文档列表（规则会按新的行重新检查）。 */
+/**
+ * Add and remove table rows. Refetches the document and the document list on success (rules are re-evaluated
+ * on the new rows).
+ */
 export function useRows(documentId: string) {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { message } = App.useApp()
   return useMutation({
@@ -24,7 +29,7 @@ export function useRows(documentId: string) {
         ? addRow(change.extractionId, change.table, change.after)
         : changeRow(change.extractionId, change.table, change.index, change.kind, change.reason),
     onSuccess: (_, change) => {
-      const done = { add: '已加一行', delete: '已删除这一行', restore: '已恢复这一行' }
+      const done = { add: t('已加一行'), delete: t('已删除这一行'), restore: t('已恢复这一行') }
       void message.success(done[change.kind])
       void queryClient.invalidateQueries({ queryKey: ['document', documentId] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })

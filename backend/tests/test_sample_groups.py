@@ -1,8 +1,9 @@
-"""OCR 样本按业务单据分组、划分训练集和验证集（ADR 0052）。
+"""Grouping OCR samples by business document and splitting into training and validation sets.
 
-验收用例：同一张单据重新处理几轮、PDF 和照片、同一个文件里几张单据、导出以后才发现重复；
-同样的数据重复导出成员一致；训练和验证的组没有交集；锁定测试集不进普通导出、不当教训来源。
-"""
+Acceptance cases: a document reprocessed several times, a PDF and a photo, several documents in
+one file, duplicates found after export; repeated exports of the same data have identical
+members; training and validation groups are disjoint; the locked test set is excluded from
+regular exports and never used as a source of examples."""
 
 import io
 import uuid
@@ -12,6 +13,7 @@ from datetime import datetime
 import pytest
 
 from jacara.core.db import session_scope
+from jacara.core.i18n import render
 from jacara.models import DocGroupMember, Document, OcrSample, OcrSampleExport
 from jacara.modules.ocr_samples import groups
 from jacara.pipeline.store import add_extractions, save_document
@@ -47,7 +49,8 @@ def report(receipt_page, page: int = 1, merchant: str = "BOOK TA _K (TAMAN DAYA)
 
 
 def page_png(content: bytes) -> bytes:
-    """每份文件的图不一样（裁出来的小图哈希不同），字节一样的文件图也一样。"""
+    """Each file has a different image (crop hashes differ); files with identical bytes have
+    identical images."""
     import hashlib
 
     from PIL import Image, ImageDraw
@@ -64,8 +67,8 @@ def page_png(content: bytes) -> bytes:
 
 @pytest.fixture
 def make(factory, storage, receipt_page, tmp_path):
-    """建一份处理完的文档。content：文件的字节（一样的字节 = 重复上传）；
-    pages：每张单据的起始页。"""
+    """Create a processed document. content: file bytes (identical bytes = duplicate upload); pages:
+    first page of each document."""
 
     def build(name: str, content: bytes, pages=(1,), **kw) -> uuid.UUID:
         path = tmp_path / name
@@ -76,7 +79,7 @@ def make(factory, storage, receipt_page, tmp_path):
         with session_scope(factory) as session:
             document = save_document(session, path, reports)
             document.storage_key = key
-            document.content_type = "image/png"  # 裁图用的都是那张 PNG
+            document.content_type = "image/png"  # All crops come from that PNG.
             document.page_count = max(pages)
             return document.id
 
@@ -119,16 +122,17 @@ def export(client, **params) -> zipfile.ZipFile:
     return zipfile.ZipFile(io.BytesIO(response.content))
 
 
-# ---- 划分 ----
+# ---- Splits ----
 
 
 def test_hash_split_is_stable_and_about_one_in_five():
     ids = [uuid.UUID(int=n) for n in range(2000)]
     first = [groups.hashed_split("seed", 1, g) for g in ids]
-    assert first == [groups.hashed_split("seed", 1, g) for g in ids]  # 同样的输入同样的结果
+    assert first == [groups.hashed_split("seed", 1, g) for g in ids]  # Same input, same result.
     share = first.count("val") / len(first)
     assert 0.17 < share < 0.23
-    assert first != [groups.hashed_split("seed", 2, g) for g in ids]  # 换版本重新分
+    # Reassigned with a new version.
+    assert first != [groups.hashed_split("seed", 2, g) for g in ids]
 
 
 def test_first_sample_assigns_a_group_and_a_stored_split(client, factory, make):
@@ -140,14 +144,14 @@ def test_first_sample_assigns_a_group_and_a_stored_split(client, factory, make):
         team = session.get_one(Document, doc).team_id
         stored = groups.assignment(session, team, group)
         assert stored is not None and stored.split in ("train", "val")
-        assert stored.reason == "第一次进数据集时按哈希分"
+        assert render(stored.reason) == "第一次进数据集时按哈希分"
 
 
-# ---- 什么算同一张单据 ----
+# ---- What counts as the same document ----
 
 
 def test_rerun_stays_in_the_same_group(client, factory, make, receipt_page):
-    """重新处理一轮：新的抽取记录，还是同一张业务单据。"""
+    """Reprocess once: a new extraction for the same business document."""
     turn_on(client)
     doc = make("a.png", b"a")
     collect(client, doc)
@@ -167,7 +171,8 @@ def test_same_bytes_share_a_group(client, factory, make):
     collect(client, first)
     collect(client, again)
     assert group_of(factory, first) == group_of(factory, again)
-    assert client.get("/api/v1/ocr-samples/pairs").json() == []  # 自动同组，不用确认
+    # Grouped automatically, without confirmation.
+    assert client.get("/api/v1/ocr-samples/pairs").json() == []
 
 
 def test_two_documents_in_one_file_are_two_groups(client, factory, make):
@@ -178,7 +183,7 @@ def test_two_documents_in_one_file_are_two_groups(client, factory, make):
     assert group_of(factory, doc, 1) != group_of(factory, doc, 2)
 
 
-# ---- PDF 和照片配对 ----
+# ---- Pairing PDFs and photos ----
 
 
 def test_pdf_and_photo_are_nominated_and_merged_after_a_person_confirms(client, factory, make):
@@ -187,8 +192,8 @@ def test_pdf_and_photo_are_nominated_and_merged_after_a_person_confirms(client, 
     collect(client, pdf)
     [pair] = client.get("/api/v1/ocr-samples/pairs").json()
     assert {pair["a"]["document_id"], pair["b"]["document_id"]} == {str(pdf), str(photo)}
-    assert pair["a"]["samples"] == 1  # 有样本的那张在前
-    assert any("9.0" in v for v in pair["a"]["values"].values())  # 并排看的几个值
+    assert pair["a"]["samples"] == 1  # The one with samples first.
+    assert any("9.0" in v for v in pair["a"]["values"].values())  # Values compared side by side.
     body = {
         "a": {"document_id": str(pdf), "page": 1},
         "b": {"document_id": str(photo), "page": 1},
@@ -196,7 +201,7 @@ def test_pdf_and_photo_are_nominated_and_merged_after_a_person_confirms(client, 
     }
     result = client.post("/api/v1/ocr-samples/pairs", json=body).json()
     assert not result["quarantined"]
-    collect(client, photo)  # 照片后来的样本也在同一组
+    collect(client, photo)  # Later samples of the photo join the same group.
     assert group_of(factory, pdf) == group_of(factory, photo)
     assert client.get("/api/v1/ocr-samples/pairs").json() == []
     [group] = client.get("/api/v1/ocr-samples/groups").json()["items"]
@@ -207,7 +212,7 @@ def test_only_date_and_amount_are_not_enough(client, make):
     turn_on(client)
     a, _ = make("a.pdf", b"a"), make("b.jpg", b"b", merchant="ANOTHER SHOP")
     collect(client, a)
-    assert client.get("/api/v1/ocr-samples/pairs").json() == []  # 发单方不一样
+    assert client.get("/api/v1/ocr-samples/pairs").json() == []  # Different issuer.
 
 
 def test_different_is_remembered(client, make):
@@ -232,7 +237,7 @@ def test_manual_pairing_finds_units_by_filename(client, make):
     ]
 
 
-# ---- 合并、拆开和隔离 ----
+# ---- Merging, splitting and quarantine ----
 
 
 def pair(client, a, b, decision="same"):
@@ -262,12 +267,12 @@ def test_merge_before_any_export_follows_the_kept_group(client, factory, make):
 
 def test_duplicate_found_after_export_is_quarantined_and_recorded(client, factory, make):
     a, b = two_groups(client, factory, make)
-    export(client)  # 一份进了训练、一份进了验证
+    export(client)  # One copy in training, one in validation.
     result = pair(client, a, b)
     assert result["quarantined"] and result["affected_exports"] == 1
     with session_scope(factory) as session:
         [record] = session.query(OcrSampleExport).all()
-        assert len(record.affected) == 2  # 两组都在这次导出里，各记一笔
+        assert len(record.affected) == 2  # Both groups are in this export; one record each.
         for problem in record.affected:
             assert problem["group"].startswith("g_") and "一份训练、一份验证" in problem["reason"]
     excluded = {e["reason"]: e["count"] for e in preview(client)["excluded"]}
@@ -317,7 +322,7 @@ def test_a_group_exported_for_training_cannot_become_validation(client, factory,
     assert set_split(client, group, "test_locked").status_code == 422
 
 
-# ---- 导出 ----
+# ---- Export ----
 
 
 def test_repeated_export_has_the_same_members(client, factory, make):
@@ -347,7 +352,8 @@ def test_train_and_validation_never_share_a_group(client, factory, make):
     shown = preview(client)
     assert shown["splits"]["train"]["groups"] + shown["splits"]["val"]["groups"] == 20
     assert shown["splits"]["val"]["rows"] == 2 * shown["splits"]["val"]["groups"]
-    assert shown["evidence"]["level"] in ("process", "none")  # 验证集只有几组：只能检查流程
+    # Only a few validation groups: only the workflow can be checked.
+    assert shown["evidence"]["level"] in ("process", "none")
     readme = archive.read("README.md").decode()
     assert "训练集：" in readme
     assert "只能检查流程" in readme or "没有验证集" in readme
@@ -366,14 +372,15 @@ def test_locked_test_set_is_exported_separately_and_not_a_lesson_source(client, 
     test = export(client, kind="test")
     assert "rec_gt_test.txt" in test.namelist() and "rec_gt.txt" not in test.namelist()
     assert test.read("rec_gt_test.txt").decode().count("\n") == 1
-    # 审核完成后人改过的地方：锁定测试集的那份不当例子
+    # Corrections after review completion: the copy in the locked test set is not used as an
+    # example.
     with session_scope(factory) as session:
         for document in session.query(Document):
             document.status = "reviewed"
             document.reviewed_at = datetime(2026, 11, 13)
         team = session.get_one(Document, a).team_id
         lessons = from_database(session, team, "receipt")
-        assert len(lessons) == 1  # 只有 b 的
+        assert len(lessons) == 1  # Only b's.
 
 
 def test_label_revision_goes_into_the_manifest(client, factory, make):
@@ -393,11 +400,14 @@ def test_older_samples_are_grouped_when_needed(client, factory, make):
     turn_on(client)
     doc = make("two.pdf", b"two", pages=(1, 2))
     collect(client, doc, page=2)
-    with session_scope(factory) as session:  # ADR 0052 以前收集的：没有组，起始页是默认的 1
+    # Collected before grouping existed: no group, first page defaults to 1.
+    with session_scope(factory) as session:
         session.query(DocGroupMember).delete()
         for sample in session.query(OcrSample):
             sample.unit_page = 1
-    preview(client)  # 用到的时候补上（这张图只有一页，第 2 页裁图失败，不影响分组）
+    # Backfilled on use (this image has one page, so cropping page 2 fails, without affecting
+    # grouping).
+    preview(client)
     with session_scope(factory) as session:
-        assert session.query(OcrSample).one().unit_page == 2  # 按来源那张单据补回来
+        assert session.query(OcrSample).one().unit_page == 2  # Backfilled from the source document.
         assert groups.member_of(session, (doc, 2)) is not None

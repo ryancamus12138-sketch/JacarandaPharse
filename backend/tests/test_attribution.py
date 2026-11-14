@@ -1,4 +1,4 @@
-"""错误归因（ADR 0053）：证据够才下结论。"""
+"""Error attribution: conclusions only with sufficient evidence."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def test_ocr_sample_says_ocr_misread():
     )
     v = judge(_value("number", "8.0", "9.0"), _extraction("⟨1⟩TOTAL ⟨2⟩8.00"), [sample])
     assert (v.stage, v.reason) == ("ocr_misread", "sample_rec_error")
-    # OCR 在这里认错了，但别处的文字里有对的值：两边都有证据
+    # OCR misread here, but the correct value appears elsewhere in the text: evidence on both sides.
     both = judge(_value("number", "8.0", "9.0"), _extraction(SENT), [sample])
     assert both.stage == "mixed"
 

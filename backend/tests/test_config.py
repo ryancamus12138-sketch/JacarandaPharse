@@ -1,16 +1,16 @@
-"""配置：默认值、从环境变量读取、从 .env 读取、密码不会被打印出来。"""
+"""Configuration: defaults, environment variables, .env, and passwords never printed."""
 
 import pytest
 
 from jacara.core.config import Settings
 
 FAKE_KEY = "not-a-real-key"
-"""测试用的假密钥。故意写得一看就是假的，免得 gitleaks 当成真密钥拦下来。"""
+"""Fake secret for tests, deliberately obvious so that gitleaks does not flag it as real."""
 
 
 @pytest.fixture(autouse=True)
 def no_real_env_file(tmp_path, monkeypatch):
-    """每个测试都在一个空文件夹里运行，读不到项目里真正的 .env。"""
+    """Each test runs in an empty folder and cannot read the project's real .env."""
     monkeypatch.chdir(tmp_path)
 
 
@@ -24,7 +24,7 @@ def test_environment_variables_override_defaults(monkeypatch):
     monkeypatch.setenv("POSTGRES_PASSWORD", "s3cret")
     monkeypatch.setenv("POSTGRES_PORT", "15432")
     settings = Settings()
-    assert settings.postgres_port == 15432  # 文字 "15432" 自动转成整数
+    assert settings.postgres_port == 15432  # The string "15432" is converted to an integer.
     assert settings.database_url == "postgresql+psycopg://jacara:s3cret@127.0.0.1:15432/jacara"
 
 
@@ -63,7 +63,7 @@ def test_model_from_env_is_relative_to_the_project(monkeypatch):
 
 
 def test_model_is_found_only_when_there_is_exactly_one(tmp_path, monkeypatch):
-    """models/ 里只有一个 .gguf 就用它；没有或有好几个都不猜。"""
+    """A single .gguf in models/ is used; with none or several, nothing is guessed."""
     from jacara.core import config
 
     monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)

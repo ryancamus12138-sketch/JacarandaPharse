@@ -1,7 +1,8 @@
-"""设置页（ADR 0063）：.env 优先，其次是页面上改的（data/settings.json），再是默认值。
+"""Settings page: .env takes precedence, then values changed on the page (data/settings.json), then
+defaults.
 
-后台 worker 启动时读一次配置，所以改完要 jacara stop、jacara start；API 这边改完马上清掉缓存。
-"""
+Background workers read the configuration once at startup, so changes require `jacara stop` and
+`jacara start`; the API clears its cache immediately after a change."""
 
 from __future__ import annotations
 
@@ -18,13 +19,15 @@ from sqlalchemy.orm import Session
 
 from jacara.core import config
 from jacara.core.config import PAGE_EDITABLE, Settings, get_settings
+from jacara.core.i18n import N_, tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import allowed, require
 from jacara.modules.app_settings.schemas import Option, SettingItem, SettingsIn, SettingsOut
 from jacara.modules.audit.service import record
 
 STARTED = time.time()
-"""这个进程是什么时候启动的：页面设置比它新，说明还没重启。"""
+"""Start time of this process: page settings newer than this have not been applied by a restart
+yet."""
 
 
 @dataclass(frozen=True)
@@ -40,83 +43,88 @@ class Spec:
 
 SPECS: dict[str, Spec] = {
     "jacara_vision": Spec(
-        "识别",
-        "让模型看原图",
-        "照片、扫描件 OCR 认不准时，让视觉模型看着原图读（ADR 0038）。要先放好视觉模型。",
+        N_("识别"),
+        N_("让模型看原图"),
+        N_("照片、扫描件 OCR 认不准时，让视觉模型看着原图读。要先放好视觉模型。"),
         "choice",
-        [("auto", "OCR 不可靠时才看（推荐）"), ("always", "每张都看（慢）"), ("off", "不看")],
+        [
+            ("auto", N_("OCR 不可靠时才看（推荐）")),
+            ("always", N_("每张都看（慢）")),
+            ("off", N_("不看")),
+        ],
     ),
     "jacara_pdf_read": Spec(
-        "识别",
-        "PDF 怎么读文字",
-        "画成图做 OCR，和照片走同一条路，PDF 自带的文字只拿来核对（ADR 0042）；"
-        "只读自带文字快，但只适合确定干净的电子版。",
+        N_("识别"),
+        N_("PDF 怎么读文字"),
+        N_(
+            "画成图做 OCR，和照片走同一条路，PDF 自带的文字只拿来核对；只读自带文字快，"
+            "但只适合确定干净的电子版。"
+        ),
         "choice",
-        [("image", "画成图做 OCR（推荐）"), ("text", "只读 PDF 自带的文字")],
+        [("image", N_("画成图做 OCR（推荐）")), ("text", N_("只读 PDF 自带的文字"))],
     ),
     "jacara_ocr_max_side": Spec(
-        "识别",
-        "OCR 时图片长边最多多少像素",
-        "超过的先缩小。大一点小字认得更准，但更慢（ADR 0042）。",
+        N_("识别"),
+        N_("OCR 时图片长边最多多少像素"),
+        N_("超过的先缩小。大一点小字认得更准，但更慢。"),
         "int",
         min=1000,
         max=8000,
     ),
     "jacara_layout": Spec(
-        "识别",
-        "先找页面上的区域",
-        "抽取前用版面模型找出标题、正文、表格、页眉页脚（ADR 0034）。",
+        N_("识别"),
+        N_("先找页面上的区域"),
+        N_("抽取前用版面模型找出标题、正文、表格、页眉页脚。"),
         "bool",
     ),
     "jacara_learn": Spec(
-        "从人改过的地方学",
-        "抽取时带上以前人改过的例子",
-        "同一个模板以前人工改过的值告诉模型，少犯同样的错（ADR 0045）。",
+        N_("从人改过的地方学"),
+        N_("抽取时带上以前人改过的例子"),
+        N_("同一个模板以前人工改过的值告诉模型，少犯同样的错。"),
         "bool",
     ),
     "jacara_learn_mode": Spec(
-        "从人改过的地方学",
-        "怎么挑例子",
-        "整理过的：只用错在模型的、合并重复、去掉过期的（ADR 0055）。换之前先用回放比一比。",
+        N_("从人改过的地方学"),
+        N_("怎么挑例子"),
+        N_("整理过的：只用错在模型的、合并重复、去掉过期的。换之前先用回放比一比。"),
         "choice",
-        [("recent", "最近改得多的（默认）"), ("curated", "整理过的")],
+        [("recent", N_("最近改得多的（默认）")), ("curated", N_("整理过的"))],
     ),
     "jacara_pipeline": Spec(
-        "后台和导入",
-        "后台分两个工位",
-        "OCR 和模型同时干活，批量导入更快；关掉省几百 MB 内存（ADR 0051）。",
+        N_("后台和导入"),
+        N_("后台分两个工位"),
+        N_("OCR 和模型同时干活，批量导入更快；关掉省几百 MB 内存。"),
         "bool",
     ),
     "jacara_watch_dir": Spec(
-        "后台和导入",
-        "监视文件夹",
-        "放进去的图片和 PDF 自动导入，不动原文件，重复的跳过（ADR 0036）。"
-        "写完整路径；空着就不监视。",
+        N_("后台和导入"),
+        N_("监视文件夹"),
+        N_("放进去的图片和 PDF 自动导入，不动原文件，重复的跳过。写完整路径；空着就不监视。"),
         "path",
     ),
     "jacara_watch_template": Spec(
-        "后台和导入",
-        "监视文件夹用的模板",
-        "我的模板的 id；空着就用上一次上传时选的。",
+        N_("后台和导入"),
+        N_("监视文件夹用的模板"),
+        N_("我的模板的 id；空着就用上一次上传时选的。"),
         "text",
     ),
     "max_upload_mb": Spec(
-        "后台和导入",
-        "上传文件最大多少 MB",
-        "一个文件超过这么大就不收。",
+        N_("后台和导入"),
+        N_("上传文件最大多少 MB"),
+        N_("一个文件超过这么大就不收。"),
         "int",
         min=1,
         max=500,
     ),
     "jacara_api_docs": Spec(
-        "安全",
-        "打开接口文档页 /docs",
-        "开发时有用；给别人用时建议关掉，少暴露一些接口细节。",
+        N_("安全"),
+        N_("打开接口文档页 /docs"),
+        N_("开发时有用；给别人用时建议关掉，少暴露一些接口细节。"),
         "bool",
     ),
 }
-if set(SPECS) != set(PAGE_EDITABLE):  # 两边要一起改
-    raise RuntimeError("SPECS 和 config.PAGE_EDITABLE 对不上")
+if set(SPECS) != set(PAGE_EDITABLE):  # Both sides must change together.
+    raise RuntimeError("SPECS and config.PAGE_EDITABLE list different settings")
 
 
 class SettingsError(Exception):
@@ -127,7 +135,8 @@ class SettingsError(Exception):
 
 
 def env_locked() -> set[str]:
-    """环境变量或 .env 里写了的设置（这些页面上改不了）。只看有没有这个名字，不读值。"""
+    """Settings defined in environment variables or .env (not editable on the page). Only the
+    presence of each name is checked; values are not read."""
     from dotenv import dotenv_values
 
     names = {k.upper() for k in os.environ}
@@ -146,22 +155,28 @@ def _saved_at() -> float:
 
 
 def _check(key: str, value: Any) -> Any:
-    """按 Settings 里这一项的类型检查，再按设置页的范围检查。返回能写进 JSON 的值。"""
+    """Validate against the type of this setting in Settings and the settings page range. Returns a
+    JSON-serializable value."""
     spec = SPECS[key]
     annotation: Any = Settings.model_fields[key].annotation
     try:
         checked = TypeAdapter(annotation).validate_python(value)
     except ValidationError as err:
-        raise SettingsError("invalid", f"{spec.label}：值不对") from err
+        raise SettingsError("invalid", tr("{label}：值不对", label=tr(spec.label))) from err
     if spec.kind == "int" and (
         (spec.min is not None and checked < spec.min)
         or (spec.max is not None and checked > spec.max)
     ):
-        raise SettingsError("invalid", f"{spec.label}：要在 {spec.min}～{spec.max} 之间")
+        raise SettingsError(
+            "invalid",
+            tr("{label}：要在 {min}～{max} 之间", label=tr(spec.label), min=spec.min, max=spec.max),
+        )
     if spec.kind == "path" and checked is not None:
         path = Path(checked).expanduser()
         if not path.is_absolute() or not path.is_dir():
-            raise SettingsError("invalid", f"{spec.label}：要写一个已经存在的文件夹的完整路径")
+            raise SettingsError(
+                "invalid", tr("{label}：要写一个已经存在的文件夹的完整路径", label=tr(spec.label))
+            )
         return str(path)
     if spec.kind == "text":
         return str(checked).strip() or None
@@ -185,15 +200,15 @@ class AppSettingsService:
             items.append(
                 SettingItem(
                     key=key,
-                    group=spec.group,
-                    label=spec.label,
-                    help=spec.help,
+                    group=tr(spec.group),
+                    label=tr(spec.label),
+                    help=tr(spec.help),
                     kind=spec.kind,  # type: ignore[arg-type]
                     value=str(value) if isinstance(value, Path) else value,
                     default=str(default) if isinstance(default, Path) else default,
                     source="env" if key in locked else "page" if key in saved else "default",
                     env=key.upper(),
-                    options=[Option(value=v, label=label) for v, label in spec.options],
+                    options=[Option(value=v, label=tr(label)) for v, label in spec.options],
                     min=spec.min,
                     max=spec.max,
                 )
@@ -211,10 +226,15 @@ class AppSettingsService:
         changed: dict[str, Any] = {}
         for key, value in data.values.items():
             if key not in SPECS:
-                raise SettingsError("invalid", f"设置页不能改 {key}")
+                raise SettingsError("invalid", tr("设置页不能改 {key}", key=key))
             if key in locked:
                 raise SettingsError(
-                    "invalid", f"{SPECS[key].label}由 .env 里的 {key.upper()} 指定，页面上改不了"
+                    "invalid",
+                    tr(
+                        "{label}由 .env 里的 {env} 指定，页面上改不了",
+                        label=tr(SPECS[key].label),
+                        env=key.upper(),
+                    ),
                 )
             if value is None or value == "":
                 saved.pop(key, None)
@@ -228,7 +248,9 @@ class AppSettingsService:
         tmp = path.with_suffix(".tmp")
         body = {**saved, "_saved_at": time.time(), "_saved": datetime.now(UTC).isoformat()}
         tmp.write_text(json.dumps(body, ensure_ascii=False, indent=2), "utf-8")
-        tmp.replace(path)  # 先写临时文件再改名：写到一半断电也不会留下半个文件
+        # Write to a temporary file and rename, so that a power loss never leaves a partially
+        # written file.
+        tmp.replace(path)
         get_settings.cache_clear()
         record(self.session, self.owner, "settings:update", None, None, **changed)
         return self.get()

@@ -1,4 +1,4 @@
-"""换模型接口：/api/v1/models（ADR 0046）。"""
+"""Model selection API: /api/v1/models."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from jacara.core.config import get_settings
 from jacara.core.deps import get_owner, get_session
+from jacara.core.i18n import render
 from jacara.core.owner import Owner
 from jacara.modules.model_admin.service import ModelAdminService, ModelError, ModelsIn, ModelsOut
 
@@ -27,14 +28,18 @@ Service = Annotated[ModelAdminService, Depends(get_service)]
 
 @router.get("", summary="模型文件和现在用的")
 def models(service: Service) -> ModelsOut:
-    """大模型、视觉模型、OCR、表格模型：models/ 里有哪些文件，现在用的是哪个、是谁定的。"""
+    """LLM, vision projector, OCR and table models: available files in models/, the one in use, and
+    what determined it."""
     return service.get()
 
 
 @router.put("", summary="换模型")
 def choose(data: ModelsIn, service: Service) -> ModelsOut:
-    """选用 models/ 里的文件（只有管理员）。改完要 jacara stop、jacara start 才生效。"""
+    """Select files in models/ (administrators only). Takes effect after `jacara stop` and `jacara
+    start`."""
     try:
         return service.choose(data)
     except ModelError as err:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err.message) from err
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=render(err.message)
+        ) from err

@@ -1,14 +1,14 @@
-/** 审计日志的接口：/api/v1/audit-logs（只有管理员能用）。 */
+/** Audit log API: /api/v1/audit-logs (administrators only). */
 
 import { api } from './client'
 import type { AuditPage } from './types'
 
 export interface AuditFilters {
-  /** 按开头筛选，比如 "document:" 只看文档相关的。 */
+  /** Prefix filter, for example "document:" for document events only. */
   action?: string
-  /** 只看这个人做的。 */
+  /** Only events by this actor. */
   user_id?: string
-  /** 日期范围（含两头，YYYY-MM-DD）。 */
+  /** Date range (inclusive, YYYY-MM-DD). */
   date_from?: string
   date_to?: string
 }
@@ -25,7 +25,7 @@ export function listAuditLogs(limit: number, offset: number, filters: AuditFilte
   return api<AuditPage>(`/audit-logs?${query(filters, { limit: String(limit), offset: String(offset) })}`)
 }
 
-/** 按同样的条件取出全部（最多 5 万条），导出本身也会记一条审计日志。 */
+/** All entries matching the same filters (at most 50,000); the export itself is also logged. */
 export function exportAuditLogs(filters: AuditFilters): Promise<AuditPage> {
   return api<AuditPage>(`/audit-logs/export?${query(filters)}`)
 }

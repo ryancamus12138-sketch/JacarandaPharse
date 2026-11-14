@@ -1,8 +1,8 @@
-"""任务队列：API 把"处理这个文档"放进 Valkey，后台的 worker 取出来做。
+"""Task queue: the API puts "process this document" on Valkey and the background worker picks it up.
 
-API 这一边只负责"放进去"（enqueue），不导入流水线代码，所以启动快、不占内存。
-真正干活的任务定义在 jacara/worker.py。两边靠任务名字（PROCESS_DOCUMENT）对上。
-"""
+The API side only enqueues and does not import pipeline code, so it starts quickly and stays
+small. The task implementations live in jacara/worker.py; both sides agree on task names
+(PROCESS_DOCUMENT)."""
 
 from __future__ import annotations
 
@@ -13,33 +13,35 @@ from typing import Protocol
 from celery import Celery
 
 from jacara.core.config import get_settings
+from jacara.core.i18n import tr
 
 PROCESS_DOCUMENT = "jacara.process_document"
-"""任务名字。API 按名字发送，worker 按名字认领。"""
+"""Task name. The API sends by name; the worker claims by name."""
 
 QUEUE = "pipeline"
-"""队列名字：上传的文档在这里排队。分工位时（ADR 0051）由 OCR 工位领。"""
+"""Queue name for uploaded documents. With the two-stage pipeline, consumed by the OCR stage."""
 
 EXTRACT_DOCUMENT = "jacara.extract_document"
 EXTRACT_QUEUE = "extract"
-"""流水线的第二站（ADR 0051）：OCR 工位认好字，把"抽取这个文档"放进这个队列，模型工位领。"""
+"""Second pipeline stage: after OCR, the OCR stage puts "extract this document" on this queue for
+the model stage."""
 
 
 EVAL_OCR = "jacara.eval_ocr"
-"""OCR 模型评测（ADR 0060）：放进 OCR 工位的队列（QUEUE），那边本来就装着 OCR。"""
+"""OCR model evaluation: routed to the OCR stage queue (QUEUE), whose workers already load OCR."""
 
 
 class QueueError(Exception):
-    """任务队列（Valkey）连不上。"""
+    """The task queue (Valkey) is unreachable."""
 
 
 class TaskQueue(Protocol):
     def enqueue_document(self, document_id: uuid.UUID) -> None:
-        """把一个文档放进待处理队列。"""
+        """Enqueue a document for processing."""
         ...
 
     def enqueue_eval(self, run_id: uuid.UUID) -> None:
-        """把一次 OCR 模型评测放进队列（ADR 0060）。"""
+        """Enqueue an OCR model evaluation."""
         ...
 
 
@@ -48,11 +50,15 @@ def create_celery() -> Celery:
     app = Celery("jacara", broker=settings.valkey_url)
     app.conf.update(
         task_default_queue=QUEUE,
-        task_ignore_result=True,  # 结果写在数据库里（documents.status），不用 Celery 再存一份
-        task_acks_late=True,  # 做完才算"领走"：worker 中途崩溃，任务会重新回到队列
-        worker_prefetch_multiplier=1,  # 一次只领一个任务：大模型一次只能处理一张
+        # Results are stored in the database (documents.status); no Celery result backend.
+        task_ignore_result=True,
+        # Acknowledge after completion: if the worker crashes mid-task, the task returns to the
+        # queue.
+        task_acks_late=True,
+        # Prefetch one task at a time: the LLM processes one document at a time.
+        worker_prefetch_multiplier=1,
         broker_connection_retry_on_startup=True,
-        # Valkey 没启动时，发送最多等几秒就报错，不让上传接口一直卡着
+        # When Valkey is down, fail after a few seconds instead of blocking the upload endpoint.
         broker_transport_options={"socket_connect_timeout": 2, "socket_timeout": 5},
         broker_connection_timeout=2,
     )
@@ -65,29 +71,30 @@ def get_celery() -> Celery:
 
 
 class CeleryQueue:
-    """用 Celery + Valkey 实现的任务队列。"""
+    """Task queue backed by Celery and Valkey."""
 
     def __init__(self, app: Celery | None = None) -> None:
         self.app = app or get_celery()
 
     def enqueue_extract(self, document_id: uuid.UUID, attempt: str) -> None:
-        """OCR 工位认好字以后，交给模型工位（ADR 0051）。"""
+        """Hand a document from the OCR stage to the model stage after OCR."""
         try:
             self.app.send_task(
                 EXTRACT_DOCUMENT, args=[str(document_id), attempt], queue=EXTRACT_QUEUE, retry=False
             )
         except Exception as err:
-            raise QueueError("任务队列（Valkey）连不上") from err
+            raise QueueError(tr("任务队列（Valkey）连不上")) from err
 
     def enqueue_document(self, document_id: uuid.UUID) -> None:
         try:
-            # retry=False：连不上就马上报错，由调用方决定怎么办
+            # retry=False: fail immediately when unreachable and let the caller decide.
             self.app.send_task(PROCESS_DOCUMENT, args=[str(document_id)], retry=False)
-        except Exception as err:  # kombu 的连接错误种类很多，统一包成 QueueError
-            raise QueueError("任务队列（Valkey）连不上") from err
+        # kombu raises many connection error types; wrap them all in QueueError.
+        except Exception as err:
+            raise QueueError(tr("任务队列（Valkey）连不上")) from err
 
     def enqueue_eval(self, run_id: uuid.UUID) -> None:
         try:
             self.app.send_task(EVAL_OCR, args=[str(run_id)], queue=QUEUE, retry=False)
         except Exception as err:
-            raise QueueError("任务队列（Valkey）连不上") from err
+            raise QueueError(tr("任务队列（Valkey）连不上")) from err

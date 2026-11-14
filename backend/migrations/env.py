@@ -1,28 +1,29 @@
-"""Alembic 运行迁移时执行的文件：告诉它连哪个数据库、对照哪些表。"""
+"""Alembic environment: database connection and target metadata for migrations."""
 
 import logging
 
 from alembic import context
 from sqlalchemy import create_engine, pool
 
-import jacara.models  # noqa: F401  导入所有表，autogenerate 才能看到它们
+import jacara.models  # noqa: F401  Import all models so that autogenerate can see every table.
 from jacara.core.config import get_settings
 from jacara.core.db import Base
 
 target_metadata = Base.metadata
 
-# 在终端里显示 Alembic 做了什么（例如 Running upgrade  -> fb6c95503174）
+# Log Alembic activity to the console (for example: Running upgrade -> fb6c95503174).
 logging.basicConfig(format="%(message)s", level=logging.WARNING)
 logging.getLogger("alembic").setLevel(logging.INFO)
 
 
 def _url() -> str:
-    """连哪个数据库：命令行恢复演练（jacara restore-drill）会传另一个地址，平时用 .env 里的。"""
+    """Database URL. The restore drill (`jacara restore-drill`) passes its own URL; otherwise the
+    URL from .env is used."""
     return context.config.attributes.get("url") or get_settings().database_url
 
 
 def run_migrations_offline() -> None:
-    """只生成 SQL、不连数据库（uv run alembic upgrade head --sql）。"""
+    """Offline mode: emit SQL without connecting to the database (`alembic upgrade head --sql`)."""
     context.configure(
         url=_url(),
         target_metadata=target_metadata,
@@ -33,7 +34,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """连上数据库，真正执行迁移。"""
+    """Online mode: connect to the database and run the migrations."""
     engine = create_engine(_url(), poolclass=pool.NullPool)
     with engine.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)

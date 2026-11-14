@@ -1,4 +1,4 @@
-"""日期范围字段的导出设置（ADR 0039）：从模板里取出来交给导出器。"""
+"""Export settings of date range fields, taken from the template and passed to exporters."""
 
 from __future__ import annotations
 
@@ -7,7 +7,8 @@ from jacara.templates import Template
 
 
 def range_settings(template: Template | None) -> dict[str, RangeSetting]:
-    """字段 ID（表格的列写成 items.period）→ 导出成什么样、分隔符、数字日期的日月顺序。"""
+    """Field ID (table columns as items.period) → export format, separator, and day/month order of
+    numeric dates."""
     if template is None:
         return {}
     return {

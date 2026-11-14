@@ -1,8 +1,8 @@
-"""保存到数据库：用内存里的 SQLite 测试，不需要启动 PostgreSQL。
+"""Storing in the database, tested with in-memory SQLite; no PostgreSQL required.
 
-SQLite 是一个"装在文件（或内存）里的小数据库"，Python 自带。表结构由同一份模型生成，
-所以能测出"存进去、读出来"的逻辑对不对。PostgreSQL 特有的地方（JSONB 等）由迁移和 doctor 负责。
-"""
+SQLite is a small embedded database that ships with Python. The schema is generated from the same
+models, so the store-and-load logic can be tested. PostgreSQL specifics (JSONB and others) are
+covered by migrations and doctor."""
 
 import pytest
 from sqlalchemy import select
@@ -28,12 +28,12 @@ def test_save_and_read_back(factory, report, receipt_file):
         document = session.get_one(Document, document_id)
         assert document.filename == "receipt.jpg"
         assert document.sha256 == file_sha256(receipt_file)
-        assert document.user_id == PERSONAL_OWNER.user_id  # 数据带归属
+        assert document.user_id == PERSONAL_OWNER.user_id  # Data carries ownership.
 
         [extraction] = document.extractions
-        assert extraction.model == "test-model"  # 来源
+        assert extraction.model == "test-model"  # Provenance.
         assert extraction.prompt_version == "extract-v2"
-        assert extraction.raw_output == '{"raw": "模型原话"}'  # 原始回答
+        assert extraction.raw_output == '{"raw": "模型原话"}'  # Raw answer.
         assert extraction.checks["issues"][0]["rule"] == "change"
 
         values = {v.name: v for v in extraction.values}
@@ -49,7 +49,8 @@ def test_save_and_read_back(factory, report, receipt_file):
         assert values["total"].evidence["row"] == 6
         assert values["member"].value is None
         assert values["member"].status == "empty"
-        # 找零规则不通过：现金、总额、找零都要人工确认；商家名没问题
+        # The change rule fails: cash, total and change require confirmation; the merchant name is
+        # fine.
         assert values["change"].needs_review
         assert values["cash"].needs_review
         assert not values["merchant"].needs_review

@@ -1,17 +1,21 @@
-/** 上传时选模板：选项、记住上次选的。 */
+/** Template selection at upload: options and the remembered choice. */
 
 import type { Template } from '../../api/types'
 import { countryName } from './labels'
+import { t } from '../../i18n'
 
-/** "不用模板、抽出所有键值对"在选择里的值（和后端一样）。 */
+/** Value of "no template, extract all key-value pairs" (same as the backend). */
 export const DISCOVER = 'discover'
 
-/** "自动判断用哪个模板"在选择里的值（和后端一样，ADR 0038）。 */
+/** Value of "select the template automatically" (same as the backend). */
 export const AUTO = 'auto'
 
 const KEY = 'jacara.upload.template'
 
-/** 上次上传选的模板（记在这个浏览器里）。没有就是 undefined：后端用这个人上一次用的。 */
+/**
+ * Template chosen for the last upload (remembered in this browser). undefined means the backend uses this
+ * user's last template.
+ */
 export function loadUploadTemplate(): string | undefined {
   try {
     return localStorage.getItem(KEY) ?? undefined
@@ -24,32 +28,35 @@ export function saveUploadTemplate(value: string) {
   try {
     localStorage.setItem(KEY, value)
   } catch {
-    // 存不了就算了
+    // Storage unavailable: ignore.
   }
 }
 
-/** 我的模板按第一个功能领域分组；名字后面带上国家（通用的不写），可以按名字、领域、国家、标签搜。 */
+/**
+ * My templates grouped by their first domain; names are followed by countries (omitted for generic) and are
+ * searchable by name, domain, country and tag.
+ */
 export function templateOptions(templates: Template[]) {
-  const mine = templates.filter((t) => t.kind === 'mine' && !t.archived && t.id)
+  const mine = templates.filter((tpl) => tpl.kind === 'mine' && !tpl.archived && tpl.id)
   const groups = new Map<string, Template[]>()
-  for (const t of mine) {
-    const key = t.domains?.[0] || t.category || '其他'
-    groups.set(key, [...(groups.get(key) ?? []), t])
+  for (const tpl of mine) {
+    const key = tpl.domains?.[0] || tpl.category || t('其他')
+    groups.set(key, [...(groups.get(key) ?? []), tpl])
   }
-  const label = (t: Template) => {
-    const where = (t.countries ?? []).map(countryName).join('、')
-    return `${t.title}${where ? ` · ${where}` : ''}（第 ${t.version} 版）`
+  const label = (tpl: Template) => {
+    const where = (tpl.countries ?? []).map(countryName).join(t('、'))
+    return t('{{title}}{{value}}（第 {{version}} 版）', { title: tpl.title, value: where ? ` · ${where}` : '', version: tpl.version })
   }
   const auto = mine.length
     ? [
         {
-          label: '让系统选',
+          label: t('让系统选'),
           title: 'auto',
           options: [
             {
               value: AUTO,
-              label: '自动判断（从我的模板里选最合适的）',
-              search: '自动判断 auto 让系统选',
+              label: t('自动判断（从我的模板里选最合适的）'),
+              search: t('自动判断 auto 让系统选'),
             },
           ],
         },
@@ -60,18 +67,18 @@ export function templateOptions(templates: Template[]) {
     ...[...groups].map(([category, items]) => ({
       label: category,
       title: category,
-      options: items.map((t) => ({
-        value: t.id as string,
-        label: label(t),
-        // 搜索时也能按领域、国家、自定义标签找
-        search: [label(t), ...(t.domains ?? []), ...(t.tags ?? [])].join(' '),
+      options: items.map((tpl) => ({
+        value: tpl.id as string,
+        label: label(tpl),
+        // Search also matches domains, countries and custom tags.
+        search: [label(tpl), ...(tpl.domains ?? []), ...(tpl.tags ?? [])].join(' '),
       })),
     })),
     {
-      label: '没有合适的模板',
+      label: t('没有合适的模板'),
       title: 'discover',
       options: [
-        { value: DISCOVER, label: '抽取所有键值对（之后可以存成模板）', search: '抽取所有键值对 discover' },
+        { value: DISCOVER, label: t('抽取所有键值对（之后可以存成模板）'), search: t('抽取所有键值对 discover') },
       ],
     },
   ]

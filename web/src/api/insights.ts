@@ -1,10 +1,11 @@
-/** 统计和数据导出：/api/v1/insights（ADR 0044）。 */
+/** Statistics and data export: /api/v1/insights. */
 
 import { api, apiDownload, type DownloadedFile } from './client'
+import { t } from '../i18n'
 
 export interface KindCount {
   kind: string
-  /** 中文名：小数点、日月颠倒…… */
+  /** Display name: decimal point, day/month swapped, … */
   name: string
   count: number
 }
@@ -16,7 +17,7 @@ export interface FieldStat {
   label: string
   total: number
   edited: number
-  /** 改了，但抽取时没标黄（错了却没提醒）。 */
+  /** Corrected but not flagged at extraction (wrong without a warning). */
   silent: number
   rate: number
   kinds: KindCount[]
@@ -44,7 +45,7 @@ export interface Correction {
   flagged: boolean
   reason: string
   at: string
-  /** 错误归因（ADR 0053）。 */
+  /** Error attribution. */
   attribution_id: string | null
   stage: Stage | null
   stage_name: string
@@ -56,7 +57,10 @@ export interface Correction {
 
 export type Stage = 'ocr_misread' | 'ocr_uncovered' | 'extraction' | 'matching' | 'template' | 'mixed' | 'unknown'
 
-/** 归因的证据：OCR 样本、发给模型的文字、审核时点的原文或框、模型给的原值、模板设置。 */
+/**
+ * Attribution evidence: OCR samples, text sent to the model, source text or regions selected during review,
+ * the model's original value, template settings.
+ */
 export interface Evidence {
   kind: 'ocr_sample' | 'sent_text' | 'revision' | 'value' | 'template'
   stage?: Stage
@@ -78,7 +82,7 @@ export interface StageCount {
   count: number
 }
 
-/** 人改判错在哪一步；stage 为 null 是撤销改判。 */
+/** Override the stage at fault; stage null reverts the override. */
 export function overrideAttribution(id: string, stage: Stage | null, note: string) {
   return api<{ id: string; stage: Stage; auto_stage: Stage; overridden: boolean; note: string }>(
     `/insights/attributions/${id}`,
@@ -93,9 +97,9 @@ export interface CorrectionStats {
   confirmed: number
   silent: number
   rate: number
-  /** 平均每份审核用了几秒（只算记了用时的单据）。 */
+  /** Average review seconds per document (only documents with recorded review time). */
   review_seconds: number | null
-  /** 记了审核用时的有几份。 */
+  /** Number of documents with recorded review time. */
   timed_documents: number
   kinds: KindCount[]
   templates: TemplateStat[]
@@ -111,9 +115,9 @@ export function getCorrections(template?: string, days?: number): Promise<Correc
   return api<CorrectionStats>(`/insights/corrections?${query}`)
 }
 
-/** 审核过的单据打包成 zip：原文件、训练数据、成对测评清单。 */
+/** Package reviewed documents into a zip: original files, training data, paired evaluation manifest. */
 export function downloadDataset(opts: { template?: string; sensitive: boolean; files: boolean }): Promise<DownloadedFile> {
   const query = new URLSearchParams({ sensitive: String(opts.sensitive), files: String(opts.files) })
   if (opts.template) query.set('template', opts.template)
-  return apiDownload(`/insights/dataset?${query}`, '审核数据.zip')
+  return apiDownload(`/insights/dataset?${query}`, t('审核数据.zip'))
 }

@@ -20,9 +20,9 @@ _JSON = sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgre
 
 
 def upgrade() -> None:
-    # 每一页的结构：文字块、行、版面区域、表格、标题 → 值（ADR 0034）
+    # Page structure per page: text blocks, lines, layout regions, tables, label-value pairs.
     op.add_column("extractions", sa.Column("structure", _JSON, nullable=True))
-    # 核对不上、按规则没有填的值：模型给的值记在这里
+    # Value returned by the model but rejected because it could not be matched to the source text.
     op.add_column("extracted_values", sa.Column("rejected_value", sa.Text(), nullable=True))
 
 

@@ -9,6 +9,7 @@ import { listTemplates } from '../../api/templates'
 import { REPROCESS_REASONS, type ReprocessReason } from '../../api/types'
 import { PDF_READ_CHOICES, SAME, SPLITS, VISION_CHOICES } from '../review/reprocessChoices'
 import { templateOptions } from '../templates/uploadChoice'
+import { useTranslation } from 'react-i18next'
 
 const KEEP = 'keep'
 
@@ -22,8 +23,9 @@ interface Choice {
 }
 
 /**
- * 批量重新处理：勾选的几份用同样的设置各跑新的一轮。设置都显示出来，可以改；
- * 默认模板用各自的最新版、分单据和上次一样、看原图和 PDF 读法按系统设置。
+ * Bulk reprocessing: run a new pass for each selected document with the same settings. All settings are shown
+ * and editable; by default each document uses its latest template version, the previous split, and system
+ * settings for vision and PDF read mode.
  */
 export function BatchReprocessButton({
   ids,
@@ -32,11 +34,12 @@ export function BatchReprocessButton({
   onDone,
 }: {
   ids: string[]
-  /** 选中的里面有正在处理的：不打开设置，先提示。 */
+  /** The selection contains documents being processed: show a notice instead of the settings. */
   busy: boolean
   onBusy: () => void
   onDone: (ids: string[]) => void
 }) {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const [open, setOpen] = useState(false)
   const [form] = Form.useForm<Choice>()
@@ -59,31 +62,31 @@ export function BatchReprocessButton({
     },
     onSuccess: ({ queued, skipped }) => {
       setOpen(false)
-      if (queued > 0) void message.success(`已重新排队 ${queued} 份`)
-      for (const r of skipped) void message.warning(`没重新处理：${r}`)
+      if (queued > 0) void message.success(t('已重新排队 {{queued}} 份', { queued }))
+      for (const r of skipped) void message.warning(t('没重新处理：{{r}}', { r }))
       onDone(ids)
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
 
-  const keep = { value: KEEP, label: '和上次一样' }
+  const keep = { value: KEEP, label: t('和上次一样') }
   return (
     <>
-      <Tooltip title={ids.length === 0 ? '先在左边勾选要重新处理的' : undefined}>
+      <Tooltip title={ids.length === 0 ? t('先在左边勾选要重新处理的') : undefined}>
         <Button
           icon={<SyncOutlined />}
           disabled={ids.length === 0}
           loading={run.isPending}
           onClick={() => (busy ? onBusy() : setOpen(true))}
         >
-          重新处理{ids.length > 0 ? `（${ids.length}）` : ''}
+          {t('重新处理')}{ids.length > 0 ? t('（{{length}}）', { length: ids.length }) : ''}
         </Button>
       </Tooltip>
       <Modal
         open={open}
-        title={`重新处理选中的 ${ids.length} 份`}
-        okText="重新处理"
-        cancelText="取消"
+        title={t('重新处理选中的 {{length}} 份', { length: ids.length })}
+        okText={t('重新处理')}
+        cancelText={t('取消')}
         confirmLoading={run.isPending}
         onCancel={() => setOpen(false)}
         onOk={() => form.submit()}
@@ -103,45 +106,45 @@ export function BatchReprocessButton({
           onFinish={(v) => run.mutate(v)}
           preserve={false}
         >
-          <Form.Item name="template" label="用哪个模板">
+          <Form.Item name="template" label={t('用哪个模板')}>
             <Select
               loading={templates.isPending}
               options={[
                 {
-                  label: '不换',
+                  label: t('不换'),
                   title: 'same',
-                  options: [{ value: SAME, label: '各自现在的模板（最新版）' }],
+                  options: [{ value: SAME, label: t('各自现在的模板（最新版）') }],
                 },
                 ...templateOptions(templates.data ?? []),
               ]}
             />
           </Form.Item>
-          <Form.Item name="split" label="一个文件里几张单据">
+          <Form.Item name="split" label={t('一个文件里几张单据')}>
             <Select options={[keep, ...SPLITS.filter((s) => s.value !== 'ranges')]} />
           </Form.Item>
           <Form.Item
             name="vision"
-            label="对照原图读"
-            extra={vision.isSuccess && !sees ? '还没有视觉模型，只能看文字。' : undefined}
+            label={t('对照原图读')}
+            extra={vision.isSuccess && !sees ? t('还没有视觉模型，只能看文字。') : undefined}
           >
             <Select disabled={!sees} options={[...VISION_CHOICES, keep]} />
           </Form.Item>
-          <Form.Item name="pdfRead" label="PDF 怎么读" extra="只对 PDF 有效。">
+          <Form.Item name="pdfRead" label={t('PDF 怎么读')} extra={t('只对 PDF 有效。')}>
             <Select options={[...PDF_READ_CHOICES, keep]} />
           </Form.Item>
-          <Form.Item name="reason" label="为什么" rules={[{ required: true }]}>
+          <Form.Item name="reason" label={t('为什么')} rules={[{ required: true }]}>
             <Radio.Group
               options={Object.entries(REPROCESS_REASONS).map(([value, label]) => ({ value, label }))}
             />
           </Form.Item>
           <Form.Item
             name="note"
-            label="说明"
-            rules={[{ required: reason === 'other', message: '原因选了"其他"，请写一句说明' }]}
+            label={t('说明')}
+            rules={[{ required: reason === 'other', message: t('原因选了"其他"，请写一句说明') }]}
           >
-            <Input.TextArea autoSize={{ minRows: 1 }} maxLength={500} placeholder="可以不写" />
+            <Input.TextArea autoSize={{ minRows: 1 }} maxLength={500} placeholder={t('可以不写')} />
           </Form.Item>
-          <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>旧结果保留，已审核的要重新审核。</div>
+          <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{t('旧结果保留，已审核的要重新审核。')}</div>
         </Form>
       </Modal>
     </>

@@ -1,18 +1,19 @@
-"""把页面结构写成给大模型看的文字（ADR 0034）。
+"""Serialize page structure as text for the LLM.
 
-两部分：
-1. 版面原样（LAPDoc 的 SpatialFormat）：按每块文字在页面上的横向位置用空格排开，
-   上下空得多的地方空一行。模型不用算坐标，一眼就能看出谁在谁下面、哪几块是一列。
-   每块前面带编号 ⟨n⟩（LMDX 的做法）：模型回答值的时候说"用了哪几块"，系统再去核对。
-2. 结构：版面区域、"标题 → 值"、表格（每格是哪几块），都用编号写。
-"""
+Two parts:
+1. Layout-preserving text (LAPDoc SpatialFormat): each block is placed with spaces according to
+   its horizontal position on the page, with an empty line where vertical gaps are large. The
+   model sees at a glance what lies below what and which blocks form a column, without computing
+   coordinates. Each block is prefixed with an index ⟨n⟩ (the LMDX approach): the model names the
+   blocks used for each value, and the system verifies them.
+2. Structure: layout regions, label → value pairs and tables (blocks per cell), all by index."""
 
 from __future__ import annotations
 
 from jacara.structure.graph import Block, PageStructure
 
 GRID = 120
-"""页面宽度换算成多少个字符的宽度。"""
+"""Page width expressed in characters."""
 
 
 def mark(n: int) -> str:
@@ -20,13 +21,14 @@ def mark(n: int) -> str:
 
 
 def spatial_text(s: PageStructure) -> str:
-    """版面原样：一行一个视觉行，每块按横向位置排，块前面带 ⟨编号⟩。"""
+    """Layout-preserving text: one visual line per line, blocks placed by horizontal position and
+    prefixed with ⟨index⟩."""
     out: list[str] = []
     previous: Block | None = None
     page = 0
     for line_id in s.lines:
         line = s.blocks[line_id]
-        # 几页拼成的单据：到了下一页，写一行分隔（ADR 0036）
+        # Stacked documents: write a separator line at each new page.
         while page + 1 < len(s.page_starts) and line.box[1] >= s.page_starts[page + 1]:
             page += 1
             out += ["", f"──────── 第 {page + 1} 页 ────────", ""]
@@ -34,7 +36,7 @@ def spatial_text(s: PageStructure) -> str:
         if previous is not None:
             h = max(min(line.box[3] - line.box[1], previous.box[3] - previous.box[1]), 1.0)
             if line.box[1] - previous.box[3] > 1.2 * h:
-                out.append("")  # 上下空得多：空一行
+                out.append("")  # Large vertical gap: add an empty line.
         text = ""
         for word in sorted((s.blocks[c] for c in line.children), key=lambda w: w.box[0]):
             column = round(word.box[0] / max(s.width, 1.0) * GRID)
@@ -55,9 +57,10 @@ def _marks(s: PageStructure, block_id: str) -> str:
 
 
 def structure_text(s: PageStructure) -> str:
-    """版面区域、标题 → 值、表格。都没有就是空字符串。"""
+    """Layout regions, label → value pairs and tables. Empty string if there are none."""
     parts: list[str] = []
-    # 正文是默认的，不用说；只列出页眉、页脚、标题、表格这些有用的区域
+    # Text is the default and needs no mention; list only useful regions such as headers, footers,
+    # titles and tables.
     regions = [
         s.blocks[a]
         for a in s.layouts

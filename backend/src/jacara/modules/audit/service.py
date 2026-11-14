@@ -1,9 +1,8 @@
-"""审计日志：记录（record）和查看。
+"""Audit log: recording (record) and viewing.
 
-其他模块的 service 做完一件"值得追查"的事，就调用 record()：
-登录、退出、上传、重新处理、审核字段、完成审核、导出、管理用户。
-只看、不改的操作（列表、详情、下载原图）不记，否则日志会被淹没。
-"""
+Other modules' services call record() after an action that should be traceable: login, logout,
+upload, reprocessing, field review, review completion, export, user management. Read-only
+operations (lists, details, downloading originals) are not logged, which would drown the log."""
 
 from __future__ import annotations
 
@@ -27,7 +26,8 @@ def record(
     target_id: uuid.UUID | str | None = None,
     **detail: Any,
 ) -> None:
-    """记一条审计日志，和业务数据在同一个事务里：业务回滚了，日志也不会留下"做了一半"的记录。"""
+    """Record an audit log entry in the same transaction as the business change: if the change is
+    rolled back, no half-done entry remains."""
     AuditRepository(session).add(
         AuditLog(
             team_id=owner.team_id if owner else None,
@@ -41,7 +41,7 @@ def record(
 
 
 EXPORT_LIMIT = 50_000
-"""一次最多导出多少条审计日志。"""
+"""Maximum number of audit log entries per export."""
 
 
 class AuditService:
@@ -55,8 +55,8 @@ class AuditService:
         return AuditPage(items=[AuditOut.model_validate(log) for log in logs], total=total)
 
     def export(self, found: AuditFilter) -> AuditPage:
-        """导出：按筛选条件取出全部（最多 EXPORT_LIMIT 条）。
-        导出本身也记一条（审计日志离开系统）。"""
+        """Export all entries matching the filters (at most EXPORT_LIMIT).
+        The export itself is also logged (audit data leaving the system)."""
         require(self.owner, "audit:read")
         logs, total = self.repo.page(self.owner.team_id, EXPORT_LIMIT, 0, found)
         record(

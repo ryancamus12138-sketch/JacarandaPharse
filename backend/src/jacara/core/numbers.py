@@ -1,16 +1,21 @@
-"""在原文里找一个数：把原文里的数一个个读出来，按数值比（不再把值猜成各种写法去搜）。
+"""Locate a number in the source text: parse every number in the text and compare numerically,
+instead of generating candidate spellings of the value and searching for them.
 
-以前把 78.5 猜成 78.50、1,234.50 这几种写法去原文里搜，猜漏一种（一位小数、三位小数、
-欧洲的 1.234,56）就找不到出处。现在倒过来：原文里每个数原样切出来、读成精确的十进制数，
-和值相等就算找到。
+Generating spellings of 78.5 (78.50, 1,234.50, …) misses any spelling not generated (one decimal
+place, three decimal places, European 1.234,56). The approach is inverted: every number in the
+source text is cut out as written and parsed to an exact decimal; a match is a number equal to
+the value.
 
-- 只切完整的数：19.00 里不会切出 9.00，9.000 也是一整个数；
-- 逗号、句号是千分位还是小数点说不准时（1,234、1.234、12,5），几种读法都留着，值等于其中一种就算；
-  两种都出现时最后一个是小数点（1,234.56、1.234,56）；
-- 写成整数的（9、1,234）太容易撞上数量、编号，只在 loose=True（模型指定的那一行）时才认；
-- 小数位数比值需要的多、又超过两位的不算（金额 9 不认 9.000：那常常是重量、数量）；
-- 不管正负号：折扣写成 6.00-、-6.00、(6.00)，找数字本身就行（正负号另外核对）。
-"""
+- Only complete numbers are cut: 19.00 does not yield 9.00, and 9.000 is a single number;
+- When a comma or period may be either a thousands separator or a decimal point (1,234, 1.234,
+  12,5), all readings are kept and a match with any of them counts; when both appear, the last
+  one is the decimal point (1,234.56, 1.234,56);
+- Integers (9, 1,234) collide too easily with quantities and identifiers and are accepted only
+  with loose=True (the line indicated by the model);
+- Numbers with more decimal places than the value needs, and more than two, do not match (an
+  amount of 9 does not match 9.000, which is often a weight or quantity);
+- Signs are ignored: a discount written as 6.00-, -6.00 or (6.00) is matched on the digits (the
+  sign is checked separately)."""
 
 from __future__ import annotations
 
@@ -19,14 +24,16 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 _TOKEN = re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)*(?!\d)")
-"""原文里的一个数：几段数字，中间只隔一个逗号或句号。前面紧挨着数字、逗号、句号的不算开头。"""
+"""A number in the source text: digit groups separated by single commas or periods. A match
+immediately preceded by a digit, comma or period is not the start of a number."""
 
 
 @dataclass(frozen=True)
 class Reading:
     value: Decimal
     places: int
-    """这种读法写了几位小数（写成整数、或者逗号句号都是千分位的是 0）。"""
+    """Number of decimal places in this reading (0 for integers or when every comma and period is a
+    thousands separator)."""
 
 
 @dataclass(frozen=True)
@@ -38,16 +45,18 @@ class NumberToken:
 
 
 def readings(text: str) -> tuple[Reading, ...]:
-    """一段数字（1,234.56、12,5、78.5）可能的读法。读不成数（25.12.2018）是空的。"""
+    """Possible readings of a digit sequence (1,234.56, 12,5, 78.5). Empty if it is not a number
+    (25.12.2018)."""
     groups = re.split(r"[.,]", text)
     seps = re.findall(r"[.,]", text)
     if len(groups[0]) > 1 and groups[0].startswith("0"):
-        return ()  # 007、0123：编号，不是数
+        return ()  # 007, 0123: identifiers, not numbers.
     if not seps:
         return (Reading(Decimal(text), 0),)
     found: list[Reading] = []
     if len(set(seps)) == 2:
-        # 两种都有：最后一个是小数点，前面的都得是另一种（千分位）
+        # Both present: the last one is the decimal point and all earlier ones must be the other
+        # (thousands separator).
         point = seps[-1]
         if point in seps[:-1] or any(len(g) != 3 for g in groups[1:-1]) or len(groups[0]) > 3:
             return ()
@@ -55,14 +64,16 @@ def readings(text: str) -> tuple[Reading, ...]:
         return tuple(found)
     if len(groups) == 2:
         whole, part = groups
-        found.append(Reading(Decimal(f"{whole}.{part}"), len(part)))  # 小数点（12,5 是欧洲写法）
+        # Decimal point (12,5 is European notation).
+        found.append(Reading(Decimal(f"{whole}.{part}"), len(part)))
     if all(len(g) == 3 for g in groups[1:]) and 1 <= len(groups[0]) <= 3:
-        found.append(Reading(Decimal("".join(groups)), 0))  # 千分位（1,234、1.234.567）
+        # Thousands separator (1,234, 1.234.567).
+        found.append(Reading(Decimal("".join(groups)), 0))
     return tuple(found)
 
 
 def numbers_in(text: str) -> list[NumberToken]:
-    """原文里的每个数，和它在文字里的位置。"""
+    """Every number in the source text with its position."""
     tokens: list[NumberToken] = []
     for m in _TOKEN.finditer(text):
         found = readings(m[0])
@@ -81,13 +92,13 @@ def _decimal(value: float | int | str | Decimal) -> Decimal | None:
 
 
 def _places(number: Decimal) -> int:
-    """这个数至少要几位小数：78.5 → 1，9 → 0，0.123 → 3。"""
+    """Minimum number of decimal places for this value: 78.5 → 1, 9 → 0, 0.123 → 3."""
     exponent = number.normalize().as_tuple().exponent
     return max(0, -exponent) if isinstance(exponent, int) else 0
 
 
 def matches(token: NumberToken, value: float | int | str | Decimal, *, loose: bool) -> bool:
-    """原文里的这个数是不是 value。"""
+    """Whether this number in the source text equals value."""
     target = _decimal(value)
     if target is None:
         return False
@@ -105,7 +116,8 @@ def matches(token: NumberToken, value: float | int | str | Decimal, *, loose: bo
 
 @dataclass(frozen=True)
 class NumberMatch:
-    """找到的位置，和 re.Match 一样有 start()、end()、group()，出处框按它截。"""
+    """Match location, like re.Match with start(), end() and group(); the evidence box is cut from
+    it."""
 
     token: NumberToken
 
@@ -121,7 +133,7 @@ class NumberMatch:
 
 @dataclass(frozen=True)
 class NumberPattern:
-    """一个值的查找规则：用法和正则一样，pattern.search(text)。"""
+    """Search rule for one value; used like a regular expression: pattern.search(text)."""
 
     value: float | int | str | Decimal
     loose: bool = True
@@ -134,5 +146,6 @@ class NumberPattern:
 
 
 def number_pattern(value: float | int | str | Decimal, *, loose: bool) -> NumberPattern:
-    """在原文里找 value 的规则。loose=True 时写成整数的（9、1,234）也算。"""
+    """Rule for locating value in the source text. With loose=True, integers (9, 1,234) also
+    match."""
     return NumberPattern(value, loose)

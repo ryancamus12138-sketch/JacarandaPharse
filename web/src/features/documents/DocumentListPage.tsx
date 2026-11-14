@@ -43,14 +43,16 @@ import { BatchReprocessButton } from './BatchReprocess'
 import { EXPORTABLE, IN_PROGRESS } from './status'
 import { StatusTag } from './StatusTag'
 import { UploadArea } from './UploadArea'
+import { useTranslation } from 'react-i18next'
+import { t } from '../../i18n'
 
 const PAGE_SIZE = 20
-const POLL_MS = 3000 // 有文件在排队或处理时，每 3 秒刷新一次
-const STUCK_MS = 60_000 // 排队超过 1 分钟还没开始：多半是 worker 没开，或者队列丢了任务
+const POLL_MS = 3000 // Refresh every 3 seconds while files are queued or processing.
+const STUCK_MS = 60_000 // Queued for over a minute without starting: usually no worker is running or the queue lost the task.
 
 /**
- * 能不能点"重试"：失败的，或者排队太久的。
- * 后端两种都接受；worker 按状态认领，重复放进队列也不会处理两次。
+ * Whether "Retry" is available: failed documents, or documents queued too long.
+ * The backend accepts both; workers claim by status, so requeueing never processes a document twice.
  */
 function canRetry(d: DocumentSummary, now: number): boolean {
   if (d.status === 'failed') {
@@ -60,14 +62,17 @@ function canRetry(d: DocumentSummary, now: number): boolean {
 }
 
 const STATUS_OPTIONS: { value: DocumentStatus; label: string }[] = [
-  { value: 'uploaded', label: '排队中' },
-  { value: 'processing', label: '处理中' },
-  { value: 'done', label: '待审核' },
-  { value: 'failed', label: '失败' },
-  { value: 'reviewed', label: '已审核' },
+  { value: 'uploaded', get label() { return t('排队中') } },
+  { value: 'processing', get label() { return t('处理中') } },
+  { value: 'done', get label() { return t('待审核') } },
+  { value: 'failed', get label() { return t('失败') } },
+  { value: 'reviewed', get label() { return t('已审核') } },
 ]
 
-/** 筛选条件放在网址里（?status=done&q=costco）：刷新、后退、从工作台点进来都能保持。 */
+/**
+ * Filters live in the URL (?status=done&q=costco), so they survive reloads, back navigation and links from
+ * the dashboard.
+ */
 function filtersFrom(params: URLSearchParams): DocumentFilters {
   return {
     status: params.getAll('status') as DocumentStatus[],
@@ -98,51 +103,57 @@ function paramsFrom(f: DocumentFilters): URLSearchParams {
   return params
 }
 
-/** 文档列表：上传、筛选、看状态和进度、失败重试、勾选导出。点文件名进入审核页。 */
+/**
+ * Document list: upload, filter, status and progress, retry failures, select for export. Clicking a file name
+ * opens the review page.
+ */
 export function DocumentListPage() {
+  const { t } = useTranslation()
   const { can } = useAuth()
   const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
-  // 勾选了哪些文档（要导出的）。翻页时保留，可以跨页勾选
+  // Selected documents (for export). Kept across pages, so selection can span pages.
   const [selected, setSelected] = useState<string[]>([])
-  // 勾选的那几行（翻页后也记着）：状态会变，重新处理前要看有没有正在处理的
+  // Selected rows (remembered across pages): their status may change, so check for documents being processed
+  // before reprocessing.
   const [pickedRows, setPickedRows] = useState<Record<string, DocumentSummary>>({})
   const [params, setParams] = useSearchParams()
   const filters = filtersFrom(params)
   const filtered = params.toString() !== ''
-  // 搜索框打字时先不查，按回车或点搜索再查
+  // Typing in the search box does not query; press Enter or click search.
   const [search, setSearch] = useState(filters.q ?? '')
   const [valueSearch, setValueSearch] = useState(filters.value_q ?? '')
   const templates = useQuery({ queryKey: ['templates'], queryFn: listTemplates, staleTime: Infinity })
   const folders = useQuery({ queryKey: ['folders'], queryFn: listFolders })
 
-  // "在哪个字段里找"的选项：选了模板就是这个模板的字段，没选就是所有模板的字段（同一个 ID 只列一次）
+  // Options for "search in field": the selected template's fields, or all templates' fields when none is
+  // selected (each ID listed once).
   const fieldOptions = (() => {
     const seen = new Map<string, string>()
-    for (const t of templates.data ?? []) {
-      if (filters.template && t.name !== filters.template) continue
-      for (const f of t.fields) if (!seen.has(f.name)) seen.set(f.name, f.label || f.name)
+    for (const tpl of templates.data ?? []) {
+      if (filters.template && tpl.name !== filters.template) continue
+      for (const f of tpl.fields) if (!seen.has(f.name)) seen.set(f.name, f.label || f.name)
     }
     return [...seen].map(([value, label]) => ({ value, label }))
   })()
 
   function setFilters(change: Partial<DocumentFilters>) {
     setParams(paramsFrom({ ...filters, ...change }), { replace: true })
-    setPage(1) // 条件变了，从第一页看起
+    setPage(1) // Filters changed: start from the first page.
   }
 
   const documents = useQuery({
     queryKey: ['documents', page, params.toString()],
     queryFn: () => listDocuments(PAGE_SIZE, (page - 1) * PAGE_SIZE, filters),
-    placeholderData: keepPreviousData, // 翻页时先显示上一页，新数据到了再换，表格不会闪
+    placeholderData: keepPreviousData, // Keep showing the previous page until new data arrives, so the table does not flicker.
     refetchInterval: (query) =>
       query.state.data?.items.some((d) => IN_PROGRESS.includes(d.status)) ? POLL_MS : false,
   })
 
   const retry = useMutation({
     mutationFn: processDocument,
-    onSuccess: (document) => void message.success(`${document.filename} 已重新排队`),
+    onSuccess: (document) => void message.success(t('{{filename}} 已重新排队', { filename: document.filename })),
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: ['documents'] }),
   })
@@ -150,8 +161,8 @@ export function DocumentListPage() {
   const remove = useMutation({
     mutationFn: deleteDocuments,
     onSuccess: ({ deleted, skipped }, ids) => {
-      void message.success(`删除了 ${deleted} 份`)
-      for (const reason of skipped) void message.warning(`没删：${reason}`)
+      void message.success(t('删除了 {{deleted}} 份', { deleted }))
+      for (const reason of skipped) void message.warning(t('没删：{{reason}}', { reason }))
       setSelected((s) => s.filter((id) => !ids.includes(id)))
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
@@ -163,22 +174,28 @@ export function DocumentListPage() {
   })
   const canDelete = can('document:delete')
 
-  /** 勾选的这一份现在是什么状态：当前页上有就用最新的，翻走了就用勾选时记下的。 */
+  /**
+   * Current status of a selected document: from the current page if present, otherwise as recorded when
+   * selected.
+   */
   function statusOf(id: string): DocumentStatus | undefined {
     return documents.data?.items.find((d) => d.id === id)?.status ?? pickedRows[id]?.status
   }
   const busyPicked = selected.filter((id) => IN_PROGRESS.includes(statusOf(id) as DocumentStatus))
 
-  /** 选中的里面有正在处理、排队中的：不重新处理，提示取消勾选。 */
+  /** The selection contains processing or queued documents: do not reprocess; ask to deselect them. */
   function warnBusy() {
     const names = busyPicked.map(
       (id) => documents.data?.items.find((d) => d.id === id)?.filename ?? pickedRows[id]?.filename ?? id,
     )
     modal.confirm({
-      title: `有 ${names.length} 份正在处理，不能重新处理`,
-      content: `${names.slice(0, 5).join('、')}${names.length > 5 ? ` 等 ${names.length} 份` : ''}。请取消勾选后再试。`,
-      okText: '取消勾选这些',
-      cancelText: '返回',
+      title: t('有 {{length}} 份正在处理，不能重新处理', { length: names.length }),
+      content: t('{{names}}{{more}}。请取消勾选后再试。', {
+        names: names.slice(0, 5).join(t('、')),
+        more: names.length > 5 ? t(' 等 {{length}} 份', { length: names.length }) : '',
+      }),
+      okText: t('取消勾选这些'),
+      cancelText: t('返回'),
       onOk: () => setSelected((s) => s.filter((id) => !busyPicked.includes(id))),
     })
   }
@@ -186,12 +203,12 @@ export function DocumentListPage() {
 
   const columns: TableProps<DocumentSummary>['columns'] = [
     {
-      title: '文件名',
+      title: t('文件名'),
       dataIndex: 'filename',
       ellipsis: true,
       render: (filename: string, d) => (
         <Flex gap={6} align="center" style={{ minWidth: 0 }}>
-          {/* 处理完的才有结果可看 */}
+          {/* Only processed documents have results to view. */}
           <Typography.Text ellipsis style={{ minWidth: 0 }}>
             {d.status === 'done' || d.status === 'reviewed' ? (
               <Link to={`/documents/${d.id}`}>{filename}</Link>
@@ -200,25 +217,27 @@ export function DocumentListPage() {
             )}
           </Typography.Text>
           {d.skipped_at && (
-            <Tooltip title={d.skip_reason ? `跳过原因：${d.skip_reason}` : '审核时先跳过了'}>
+            <Tooltip title={d.skip_reason ? t('跳过原因：{{skip_reason}}', { skip_reason: d.skip_reason }) : t('审核时先跳过了')}>
               <Tag color="orange" style={{ marginInlineEnd: 0 }}>
-                已跳过
+                {t('已跳过')}
               </Tag>
             </Tooltip>
           )}
           {(d.same_file ?? []).length > 0 && (
             <Tooltip
-              title={`内容完全一样的文件以前传过：${(d.same_file ?? [])
-                .map((o) => `${o.filename}（${formatTime(o.created_at)}）`)
-                .join('、')}`}
+              title={t('内容完全一样的文件以前传过：{{files}}', {
+                files: (d.same_file ?? [])
+                  .map((o) => t('{{filename}}（{{formatTime}}）', { filename: o.filename, formatTime: formatTime(o.created_at) }))
+                  .join(t('、')),
+              })}
             >
               <Tag color="red" style={{ marginInlineEnd: 0 }}>
-                重复的文件
+                {t('重复的文件')}
               </Tag>
             </Tooltip>
           )}
           {d.folder && (
-            <Tooltip title="批量导入时所在的文件夹，点一下只看这个文件夹">
+            <Tooltip title={t('批量导入时所在的文件夹，点一下只看这个文件夹')}>
               <Tag
                 icon={<FolderOutlined />}
                 style={{ marginInlineEnd: 0, cursor: 'pointer' }}
@@ -229,7 +248,7 @@ export function DocumentListPage() {
             </Tooltip>
           )}
           {(d.open_comments ?? 0) > 0 && (
-            <Tooltip title={`${d.open_comments} 条备注没解决`}>
+            <Tooltip title={t('{{open_comments}} 条备注没解决', { open_comments: d.open_comments })}>
               <Tag icon={<MessageOutlined />} style={{ marginInlineEnd: 0 }}>
                 {d.open_comments}
               </Tag>
@@ -239,12 +258,12 @@ export function DocumentListPage() {
       ),
     },
     {
-      title: '状态',
+      title: t('状态'),
       dataIndex: 'status',
       width: 150,
       render: (_, d) =>
         d.status === 'processing' && d.progress !== null ? (
-          // 处理中：显示做到哪一步
+          // Processing: show the current step.
           <Flex vertical gap={0}>
             <Progress percent={d.progress} size="small" status="active" />
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -255,25 +274,25 @@ export function DocumentListPage() {
           <StatusTag status={d.status} error={d.status === 'failed' ? d.error : null} />
         ),
     },
-    { title: '页数', dataIndex: 'page_count', width: 70, align: 'right' },
+    { title: t('页数'), dataIndex: 'page_count', width: 80, align: 'right' },
     {
-      title: '待确认',
+      title: t('待确认'),
       dataIndex: 'review_count',
-      width: 90,
+      width: 110,
       align: 'right',
       render: (count: number, d) =>
         d.status !== 'done' ? '–' : count > 0 ? <Tag color="gold">{count}</Tag> : 0,
     },
     {
-      title: '大小',
+      title: t('大小'),
       dataIndex: 'size_bytes',
       width: 100,
       align: 'right',
       render: formatBytes,
     },
-    { title: '上传时间', dataIndex: 'created_at', width: 170, render: formatTime },
+    { title: t('上传时间'), dataIndex: 'created_at', width: 170, render: formatTime },
     {
-      title: '操作',
+      title: t('操作'),
       key: 'actions',
       width: 170,
       render: (_, d) => (
@@ -285,20 +304,20 @@ export function DocumentListPage() {
               loading={retry.isPending && retry.variables === d.id}
               onClick={() => retry.mutate(d.id)}
             >
-              重试
+              {t('重试')}
             </Button>
           )}
           {canDelete && d.status !== 'processing' && (
             <Popconfirm
-              title={`删除「${d.filename}」？`}
-              description="原始文件、处理结果、审核记录、备注都会删掉，不能恢复。"
-              okText="删除"
+              title={t('删除「{{filename}}」？', { filename: d.filename })}
+              description={t('原始文件、处理结果、审核记录、备注都会删掉，不能恢复。')}
+              okText={t('删除')}
               okButtonProps={{ danger: true }}
-              cancelText="取消"
+              cancelText={t('取消')}
               onConfirm={() => remove.mutate([d.id])}
             >
-              <Button size="small" danger type="text" icon={<DeleteOutlined />} aria-label="删除">
-                删除
+              <Button size="small" danger type="text" icon={<DeleteOutlined />} aria-label={t('删除')}>
+                {t('删除')}
               </Button>
             </Popconfirm>
           )}
@@ -309,7 +328,7 @@ export function DocumentListPage() {
 
   return (
     <Card
-      title="文档"
+      title={t('文档')}
       extra={
         <Flex gap={8}>
           {can('document:process') && (
@@ -326,22 +345,22 @@ export function DocumentListPage() {
           )}
           {canDelete && (
             <Popconfirm
-              title={`删除选中的 ${selected.length} 份？`}
-              description="原始文件、处理结果、审核记录、备注都会删掉，不能恢复。正在处理的会跳过。"
-              okText="删除"
+              title={t('删除选中的 {{length}} 份？', { length: selected.length })}
+              description={t('原始文件、处理结果、审核记录、备注都会删掉，不能恢复。正在处理的会跳过。')}
+              okText={t('删除')}
               okButtonProps={{ danger: true }}
-              cancelText="取消"
+              cancelText={t('取消')}
               disabled={selected.length === 0}
               onConfirm={() => remove.mutate(selected)}
             >
-              <Tooltip title={selected.length === 0 ? '先在左边勾选要删除的' : undefined}>
+              <Tooltip title={selected.length === 0 ? t('先在左边勾选要删除的') : undefined}>
                 <Button
                   danger
                   icon={<DeleteOutlined />}
                   disabled={selected.length === 0}
                   loading={remove.isPending}
                 >
-                  删除{selected.length > 0 ? `（${selected.length}）` : ''}
+                  {t('删除')}{selected.length > 0 ? t('（{{length}}）', { length: selected.length }) : ''}
                 </Button>
               </Tooltip>
             </Popconfirm>
@@ -352,7 +371,7 @@ export function DocumentListPage() {
             onClick={() => void documents.refetch()}
             loading={documents.isFetching}
           >
-            刷新
+            {t('刷新')}
           </Button>
         </Flex>
       }
@@ -362,7 +381,7 @@ export function DocumentListPage() {
         <Select<DocumentStatus[]>
           mode="multiple"
           allowClear
-          placeholder="全部状态"
+          placeholder={t('全部状态')}
           value={filters.status}
           onChange={(status) => setFilters({ status })}
           options={STATUS_OPTIONS}
@@ -371,12 +390,12 @@ export function DocumentListPage() {
         />
         <Select<string>
           allowClear
-          placeholder="全部模板"
+          placeholder={t('全部模板')}
           value={filters.template}
           onChange={(template) => setFilters({ template })}
-          options={templates.data?.map((t) => ({
-            value: t.name,
-            label: t.kind === 'builtin' ? `${t.title}（内置）` : t.title,
+          options={templates.data?.map((tpl) => ({
+            value: tpl.name,
+            label: tpl.kind === 'builtin' ? t('{{title}}（内置）', { title: tpl.title }) : tpl.title,
           }))}
           style={{ minWidth: 160 }}
           popupMatchSelectWidth={false}
@@ -384,15 +403,15 @@ export function DocumentListPage() {
         <Flex gap={4} align="center">
           <Input
             type="date"
-            aria-label="上传日期从"
+            aria-label={t('上传日期从')}
             value={filters.date_from ?? ''}
             onChange={(e) => setFilters({ date_from: e.target.value || undefined })}
             style={{ width: 150 }}
           />
-          <Typography.Text type="secondary">至</Typography.Text>
+          <Typography.Text type="secondary">{t('至')}</Typography.Text>
           <Input
             type="date"
-            aria-label="上传日期到"
+            aria-label={t('上传日期到')}
             value={filters.date_to ?? ''}
             onChange={(e) => setFilters({ date_to: e.target.value || undefined })}
             style={{ width: 150 }}
@@ -400,20 +419,20 @@ export function DocumentListPage() {
         </Flex>
         <Input.Search
           allowClear
-          placeholder="文件名"
+          placeholder={t('文件名')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onSearch={(q) => setFilters({ q: q.trim() || undefined })}
           enterButton={<SearchOutlined />}
           style={{ width: 200 }}
         />
-        {/* 选字段 + 输入内容放在一起，换行时也不分开 */}
+        {/* Keep the field selector and the search input together when wrapping. */}
         <Space.Compact>
           <Select<string>
             allowClear
             showSearch={{ optionFilterProp: 'label' }}
-            placeholder="所有字段"
-            aria-label="在哪个字段里找"
+            placeholder={t('所有字段')}
+            aria-label={t('在哪个字段里找')}
             value={filters.field}
             onChange={(field) => setFilters({ field })}
             options={fieldOptions}
@@ -422,8 +441,8 @@ export function DocumentListPage() {
           />
           <Input.Search
             allowClear
-            placeholder="字段内容，如发票号码、商家"
-            aria-label="按字段内容找"
+            placeholder={t('字段内容，如发票号码、商家')}
+            aria-label={t('按字段内容找')}
             value={valueSearch}
             onChange={(e) => setValueSearch(e.target.value)}
             onSearch={(v) => setFilters({ value_q: v.trim() || undefined })}
@@ -435,26 +454,26 @@ export function DocumentListPage() {
           <Select<string>
             allowClear
             showSearch
-            placeholder="全部文件夹"
-            aria-label="文件夹"
+            placeholder={t('全部文件夹')}
+            aria-label={t('文件夹')}
             value={filters.folder}
             onChange={(folder) => setFilters({ folder })}
             options={(folders.data ?? []).map((f) => ({
               value: f.folder,
-              label: `${f.folder}（${f.count}）`,
+              label: t('{{folder}}（{{count}}）', { folder: f.folder, count: f.count }),
             }))}
             style={{ minWidth: 180 }}
             popupMatchSelectWidth={false}
           />
         )}
         <Select<string>
-          aria-label="跳过的文档"
+          aria-label={t('跳过的文档')}
           value={filters.skipped === undefined ? 'all' : filters.skipped ? 'only' : 'hide'}
           onChange={(v) => setFilters({ skipped: v === 'all' ? undefined : v === 'only' })}
           options={[
-            { value: 'all', label: '跳过的也显示' },
-            { value: 'only', label: '只看跳过的' },
-            { value: 'hide', label: '不看跳过的' },
+            { value: 'all', label: t('跳过的也显示') },
+            { value: 'only', label: t('只看跳过的') },
+            { value: 'hide', label: t('不看跳过的') },
           ]}
           style={{ width: 130 }}
         />
@@ -462,7 +481,7 @@ export function DocumentListPage() {
           checked={filters.pending}
           onChange={(e) => setFilters({ pending: e.target.checked })}
         >
-          只看有待确认字段的
+          {t('只看有待确认字段的')}
         </Checkbox>
         {filtered && (
           <Button
@@ -475,7 +494,7 @@ export function DocumentListPage() {
               setPage(1)
             }}
           >
-            清除筛选
+            {t('清除筛选')}
           </Button>
         )}
       </Flex>
@@ -505,9 +524,10 @@ export function DocumentListPage() {
               return next
             })
           },
-          preserveSelectedRowKeys: true, // 翻到别的页，已经勾的不会丢
-          // 排队中、处理中的不能勾：还没有结果（不能导出），也不能重新处理、删除；失败的可以重新处理、删除
-          // 勾选以后才开始处理的，还能取消勾选
+          preserveSelectedRowKeys: true, // Selections survive switching pages.
+          // Queued and processing documents cannot be selected: no results yet (not exportable), and they
+          // cannot be reprocessed or deleted; failed documents can be reprocessed and deleted.
+          // Documents that started processing after being selected can still be deselected.
           getCheckboxProps: (d) => ({
             disabled: !EXPORTABLE.includes(d.status) && d.status !== 'failed' && !selected.includes(d.id),
           }),
@@ -518,15 +538,15 @@ export function DocumentListPage() {
           current: page,
           pageSize: PAGE_SIZE,
           total: documents.data?.total ?? 0,
-          showTotal: (total) => `共 ${total} 个`,
+          showTotal: (total) => t('共 {{total}} 个', { total }),
           onChange: setPage,
         }}
         locale={{
           emptyText: filtered
-            ? '没有符合条件的文档'
+            ? t('没有符合条件的文档')
             : can('document:create')
-              ? '还没有文档，先上传一个'
-              : '还没有文档',
+              ? t('还没有文档，先上传一个')
+              : t('还没有文档'),
         }}
       />
     </Card>

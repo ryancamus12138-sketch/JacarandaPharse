@@ -1,21 +1,21 @@
-/** 全站共用的"现在是谁"。任何页面用 useAuth() 就能拿到。 */
+/** App-wide current user. Any page can read it with useAuth(). */
 
 import { createContext } from 'react'
 import type { ApiError } from '../api/client'
 import type { Me } from '../api/types'
 
 export interface AuthState {
-  /** 现在是谁。null：还没登录（团队模式）。 */
+  /** Current user. null: not logged in (team mode). */
   me: Me | null
-  /** 第一次问后端"我是谁"还没回来。 */
+  /** The first request for the current user has not returned yet. */
   loading: boolean
-  /** 问不到：后端没启动之类。401 不算错误，算"没登录"。 */
+  /** Request failed: backend not running or similar. 401 is not an error but means not logged in. */
   error: ApiError | null
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
-  /** 重新问一次后端"我是谁"。 */
+  /** Ask the backend for the current user again. */
   refresh: () => Promise<void>
-  /** 有没有某个权限，比如 can('user:manage')。 */
+  /** Whether a permission is granted, for example can('user:manage'). */
   can: (permission: string) => boolean
 }
 

@@ -1,25 +1,29 @@
-/** 模板编辑器共用的小工具（字段 ID 规则、类型选项、新字段）。 */
+/** Shared helpers of the template editor (field ID rules, type options, new fields). */
 
 import type { FieldType, RangeExport, TemplateField } from '../../api/types'
+import { t } from '../../i18n'
 
 export const TYPE_OPTIONS: { value: FieldType; label: string }[] = [
-  { value: 'string', label: '文字' },
-  { value: 'number', label: '数字（金额）' },
-  { value: 'date', label: '日期' },
-  { value: 'date_range', label: '日期范围' },
+  { value: 'string', get label() { return t('文字') } },
+  { value: 'number', get label() { return t('数字（金额）') } },
+  { value: 'date', get label() { return t('日期') } },
+  { value: 'date_range', get label() { return t('日期范围') } },
 ]
 
-/** 日期范围导出成（ADR 0039）。 */
+/** Date range export formats. */
 export const RANGE_EXPORTS: { value: RangeExport; label: string }[] = [
-  { value: 'normalized', label: '统一格式' },
-  { value: 'original', label: '原文' },
-  { value: 'columns', label: '拆成两列' },
+  { value: 'normalized', get label() { return t('统一格式') } },
+  { value: 'original', get label() { return t('原文') } },
+  { value: 'columns', get label() { return t('拆成两列') } },
 ]
 
-/** 模板的类型（上传时按它分组）。可以自己写别的。 */
-export const CATEGORIES = ['发票', '交通', '收据', '住宿', '其他']
+/** Template types (used to group templates at upload). Others can be typed. */
+export const CATEGORIES = ['发票', '交通', '收据', '住宿', '其他'] // i18n-ignore: template content
 
-/** 字段 ID 的规则（和后端一样）：小写英文字母开头，只有小写字母、数字、下划线。 */
+/**
+ * Field ID rule (same as the backend): starts with a lowercase letter; only lowercase letters, digits and
+ * underscores.
+ */
 export const FIELD_ID = /^[a-z][a-z0-9_]*$/
 
 export function blankField(existing: TemplateField[]): TemplateField {
@@ -39,13 +43,16 @@ export function blankField(existing: TemplateField[]): TemplateField {
   }
 }
 
-/** 保存前检查：中文名不能空、字段 ID 合规且不重复。返回第一个问题，没问题返回 null。 */
+/**
+ * Checks before saving: display names must not be empty; field IDs must be valid and unique. Returns the
+ * first problem, or null.
+ */
 export function fieldsProblem(fields: TemplateField[], where: string): string | null {
   const seen = new Set<string>()
   for (const f of fields) {
-    if (!f.label.trim()) return `${where}有字段没写中文名`
-    if (!FIELD_ID.test(f.name)) return `${where}的字段 ID「${f.name}」只能用小写英文字母、数字和下划线`
-    if (seen.has(f.name)) return `${where}的字段 ID「${f.name}」重复了`
+    if (!f.label.trim()) return t('{{where}}有字段没写中文名', { where })
+    if (!FIELD_ID.test(f.name)) return t('{{where}}的字段 ID「{{name}}」只能用小写英文字母、数字和下划线', { where, name: f.name })
+    if (seen.has(f.name)) return t('{{where}}的字段 ID「{{name}}」重复了', { where, name: f.name })
     seen.add(f.name)
   }
   return null

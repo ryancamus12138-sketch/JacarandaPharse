@@ -1,11 +1,13 @@
 import { useContext } from 'react'
 import { AuthContext, type AuthState } from './context'
+import { useTranslation } from 'react-i18next'
 
-/** 在任何页面里拿到"现在是谁、能做什么"。必须在 <AuthProvider> 里面用。 */
+/** Current user and permitted operations, from any page. Must be used inside <AuthProvider>. */
 export function useAuth(): AuthState {
+  const { t } = useTranslation()
   const auth = useContext(AuthContext)
   if (auth === null) {
-    throw new Error('useAuth 必须放在 <AuthProvider> 里面使用')
+    throw new Error(t('useAuth 必须放在 <AuthProvider> 里面使用'))
   }
   return auth
 }

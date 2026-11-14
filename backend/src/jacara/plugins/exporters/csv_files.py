@@ -1,9 +1,10 @@
-"""导出 CSV：和标准格式的 Excel 内容一样，每张表一个 CSV 文件。
+"""CSV export: the same content as the standard Excel export, one CSV file per sheet.
 
-CSV 只有文字，没有颜色、批注；"需要确认"那一列还在。用 UTF-8（带 BOM），Excel 直接打开中文不乱码。
-日期写成 2014-08-03，数字不带千分位。
-只导出给别的系统用的表：汇总、每张明细表、键值对；"明细"（逐个字段的出处和审核记录）和"来源"不导出。
-"""
+CSV holds text only, without colors or comments; the "needs confirmation" column remains. UTF-8
+with BOM, so Excel opens non-ASCII text correctly. Dates are written as 2014-08-03, numbers
+without thousands separators. Only sheets meant for other systems are exported: summary, each
+line-item table, key-value pairs; the details sheet (per-field evidence and review history) and
+the source sheet are not."""
 
 from __future__ import annotations
 
@@ -13,7 +14,10 @@ from datetime import date, datetime
 
 from openpyxl import load_workbook
 
-SKIPPED = frozenset({"明细", "来源"})
+from jacara.core.i18n import N_, tr
+
+SKIPPED = (N_("明细"), N_("来源"))
+"""Sheets not exported (details and sources), by message id; compared in the request language."""
 
 
 def _text(value: object) -> str:
@@ -33,12 +37,13 @@ def _text(value: object) -> str:
 
 
 def workbook_to_csv(xlsx: bytes) -> list[tuple[str, bytes]]:
-    """标准格式的 Excel → [(表名, CSV 内容)]。
-    空的表（只有表头）也导出，方便别的系统按固定的列读。"""
+    """Standard Excel workbook → [(sheet name, CSV content)]. Empty sheets (header only) are
+    exported too, so other systems can rely on fixed columns."""
     book = load_workbook(io.BytesIO(xlsx), read_only=True, data_only=True)
     files: list[tuple[str, bytes]] = []
+    skipped = {tr(name) for name in SKIPPED}
     for sheet in book.worksheets:
-        if sheet.title in SKIPPED:
+        if sheet.title in skipped:
             continue
         out = io.StringIO()
         writer = csv.writer(out, lineterminator="\r\n")

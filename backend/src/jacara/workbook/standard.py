@@ -1,8 +1,13 @@
-"""标准模板 Excel（方法一，ADR 0031）：模板 ↔ 一个人能看懂、能改的 Excel。
+"""Standard template workbook: template ↔ an Excel workbook people can read and edit.
 
-几张固定的表：模板、字段、表格、规则、对象、参照表（每份参照名单另有一张"参照-名字"）。
-按原表导出的样式（工作簿）不在里面：它带着原 Excel 文件，要搬的话用 JSON 导出。
-"""
+Fixed sheets: template, fields, tables, rules, subjects, reference tables (plus one
+"reference-NAME" sheet per reference list). The original-workbook export layout is not included:
+it carries the original workbook file, so use the JSON export to move it.
+
+Sheet names, headers and fixed values (types, yes/no, severity) are written in the interface
+language of the request. Import accepts every supported language: each fixed label is compared
+with its message id and all of its translations (i18n.variants), so a workbook exported in English
+can be imported from the Chinese interface and the other way round."""
 
 from __future__ import annotations
 
@@ -14,27 +19,89 @@ from openpyxl.styles import Font
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
+from jacara.core.i18n import N_, N_c, tr, trc, variants, variants_c
 from jacara.plugins.validators import ALL_RULES
 from jacara.plugins.validators.base import Rule
 from jacara.plugins.validators.rules import REGIONS
 
 FORMAT = "jacarandaparse-template"
-TYPES = {"string": "文字", "number": "数字", "date": "日期", "date_range": "日期范围"}
-TYPES_BACK = {v: k for k, v in TYPES.items()} | {k: k for k in TYPES}
+TYPES = {
+    "string": N_("文字"),
+    "number": N_("数字"),
+    "date": N_("日期"),
+    "date_range": N_("日期范围"),
+}
 FIELD_HEADERS = [
-    "中文名",
-    "字段ID",
-    "类型",
-    "必填",
-    "从单据抽",
-    "导出",
-    "敏感",
-    "可选值",
-    "别名",
-    "说明",
+    N_("中文名"),
+    N_("字段ID"),
+    N_("类型"),
+    N_("必填"),
+    N_("从单据抽"),
+    N_("导出"),
+    N_("敏感"),
+    N_("可选值"),
+    N_("别名"),
+    N_("说明"),
 ]
-TABLE_HEADERS = ["表ID", "表中文名", "表说明", "至少一行", "导出整张表", *FIELD_HEADERS]
-YES, NO = "是", "否"
+TABLE_HEADERS = [
+    N_("表ID"),
+    N_("表中文名"),
+    N_("表说明"),
+    N_("至少一行"),
+    N_("导出整张表"),
+    *FIELD_HEADERS,
+]
+RULE_HEADERS = [N_("编号"), N_("名称"), N_("级别"), N_("用")]
+ENTITY_HEADERS = [N_("对象ID"), N_("中文名"), N_("编号字段"), N_("包含的字段")]
+REFERENCE_HEADERS = [N_("参照ID"), N_("中文名"), N_("对照字段"), N_("对照列"), N_("数据在")]
+INFO_HEADERS = [N_("项目"), N_("内容")]
+SHEETS = {
+    "info": N_c("sheet", "模板"),
+    "fields": N_c("sheet", "字段"),
+    "tables": N_c("sheet", "表格"),
+    "rules": N_c("sheet", "规则"),
+    "entities": N_c("sheet", "对象"),
+    "references": N_c("sheet", "参照表"),
+}
+"""Fixed sheets → sheet name (message id in the context "sheet")."""
+INFO = {
+    "format": N_("格式"),
+    "format_version": N_("格式版本"),
+    "title": N_("模板名"),
+    "category": N_("类型"),
+    "domains": N_("功能领域"),
+    "countries": N_("国家和地区"),
+    "tags": N_("自定义标签"),
+    "description": N_("说明"),
+    "version": N_("导出时的版本"),
+    "hint": N_("提示"),
+}
+YES, NO = N_("是"), N_("否")
+GENERIC = N_("通用")
+"""Country cell of a template that applies everywhere."""
+
+
+def _canonical(labels: list[str]) -> dict[str, str]:
+    """Written label in any supported language → message id."""
+    return {text: label for label in labels for text in variants(label)}
+
+
+def _type_back(text: str) -> str | None:
+    """Type cell (in any language, or the type id itself) → type id."""
+    found = {v: k for k, label in TYPES.items() for v in variants(label)} | {k: k for k in TYPES}
+    return found.get(text)
+
+
+def _sheet_title(key: str) -> str:
+    """Name of a fixed sheet in the request language."""
+    name = SHEETS[key]
+    return trc("sheet", name)
+
+
+def _sheet(book: Any, key: str) -> str | None:
+    """Name of a fixed sheet in the workbook, written in any supported language."""
+    names = variants_c("sheet", SHEETS[key])
+    return next((n for n in book.sheetnames if n in names), None)
 
 
 class StandardError(ValueError):
@@ -46,17 +113,19 @@ def is_standard(data: bytes) -> bool:
         book = load_workbook(io.BytesIO(data), read_only=True)
     except Exception:
         return False
-    if "字段" not in book.sheetnames:
+    sheet = _sheet(book, "fields")
+    if sheet is None:
         return False
-    header = next(book["字段"].iter_rows(max_row=1, values_only=True), ())
-    return "中文名" in header and "字段ID" in header
+    header = {_str(h) for h in next(book[sheet].iter_rows(max_row=1, values_only=True), ())}
+    return bool(header & variants(N_("中文名"))) and bool(header & variants(N_("字段ID")))
 
 
-# ---------- 模板 → Excel ----------
+# ---------- Template → Excel ----------
 
 
 def usable_rule(rule: Rule, template: dict[str, Any]) -> bool:
-    """这条内置规则这个模板用得上：要的字段（表格的列）都有；某国的规则只给选了这个国家的模板。"""
+    """Whether this built-in rule applies to the template: all required fields (table columns)
+    present, and country-specific rules only for templates of that country."""
     country = REGIONS.get(rule.id)
     if country and country not in (template.get("countries") or []):
         return False
@@ -74,36 +143,40 @@ def usable_rule(rule: Rule, template: dict[str, Any]) -> bool:
 
 
 def to_excel(template: dict[str, Any]) -> bytes:
-    """template：TemplateFile 的字典（title、fields、tables、rules、entities、references……）。"""
+    """template: a TemplateFile dictionary (title, fields, tables, rules, entities, references,
+    …)."""
     book = Workbook()
     info = book.worksheets[0]
-    info.title = "模板"
-    _setup(info, ["项目", "内容"], [16, 60])
-    for row in (
-        ("格式", FORMAT),
-        ("格式版本", 1),
-        ("模板名", template["title"]),
-        ("类型", template.get("category", "")),
-        ("功能领域", "、".join(template.get("domains") or [])),
-        ("国家和地区", "、".join(template.get("countries") or []) or "通用"),
-        ("自定义标签", "、".join(template.get("tags") or [])),
-        ("说明", template.get("description", "")),
-        ("导出时的版本", template.get("version", 1)),
+    info.title = _sheet_title("info")
+    _setup(info, INFO_HEADERS, [16, 60])
+    separator = tr("、")
+    for key, value in (
+        ("format", FORMAT),
+        ("format_version", 1),
+        ("title", template["title"]),
+        ("category", template.get("category", "")),
+        ("domains", separator.join(template.get("domains") or [])),
+        ("countries", separator.join(template.get("countries") or []) or tr(GENERIC)),
+        ("tags", separator.join(template.get("tags") or [])),
+        ("description", template.get("description", "")),
+        ("version", template.get("version", 1)),
         (
-            "提示",
-            "改好之后在“模板”页点“导入模板”选这个文件。"
-            "按原表导出的样式不在这里，要搬请用 JSON 导出。",
+            "hint",
+            tr(
+                "改好之后在“模板”页点“导入模板”选这个文件。"
+                "按原表导出的样式不在这里，要搬请用 JSON 导出。"
+            ),
         ),
     ):
-        info.append(list(row))
+        info.append([tr(INFO[key]), value])
 
-    fields_ws = book.create_sheet("字段")
+    fields_ws = book.create_sheet(_sheet_title("fields"))
     _setup(fields_ws, FIELD_HEADERS, [16, 18, 8, 6, 9, 6, 6, 24, 24, 50])
     for f in template["fields"]:
         fields_ws.append(_field_row(f))
     _choices(fields_ws, len(template["fields"]) + 200, 0)
 
-    tables_ws = book.create_sheet("表格")
+    tables_ws = book.create_sheet(_sheet_title("tables"))
     _setup(tables_ws, TABLE_HEADERS, [12, 14, 30, 9, 10, 16, 18, 8, 6, 9, 6, 6, 24, 24, 50])
     for t in template.get("tables", []):
         for c in t["columns"]:
@@ -119,37 +192,39 @@ def to_excel(template: dict[str, Any]) -> bytes:
             )
     _choices(tables_ws, 500, 5)
 
-    rules_ws = book.create_sheet("规则")
-    _setup(rules_ws, ["编号", "名称", "级别", "用"], [22, 46, 8, 6])
+    rules_ws = book.create_sheet(_sheet_title("rules"))
+    _setup(rules_ws, RULE_HEADERS, [22, 46, 8, 6])
     chosen = set(template.get("rules", []))
-    # 只列这个模板选了的规则（化验单不会列出发票、收据、机票的规则）。
-    # 想加别的规则，在下面空行里写规则编号、"用"填"是"，导入时会检查
+    # List only the rules this template selected (a lab report does not list invoice, receipt or air
+    # ticket rules). To add a rule, enter its id in an empty row below and set "use" to "yes"; it is
+    # validated on import.
     listed = [r for r in ALL_RULES if r.id in chosen]
     for rule in listed:
         rules_ws.append(
             [
                 rule.id,
-                rule.title,
-                "错误" if rule.severity == "error" else "警告",
+                tr(rule.title),
+                tr("错误") if rule.severity == "error" else tr("警告"),
                 _yes(rule.id in chosen),
             ]
         )
-    _yes_no(rules_ws, "D", max(len(listed), 30) + 1)  # 留几行空的，导入时可以自己加
+    # Leave a few empty rows for additions before import.
+    _yes_no(rules_ws, "D", max(len(listed), 30) + 1)
 
-    entities_ws = book.create_sheet("对象")
-    _setup(entities_ws, ["对象ID", "中文名", "编号字段", "包含的字段"], [14, 14, 16, 50])
+    entities_ws = book.create_sheet(_sheet_title("entities"))
+    _setup(entities_ws, ENTITY_HEADERS, [14, 14, 16, 50])
     for e in template.get("entities", []):
-        entities_ws.append([e["name"], e["label"], e["key"], "、".join(e["fields"])])
+        entities_ws.append([e["name"], e["label"], e["key"], separator.join(e["fields"])])
 
-    refs_ws = book.create_sheet("参照表")
-    _setup(refs_ws, ["参照ID", "中文名", "对照字段", "对照列", "数据在"], [14, 16, 18, 16, 24])
+    refs_ws = book.create_sheet(_sheet_title("references"))
+    _setup(refs_ws, REFERENCE_HEADERS, [14, 16, 18, 16, 24])
     for r in template.get("references", []):
-        sheet_name = _sheet_name(book, f"参照-{r['label']}")
+        sheet_name = _sheet_name(book, tr("参照-{label}", label=r["label"]))
         refs_ws.append(
             [r["name"], r["label"], r.get("match_field", ""), r.get("match_column", ""), sheet_name]
         )
         data_ws = book.create_sheet(sheet_name)
-        _setup(data_ws, list(r["columns"]), [16] * len(r["columns"]))
+        _setup(data_ws, list(r["columns"]), [16] * len(r["columns"]), translate=False)
         for row in r.get("rows", []):
             data_ws.append(list(row))
 
@@ -168,28 +243,31 @@ def _sheet_name(book: Workbook, name: str) -> str:
 
 
 def _field_row(f: dict[str, Any]) -> list[Any]:
+    separator = tr("、")
     return [
         f["label"],
         f["name"],
-        TYPES.get(f.get("type", "string"), "文字"),
+        tr(TYPES.get(f.get("type", "string"), TYPES["string"])),
         _yes(f.get("required")),
         _yes(f.get("extract", True)),
         _yes(f.get("export", True)),
         _yes(f.get("sensitive")),
-        "、".join(f.get("options", [])),
-        "、".join(f.get("aliases", [])),
+        separator.join(f.get("options", [])),
+        separator.join(f.get("aliases", [])),
         f.get("description", ""),
     ]
 
 
 def _yes(value: Any) -> str:
-    return YES if value else NO
+    return tr(YES) if value else tr(NO)
 
 
-def _setup(ws: Worksheet, headers: list[str], widths: list[int]) -> None:
+def _setup(ws: Worksheet, headers: list[str], widths: list[int], translate: bool = True) -> None:
+    """Header row (fixed headers are message ids, translated; reference tables keep their own
+    column names), bold, frozen, with column widths."""
     from openpyxl.utils import get_column_letter
 
-    ws.append(headers)
+    ws.append([tr(h) for h in headers] if translate else headers)
     for cell in ws[1]:
         cell.font = Font(bold=True)
     ws.freeze_panes = "A2"
@@ -198,10 +276,13 @@ def _setup(ws: Worksheet, headers: list[str], widths: list[int]) -> None:
 
 
 def _choices(ws: Worksheet, rows: int, offset: int) -> None:
-    """类型、是/否 列加下拉框，填的人不容易写错。offset：前面有几列（表格表多 5 列）。"""
+    """Add drop-downs to type and yes/no columns to prevent input errors. offset: number of
+    preceding columns (the tables sheet has 5 more)."""
     from openpyxl.utils import get_column_letter
 
-    kinds = DataValidation(type="list", formula1='"文字,数字,日期,日期范围"', allow_blank=True)
+    kinds = DataValidation(
+        type="list", formula1=f'"{",".join(tr(t) for t in TYPES.values())}"', allow_blank=True
+    )
     ws.add_data_validation(kinds)
     kinds.add(f"{get_column_letter(offset + 3)}2:{get_column_letter(offset + 3)}{rows}")
     for col in (4, 5, 6, 7):
@@ -212,71 +293,78 @@ def _choices(ws: Worksheet, rows: int, offset: int) -> None:
 
 
 def _yes_no(ws: Worksheet, letter: str, rows: int) -> None:
-    choice = DataValidation(type="list", formula1='"是,否"', allow_blank=True)
+    choice = DataValidation(type="list", formula1=f'"{tr(YES)},{tr(NO)}"', allow_blank=True)
     ws.add_data_validation(choice)
     choice.add(f"{letter}2:{letter}{rows}")
 
 
-# ---------- Excel → 模板 ----------
+# ---------- Excel → template ----------
 
 
 def from_excel(data: bytes) -> dict[str, Any]:
-    """读标准模板 Excel，返回 TemplateFile 的字典。写错的地方说清楚哪张表第几行。"""
+    """Read a standard template workbook and return a TemplateFile dictionary. Errors name the sheet
+    and row."""
     book = load_workbook(io.BytesIO(data), data_only=True)
-    info = {str(r[0]).strip(): r[1] for r in _rows(book, "模板") if r and r[0]}
-    title = str(info.get("模板名") or "").strip()
+    names = _canonical(list(INFO.values()))
+    info = {names.get(_str(r[0]), _str(r[0])): r[1] for r in _rows(book, "info") if r and r[0]}
+    title = str(info.get(INFO["title"]) or "").strip()
     if not title:
-        raise StandardError("“模板”表里没有写模板名")
+        raise StandardError(tr("“模板”表里没有写模板名"))
 
+    fields_sheet = tr("字段表")
     fields = []
-    for counter, (n, row) in enumerate(_numbered(book, "字段", FIELD_HEADERS), start=1):
-        fields.append(_field(row, "字段表", n, f"field_{counter}"))
+    for counter, (n, row) in enumerate(_numbered(book, "fields", FIELD_HEADERS), start=1):
+        fields.append(_field(row, fields_sheet, n, f"field_{counter}"))
 
+    tables_sheet = tr("表格表")
     tables: dict[str, dict[str, Any]] = {}
-    for n, row in _numbered(book, "表格", TABLE_HEADERS):
-        table_id = _str(row.get("表ID"))
+    for n, row in _numbered(book, "tables", TABLE_HEADERS):
+        table_id = _str(row.get(N_("表ID")))
         if not table_id:
-            raise StandardError(f"表格表第 {n} 行：没有写表ID")
+            raise StandardError(tr("表格表第 {n} 行：没有写表ID", n=n))
         table = tables.setdefault(
             table_id,
             {
                 "name": table_id,
-                "label": _str(row.get("表中文名")) or table_id,
-                "description": _str(row.get("表说明")),
-                "required": _bool(row.get("至少一行"), False, "表格表", n),
-                "export": _bool(row.get("导出整张表"), True, "表格表", n),
+                "label": _str(row.get(N_("表中文名"))) or table_id,
+                "description": _str(row.get(N_("表说明"))),
+                "required": _bool(row.get(N_("至少一行")), False, tables_sheet, n),
+                "export": _bool(row.get(N_("导出整张表")), True, tables_sheet, n),
                 "columns": [],
             },
         )
-        table["columns"].append(_field(row, "表格表", n, f"col_{len(table['columns']) + 1}"))
+        table["columns"].append(_field(row, tables_sheet, n, f"col_{len(table['columns']) + 1}"))
 
+    rules_sheet = tr("规则表")
     rules = [
-        _str(row.get("编号"))
-        for n, row in _numbered(book, "规则", ["编号", "名称", "级别", "用"])
-        if _bool(row.get("用"), False, "规则表", n)
+        _str(row.get(N_("编号")))
+        for n, row in _numbered(book, "rules", RULE_HEADERS)
+        if _bool(row.get(N_("用")), False, rules_sheet, n)
     ]
     entities = [
         {
-            "name": _str(row.get("对象ID")),
-            "label": _str(row.get("中文名")),
-            "key": _str(row.get("编号字段")),
-            "fields": _list(row.get("包含的字段")),
+            "name": _str(row.get(N_("对象ID"))),
+            "label": _str(row.get(N_("中文名"))),
+            "key": _str(row.get(N_("编号字段"))),
+            "fields": _list(row.get(N_("包含的字段"))),
         }
-        for _, row in _numbered(book, "对象", ["对象ID", "中文名", "编号字段", "包含的字段"])
+        for _, row in _numbered(book, "entities", ENTITY_HEADERS)
     ]
     references = []
-    for n, row in _numbered(book, "参照表", ["参照ID", "中文名", "对照字段", "对照列", "数据在"]):
-        sheet = _str(row.get("数据在"))
+    for n, row in _numbered(book, "references", REFERENCE_HEADERS):
+        sheet = _str(row.get(N_("数据在")))
         if sheet not in book.sheetnames:
-            raise StandardError(f"参照表第 {n} 行：找不到放数据的 sheet「{sheet}」")
+            raise StandardError(
+                tr("参照表第 {n} 行：找不到放数据的 sheet「{sheet}」", n=n, sheet=sheet)
+            )
         values = list(book[sheet].iter_rows(values_only=True))
         columns = [_str(v) for v in values[0] if _str(v)] if values else []
         references.append(
             {
-                "name": _str(row.get("参照ID")),
-                "label": _str(row.get("中文名")),
-                "match_field": _str(row.get("对照字段")),
-                "match_column": _str(row.get("对照列")),
+                "name": _str(row.get(N_("参照ID"))),
+                "label": _str(row.get(N_("中文名"))),
+                "match_field": _str(row.get(N_("对照字段"))),
+                "match_column": _str(row.get(N_("对照列"))),
                 "columns": columns,
                 "rows": [
                     [_str(v) for v in r[: len(columns)]]
@@ -285,21 +373,23 @@ def from_excel(data: bytes) -> dict[str, Any]:
                 ],
             }
         )
-    countries_text = _str(info.get("国家和地区"))
+    countries_text = _str(info.get(INFO["countries"]))
+    generic = {"", *variants(GENERIC)}
     return {
         "format": FORMAT,
         "title": title,
-        "category": _str(info.get("类型")),
-        # 新导出的才有这三行；旧的 Excel 没有：领域用"类型"，国家按选的规则认
-        **({"domains": _list(info.get("功能领域"))} if "功能领域" in info else {}),
+        "category": _str(info.get(INFO["category"])),
+        # Only newly exported workbooks have these three rows; for older ones, the domain comes from
+        # "type" and the country from the selected rules.
+        **({"domains": _list(info.get(INFO["domains"]))} if INFO["domains"] in info else {}),
         **(
-            {"countries": [] if countries_text in ("", "通用") else _list(countries_text)}
-            if "国家和地区" in info
+            {"countries": [] if countries_text in generic else _list(countries_text)}
+            if INFO["countries"] in info
             else {}
         ),
-        **({"tags": _list(info.get("自定义标签"))} if "自定义标签" in info else {}),
-        "description": _str(info.get("说明")),
-        "version": int(info.get("导出时的版本") or 1),
+        **({"tags": _list(info.get(INFO["tags"]))} if INFO["tags"] in info else {}),
+        "description": _str(info.get(INFO["description"])),
+        "version": int(info.get(INFO["version"]) or 1),
         "fields": fields,
         "tables": list(tables.values()),
         "rules": rules,
@@ -308,21 +398,33 @@ def from_excel(data: bytes) -> dict[str, Any]:
     }
 
 
-def _rows(book: Any, name: str) -> list[tuple[Any, ...]]:
-    if name not in book.sheetnames:
+def _rows(book: Any, key: str) -> list[tuple[Any, ...]]:
+    name = _sheet(book, key)
+    if name is None:
         return []
     return list(book[name].iter_rows(values_only=True))
 
 
-def _numbered(book: Any, name: str, headers: list[str]) -> list[tuple[int, dict[str, Any]]]:
-    rows = _rows(book, name)
+REQUIRED_COLUMNS = {"fields": [N_("中文名")], "tables": [N_("表ID"), N_("中文名")]}
+"""Columns a sheet must have (message ids)."""
+
+
+def _numbered(book: Any, key: str, headers: list[str]) -> list[tuple[int, dict[str, Any]]]:
+    """Data rows of a fixed sheet, keyed by header message id, with their row numbers."""
+    rows = _rows(book, key)
     if not rows:
         return []
-    header = [_str(h) for h in rows[0]]
-    needed = {"字段": ["中文名"], "表格": ["表ID", "中文名"]}.get(name, [])
-    missing = [h for h in needed if h not in header]
+    names = _canonical(headers)
+    header = [names.get(_str(h), _str(h)) for h in rows[0]]
+    missing = [h for h in REQUIRED_COLUMNS.get(key, []) if h not in header]
     if missing:
-        raise StandardError(f"“{name}”表缺少这几列：{'、'.join(missing)}")
+        raise StandardError(
+            tr(
+                "“{sheet}”表缺少这几列：{columns}",
+                sheet=_sheet_title(key),
+                columns=tr("、").join(tr(h) for h in missing),
+            )
+        )
     result = []
     for n, values in enumerate(rows[1:], start=2):
         if not any(_str(v) for v in values):
@@ -332,24 +434,32 @@ def _numbered(book: Any, name: str, headers: list[str]) -> list[tuple[int, dict[
 
 
 def _field(row: dict[str, Any], where: str, n: int, default_id: str) -> dict[str, Any]:
-    label = _str(row.get("中文名"))
+    label = _str(row.get(N_("中文名")))
     if not label:
-        raise StandardError(f"{where}第 {n} 行：没有写中文名")
-    kind = TYPES_BACK.get(_str(row.get("类型")) or "文字")
+        raise StandardError(tr("{sheet}第 {n} 行：没有写中文名", sheet=where, n=n))
+    written = _str(row.get(N_("类型")))
+    kind = _type_back(written) if written else "string"
     if kind is None:
-        raise StandardError(f"{where}第 {n} 行：类型只能填 文字、数字、日期、日期范围")
-    sensitive = _bool(row.get("敏感"), False, where, n)
+        raise StandardError(
+            tr(
+                "{sheet}第 {n} 行：类型只能填 {types}",
+                sheet=where,
+                n=n,
+                types=tr("、").join(tr(t) for t in TYPES.values()),
+            )
+        )
+    sensitive = _bool(row.get(N_("敏感")), False, where, n)
     return {
-        "name": _str(row.get("字段ID")) or default_id,
+        "name": _str(row.get(N_("字段ID"))) or default_id,
         "label": label,
         "type": kind,
-        "required": _bool(row.get("必填"), False, where, n),
-        "extract": _bool(row.get("从单据抽"), True, where, n),
-        "export": _bool(row.get("导出"), not sensitive, where, n),
+        "required": _bool(row.get(N_("必填")), False, where, n),
+        "extract": _bool(row.get(N_("从单据抽")), True, where, n),
+        "export": _bool(row.get(N_("导出")), not sensitive, where, n),
         "sensitive": sensitive,
-        "options": _list(row.get("可选值")),
-        "aliases": _list(row.get("别名")),
-        "description": _str(row.get("说明")),
+        "options": _list(row.get(N_("可选值"))),
+        "aliases": _list(row.get(N_("别名"))),
+        "description": _str(row.get(N_("说明"))),
     }
 
 
@@ -370,8 +480,17 @@ def _bool(value: Any, default: bool, where: str, n: int) -> bool:
     text = _str(value).lower()
     if not text:
         return default
-    if text in ("是", "y", "yes", "true", "1", "√", "✓"):
+    if text in {v.lower() for v in variants(YES)} | {"y", "yes", "true", "1", "√", "✓"}:
         return True
-    if text in ("否", "n", "no", "false", "0", "×"):
+    if text in {v.lower() for v in variants(NO)} | {"n", "no", "false", "0", "×"}:
         return False
-    raise StandardError(f"{where}第 {n} 行：是/否 的格子写了「{value}」，只能填 是 或 否")
+    raise StandardError(
+        tr(
+            "{sheet}第 {n} 行：是/否 的格子写了「{value}」，只能填 {yes} 或 {no}",
+            sheet=where,
+            n=n,
+            value=value,
+            yes=tr(YES),
+            no=tr(NO),
+        )
+    )

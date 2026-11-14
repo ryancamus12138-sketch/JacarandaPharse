@@ -1,8 +1,8 @@
-"""手写最小的 PDF，给测试用：能控制文字层（字体对照表、看不见的字）、表单字段、页面旋转。
+"""Hand-written minimal PDFs for tests, with control over the text layer (font mapping, invisible
+text), form fields and page rotation.
 
-用标准字体 Helvetica（每个 PDF 阅读器都有，不用嵌入），只写 ASCII 字符。
-页面坐标按 PDF 的习惯：单位是点，原点在左下角。
-"""
+Uses the standard Helvetica font (available in every PDF reader, no embedding) and ASCII text
+only. Page coordinates follow PDF conventions: points, origin at the bottom left."""
 
 from __future__ import annotations
 
@@ -11,29 +11,31 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Run:
-    """一段文字：x、y 是基线左端，size 是字号。"""
+    """A text run: x, y is the left end of the baseline; size is the font size."""
 
     x: float
     y: float
     text: str
     size: float = 14
     invisible: bool = False
-    """文字渲染模式 3：有文字层、画面上看不见（扫描件上旧 OCR 留下的字就是这样）。"""
+    """Text render mode 3: present in the text layer but invisible on the page (as left on scans by
+    old OCR)."""
     font: str = "F1"
-    """F1：普通 Helvetica；F2：带"错误对照表"的 Helvetica（见 Page.wrong_map）。"""
+    """F1: regular Helvetica; F2: Helvetica with a wrong mapping (see Page.wrong_map)."""
 
 
 @dataclass
 class Field:
-    """一个文本类表单字段。rect 是 (x0, y0, x1, y1)。"""
+    """A text form field. rect is (x0, y0, x1, y1)."""
 
     name: str
     value: str
     rect: tuple[float, float, float, float]
     appearance: bool = True
-    """有没有外观（/AP）：没有外观的值，有的阅读器不显示。"""
+    """Whether the field has an appearance stream (/AP): some readers do not display values without
+    one."""
     hidden: bool = False
-    """隐藏标志（/F 第 2 位）。"""
+    """Hidden flag (bit 2 of /F)."""
 
 
 @dataclass
@@ -44,7 +46,7 @@ class Page:
     height: float = 200
     rotate: int = 0
     wrong_map: dict[str, str] = field(default_factory=dict)
-    """F2 字体的对照表：画的是 key 这个字形，复制出来是 value（例如 {"0": "8"}）。"""
+    """Mapping of font F2: draws the glyph of key but copies as value (for example {"0": "8"})."""
 
 
 def _escape(text: str) -> str:
@@ -60,7 +62,7 @@ def _content(runs: list[Run]) -> bytes:
 
 
 def _cmap(mapping: dict[str, str]) -> bytes:
-    """ToUnicode：每个 ASCII 字形对到它自己，mapping 里的改成别的字。"""
+    """ToUnicode: every ASCII glyph maps to itself, except those in mapping."""
     lines = []
     for code in range(32, 127):
         ch = mapping.get(chr(code), chr(code))
@@ -86,7 +88,7 @@ def make_pdf(*pages: Page) -> bytes:
     def stream(data: bytes, extra: str = "") -> bytes:
         return f"<< /Length {len(data)} {extra}>>\nstream\n".encode() + data + b"\nendstream"
 
-    catalog = add(b"")  # 先占位，最后填
+    catalog = add(b"")  # Placeholder, filled in at the end.
     tree = add(b"")
     helv = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
     kids: list[int] = []
@@ -116,7 +118,7 @@ def make_pdf(*pages: Page) -> bytes:
                     )
                 )
                 ap = f"/AP << /N {form} 0 R >>"
-            flags = 4 | (2 if f.hidden else 0)  # 4 = 打印
+            flags = 4 | (2 if f.hidden else 0)  # 4 = print
             widget = add(
                 f"<< /Type /Annot /Subtype /Widget /FT /Tx /T ({_escape(f.name)}) "
                 f"/V ({_escape(f.value)}) /Rect [{x0} {y0} {x1} {y1}] /F {flags} "
@@ -130,7 +132,7 @@ def make_pdf(*pages: Page) -> bytes:
             f"/Rotate {page.rotate} /Resources << /Font << {fonts} >> >> "
             f"/Contents {content} 0 R {annots} >>".encode()
         )
-        for w in widgets:  # 控件记一下自己在哪一页
+        for w in widgets:  # The widget records its page.
             objects[w - 1] = objects[w - 1].replace(b"/P 0 0 R", f"/P {page_obj} 0 R".encode())
         kids.append(page_obj)
         all_fields += widgets

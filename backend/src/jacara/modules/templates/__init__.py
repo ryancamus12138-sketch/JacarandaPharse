@@ -1,1 +1,2 @@
-"""模板（只读）：/api/v1/templates。模板本身是 templates/*.toml 文件，不存数据库。"""
+"""Templates (read-only): /api/v1/templates. Built-in templates are templates/*.toml files, not
+stored in the database."""

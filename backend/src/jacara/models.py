@@ -1,9 +1,8 @@
-"""导入所有数据库表。
+"""Import all database models.
 
-表之间用名字互相引用（例如 Document.extractions → "Extraction"），
-SQLAlchemy 要在所有表都导入之后才能把它们连起来。用到数据库之前 import 这个模块即可。
-新增一个模块的 models.py，也要在这里加一行。
-"""
+Models reference each other by name (for example Document.extractions → "Extraction"), and
+SQLAlchemy can resolve those references only after every model is imported. Import this module
+before using the database. When a module adds a models.py, add it here as well."""
 
 from jacara.core.db import Base
 from jacara.modules.audit.models import AuditLog

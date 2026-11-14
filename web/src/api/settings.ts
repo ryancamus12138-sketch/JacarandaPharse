@@ -1,9 +1,9 @@
-/** 设置页：/api/v1/settings（ADR 0063）。 */
+/** Settings page: /api/v1/settings. */
 
 import { api } from './client'
 
 export interface SettingItem {
-  /** 和 .env 里的变量名对应（小写）。 */
+  /** Matches the variable name in .env, lowercased. */
   key: string
   group: string
   label: string
@@ -11,9 +11,9 @@ export interface SettingItem {
   kind: 'choice' | 'bool' | 'int' | 'path' | 'text'
   value: string | number | boolean | null
   default: string | number | boolean | null
-  /** env：.env 指定（页面上改不了）；page：设置页上改的；default：默认值。 */
+  /** env: set in .env (not editable on the page); page: set on the settings page; default: default value. */
   source: 'env' | 'page' | 'default'
-  /** .env 里的变量名。 */
+  /** Variable name in .env. */
   env: string
   options: { value: string; label: string }[]
   min: number | null
@@ -23,7 +23,7 @@ export interface SettingItem {
 export interface SettingsOut {
   items: SettingItem[]
   can_change: boolean
-  /** 页面上改过、还没 jacara stop、jacara start。 */
+  /** Changed on the page but `jacara stop` / `jacara start` has not run yet. */
   restart_needed: boolean
 }
 
@@ -31,7 +31,7 @@ export function getSettings(): Promise<SettingsOut> {
   return api<SettingsOut>('/settings')
 }
 
-/** 值写 null 改回默认。 */
+/** A null value restores the default. */
 export function updateSettings(values: Record<string, unknown>): Promise<SettingsOut> {
   return api<SettingsOut>('/settings', { method: 'PUT', json: { values } })
 }

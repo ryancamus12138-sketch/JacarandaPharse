@@ -23,7 +23,7 @@ def _created() -> sa.Column:
 
 
 def upgrade() -> None:
-    # 个人资料（头像、个人模式下的昵称）：每人一行
+    # Profiles (avatar, display name in personal mode): one row per user.
     op.create_table(
         "profiles",
         sa.Column("user_id", sa.Uuid(), nullable=False),
@@ -35,12 +35,12 @@ def upgrade() -> None:
     )
     op.create_index("ix_profiles_team_id", "profiles", ["team_id"])
 
-    # 审核时先跳过的文档
+    # Documents skipped during review.
     op.add_column("documents", sa.Column("skipped_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("documents", sa.Column("skip_reason", sa.Text(), nullable=True))
     op.add_column("documents", sa.Column("skipped_by", sa.Uuid(), nullable=True))
 
-    # 备注：留给同事的话，可以挂在整份文档或某个字段上
+    # Comments: notes for colleagues, attached to a document or to a single value.
     op.create_table(
         "comments",
         sa.Column("id", sa.Uuid(), nullable=False),

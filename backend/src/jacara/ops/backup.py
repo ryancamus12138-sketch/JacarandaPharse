@@ -1,17 +1,20 @@
-"""备份和恢复（ADR 0054）：数据库的每一张表和对象存储里的每一个文件，打进同一个 .tar。
+"""Backup and restore: every database table and every object in object storage, packed into a single
+.tar.
 
-为什么不用 pg_dump：
-- 表按 SQLAlchemy 读出来写成 JSON 行，不依赖本机装哪个版本的 pg_dump；
-- 测试里就能完整地备份一次、恢复一次、核对一次（SQLite + 假存储）。
+Why not pg_dump:
+- Tables are read through SQLAlchemy and written as JSON lines, independent of the locally
+  installed pg_dump version;
+- A complete backup, restore and verification cycle can run in tests (SQLite + fake storage).
 
-一个备份包里有：
-  manifest.json        格式、时间、jacara 版本、数据库版本（alembic）、每张表几行、每个文件的 sha256
-  db/<表名>.jsonl      一行一条记录；UUID、时间、JSON 等类型带标记，恢复时还原
-  objects/<存储里的路径>  原始文件、OCR 样本小图、OCR 快照、导出文件、头像……
+A backup archive contains:
+  manifest.json            format, time, jacara version, database revision (alembic), row count
+per table, sha256 of every file
+  db/<table>.jsonl         one record per line; UUIDs, timestamps, JSON and similar types are
+tagged and restored
+  objects/<storage key>    originals, OCR sample crops, OCR snapshots, export files, avatars, …
 
-恢复只往空的环境里恢复（数据库每张表都是空的、存储里没有文件），先核对包里每个文件的 sha256，
-一处不对就什么都不动。
-"""
+Restore targets only an empty environment (every table empty, no objects in storage). The sha256
+of every file in the archive is verified first; on any mismatch nothing is changed."""
 
 from __future__ import annotations
 
@@ -37,11 +40,11 @@ CHUNK = 500
 
 
 class BackupError(Exception):
-    """备份或恢复做不下去：原因写给人看。"""
+    """Backup or restore cannot proceed; the message is for the user."""
 
 
 class FileStore(Protocol):
-    """备份要的对象存储：除了存、取，还要能列出全部文件。"""
+    """Object storage as needed for backups: besides put and get, all keys must be listable."""
 
     def put(self, key: str, data: bytes, content_type: str) -> None: ...
 
@@ -52,7 +55,7 @@ class FileStore(Protocol):
     def content_type(self, key: str) -> str: ...
 
 
-# ---- 值的编码：JSON 里没有 UUID、时间、二进制，带个标记存，恢复时还原 ----
+# ---- Value encoding: JSON has no UUID, datetime or binary types; they are tagged and restored ----
 
 
 def encode(value: Any) -> Any:
@@ -69,7 +72,7 @@ def encode(value: Any) -> Any:
     if isinstance(value, bytes | bytearray | memoryview):
         return {"$bytes": base64.b64encode(bytes(value)).decode("ascii")}
     if isinstance(value, dict | list):
-        return {"$json": value}  # JSON 列：原样，外面包一层免得和标记混淆
+        return {"$json": value}  # JSON column: stored as is, wrapped to avoid confusion with tags.
     return value
 
 
@@ -94,7 +97,7 @@ def decode(value: Any) -> Any:
     return value
 
 
-# ---- 备份 ----
+# ---- Backup ----
 
 
 @dataclass
@@ -124,7 +127,8 @@ class Manifest:
 
 
 def _tables(conn: Connection) -> list[Table]:
-    """数据库里的表，按外键先后排好（被引用的在前）。表结构从数据库读，不看代码。"""
+    """Database tables ordered by foreign keys (referenced tables first). The schema is read from
+    the database, not from code."""
     meta = MetaData()
     meta.reflect(bind=conn)
     return [t for t in meta.sorted_tables if t.name != VERSION_TABLE]
@@ -160,14 +164,16 @@ def backup(
     version: str,
     progress: Callable[[str], None] = lambda _: None,
 ) -> Path:
-    """备份到 out_dir/jacara-<时间>.tar，返回路径。
+    """Back up to out_dir/jacara-<timestamp>.tar and return the path.
 
-    先写 .partial，写完才改名：半截的包不会被当成好的。"""
+        Written as .partial and renamed when complete, so a truncated archive is never mistaken
+    for a valid one."""
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     final = out_dir / f"jacara-{stamp}.tar"
     partial = final.with_suffix(".tar.partial")
-    # PostgreSQL：整个备份在同一个快照里读，读的过程中就算有人写，各张表也对得上
+    # PostgreSQL: the whole backup reads from one snapshot, so tables stay consistent even if others
+    # write meanwhile.
     snapshot = {"isolation_level": "REPEATABLE READ"} if engine.dialect.name == "postgresql" else {}
     with engine.connect().execution_options(**snapshot) as conn, tarfile.open(partial, "w") as tar:
         manifest = Manifest(
@@ -196,7 +202,7 @@ def backup(
     return final
 
 
-# ---- 核对备份包 ----
+# ---- Archive verification ----
 
 
 def read_manifest(archive: Path) -> Manifest:
@@ -208,7 +214,8 @@ def read_manifest(archive: Path) -> Manifest:
 
 
 def check_archive(archive: Path) -> Manifest:
-    """恢复之前先核对：每张表的文件都在、行数对；每个文件都在、sha256 对。不对就报错。"""
+    """Verify before restoring: every table file present with the right row count; every object
+    present with the right sha256. Raises otherwise."""
     if not archive.exists():
         raise BackupError(f"找不到备份包：{archive}")
     try:
@@ -238,7 +245,7 @@ def check_archive(archive: Path) -> Manifest:
     return manifest
 
 
-# ---- 恢复 ----
+# ---- Restore ----
 
 
 def _member(tar: tarfile.TarFile, name: str) -> IO[bytes]:
@@ -249,7 +256,7 @@ def _member(tar: tarfile.TarFile, name: str) -> IO[bytes]:
 
 
 def is_empty(conn: Connection, storage: FileStore) -> tuple[bool, str]:
-    """要恢复到的地方是不是空的：每张表都没有数据，存储里也没有文件。"""
+    """Whether the restore target is empty: no rows in any table and no objects in storage."""
     for table in _tables(conn):
         if conn.execute(select(func.count()).select_from(table)).scalar():
             return False, f"数据库里已经有数据（表 {table.name}）"
@@ -265,11 +272,11 @@ def restore(
     migrate: Callable[[str | None], None],
     progress: Callable[[str], None] = lambda _: None,
 ) -> Manifest:
-    """把备份包恢复到空的环境里。
+    """Restore a backup archive into an empty environment.
 
-    migrate(revision) 把数据库结构变成备份时的版本（命令行用 alembic；测试里什么都不做）。
-    数据在一个事务里写完：中途出错数据库回到空的。文件最后放，放之前核对过 sha256。
-    """
+        migrate(revision) brings the database schema to the revision of the backup (alembic in
+    the CLI; a no-op in tests). Data is written in one transaction, so an error leaves the
+    database empty. Objects are written last, after sha256 verification."""
     manifest = check_archive(archive)
     with engine.connect() as conn:
         empty, reason = is_empty(conn, storage)

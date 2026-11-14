@@ -1,7 +1,6 @@
-"""把流水线的结果存进数据库。
+"""Store pipeline results in the database.
 
-插件不碰数据库（项目规则 7）：插件只返回 DocumentReport，由这里负责保存。
-"""
+Plugins never touch the database: they return DocumentReport and this module stores it."""
 
 from __future__ import annotations
 
@@ -23,7 +22,7 @@ from jacara.plugins.validators.base import ValidationResult
 
 
 def file_sha256(path: Path) -> str:
-    """文件内容的指纹。文件可能很大，所以一块一块地读。"""
+    """Content fingerprint. Files may be large, so they are read in chunks."""
     digest = hashlib.sha256()
     with path.open("rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
@@ -37,7 +36,8 @@ def save_document(
     reports: Sequence[DocumentReport],
     owner: Owner = PERSONAL_OWNER,
 ) -> Document:
-    """命令行用：新建一条文档记录，连同每一页的抽取结果一起保存。调用方负责提交。"""
+    """For the CLI: create a document record and store the extraction of every page with it. The
+    caller commits."""
     document = Document(
         filename=path.name,
         sha256=file_sha256(path),
@@ -53,7 +53,8 @@ def save_document(
 
 
 def page_count(reports: Sequence[DocumentReport]) -> int:
-    """文件有几页：最后一张单据的最后一页（一张单据可能占好几页，ADR 0036）。"""
+    """Page count of the file: the last page of the last document (a document may span several
+    pages)."""
     return max((r.last_page or r.page for r in reports), default=0)
 
 
@@ -67,11 +68,12 @@ def add_extractions(
     run_reason: str | None = None,
     ocr_snapshot: str | None = None,
 ) -> None:
-    """把每一页的抽取结果挂到一个已有的文档上。后台任务处理上传的文件时用这个。
+    """Attach the extraction of each page to an existing document. Used by background processing of
+    uploaded files.
 
-    抽取结果的归属和文档一样（同一个 user、同一个 team）。run 是第几轮处理（ADR 0030）。
-    ocr_snapshot 是这一轮 OCR 快照存在哪里（ADR 0053），同一轮的几张单据都指向它。
-    """
+        Extractions have the same ownership as the document (same user and team). run is the run
+    number. ocr_snapshot is the storage key of this run's OCR snapshot, shared by all documents
+    of the run."""
     who = {"user_id": document.user_id, "team_id": document.team_id}
     for report in reports:
         e = report.extraction
@@ -86,7 +88,8 @@ def add_extractions(
             prompt_version=e.prompt_version,
             template=report.template,
             template_version=report.template_version,
-            # 自动判断的（ADR 0038）每张单据各用各的模板；没有自动判断就用文档上选的
+            # With automatic selection, each document uses its own template; otherwise the template
+            # chosen on the document.
             template_version_id=report.template_version_id
             if report.classified is not None
             else template_version_id,
@@ -110,13 +113,15 @@ def add_extractions(
             row.evidence = _evidence_json(field, report)
             row.candidates = candidates_json(field, report)
             if field.field.name in report.manual:
-                row.origin = "manual"  # 人工填的：不是模型说"原文没有"，是等人填
+                # Manual entry: awaiting input, not reported absent by the model.
+                row.origin = "manual"
                 row.needs_review = False
             elif field.field.name in report.computed:
-                row.origin = "computed"  # 按公式算的（ADR 0035）
+                row.origin = "computed"  # Computed by formula.
             session.add(row)
 
-    session.flush()  # 让数据库现在就分配好 ID、检查约束，有错马上报
+    # Have the database assign IDs and check constraints now, so errors surface immediately.
+    session.flush()
 
 
 def _value_row(
@@ -135,7 +140,8 @@ def _value_row(
         name=field.field.name,
         label=field.field.label,
         type=field.field.type,
-        # 核对不上、按规则没有填的（ADR 0034）：值存成空的，模型给的值另外记下
+        # Rejected by cross-checking: the value is stored empty and the model value is recorded
+        # separately.
         value=None if value is None or rejected else str(value),
         rejected_value=str(value) if rejected else None,
         row_no=field.field.row,
@@ -147,8 +153,9 @@ def _value_row(
 
 
 def _evidence_json(field: AlignedField, report: DocumentReport) -> dict[str, Any] | None:
-    """出处：哪一页（文件里的页码）、这一页上的框。几页拼成的单据（ADR 0036），
-    拼成的长页上的框换回那一页自己的坐标；框跨两页时只框上面那页的部分。"""
+    """Evidence: page (page number in the file) and box on that page. For stacked documents, boxes
+    on the tall page are converted back to their page's coordinates; boxes spanning two pages
+    keep only the part on the upper page."""
     ev = field.evidence
     if ev is None:
         return None
@@ -181,7 +188,8 @@ def _evidence_json(field: AlignedField, report: DocumentReport) -> dict[str, Any
 
 
 def candidates_json(field: AlignedField, report: DocumentReport) -> dict[str, Any] | None:
-    """候选（ADR 0042）存成 JSON：框换回那一页自己的坐标，和出处一样。"""
+    """Candidates stored as JSON, with boxes converted back to their page's coordinates as for
+    evidence."""
     if not field.candidates:
         return None
     items = []
@@ -201,14 +209,16 @@ def candidates_json(field: AlignedField, report: DocumentReport) -> dict[str, An
                 "note": c.note,
                 "dpi": c.dpi,
                 "rule_ok": c.rule_ok,
+                "visible": c.visible,
             }
         )
     return {"items": items}
 
 
 def report_ocr_json(report: DocumentReport) -> dict[str, Any] | None:
-    """一张单据的 OCR 结果：只占一页的照旧存这一页；占好几页的，每一页存自己的
-    （{"pages": [{"page": 3, "width", "height", "lines"}, …]}，坐标是那一页自己的，ADR 0036）。"""
+    """OCR result of a document: a single-page document stores that page as before; a multi-page
+    document stores each page separately ({"pages": [{"page": 3, "width", "height", "lines"},
+    …]}, in each page's own coordinates)."""
     if not report.pages:
         return ocr_json(report.ocr_page)
     return {
@@ -220,10 +230,11 @@ def report_ocr_json(report: DocumentReport) -> dict[str, Any] | None:
 
 
 def ocr_json(page: OcrPage | None) -> dict[str, Any] | None:
-    """一页 OCR 结果存成 JSON：每个文字块的文字、外接框、四个角、置信度，还有它在第几个视觉行。
+    """One page of OCR results as JSON: text, bounding box, four corners and confidence of every
+    text block, plus its visual line number.
 
-    审核页面"点原文填值"要用：点哪一块，就用哪一块的文字和位置。
-    """
+        Used by click-to-fill on the review page: the clicked block supplies its text and
+    position."""
     if page is None:
         return None
     from jacara.plugins.ocr.layout import group_rows
@@ -272,7 +283,8 @@ def ocr_json(page: OcrPage | None) -> dict[str, Any] | None:
 
 
 def page_from_json(data: dict[str, Any], engine: str) -> OcrPage:
-    """ocr_json 的反方向：从数据库里存的 OCR 结果还原一页，不用重新识别（试跑用）。"""
+    """Inverse of ocr_json: restore a page from the stored OCR result without re-running OCR (for
+    trial runs)."""
     from jacara.plugins.ocr.base import FormValue, OcrLine, Point
 
     lines = tuple(
@@ -318,7 +330,8 @@ def page_from_json(data: dict[str, Any], engine: str) -> OcrPage:
 
 
 def evidence_from_ocr(lines: list[dict[str, Any]]) -> dict[str, Any]:
-    """几个文字块（ocr_json 里的格式）→ 出处，格式和抽取时找到的出处一样。"""
+    """Text blocks (in ocr_json format) → evidence, in the same format as evidence found during
+    extraction."""
     boxes = [line["box"] for line in lines]
     rows = [line["row"] for line in lines if line.get("row") is not None]
     return {

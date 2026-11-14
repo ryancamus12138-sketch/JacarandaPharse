@@ -17,7 +17,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # 用过的模板删除时只记下删除时间：版本留着，用过它的文档照常显示
+    # Deleting a template that has been used only records the deletion time; its versions are kept
+    # so that existing documents still render.
     op.add_column("templates", sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True))
 
 

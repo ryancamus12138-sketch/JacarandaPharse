@@ -1,4 +1,5 @@
-"""从 Excel 建模板、按原工作簿导出、对象合并、参照表、标准模板 Excel（ADR 0031）。"""
+"""Creating templates from Excel, exporting into the original workbook, merging subjects, reference
+tables, the standard template workbook."""
 
 from __future__ import annotations
 
@@ -28,7 +29,8 @@ def xlsx(book: Workbook) -> bytes:
 
 
 def reimbursement() -> bytes:
-    """报销表：标题行 + 汇总（一张单据一行）+ 明细（一项一行）+ 按月复制的一张 + 选项 + 说明。"""
+    """Expense workbook: title row + summary (one row per document) + line items (one row per item)
+    + a monthly copy + options + notes."""
     book = Workbook()
     ws = book.active
     assert ws is not None
@@ -55,7 +57,8 @@ def reimbursement() -> bytes:
 
 
 def pharma() -> bytes:
-    """药企：实验数据（一个指标一行）+ 病人信息（一个病人一行）+ 实验室名单（参照）。"""
+    """Pharmaceutical company: test data (one row per indicator) + patient information (one row per
+    patient) + laboratory list (reference)."""
     book = Workbook()
     ws = book.active
     assert ws is not None
@@ -75,7 +78,7 @@ def pharma() -> bytes:
     return xlsx(book)
 
 
-# ---------- 分析 ----------
+# ---------- Analysis ----------
 
 
 def test_header_row_skips_title_lines():
@@ -101,7 +104,7 @@ def test_analyze_reimbursement():
     assert columns["报销人"].source == "manual"
     assert columns["费用类别"].options == ["餐饮", "交通", "住宿"]
     assert columns["总额"].type == "number" and columns["日期"].type == "date"
-    # 对上了通用收据：字段 ID 用它的
+    # Matched the generic receipt: its field IDs are used.
     assert result.starter == "receipt_general"
     assert columns["商家"].field == "merchant" and columns["总额"].field == "total"
     link = next(c for c in sheets["报销明细"].columns if c.header == "单号")
@@ -119,11 +122,12 @@ def test_analyze_pharma():
     assert code.source == "lookup" and code.lookup == "实验室名单::实验室编号"
 
 
-# ---------- 建模板、处理、导出 ----------
+# ---------- Template creation, processing, export ----------
 
 
 class Backend:
-    """假模型：按 JSON Schema 回答。values：字段 ID → (值, 行号)；tables：表名 → 行。"""
+    """Fake model answering according to the JSON Schema. values: field ID → (value, line number);
+    tables: table name → rows."""
 
     name = "fake"
 
@@ -174,10 +178,11 @@ def build(client, analysis, title="报销模板", edit=None):
 
 
 def with_answers(page, backend):
-    """假模型回答的文字（"购物"、"张三"……）不在收据上：在页面底下补上这些字。
+    """The fake model's answers ("购物", "张三", …) are not on the receipt: add them at the bottom
+    of the page.
 
-    原文里找不到的值会按规则丢掉（ADR 0034）；这里测的是模板的规则、对象、参照表，值要真的在原文里。
-    """
+        Values not found in the source are dropped by rule; this test covers template rules,
+    subjects and reference tables, so the values must really be in the source."""
     texts = [v for v, _ in backend.values.values() if isinstance(v, str)]
     for rows in backend.tables.values():
         texts += [v for row in rows for v in row.values() if isinstance(v, str)]
@@ -212,7 +217,8 @@ def test_build_process_and_export_into_original(client, factory, storage, receip
     assert expense["options"] == ["餐饮", "交通", "住宿"]
     assert template["tables"][0]["label"] == "报销明细"
     assert template["workbook"]["filename"] == "表.xlsx"
-    assert "total_positive" in [r["id"] for r in template["rules"]]  # 起步模板的规则带过来了
+    # The starter template's rules were carried over.
+    assert "total_positive" in [r["id"] for r in template["rules"]]
 
     backend = Backend(
         {
@@ -229,7 +235,7 @@ def test_build_process_and_export_into_original(client, factory, storage, receip
         },
     )
     document_id = process(client, factory, storage, receipt_page, template["id"], backend)
-    # 人工填的字段不交给模型
+    # Manual-entry fields are not sent to the model.
     assert "报销人" not in backend.prompts[0]
 
     detail = client.get(f"/api/v1/documents/{document_id}").json()
@@ -237,25 +243,26 @@ def test_build_process_and_export_into_original(client, factory, storage, receip
     manual = next(v for v in values.values() if v["label"] == "报销人")
     assert manual["origin"] == "manual" and manual["value"] is None
     rules = {i["rule"] for i in detail["extractions"][0]["current_checks"]["issues"]}
-    assert "options" in rules  # “购物”不在可选值里
+    assert "options" in rules  # "购物" is not an allowed value.
 
     second = process(client, factory, storage, receipt_page, template["id"], backend)
     response = client.get(f"/api/v1/documents/export.xlsx?ids={document_id}&ids={second}")
     book = load_workbook(io.BytesIO(response.content))
     assert book.sheetnames[:5] == ["报销汇总", "报销明细", "9月", "选项", "填表说明"]
-    # "报销汇总"和"9月"表头一样（按月分的）：原来的都不动，填进复制出来的一张
+    # "报销汇总" and "9月" have identical headers (monthly): the originals are untouched and the
+    # copy is filled.
     assert book["报销汇总"]["B4"].value == "李"
     copy = next(n for n in book.sheetnames if n.startswith("报销汇总 "))
     assert copy.endswith("导出")
     summary = book[copy]
-    assert summary["A1"].value == "2026 年 10 月报销汇总"  # 标题行留着
+    assert summary["A1"].value == "2026 年 10 月报销汇总"  # The title row is kept.
     assert [c.value for c in summary[4]][:4] == [1, None, "A001", "BOOK TA _K (TAMAN DAYA) SDN BHD"]
     assert summary["A5"].value == 2
     assert summary["F4"].value == 9.0
     assert summary["A6"].value == "合计" and summary["F6"].value == "=SUM(F4:F5)"
     items = book["报销明细"]
     assert [c.value for c in items[2]] == ["A001", "1 PC", 9.0]
-    assert items.max_row == 3  # 两份单据各一行，原来的示例数据清掉了
+    assert items.max_row == 3  # One row per document; the original sample data is cleared.
 
 
 def test_entity_merge_conflict_and_lookup(client, factory, storage, receipt_page):
@@ -297,20 +304,21 @@ def test_entity_merge_conflict_and_lookup(client, factory, storage, receipt_page
         "issues"
     ]
     rules = {i["rule"] for i in issues}
-    assert "entity_conflict" in rules  # 同一个病人，性别对不上
-    assert "lookup" in rules  # 实验室名单里没有
+    assert "entity_conflict" in rules  # Same patient, sex disagrees.
+    assert "lookup" in rules  # Not in the laboratory list.
 
     response = client.get(f"/api/v1/documents/export.xlsx?ids={first}&ids={second}")
     book = load_workbook(io.BytesIO(response.content))
     patients = book["病人信息"]
-    assert patients.max_row == 2  # 同一个病人合并成一行
+    assert patients.max_row == 2  # The same patient is merged into one row.
     assert patients["C2"].value == "男" and patients["C2"].comment is not None
     data = book["实验数据"]
-    # 表头像检验报告：按起步模板"检验报告"把结果当文字（阴性、<0.1 也要能写），照原样导出
+    # Headers look like a lab report: following the "lab report" starter template, results are text
+    # (negative and <0.1 must be writable) and exported as is.
     assert analysis["starter"] == "lab_report"
     assert [c.value for c in data[2]] == ["P001", "第一实验室", "L01", "血糖", "9.0"]
-    assert data["C3"].value is None  # 对照不上，编号留空
-    assert book["实验室名单"].max_row == 3  # 参照表原样不动
+    assert data["C3"].value is None  # No match, identifier left empty.
+    assert book["实验室名单"].max_row == 3  # The reference sheet is unchanged.
 
 
 def test_editor_save_keeps_workbook(client):
@@ -325,10 +333,10 @@ def test_editor_save_keeps_workbook(client):
     assert saved.status_code == 200, saved.text
     sheet = saved.json()["workbook"]["sheets"][0]
     merchant = next(c for c in sheet["columns"] if c["header"] == "商家")
-    assert merchant["ref"] == ""  # 删掉的字段，导出时这一列留空
+    assert merchant["ref"] == ""  # Deleted fields leave their column empty on export.
 
 
-# ---------- 标准模板 Excel（方法一） ----------
+# ---------- Standard template workbook ----------
 
 
 def test_standard_excel_round_trip(client):
@@ -343,7 +351,7 @@ def test_standard_excel_round_trip(client):
     imported = client.post("/api/v1/templates/import", json=analysis["template"]).json()
     assert [f["name"] for f in imported["fields"]] == [f["name"] for f in template["fields"]]
     assert imported["references"][0]["row_count"] == 2
-    assert imported["workbook"] is None  # 原表样式要用 JSON 搬
+    assert imported["workbook"] is None  # The original-workbook layout moves via JSON.
 
 
 def test_standard_excel_error_says_which_row(client):
@@ -376,7 +384,8 @@ def test_not_an_excel(client):
 
 
 def test_editor_maps_a_column_to_the_start_of_a_date_range(client):
-    """原表的"日期"一列改成填日期范围字段的开始（ADR 0039）；改了随模板一起保存。"""
+    """The "date" column of the original workbook is changed to the start of the date range field;
+    the change is saved with the template."""
     template = build(client, upload_excel(client, reimbursement()))
     period = {
         "name": "period",
@@ -400,5 +409,5 @@ def test_editor_maps_a_column_to_the_start_of_a_date_range(client):
     assert saved.status_code == 200, saved.text
     columns = {c["header"]: c["ref"] for c in saved.json()["workbook"]["sheets"][0]["columns"]}
     assert columns["日期"] == "period.start"
-    assert columns["商家"] == ""  # 不存在的字段：留空
-    assert columns["单号"] == ""  # 改成留空
+    assert columns["商家"] == ""  # Nonexistent field: left empty.
+    assert columns["单号"] == ""  # Changed to empty.

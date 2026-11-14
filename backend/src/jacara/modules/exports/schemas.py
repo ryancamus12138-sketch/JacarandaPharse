@@ -1,4 +1,4 @@
-"""导出记录的对外格式。"""
+"""Public schemas of the export history."""
 
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ class ExportOut(BaseModel):
     documents: list[ExportedDocument]
     created_at: datetime
     user_name: str = ""
-    """谁导出的（显示名，没有就是用户名）。个人模式是"本机用户"。"""
+    """Exporting user (display name, otherwise user name). "Local user" in personal mode."""
     available: bool = True
-    """文件还在，可以重新下载。"""
+    """The file is still available for download."""
 
 
 class ExportPage(BaseModel):

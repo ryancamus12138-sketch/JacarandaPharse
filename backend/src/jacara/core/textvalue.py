@@ -1,8 +1,8 @@
-"""从原文里的一段文字读出数字或日期。
+"""Parse numbers and dates from a span of source text.
 
-审核时"点原文填值"：点的是原图上的文字（"RM 1,234.50"、"25/12/2018 8:13 PM"），
-存进去要变成和模型抽出的值一样的格式（1234.5、2018-12-25）。评测打分也用这里的日期读法。
-"""
+When a reviewer fills a value by clicking text on the page image ("RM 1,234.50", "25/12/2018 8:13
+PM"), the stored value must have the same format as model output (1234.5, 2018-12-25). Evaluation
+scoring uses the same date parsing."""
 
 from __future__ import annotations
 
@@ -16,10 +16,10 @@ _NUMBER = re.compile(r"(\(?)(-?)(\d[\d,]*(?:\.\d+)?|\.\d+)(\)?)(-?)")
 
 
 def parse_number(text: str) -> float | None:
-    """文字里的金额：取最后一个数字（"1x 9.99 9.99" → 9.99，"RM 1,234.50" → 1234.5）。
+    """Amount in the text: the last number ("1x 9.99 9.99" → 9.99, "RM 1,234.50" → 1234.5).
 
-    折扣的写法 "6.00-"、"-6.00"、"(6.00)" 都读成 -6.0。读不出数字返回 None。
-    """
+        Discount notations "6.00-", "-6.00" and "(6.00)" are all read as -6.0. Returns None if no
+    number is found."""
     found = list(_NUMBER.finditer(text))
     if not found:
         return None
@@ -30,11 +30,11 @@ def parse_number(text: str) -> float | None:
 
 
 def signed_number(text: str, magnitude: float) -> float | None:
-    """文字里和 magnitude 一样大的那个数字，带上原文的正负号。
+    """The number in the text with the same magnitude, carrying the sign from the source text.
 
-    "SUMMERINA 6.00-" 里找 6.0 → -6.0。用来发现"原文是折扣、值却是正的"。
-    找不到一样大的数字返回 None（不会拿同一行别的数字顶替）。
-    """
+        Looking for 6.0 in "SUMMERINA 6.00-" gives -6.0. Used to detect a positive value whose
+    source is a discount. Returns None if no number of that magnitude exists (another number on
+    the line is never substituted)."""
     for m in _NUMBER.finditer(text):
         number = float(m[3].replace(",", ""))
         if abs(number - abs(magnitude)) < 0.005:
@@ -44,11 +44,13 @@ def signed_number(text: str, magnitude: float) -> float | None:
 
 
 def parse_date(text: str) -> date | None:
-    """日期的写法很多：25/12/2018、15-01-19、02 MAR 2018、OCT 3, 2016、20180304、2018-12-25。
+    """Dates come in many formats: 25/12/2018, 15-01-19, 02 MAR 2018, OCT 3, 2016, 20180304,
+    2018-12-25.
 
-    一般是 日/月/年；月份大于 12 时说明是 月/日/年，就对调。读不出返回 None。
-    """
-    t = re.sub(r"\s+(?=[,.])", "", text.strip().upper())  # "August 3 , 2014" 逗号前的空格
+        Day/month/year is assumed; a month greater than 12 indicates month/day/year and the two
+    are swapped. Returns None if unparseable."""
+    # Space before the comma in "August 3 , 2014".
+    t = re.sub(r"\s+(?=[,.])", "", text.strip().upper())
     try:
         if m := re.search(r"(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})", t):
             return date(int(m[1]), int(m[2]), int(m[3]))

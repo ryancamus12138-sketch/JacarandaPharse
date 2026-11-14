@@ -1,14 +1,16 @@
-"""流水线的两个工位之间交接（ADR 0051）：OCR 工位认好的字存成 JSON，模型工位读回来接着做。
+"""Hand-off between the two pipeline stages: the OCR stage stores its pages as JSON and the model
+stage reads them back to continue.
 
-和数据库里存的 OCR 结果（store.ocr_json）不同，这里一样不丢：四个角、置信度、引擎和模型、
-PDF 文字层、表单字段，读回来和 OCR 刚认出来的一模一样，后面的步骤结果才和一个进程做完时相同。
-"""
+Unlike the OCR result stored in the database (store.ocr_json), nothing is dropped here: four
+corners, confidence, engine and models, PDF text layer and form fields are restored exactly as
+recognized, so later steps produce the same results as a single-process run."""
 
 from __future__ import annotations
 
 import json
 from typing import Any, cast
 
+from jacara.core.i18n import stored
 from jacara.plugins.ocr.base import FormValue, OcrLine, OcrPage, Point
 
 VERSION = 1
@@ -32,7 +34,7 @@ def _from_line(data: dict[str, Any]) -> OcrLine:
 
 
 def dump_pages(pages: list[OcrPage]) -> bytes:
-    """OCR 工位认好的每一页 → JSON。"""
+    """Pages recognized by the OCR stage → JSON."""
     return json.dumps(
         {
             "version": VERSION,
@@ -58,10 +60,16 @@ def dump_pages(pages: list[OcrPage]) -> bytes:
 
 
 def load_pages(data: bytes) -> list[OcrPage]:
-    """模型工位读回 OCR 工位认好的每一页。"""
+    """Read back the pages recognized by the OCR stage in the model stage."""
     content = json.loads(data.decode("utf-8"))
     if content.get("version") != VERSION:
-        raise ValueError(f"交接文件的版本是 {content.get('version')}，这里只认 {VERSION}")
+        raise ValueError(
+            stored(
+                "交接文件的版本是 {found}，这里只认 {expected}",
+                found=content.get("version"),
+                expected=VERSION,
+            )
+        )
     return [
         OcrPage(
             width=int(p["width"]),

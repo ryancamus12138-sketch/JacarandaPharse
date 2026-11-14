@@ -1,4 +1,4 @@
-"""在样例上框选建模板（ADR 0047）。"""
+"""Creating templates by selecting regions on a sample."""
 
 from __future__ import annotations
 
@@ -46,11 +46,12 @@ def test_value_and_pair():
     pairs = [Pair("Invoice No", [280, 100, 400, 130]), Pair("Total", [600, 400, 720, 430])]
     assert getattr(pair_for(pairs, box), "key", None) == "Invoice No"
     assert getattr(pair_for(pairs, [590, 395, 730, 435]), "key", None) == "Total"
-    assert pair_for(pairs, [90, 230, 340, 280]) is None  # 没配对的不猜
+    assert pair_for(pairs, [90, 230, 340, 280]) is None  # Unpaired: no guessing.
 
 
 def test_structure_pairs_labels_correctly():
-    """版面分析配对：值不吞下一行别的标签的值；没认出表格的表格行，行名配最右边的金额。"""
+    """Layout pairing: a value does not swallow the value of the next line's label; for table rows
+    not recognized as a table, the row name pairs with the rightmost amount."""
     from tests.conftest import make_line, make_page
 
     page = make_page(
@@ -119,7 +120,8 @@ def test_describe_region_uses_stored_ocr(client, document_id):
     assert response.status_code == 200, response.text
     found = response.json()
     assert found["text"] == "10.00" and found["type"] == "number"
-    assert found["label"] == "Cash" and found["side"] == "右边"  # 版面分析配好的"Cash → 10.00"
+    # "Cash → 10.00" paired by layout analysis.
+    assert found["label"] == "Cash" and found["side"] == "右边"
     assert found["description"].startswith("在单据")
     assert detail["id"] == str(document_id)
 

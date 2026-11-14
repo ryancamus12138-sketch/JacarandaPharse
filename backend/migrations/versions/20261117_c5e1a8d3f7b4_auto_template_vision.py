@@ -1,9 +1,8 @@
-"""auto template choice and vision (ADR 0038)
+"""auto template choice and vision
 
 Revision ID: c5e1a8d3f7b4
 Revises: b3d8f1a6c2e9
-Create Date: 2026-11-17 12:00:00.000000
-"""
+Create Date: 2026-11-17 12:00:00.000000"""
 
 from collections.abc import Sequence
 
@@ -20,13 +19,13 @@ JSON = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 
 def upgrade() -> None:
-    # 上传时选"自动判断"：每张单据从我的模板里挑（ADR 0038）
+    # Automatic template selection at upload: each document picks a template from the library.
     op.add_column(
         "documents", sa.Column("auto", sa.Boolean(), server_default="false", nullable=False)
     )
-    # 这个文档下一次处理看不看原图：always、off，空的按 JACARA_VISION
+    # Vision mode for the next run of this document: always or off; empty means JACARA_VISION.
     op.add_column("documents", sa.Column("vision", sa.String(length=8), nullable=True))
-    # 每张单据：自动判断的经过、看原图的原因
+    # Per document: how the template was chosen and why the image was used.
     op.add_column("extractions", sa.Column("classified", JSON, nullable=True))
     op.add_column("extractions", sa.Column("vision", sa.Text(), nullable=True))
 

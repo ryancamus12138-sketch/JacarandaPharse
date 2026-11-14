@@ -1,4 +1,5 @@
-"""在原文里找一个日期（core/dates.py）：原文里像日期的写法读成日期再比，不再猜写法。"""
+"""Locating dates in the source text (core/dates.py): date-like spans are parsed and compared
+instead of guessing notations."""
 
 import pytest
 
@@ -12,9 +13,9 @@ from jacara.core.dates import date_pattern, dates_in, target_of
         ("2014-08-03", "开票日期：2014年8月3日"),
         ("2014-08-03", "2014 年 08 月 03 日"),
         ("2014-08-03", "2014/8/3"),
-        ("2014-08-03", "03/08/2014"),  # 日/月/年
-        ("2014-08-03", "08/03/2014"),  # 月/日/年（说不准时两种都认）
-        ("2014-08-03", "3.8.14"),  # 两位年份
+        ("2014-08-03", "03/08/2014"),  # day/month/year
+        ("2014-08-03", "08/03/2014"),  # month/day/year (both accepted when ambiguous)
+        ("2014-08-03", "3.8.14"),  # Two-digit year.
         ("2014-08-03", "August 3 , 2014"),
         ("2014-08-03", "Aug 3rd 2014"),
         ("2014-08-03", "3 Aug 2014"),
@@ -27,7 +28,7 @@ from jacara.core.dates import date_pattern, dates_in, target_of
         ("2018-03-04", "20180304"),
         ("2024-05-10", "INV-20240510"),
         ("2018-12-25", "25/12/2018 8:13:39 PM"),
-        ("1998-12-25", "25/12/98"),  # 两位年份也可能是 19xx
+        ("1998-12-25", "25/12/98"),  # A two-digit year may also mean 19xx.
     ],
 )
 def test_found(value, text):
@@ -37,9 +38,9 @@ def test_found(value, text):
 @pytest.mark.parametrize(
     ("value", "text"),
     [
-        ("2019-01-12", "12-01-1995"),  # 不从更长的日期里截一段
+        ("2019-01-12", "12-01-1995"),  # No substring of a longer date.
         ("2014-08-03", "2014-08-30"),
-        ("2014-08-03", "40.0-75.0"),  # 参考范围不是日期
+        ("2014-08-03", "40.0-75.0"),  # Reference ranges are not dates.
         ("2014-08-03", "1234567890"),
         ("2018-03-18", "18/03/2019"),
     ],
@@ -54,10 +55,11 @@ def test_span_points_at_the_date():
 
 
 def test_value_written_as_on_the_document():
-    """模型照抄了原文（ADR 0040 以前的回答）：读得出就按日期找，读不出按原样找。"""
+    """The model copied the source text (answers from before text was separate): parse it as a date
+    if possible, otherwise search verbatim."""
     assert target_of("August 3 , 2014").isoformat() == "2014-08-03"  # type: ignore[union-attr]
     assert date_pattern("August 3 , 2014").search("Date: 03/08/2014")
-    assert target_of("01/07/2014") is None  # 说不准是哪一天
+    assert target_of("01/07/2014") is None  # Ambiguous date.
     assert date_pattern("01/07/2014").search("on 01/07/2014.")
 
 

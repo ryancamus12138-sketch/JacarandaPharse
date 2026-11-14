@@ -1,4 +1,5 @@
-"""页面结构的数据：文字块和它们之间的关系（照 AWS Textract 的 Block 结构）。"""
+"""Page structure data: text blocks and their relationships (modeled on the AWS Textract Block
+structure)."""
 
 from __future__ import annotations
 
@@ -12,18 +13,19 @@ BlockType = Literal[
 ]
 
 Box = tuple[float, float, float, float]
-"""(x0, y0, x1, y1)，单位和 OCR 的坐标一样（页面图片上的像素）。"""
+"""(x0, y0, x1, y1), in OCR coordinates (pixels of the page image)."""
 
 
 @dataclass(frozen=True)
 class Block:
-    """结构里的一个块。
+    """A block of the structure.
 
-    id：WORD 是 "w12"（12 就是给模型看的编号），其他是 "l3"、"k1"、"v1"、"t1"、"c1-2-3"……
-    children：CHILD 关系，指向组成它的块（一般是 WORD）。
-    attrs：各类块自己的信息：LAYOUT 的 kind；CELL 的 row、col、row_span、col_span；
-           KEY 的 value（指向 VALUE 块）、rule（哪条规则找出来的）；WORD 的 row（第几个视觉行）。
-    """
+        id: "w12" for WORD (12 is the index shown to the model); "l3", "k1", "v1", "t1",
+    "c1-2-3", … for others.
+        children: CHILD relationships to the blocks it consists of (usually WORD).
+        attrs: block-type specific data: kind for LAYOUT; row, col, row_span, col_span for CELL;
+    value (the VALUE block) and rule (the rule that found it) for KEY; row (visual line number)
+    for WORD."""
 
     id: str
     type: BlockType
@@ -36,7 +38,8 @@ class Block:
 
 @dataclass(frozen=True)
 class PageStructure:
-    """一页的结构。words 按阅读顺序（先上后下、同一行先左后右），第 n 个就是编号 n。"""
+    """Structure of one page. words are in reading order (top to bottom, left to right within a
+    line); the n-th has index n."""
 
     width: float
     height: float
@@ -46,16 +49,18 @@ class PageStructure:
     layouts: tuple[str, ...]
     tables: tuple[str, ...]
     keys: tuple[str, ...]
-    """KEY 块（每个都有 attrs["value"] 指向它的 VALUE 块）。"""
+    """KEY blocks (each with attrs["value"] pointing to its VALUE block)."""
     ocr_lines: tuple[OcrLine, ...]
-    """和 words 一一对应的 OCR 文字块（带四个角的坐标），出处框用。"""
+    """OCR text blocks (with four-corner coordinates) corresponding one-to-one to words; used for
+    evidence boxes."""
     sources: dict[str, str] = field(default_factory=dict, compare=False, hash=False)
-    """结构是怎么来的：{"layout": "pp_layout_cdla", "table": "slanet-plus.onnx" 或 "规则"}。"""
+    """Provenance of the structure: {"layout": "pp_layout_cdla", "table": "slanet-plus.onnx" or
+    "rules"}."""
     page_starts: tuple[float, ...] = ()
-    """几页拼成的一张单据（ADR 0036）：每一页从多高开始。只有一页是空的。"""
+    """For stacked documents, the y offset at which each page begins. Empty for a single page."""
 
     def word(self, number: int) -> Block | None:
-        """编号 → 文字块（编号从 1 开始）。"""
+        """Index → text block (1-based)."""
         return self.blocks.get(f"w{number}")
 
     def number_of(self, block_id: str) -> int:
@@ -65,10 +70,10 @@ class PageStructure:
         return self.ocr_lines[number - 1] if 1 <= number <= len(self.ocr_lines) else None
 
     def words_of(self, block_id: str) -> list[Block]:
-        """一个块（KEY、VALUE、CELL……）由哪些文字块组成，按阅读顺序。"""
+        """Text blocks forming a block (KEY, VALUE, CELL, …), in reading order."""
         found: dict[str, Block] = {}
         stack = [block_id]
-        while stack:  # MERGED_CELL → CELL → WORD：一层层往下找
+        while stack:  # MERGED_CELL → CELL → WORD: descend level by level.
             for child in self.blocks[stack.pop()].children:
                 if child.startswith("w"):
                     found[child] = self.blocks[child]
@@ -80,7 +85,8 @@ class PageStructure:
         return [self.number_of(w.id) for w in self.words_of(block_id)]
 
     def to_json(self) -> dict[str, Any]:
-        """存进数据库（extractions.structure）的格式：只存块和关系，坐标取一位小数。"""
+        """Format stored in the database (extractions.structure): blocks and relationships only,
+        coordinates rounded to one decimal."""
         return {
             "width": self.width,
             "height": self.height,
@@ -107,11 +113,11 @@ class PageStructure:
 
 
 def structure_from_json(data: dict[str, Any], page: OcrPage) -> PageStructure | None:
-    """存下来的结构 + 这一页的 OCR（page_from_json 还原的）→ PageStructure。试跑时用。
+    """Stored structure + this page's OCR (restored by page_from_json) → PageStructure. Used by
+    trial runs.
 
-    文字块和 OCR 文字块靠 attrs["ocr"]（在 OCR 结果里是第几块）对上；对不上（数据不完整）返回 None，
-    调用方重新按规则分析。
-    """
+        Text blocks are matched to OCR blocks through attrs["ocr"] (index in the OCR result); on
+    mismatch (incomplete data) returns None and the caller re-analyzes by rules."""
     try:
         blocks = {
             b["id"]: Block(

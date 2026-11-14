@@ -1,4 +1,5 @@
-"""计算字段（ADR 0035）：公式的检查和计算、处理时算、审核改了值跟着重算。"""
+"""Computed fields: formula validation and evaluation, computation during processing, recomputation
+after review edits."""
 
 from __future__ import annotations
 
@@ -6,11 +7,12 @@ import re
 
 import pytest
 
+from jacara.core.i18n import render
 from jacara.formulas import FormulaError, Inputs, Scope, evaluate, order, parse_formula
 from jacara.pipeline.compute import compute
 from jacara.templates import TemplateError, load_starter, parse_template
 
-from .conftest import make_line, make_page
+from .conftest import make_line, make_page, raises
 from .test_template_library import SchemaBackend, detail, process, upload, values
 
 SCOPE = Scope(
@@ -26,7 +28,7 @@ def test_dates_subtract_to_days():
     outcome = evaluate(formula, Inputs({"check_in": "2017-12-31", "check_out": "2018-01-02"}, {}))
     assert outcome.value == 2
     labels = {"check_in": "入住日期", "check_out": "离店日期"}
-    assert formula.readable(labels) == "离店日期 − 入住日期"
+    assert render(formula.readable(labels)) == "离店日期 − 入住日期"
 
 
 def test_missing_value_says_which():
@@ -46,7 +48,7 @@ def test_row_formula_and_sum():
 
 def test_divide_by_zero():
     formula = parse_formula("total / (total - total)", SCOPE)
-    assert evaluate(formula, Inputs({"total": 3}, {})).problem == "除以 0"
+    assert render(evaluate(formula, Inputs({"total": 3}, {})).problem) == "除以 0"
 
 
 @pytest.mark.parametrize(
@@ -64,15 +66,15 @@ def test_divide_by_zero():
     ],
 )
 def test_bad_formulas_say_why(text, message):
-    with pytest.raises(FormulaError, match=re.escape(message)):
+    with raises(FormulaError, re.escape(message)):
         parse_formula(text, SCOPE)
 
 
 def test_formulas_in_a_loop_are_refused():
     a = parse_formula("total + 1", Scope({"total": "number", "a": "number"}, {}))
     b = parse_formula("a + 1", Scope({"total": "number", "a": "number"}, {}))
-    # total 用 a、a 又用 total
-    with pytest.raises(FormulaError, match="互相引用"):
+    # total uses a and a uses total.
+    with raises(FormulaError, "互相引用"):
         order({"a": a, "total": b})
 
 
@@ -85,10 +87,10 @@ def test_template_checks_formulas():
             {"name": "nights", "label": "晚数", "type": "number", "compute": "check_out - x"},
         ],
     }
-    with pytest.raises(TemplateError, match="「晚数」的公式：没有叫 check_out 的字段"):
+    with raises(TemplateError, "「晚数」的公式：没有叫 check_out 的字段"):
         parse_template(raw, "t")
     raw["fields"][1] |= {"type": "string", "compute": "1"}
-    with pytest.raises(TemplateError, match="type 要是 number"):
+    with raises(TemplateError, "type 要是 number"):
         parse_template(raw, "t")
 
 
@@ -97,10 +99,10 @@ def test_hotel_nights_are_computed_not_asked():
     assert "nights" not in {s.name for s in hotel.specs}
     [done] = compute(hotel, {"check_in": "2017-12-31", "check_out": "2018-01-01"})
     assert (done.name, done.value) == ("nights", 1)
-    assert done.note == "按公式算：离店日期 − 入住日期 = 1"
+    assert render(done.note) == "按公式算：离店日期 − 入住日期 = 1"
 
 
-# ---------- 处理和审核 ----------
+# ---------- Processing and review ----------
 
 HOTEL = {
     "hotel": ("OYO Hotel Nanganallur", 1),
@@ -146,20 +148,21 @@ def test_nights_follow_the_dates(client, factory, storage, hotel_page, hotel_tem
     assert nights["current_value"] == "2.0" and nights["evidence_state"] == "verified"
     assert not nights["pending_review"]
 
-    # 离店日期改了：晚数跟着重算，记一条 compute，不算人审核过
+    # Check-out date changed: nights recomputed, a compute revision recorded, not counted as
+    # reviewed.
     revise(client, found["check_out"]["id"], action="edit", value="2018-01-04", reason="看错了")
     nights = values(detail(client, document_id))["nights"]
     assert nights["current_value"] == "4.0" and not nights["reviewed"]
     history = client.get(f"/api/v1/values/{nights['id']}/revisions").json()
     assert [r["action"] for r in history["revisions"]] == ["compute"]
 
-    # 人直接改了晚数：之后日期再改，晚数不再跟着变
+    # The reviewer edited nights directly: later date changes no longer recompute it.
     revise(client, nights["id"], action="edit", value="3", reason="实际住了 3 晚")
     revise(client, found["check_in"]["id"], action="edit", value="2017-12-30", reason="看错了")
     assert values(detail(client, document_id))["nights"]["current_value"] == "3.0"
 
 
-# ---------- 自定义规则、地区规则 ----------
+# ---------- Custom rules, regional rules ----------
 
 
 def custom_template(*rules):
@@ -209,21 +212,21 @@ def test_custom_rules_check_values():
     result = template.validator().validate(fields)
     messages = {i.rule: i for i in result.issues}
     assert (
-        messages["custom_1"].message
+        render(messages["custom_1"].message)
         == "明细的金额合计 是 9，总额 是 10，不满足 明细的金额合计 = 总额"
     )
-    assert messages["custom_2"].title == "离店日期 > 入住日期"
+    assert render(messages["custom_2"].title) == "离店日期 > 入住日期"
     assert messages["custom_2"].severity == "warning"
     assert "custom_3" in result.passed
     assert template.definition()["custom_rules"][2]["per_row"] == "items"
 
 
 def test_bad_custom_rule_says_which():
-    with pytest.raises(TemplateError, match="自定义规则「坏的」：没有叫 nights 的字段"):
+    with raises(TemplateError, "自定义规则「坏的」：没有叫 nights 的字段"):
         custom_template({"title": "坏的", "check": "nights == 1"})
-    with pytest.raises(TemplateError, match="比较用"):
+    with raises(TemplateError, "比较用"):
         custom_template({"check": "total + 1"})
-    with pytest.raises(TemplateError, match="都是日期"):
+    with raises(TemplateError, "都是日期"):
         custom_template({"check": "check_in == total"})
 
 
@@ -268,7 +271,7 @@ def test_old_copy_of_starter_is_offered_the_new_formula(client):
     assert body["starter_formulas"] == {}
     for f in body["fields"]:
         if f["name"] == "nights":
-            f["compute"] = ""  # 像是起步模板加公式之前复制的
+            f["compute"] = ""  # As if copied before the starter template gained a formula.
     saved = client.put(
         f"/api/v1/templates/{body['id']}",
         json={"title": body["title"], "fields": body["fields"], "tables": body["tables"]},
@@ -312,7 +315,8 @@ def test_formula_check_while_typing(client):
 
 
 def test_imported_regional_template_keeps_its_region(client):
-    """加地区之前导出的中国数电发票（模板文件里没写地区）：导入后按规则认成中国模板，不报错。"""
+    """A China fully digital e-invoice template exported before regions existed (no region in the
+    file) is recognized as a China template by its rules on import, without error."""
     exported = client.get("/api/v1/templates/starters").json()
     cn = next(t for t in exported if t["name"] == "cn_einvoice")
     body = {

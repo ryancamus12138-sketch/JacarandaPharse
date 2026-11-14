@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# JacarandaParse 个人版：第一次安装（macOS、Linux）。ADR 0064。
-# 在解压出来的文件夹里运行：./scripts/install.sh
-# 要先装好 uv 和 Docker Desktop；第一次要联网（下载 Python 依赖和数据库镜像），装好以后用的时候不联网。
+# JacarandaParse personal edition: first-time installation (macOS, Linux).
+# Run from the extracted release folder: ./scripts/install.sh
+# Requires uv and Docker Desktop. Installation needs network access (Python dependencies and
+# container images); normal operation afterwards is fully offline.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

@@ -1,10 +1,14 @@
-"""测试共用的小工具。pytest 会自动加载这个文件，里面的 fixture 所有测试都能用。"""
+"""Shared test fixtures. pytest loads this file automatically; its fixtures are available to all
+tests."""
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,6 +20,7 @@ from jacara.app import create_app
 from jacara.core.config import get_settings
 from jacara.core.db import Base, session_scope
 from jacara.core.deps import get_ocr, get_queue, get_session, get_storage
+from jacara.core.i18n import render
 from jacara.core.queue import QueueError
 from jacara.core.storage import StorageError
 from jacara.plugins.aligners import TextMatchAligner
@@ -28,8 +33,9 @@ from jacara.plugins.validators import RuleValidator
 
 @pytest.fixture(autouse=True)
 def personal_mode(monkeypatch, tmp_path):
-    """测试默认用个人模式，不管你自己的 .env 里写的是什么。要测团队模式的文件再自己切过去。
-    设置页改的设置（ADR 0063）也换到临时文件夹，不读你自己的 data/settings.json。"""
+    """Tests run in personal mode by default, regardless of the local .env. Tests for team mode
+    switch explicitly. Settings-page values are redirected to a temporary folder as well, so the
+    local data/settings.json is never read."""
     from jacara.core import config
 
     monkeypatch.setenv("JACARA_MODE", "personal")
@@ -39,8 +45,18 @@ def personal_mode(monkeypatch, tmp_path):
     get_settings.cache_clear()
 
 
+@contextmanager
+def raises(kind: type[BaseException], pattern: str) -> Iterator[Any]:
+    """pytest.raises whose pattern is searched in the rendered message: messages that may be shown
+    later are stored as template plus parameters and rendered in the reader's language."""
+    with pytest.raises(kind) as info:
+        yield info
+    message = render(str(info.value))
+    assert re.search(pattern, message), message
+
+
 def make_line(text: str, x0: float, y0: float, x1: float, y1: float, conf: float = 0.99) -> OcrLine:
-    """造一块假的 OCR 文字：只要给出文字和外框。"""
+    """Build a fake OCR text block from text and a bounding box."""
     polygon = (Point(x0, y0), Point(x1, y0), Point(x1, y1), Point(x0, y1))
     return OcrLine(text=text, polygon=polygon, confidence=conf)
 
@@ -53,7 +69,8 @@ def make_page(*lines: OcrLine) -> OcrPage:
 
 @pytest.fixture
 def receipt_page() -> OcrPage:
-    """一张缩小版的收据：照着 SROIE 第 0 张的真实 OCR 结果写的，包括 OCR 的错（找零读成 100）。"""
+    """A reduced receipt based on the real OCR result of SROIE sample 0, including the OCR error
+    (change read as 100)."""
     return make_page(
         make_line("BOOK TA _K (TAMAN DAYA) SDN BHD", 68, 91, 423, 115),
         make_line("NO.55 55,57 & 59, JALAN SAGU 18,", 108, 142, 383, 165),
@@ -75,7 +92,8 @@ def receipt_page() -> OcrPage:
 
 @pytest.fixture
 def report(receipt_page) -> DocumentReport:
-    """一份走完流水线的结果：找零读成 100，规则"现金 − 总额 = 找零"不通过。"""
+    """A result after the full pipeline: change read as 100, so the rule "cash − total = change"
+    fails."""
     fields = (
         F("merchant", "string", "BOOK TA _K (TAMAN DAYA) SDN BHD", 1),
         F("total", "number", 9.0, 6),
@@ -96,11 +114,11 @@ def report(receipt_page) -> DocumentReport:
 
 @pytest.fixture
 def factory() -> sessionmaker[Session]:
-    """内存里的 SQLite 数据库，每个测试一个全新的，测完就没了。
+    """In-memory SQLite database, fresh for every test and discarded afterwards.
 
-    StaticPool：所有会话共用同一个连接。内存 SQLite 每开一个新连接就是一个新的空数据库，
-    而 API 和后台处理都会开多个会话，必须共用同一个。
-    """
+        StaticPool: all sessions share one connection. Every new connection to in-memory SQLite
+    is a new empty database, and the API and background processing open several sessions, so they
+    must share one."""
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
@@ -109,7 +127,7 @@ def factory() -> sessionmaker[Session]:
 
 
 class MemoryStorage:
-    """假的对象存储：文件存在一个字典里。满足 ObjectStorage 接口。"""
+    """Fake object storage backed by a dictionary. Implements the ObjectStorage interface."""
 
     def __init__(self) -> None:
         self.files: dict[str, tuple[bytes, str]] = {}
@@ -119,7 +137,9 @@ class MemoryStorage:
 
     def get(self, key: str) -> bytes:
         if key not in self.files:
-            raise StorageError(f"找不到文件：{key}")  # 和真的 S3Storage 一样，报 StorageError
+            raise StorageError(
+                f"找不到文件：{key}"
+            )  # Raises StorageError, like the real S3Storage.
         return self.files[key][0]
 
     def delete(self, key: str) -> None:
@@ -133,7 +153,8 @@ class MemoryStorage:
 
 
 class FakeQueue:
-    """假的任务队列：只记下放进来的文档 id，不真的发给 Valkey。down=True 模拟 Valkey 没启动。"""
+    """Fake task queue: records enqueued document ids without sending to Valkey. down=True simulates
+    Valkey being unavailable."""
 
     def __init__(self) -> None:
         self.sent: list[uuid.UUID] = []
@@ -152,14 +173,15 @@ class FakeQueue:
 
 
 class RegionOcr:
-    """假的 OCR：不管给什么图，都认出 lines 里的文字。"重新识别这块"的测试改它。"""
+    """Fake OCR: recognizes the text in lines regardless of the image. Region re-recognition tests
+    modify it."""
 
     name = "fake"
 
     def __init__(self) -> None:
         self.lines: list[str] = ["9.99"]
         self.seen: list[tuple[int, int]] = []
-        """每次识别的图片大小，看裁得对不对、放大了没有。"""
+        """Image size of each recognition call, to verify cropping and upscaling."""
 
     def recognize(self, image):
         from PIL import Image
@@ -173,7 +195,8 @@ class RegionOcr:
         return OcrPage(width=100, height=100, lines=lines, engine="fake", models={}, duration_ms=0)
 
     line: tuple[str, float] | None = None
-    """不检测、整块当一行直接识别时认出的文字（检测一个字都没找到时才用）。"""
+    """Text recognized when the whole region is read as one line without detection (used only when
+    detection finds nothing)."""
 
     def read_line(self, image):
         return self.line
@@ -194,7 +217,7 @@ def queue() -> FakeQueue:
 
 @pytest.fixture
 def client(factory, storage, queue) -> Iterator[TestClient]:
-    """调用 API 用的客户端：数据库、对象存储、任务队列都换成上面的假东西。"""
+    """API client with database, object storage and task queue replaced by the fakes above."""
     app = create_app()
 
     def test_session() -> Iterator[Session]:

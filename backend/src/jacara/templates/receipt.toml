@@ -1,19 +1,19 @@
-# 收据模板：常用的 5 个字段。worker 处理上传的文件时用这个。
+# Receipt template: the 5 most common fields. Built-in template for evaluation and the CLI.
 #
-# 版本记录（改了什么、为什么，评测结果见 docs/eval/README.md）：
-#   1  v1.0.0 的 4 个字段原样搬过来
-#   2  商家改成"开票的公司"，说明写清楚不带注册号；新增店名 store_name
-#   3  新增商品明细表 items（商品、数量、单价、金额）和两条规则 items_sum、item_line
+# Version history (changes and reasons; evaluation results in docs/eval/README.md):
+#   1  The 4 fields of v1.0.0, unchanged
+#   2  Merchant redefined as the invoicing company, explicitly without registration number; store_name added
+#   3  Line item table items (item, quantity, unit price, amount) and two rules items_sum, item_line added
 #
-# 改了字段、说明或规则，就把 version 加 1：每份文档都会记下处理时用的模板名和版本，
-# 以后看到一条旧结果，能知道它是按哪一版模板抽的。改完跑一次评测（docs/eval/README.md）。
+# Increment version whenever fields, descriptions or rules change: every document records the template name
+# and version used, so older results remain attributable. Run the evaluation after changes (docs/eval/README.md).
 #
-# fields  按顺序抽取、显示、导出。type 只能是 string（文字）、number（数字）、date（日期）。
-#         description 是写给大模型看的说明，直接影响抽取效果。
-#         required 现在只是记录，v2 后面做"必填"校验时才会用到。
-# tables  表格（[[tables]]，列写在 [[tables.columns]]），每行的列和 fields 的写法一样。
-# rules   要检查的规则编号，规则本身写在 plugins/validators/rules.py。
-#         规则要用的字段这里没有时，那条规则自动跳过。
+# fields  Extracted, displayed and exported in order. type is string, number or date.
+#         description is the instruction for the LLM and directly affects extraction quality.
+#         required is not enforced for built-in templates (enforce_required is off).
+# tables  Tables ([[tables]], columns in [[tables.columns]]); columns use the same keys as fields.
+# rules   Ids of the rules to check; rules are defined in plugins/validators/rules.py.
+#         A rule is skipped automatically when its fields are absent here.
 
 name = "receipt"
 version = 3
@@ -57,8 +57,8 @@ type = "number"
 required = true
 description = "最终应付总额（含税、四舍五入之后的金额）"
 
-# 表格：行数不固定，每行同样的几列。每一格都当作一个字段存（items.2.amount = 第 2 行的金额），
-# 和普通字段一样找出处、校验、审核。
+# Tables: a variable number of rows with identical columns. Each cell is stored as a field (items.2.amount =
+# amount in row 2) and goes through evidence, validation and review like a regular field.
 [[tables]]
 name = "items"
 label = "商品明细"

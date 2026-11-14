@@ -50,6 +50,8 @@
 
 全程不联网：OCR 模型随包提供，大模型由本机的 llama-server 运行。
 
+界面有中文和英文两种，右上角的按钮切换（第一次按浏览器的语言）；模板里的字段名用哪种语言另外设置，互不影响。
+
 ## 第一次准备（从源码装，开发用）
 
 需要 [uv](https://docs.astral.sh/uv/)、[Docker Desktop](https://www.docker.com/products/docker-desktop/)、[Node.js](https://nodejs.org)（LTS）

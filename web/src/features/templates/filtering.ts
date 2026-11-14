@@ -1,12 +1,13 @@
-/** 模板页的筛选和排序（ADR 0037）。 */
+/** Filtering and sorting on the templates page. */
 
 import type { Template } from '../../api/types'
+import { t } from '../../i18n'
 
-/** 模板页的筛选条件（ADR 0037）。 */
+/** Filters of the templates page. */
 export interface Filters {
   q: string
   domains: string[]
-  /** 国家代码；"" 表示只看通用的；undefined 不限 */
+  /** Country code; "" means generic only; undefined means unrestricted. */
   country?: string
   tags: string[]
   source?: string
@@ -15,35 +16,35 @@ export interface Filters {
 
 export const NO_FILTERS: Filters = { q: '', domains: [], tags: [], sort: 'updated' }
 
-/** 来源：从 source 字段认（starter:xxx、copy:xxx、sample:xxx、excel、import、blank）。 */
+/** Source, derived from the source field (starter:xxx, copy:xxx, sample:xxx, excel, import, blank). */
 export const SOURCE_TEXT: Record<string, string> = {
-  starter: '从起步模板库',
-  copy: '复制的',
-  excel: '从 Excel 建',
-  sample: '用样例建',
-  import: '导入的',
-  blank: '空白新建',
+  get starter() { return t('从起步模板库') },
+  get copy() { return t('复制的') },
+  get excel() { return t('从 Excel 建') },
+  get sample() { return t('用样例建') },
+  get import() { return t('导入的') },
+  get blank() { return t('空白新建') },
 }
 
 export function sourceKind(source: string | undefined): string {
   return (source ?? '').split(':')[0] || 'blank'
 }
 
-export function domainsOf(t: Template): string[] {
-  return t.domains?.length ? t.domains : t.category ? [t.category] : []
+export function domainsOf(tpl: Template): string[] {
+  return tpl.domains?.length ? tpl.domains : tpl.category ? [tpl.category] : []
 }
 
-/** 按条件筛选、排序。 */
+/** Filter and sort by the given criteria. */
 export function applyFilters(list: Template[], f: Filters): Template[] {
   const q = f.q.trim().toLowerCase()
-  const found = list.filter((t) => {
-    if (q && !`${t.title} ${t.description}`.toLowerCase().includes(q)) return false
-    if (f.domains.length && !f.domains.some((d) => domainsOf(t).includes(d))) return false
-    const countries = t.countries ?? []
+  const found = list.filter((tpl) => {
+    if (q && !`${tpl.title} ${tpl.description}`.toLowerCase().includes(q)) return false
+    if (f.domains.length && !f.domains.some((d) => domainsOf(tpl).includes(d))) return false
+    const countries = tpl.countries ?? []
     if (f.country === '' && countries.length > 0) return false
     if (f.country && !countries.includes(f.country)) return false
-    if (f.tags.length && !f.tags.some((x) => (t.tags ?? []).includes(x))) return false
-    if (f.source && sourceKind(t.source) !== f.source) return false
+    if (f.tags.length && !f.tags.some((x) => (tpl.tags ?? []).includes(x))) return false
+    if (f.source && sourceKind(tpl.source) !== f.source) return false
     return true
   })
   const time = (s: string | null | undefined) => (s ? new Date(s).getTime() : 0)

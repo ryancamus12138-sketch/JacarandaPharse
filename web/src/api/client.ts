@@ -1,13 +1,16 @@
 /**
- * 调用后端的唯一入口。所有页面都通过这里请求 /api/v1（项目规则 8）。
- * 返回 JSON 的用 api()，返回文件（图片、Excel）的用 apiBlob()。
+ * Single entry point for backend calls. Every page requests /api/v1 through this module.
+ * Use api() for JSON responses and apiBlob() for files (images, Excel).
  *
- * - 有 token 就自动带上 Authorization 头；
- * - 后端出错时返回 {"detail": "..."}，这里统一变成 ApiError，页面直接显示 message；
- * - 带着 token 却收到 401（过期、被停用、退出过），清掉 token 并通知 AuthProvider 回登录页。
+ * - The Authorization header is added automatically when a token exists;
+ * - Backend errors return {"detail": "..."}, which is converted to ApiError so pages can display message
+ *   directly;
+ * - A 401 despite a token (expired, deactivated, logged out) clears the token and notifies AuthProvider to
+ *   return to the login page.
  */
 
 import { clearToken, getToken } from './token'
+import { t, uiLanguage } from '../i18n'
 
 export class ApiError extends Error {
   readonly status: number
@@ -19,19 +22,25 @@ export class ApiError extends Error {
   }
 }
 
-/** 和 fetch 的参数一样，多一个 json：要发给后端的数据，会自动变成 JSON。 */
+/** Same as fetch options, plus json: data sent to the backend, serialized to JSON automatically. */
 export interface ApiInit extends RequestInit {
   json?: unknown
 }
 
 let onUnauthorized: (() => void) | null = null
 
-/** AuthProvider 调用：登录失效时要做什么（清掉"我是谁"、回登录页）。 */
+/**
+ * Called by AuthProvider: what to do when the session becomes invalid (clear the current user, return to
+ * login).
+ */
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
   onUnauthorized = handler
 }
 
-/** 发请求：带 token、处理 401 和错误。成功时返回原始的 Response，由下面两个函数决定怎么读。 */
+/**
+ * Send a request: attach the token and handle 401 and errors. Returns the raw Response on success; the
+ * functions below decide how to read it.
+ */
 async function send(path: string, init: ApiInit): Promise<Response> {
   const { json, ...rest } = init
   const headers = new Headers(rest.headers)
@@ -42,6 +51,8 @@ async function send(path: string, init: ApiInit): Promise<Response> {
   if (json !== undefined) {
     headers.set('Content-Type', 'application/json')
   }
+  // The backend localizes messages per request.
+  headers.set('Accept-Language', uiLanguage())
 
   let response: Response
   try {
@@ -51,12 +62,13 @@ async function send(path: string, init: ApiInit): Promise<Response> {
       body: json !== undefined ? JSON.stringify(json) : rest.body,
     })
   } catch {
-    // 连请求都没发出去：后端没启动，或者网络断了
-    throw new ApiError(0, '连不上后端。请确认终端里 uv run jacara api 正在运行')
+    // The request was never sent: the backend is not running or the network is down.
+    throw new ApiError(0, t('连不上后端。请确认终端里 uv run jacara api 正在运行'))
   }
 
   if (response.status === 401 && token) {
-    // 带了 token 还是 401：token 失效了。没带 token 的 401（比如登录密码错）不算
+    // 401 despite a token: the token is invalid. A 401 without a token (such as a wrong login password) does
+    // not count.
     clearToken()
     onUnauthorized?.()
   }
@@ -66,28 +78,31 @@ async function send(path: string, init: ApiInit): Promise<Response> {
   return response
 }
 
-/** 调用返回 JSON 的接口（绝大多数接口）。 */
+/** Call an endpoint returning JSON (most endpoints). */
 export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
   const response = await send(path, init)
   if (response.status === 204) {
-    return undefined as T // 204：成功了，但没有内容（比如退出登录）
+    return undefined as T // 204: success without content (for example logout).
   }
   return (await response.json()) as T
 }
 
-/** 调用返回文件的接口（图片、Excel）。 */
+/** Call an endpoint returning a file (images, Excel). */
 export async function apiBlob(path: string, init: ApiInit = {}): Promise<Blob> {
   const response = await send(path, init)
   return response.blob()
 }
 
-/** 下载回来的文件：内容 + 后端给的文件名。 */
+/** A downloaded file: content + file name supplied by the backend. */
 export interface DownloadedFile {
   blob: Blob
   filename: string
 }
 
-/** 调用"下载文件"的接口（导出 Excel）：除了内容，还要后端在 Content-Disposition 里给的文件名。 */
+/**
+ * Call a download endpoint (Excel export): besides the content, the file name from Content-Disposition is
+ * needed.
+ */
 export async function apiDownload(path: string, fallbackName: string): Promise<DownloadedFile> {
   const response = await send(path, {})
   const filename = filenameFrom(response.headers.get('Content-Disposition')) ?? fallbackName
@@ -95,8 +110,9 @@ export async function apiDownload(path: string, fallbackName: string): Promise<D
 }
 
 /**
- * 从 Content-Disposition 里取文件名。后端两种都给（第十七课）：
- * filename*=UTF-8''%E6%94%B6%E6%8D%AE.xlsx（中文按标准编码过）优先，没有再用 filename="export.xlsx"。
+ * File name from Content-Disposition. The backend supplies both forms (RFC 6266):
+ * filename*=UTF-8''%E6%94%B6%E6%8D%AE.xlsx (percent-encoded per the standard) takes precedence, then
+ * filename="export.xlsx".
  */
 function filenameFrom(header: string | null): string | null {
   if (!header) {
@@ -111,7 +127,7 @@ function filenameFrom(header: string | null): string | null {
 
 async function errorMessage(response: Response): Promise<string> {
   if (response.status === 502 || response.status === 504) {
-    return '连不上后端。请确认终端里 uv run jacara api 正在运行'
+    return t('连不上后端。请确认终端里 uv run jacara api 正在运行')
   }
   try {
     const body = (await response.json()) as { detail?: unknown }
@@ -119,12 +135,12 @@ async function errorMessage(response: Response): Promise<string> {
       return body.detail
     }
     if (Array.isArray(body.detail)) {
-      // 422：FastAPI 的格式检查错误，是一个列表，取第一条
+      // 422: FastAPI validation errors come as a list; use the first entry.
       const first = body.detail[0] as { msg?: string } | undefined
-      return first?.msg ?? '提交的内容格式不对'
+      return first?.msg ?? t('提交的内容格式不对')
     }
   } catch {
-    // 返回的不是 JSON，用下面的通用说法
+    // Not JSON: fall back to the generic message below.
   }
-  return `请求失败（${response.status}）`
+  return t('请求失败（{{status}}）', { status: response.status })
 }

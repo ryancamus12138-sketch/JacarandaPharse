@@ -1,1 +1,2 @@
-"""换模型（ADR 0046）：在网页上选用 models/ 里的哪个大模型、视觉模型、OCR 模型、表格模型。"""
+"""Model selection: choose which LLM, vision projector, OCR and table models in models/ to use, from
+the web UI."""

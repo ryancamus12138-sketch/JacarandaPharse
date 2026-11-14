@@ -1,7 +1,7 @@
-"""导出记录：保存每次导出的文件，列出来，重新下载。
+"""Export history: store every exported file, list exports and download them again.
 
-导出本身（生成 Excel）还在 documents 模块；生成好之后调用 save_export 存下来。
-"""
+The export itself (generating Excel) lives in the documents module, which calls save_export
+afterwards."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from pathlib import PurePath
 
 from sqlalchemy.orm import Session
 
+from jacara.core.i18n import tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.storage import ObjectStorage, StorageError
@@ -47,10 +48,10 @@ def save_export(
     data: bytes,
     documents: list[Document],
 ) -> Export:
-    """记下一次导出，并把文件存进对象存储（exports/<id>.xlsx）。
+    """Record an export and store the file in object storage (exports/<id>.xlsx).
 
-    存文件失败不影响这次导出：用户照样拿到文件，只是记录里标着"不能重新下载"。
-    """
+        A storage failure does not fail the export: the user still receives the file; the record
+    is marked as not downloadable again."""
     export = Export(
         filename=filename,
         format=file_format,
@@ -84,7 +85,7 @@ class ExportService:
         items = [
             ExportOut.model_validate(e).model_copy(
                 update={
-                    "user_name": names.get(e.user_id, "本机用户"),
+                    "user_name": names.get(e.user_id, tr("本机用户")),
                     "available": e.storage_key is not None,
                 }
             )
@@ -93,17 +94,18 @@ class ExportService:
         return ExportPage(items=items, total=total)
 
     def download(self, export_id: uuid.UUID) -> tuple[Export, bytes]:
-        """重新下载以前导出的文件。文件内容是当时导出的样子，不是现在的值。"""
+        """Download a past export again. The content is as exported at the time, not the current
+        values."""
         export = self.repo.get(export_id, self.owner.team_id)
         if export is None:
-            raise ExportError("not_found", "找不到这条导出记录")
+            raise ExportError("not_found", tr("找不到这条导出记录"))
         require(self.owner, "document:export", export.team_id)
         if export.storage_key is None:
-            raise ExportError("no_file", "这次导出的文件当时没能保存，不能重新下载")
+            raise ExportError("no_file", tr("这次导出的文件当时没能保存，不能重新下载"))
         try:
             data = self.storage.get(export.storage_key)
         except StorageError as err:
-            raise ExportError("storage", "对象存储里取不到这个文件") from err
-        # 重新下载也是"数据离开系统"，留一条记录
+            raise ExportError("storage", tr("对象存储里取不到这个文件")) from err
+        # Downloading again is also data leaving the system; record it.
         record(self.session, self.owner, "export:download", "export", export.id)
         return export, data

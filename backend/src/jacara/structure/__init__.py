@@ -1,12 +1,15 @@
-"""页面结构分析（ADR 0034）：参照 AWS Textract 的结构，把一页 OCR 结果整理成"文字块 + 关系"。
+"""Page structure analysis: organizes one page of OCR results into "text blocks + relationships",
+modeled on the AWS Textract block structure.
 
-- WORD：一个文字块（OCR 的一块、PDF 文字层的一段），带位置、置信度，按阅读顺序编号 1、2、3……
-- LINE：一个视觉行，CHILD → 这一行的文字块
-- LAYOUT：版面区域（标题、正文、表格、页眉、页脚……），版面模型找出来，CHILD → 区域里的文字块
-- KEY / VALUE：一对"标题 → 值"（Textract 的 KEY_VALUE_SET），KEY 有 VALUE 关系指向它的值，
-  两边都 CHILD → 文字块
-- TABLE / CELL / MERGED_CELL：表格、格子（行号、列号、跨几行几列）、合并的格子
+- WORD: one text block (an OCR block or a PDF text-layer span) with position and confidence,
+  numbered 1, 2, 3, … in reading order
+- LINE: one visual line, CHILD → the text blocks of the line
+- LAYOUT: a layout region (title, text, table, header, footer, …) found by the layout model,
+  CHILD → the text blocks inside
+- KEY / VALUE: a label → value pair (Textract KEY_VALUE_SET); KEY has a VALUE relationship to its
+  value, and both have CHILD → text blocks
+- TABLE / CELL / MERGED_CELL: tables, cells (row, column, row and column span), merged cells
 
-抽取时，模型看到的是带编号的文字块（按原样排版，LAPDoc），以及表单和表格的结构；模型回答
-"值 + 用了哪几块"（LMDX），由证据对齐核对。
-"""
+During extraction the model sees the indexed text blocks (laid out as on the page, LAPDoc)
+together with the form and table structure; it answers with "value + blocks used" (LMDX), which
+evidence alignment verifies."""

@@ -4,10 +4,12 @@ import type { TemplateField, TemplateTable } from '../../api/types'
 import { languageName } from '../../utils/languages'
 import { FormulaInput } from './FormulaInput'
 import { blankField, FIELD_ID, RANGE_EXPORTS, TYPE_OPTIONS } from './templateFields'
+import { useTranslation } from 'react-i18next'
 
 /**
- * 字段（或表格的列）编辑表：中文名、字段 ID、类型、必填、导出、敏感、别名、给模型的说明。
- * locked：已经存过的字段 ID 不能改（旧文档、规则、导出都靠它对齐）。
+ * Editor table for fields (or table columns): display name, field ID, type, required, export, sensitive,
+ * aliases, description for the model.
+ * locked: field IDs already saved cannot change (older documents, rules and exports rely on them).
  */
 export function FieldsEditor({
   fields,
@@ -17,15 +19,22 @@ export function FieldsEditor({
   scope,
   language = 'zh',
 }: {
-  /** 正在编辑哪种语言的名字（ADR 0048）：zh 改 label，别的改 names 里那一种。 */
+  /**
+   * Language of the names being edited: zh edits label; other languages edit the corresponding entry in
+   * names.
+   */
   language?: string
   fields: TemplateField[]
   onChange: (fields: TemplateField[]) => void
   locked: Set<string>
   readOnly: boolean
-  /** 公式里能用的字段：整个模板的字段和表格；row 是这些列所在的表（普通字段是 null）。 */
+  /**
+   * Fields usable in formulas: all fields and tables of the template; row is the table containing these
+   * columns (null for regular fields).
+   */
   scope: { fields: TemplateField[]; tables: TemplateTable[]; row: string | null }
 }) {
+  const { t } = useTranslation()
   const update = (i: number, patch: Partial<TemplateField>) =>
     onChange(fields.map((f, j) => (j === i ? { ...f, ...patch } : f)))
   const move = (i: number, by: number) => {
@@ -39,12 +48,13 @@ export function FieldsEditor({
   const other = language !== 'zh'
   const columns: TableProps<TemplateField>['columns'] = [
     {
-      title: other ? `${languageName(language)} 名称` : '中文名',
+      title: other ? t('{{languageName}} 名称', { languageName: languageName(language) }) : t('中文名'),
       dataIndex: 'label',
       width: 150,
       render: (_, f, i) =>
         other ? (
-          // 别的语言：没写就导出、显示中文名，所以可以留空
+          // Other languages: empty values fall back to the default name for export and display, so they may
+          // stay empty.
           <Input
             value={f.names?.[language] ?? ''}
             disabled={readOnly}
@@ -56,15 +66,15 @@ export function FieldsEditor({
             value={f.label}
             disabled={readOnly}
             status={f.label.trim() ? undefined : 'error'}
-            placeholder="例如：总额"
+            placeholder={t('例如：总额')}
             onChange={(e) => update(i, { label: e.target.value })}
           />
         ),
     },
     {
       title: (
-        <Tooltip title="小写英文字母开头，只有小写字母、数字、下划线。存过之后不能改：旧文档、规则、导出都靠它对齐">
-          字段 ID
+        <Tooltip title={t('小写英文字母开头，只有小写字母、数字、下划线。存过之后不能改：旧文档、规则、导出都靠它对齐')}>
+          {t('字段 ID')}
         </Tooltip>
       ),
       dataIndex: 'name',
@@ -80,8 +90,8 @@ export function FieldsEditor({
     },
     {
       title: (
-        <Tooltip title="日期范围（2014-07-01 ~ 2014-07-31 这种）：模型照抄原文，系统拆成开始、结束；导出时可以选统一格式、原文或拆成两列">
-          类型
+        <Tooltip title={t('日期范围（2014-07-01 ~ 2014-07-31 这种）：模型照抄原文，系统拆成开始、结束；导出时可以选统一格式、原文或拆成两列')}>
+          {t('类型')}
         </Tooltip>
       ),
       dataIndex: 'type',
@@ -101,13 +111,13 @@ export function FieldsEditor({
                 size="small"
                 value={f.range_export ?? 'normalized'}
                 disabled={readOnly}
-                options={RANGE_EXPORTS.map((o) => ({ ...o, label: `导出：${o.label}` }))}
+                options={RANGE_EXPORTS.map((o) => ({ ...o, label: t('导出：{{label}}', { label: o.label }) }))}
                 onChange={(range_export) => update(i, { range_export })}
               />
               {(f.range_export ?? 'normalized') === 'normalized' && (
                 <Input
                   size="small"
-                  addonBefore="分隔"
+                  addonBefore={t('分隔')}
                   value={f.range_separator ?? ' ~ '}
                   disabled={readOnly}
                   maxLength={10}
@@ -120,7 +130,7 @@ export function FieldsEditor({
       ),
     },
     {
-      title: '必填',
+      title: t('必填'),
       dataIndex: 'required',
       width: 60,
       render: (_, f, i) => (
@@ -134,8 +144,8 @@ export function FieldsEditor({
     },
     {
       title: (
-        <Tooltip title="关掉 = 人工填（报销人、部门……）：不交给模型抽，审核时自己填">
-          从单据抽
+        <Tooltip title={t('关掉 = 人工填（报销人、部门……）：不交给模型抽，审核时自己填')}>
+          {t('从单据抽')}
         </Tooltip>
       ),
       dataIndex: 'extract',
@@ -151,8 +161,8 @@ export function FieldsEditor({
     },
     {
       title: (
-        <Tooltip title="按别的字段算出来，不让模型去单据上找。点输入框右边的按钮选字段，例如 离店日期 − 入住日期、数量 × 单价、明细金额合计。只能是数字字段">
-          公式
+        <Tooltip title={t('按别的字段算出来，不让模型去单据上找。点输入框右边的按钮选字段，例如 离店日期 − 入住日期、数量 × 单价、明细金额合计。只能是数字字段')}>
+          {t('公式')}
         </Tooltip>
       ),
       dataIndex: 'compute',
@@ -166,15 +176,15 @@ export function FieldsEditor({
           tables={scope.tables}
           row={scope.row}
           self={f.name}
-          placeholder="不算"
+          placeholder={t('不算')}
           onChange={(compute) => update(i, { compute, ...(compute.trim() ? { type: 'number' as const } : {}) })}
         />
       ),
     },
     {
       title: (
-        <Tooltip title="发票号码、账单号这类：别的单据里有一样的值，就标黄提醒“可能重复报销”">
-          不能重复
+        <Tooltip title={t('发票号码、账单号这类：别的单据里有一样的值，就标黄提醒“可能重复报销”')}>
+          {t('不能重复')}
         </Tooltip>
       ),
       dataIndex: 'unique',
@@ -189,7 +199,7 @@ export function FieldsEditor({
       ),
     },
     {
-      title: <Tooltip title="导出 Excel 时要不要这一列">导出</Tooltip>,
+      title: <Tooltip title={t('导出 Excel 时要不要这一列')}>{t('导出')}</Tooltip>,
       dataIndex: 'export',
       width: 60,
       render: (_, f, i) => (
@@ -202,7 +212,7 @@ export function FieldsEditor({
       ),
     },
     {
-      title: <Tooltip title="证件号码这类敏感信息：打开后默认不导出">敏感</Tooltip>,
+      title: <Tooltip title={t('证件号码这类敏感信息：打开后默认不导出')}>{t('敏感')}</Tooltip>,
       dataIndex: 'sensitive',
       width: 60,
       render: (_, f, i) => (
@@ -215,7 +225,7 @@ export function FieldsEditor({
       ),
     },
     {
-      title: <Tooltip title="单据上的其他写法（Check-in、入住日期……），回车添加，会一起告诉模型">别名</Tooltip>,
+      title: <Tooltip title={t('单据上的其他写法（Check-in、入住日期……），回车添加，会一起告诉模型')}>{t('别名')}</Tooltip>,
       dataIndex: 'aliases',
       width: 200,
       render: (_, f, i) => (
@@ -225,7 +235,7 @@ export function FieldsEditor({
           disabled={readOnly}
           open={false}
           suffixIcon={null}
-          placeholder="回车添加"
+          placeholder={t('回车添加')}
           onChange={(aliases: string[]) => update(i, { aliases })}
           style={{ width: '100%' }}
         />
@@ -233,8 +243,8 @@ export function FieldsEditor({
     },
     {
       title: (
-        <Tooltip title="只能填这几个值（如费用类别）：回车添加。抽到别的值会提醒；不写 = 不限">
-          可选值
+        <Tooltip title={t('只能填这几个值（如费用类别）：回车添加。抽到别的值会提醒；不写 = 不限')}>
+          {t('可选值')}
         </Tooltip>
       ),
       dataIndex: 'options',
@@ -246,21 +256,21 @@ export function FieldsEditor({
           disabled={readOnly}
           open={false}
           suffixIcon={null}
-          placeholder="不限"
+          placeholder={t('不限')}
           onChange={(options: string[]) => update(i, { options })}
           style={{ width: '100%' }}
         />
       ),
     },
     {
-      title: '给模型的说明',
+      title: t('给模型的说明'),
       dataIndex: 'description',
       render: (_, f, i) => (
         <Input.TextArea
           value={f.description}
           disabled={readOnly}
           autoSize={{ minRows: 1, maxRows: 4 }}
-          placeholder="在单据哪里、长什么样、别和什么搞混"
+          placeholder={t('在单据哪里、长什么样、别和什么搞混')}
           onChange={(e) => update(i, { description: e.target.value })}
         />
       ),
@@ -278,7 +288,7 @@ export function FieldsEditor({
                   size="small"
                   type="text"
                   icon={<ArrowUpOutlined />}
-                  aria-label="上移"
+                  aria-label={t('上移')}
                   disabled={i === 0}
                   onClick={() => move(i, -1)}
                 />
@@ -286,17 +296,17 @@ export function FieldsEditor({
                   size="small"
                   type="text"
                   icon={<ArrowDownOutlined />}
-                  aria-label="下移"
+                  aria-label={t('下移')}
                   disabled={i === fields.length - 1}
                   onClick={() => move(i, 1)}
                 />
-                <Tooltip title={`删掉「${f.label || f.name}」`}>
+                <Tooltip title={t('删掉「{{value}}」', { value: f.label || f.name })}>
                   <Button
                     size="small"
                     type="text"
                     danger
                     icon={<DeleteOutlined />}
-                    aria-label="删除"
+                    aria-label={t('删除')}
                     onClick={() => onChange(fields.filter((_, j) => j !== i))}
                   />
                 </Tooltip>
@@ -322,7 +332,7 @@ export function FieldsEditor({
           onClick={() => onChange([...fields, blankField(fields)])}
           style={{ alignSelf: 'start' }}
         >
-          加一个字段
+          {t('加一个字段')}
         </Button>
       )}
     </Flex>

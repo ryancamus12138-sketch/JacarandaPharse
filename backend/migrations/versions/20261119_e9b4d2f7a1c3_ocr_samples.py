@@ -1,9 +1,8 @@
-"""ocr samples and team settings (ADR 0050)
+"""ocr samples and team settings
 
 Revision ID: e9b4d2f7a1c3
 Revises: d7a2c9e4b1f6
-Create Date: 2026-11-19 12:00:00.000000
-"""
+Create Date: 2026-11-19 12:00:00.000000"""
 
 from collections.abc import Sequence
 
@@ -20,7 +19,7 @@ JSON = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 
 def upgrade() -> None:
-    # 按团队存的开关（现在只有"自动收集纠错样本"）
+    # Per-team settings (currently only "collect OCR correction samples").
     op.create_table(
         "team_settings",
         sa.Column("team_id", sa.Uuid(), nullable=False),
@@ -31,7 +30,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("team_id", "key", name=op.f("pk_team_settings")),
     )
-    # OCR 纠错样本：小图 + 图中原文 + OCR 当时读的
+    # OCR correction samples: line crop, ground-truth transcription and the original OCR reading.
     op.create_table(
         "ocr_samples",
         sa.Column("id", sa.Uuid(), nullable=False),

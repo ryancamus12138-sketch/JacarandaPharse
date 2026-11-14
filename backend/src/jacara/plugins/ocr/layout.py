@@ -1,13 +1,15 @@
-"""把 OCR 的"文字块"按图上的位置合并成"视觉行"。
+"""Merge OCR text blocks into visual lines by their position on the image.
 
-OCR 给的是一块一块的文字。收据上"Date:"和"25/12/2018"是同一行左右两块，
-但 OCR 会把它们当成两条。按位置把它们合回一行，大模型才看得出谁和谁是一对。
-抽取器和证据对齐都用这里的行号，所以两边说的"第几行"永远是同一行。
+OCR returns text in blocks. On a receipt, "Date:" and "25/12/2018" are two blocks on the same
+line, yet OCR reports them separately. Merging them back into one line by position lets the LLM
+see which belong together. The extractor and evidence alignment share these line numbers, so
+"line n" always refers to the same line on both sides.
 
-手机拍的收据常常是歪的、弯的。歪的文字块，外接矩形会比字高很多，按矩形的上下重叠来判断，
-会把好几行粘成一行（一张歪着拍的收据曾经被粘成几大行，模型完全读不懂）。所以这里按文字块
-自己的倾斜方向来判断：顺着一行文字的斜度往左右延长，另一个文字块的中心落在这条线附近，才算同一行。
-"""
+Receipts photographed with a phone are often skewed or curved. The bounding rectangle of a skewed
+block is much taller than its text, so judging by vertical overlap of rectangles glues several
+lines together (a skewed receipt was once merged into a few large lines the model could not read
+at all). Instead, the slope of each block is used: a line is extended left and right along its
+slope, and another block belongs to it only if its center lies near that extension."""
 
 from __future__ import annotations
 
@@ -20,28 +22,30 @@ from statistics import median
 from jacara.plugins.ocr.base import OcrLine, OcrPage
 
 SAME_ROW = 0.5
-"""另一个文字块的中心离这一行的延长线不超过"字高 × 0.5"，算同一行。"""
+"""A block whose center is within text height × 0.5 of the line's extension belongs to the same
+line."""
 
 MAX_ANGLE = 0.12
-"""两个文字块的倾斜角相差超过这么多（弧度，约 7 度），不算同一行：多半是照片里的另一张纸。"""
+"""Blocks whose slopes differ by more than this (radians, about 7 degrees) are not on the same line:
+usually another sheet of paper in the photo."""
 
 
 @dataclass(frozen=True)
 class OcrRow:
-    """图上的一行：由一个或多个文字块组成，从左到右排列。index 从 1 开始。"""
+    """A line on the image: one or more text blocks ordered left to right. index starts at 1."""
 
     index: int
     lines: tuple[OcrLine, ...]
 
     @property
     def text(self) -> str:
-        """这一行的全部文字，文字块之间用两个空格隔开。"""
+        """All text of this line, blocks separated by two spaces."""
         return "  ".join(line.text for line in self.lines)
 
 
 @dataclass(frozen=True)
 class _Geo:
-    """一个文字块的几何信息：中心、字高、倾斜度（每向右 1 像素，往下几像素）。"""
+    """Geometry of a text block: center, text height, slope (pixels down per pixel to the right)."""
 
     line: OcrLine
     cx: float
@@ -49,7 +53,8 @@ class _Geo:
     height: float
     width: float
     slope: float | None
-    """文字块太短（不到字高的 2 倍宽）时，斜度不准，是 None，改用附近文字块的斜度。"""
+    """None for blocks too short (narrower than twice the text height) for a reliable slope; the
+    slope of nearby blocks is used instead."""
 
 
 def _geo(line: OcrLine) -> _Geo:
@@ -64,11 +69,12 @@ def _geo(line: OcrLine) -> _Geo:
 
 
 def group_rows(page: OcrPage, same_row: float = SAME_ROW) -> tuple[OcrRow, ...]:
-    """把文字块合并成行，从上到下编号。
+    """Merge text blocks into lines numbered top to bottom.
 
-    新的文字块和每一行里横向最近的块比：顺着两边的斜度延长过去，中心离延长线都不超过
-    字高 × same_row，而且斜度差不多，就加入这一行；离哪一行都不够近，就自己开一行。
-    """
+        Each new block is compared with the horizontally nearest block of each line: extended
+    along both slopes, if both centers are within text height × same_row of the extensions and
+    the slopes are similar, the block joins that line; if no line is close enough, it starts a
+    new one."""
     geos = [_geo(line) for line in page.lines]
     if not geos:
         return ()
@@ -76,7 +82,8 @@ def group_rows(page: OcrPage, same_row: float = SAME_ROW) -> tuple[OcrRow, ...]:
     page_slope = median(g.slope for g in reliable if g.slope is not None) if reliable else 0.0
 
     def local_slope(g: _Geo) -> float:
-        """短文字块用附近（上下最近的 5 个）长文字块的斜度：收据弯了，各处斜度不一样。"""
+        """Short blocks use the slope of nearby long blocks (the 5 nearest above and below): curved
+        receipts have different slopes in different places."""
         if g.slope is not None:
             return g.slope
         near = sorted(reliable, key=lambda r: abs(r.cy - g.cy))[:5]
@@ -88,14 +95,15 @@ def group_rows(page: OcrPage, same_row: float = SAME_ROW) -> tuple[OcrRow, ...]:
         return slopes[id(g)]
 
     def y_at(anchor: _Geo, x: float) -> float:
-        """顺着 anchor 的斜度，在横坐标 x 处的高度。"""
+        """Height at x along the slope of anchor."""
         return anchor.cy + slope_of(anchor) * (x - anchor.cx)
 
     def gap(a: _Geo, b: _Geo) -> float | None:
-        """两个文字块离"在同一行"差多远（像素）。斜度明显不同，就不可能同一行，返回 None。
+        """Distance (pixels) of two blocks from being on the same line. None if their slopes clearly
+        differ, ruling out the same line.
 
-        两边都算一次：b 离 a 的延长线多远、a 离 b 的延长线多远，取大的。
-        """
+                Computed both ways (b from a's extension and a from b's extension); the larger is
+        returned."""
         if abs(math.atan(slope_of(a)) - math.atan(slope_of(b))) > MAX_ANGLE:
             return None
         return max(abs(b.cy - y_at(a, b.cx)), abs(a.cy - y_at(b, a.cx)))
@@ -104,7 +112,8 @@ def group_rows(page: OcrPage, same_row: float = SAME_ROW) -> tuple[OcrRow, ...]:
     for g in sorted(geos, key=lambda g: g.cy - page_slope * g.cx):
         best: tuple[float, int] | None = None
         for i, row in enumerate(rows):
-            # 和这一行里横向离得最近的文字块比：收据是弯的，离得远的块延长过来误差大
+            # Compare with the horizontally nearest block of the line: on curved receipts, extending
+            # distant blocks accumulates error.
             near = min(row, key=lambda m: abs(m.cx - g.cx))
             d = gap(near, g)
             if d is None or d > same_row * min(g.height, near.height):
@@ -116,7 +125,8 @@ def group_rows(page: OcrPage, same_row: float = SAME_ROW) -> tuple[OcrRow, ...]:
         else:
             rows[best[1]].append(g)
 
-    # 从上到下：比较每一行在页面正中间的高度（用这一行最宽的块延长过去），歪着拍的收据也排得对
+    # Top to bottom: compare each line's height at the horizontal center of the page (extending its
+    # widest block), so skewed photos sort correctly too.
     middle = page.width / 2
     order = sorted(
         range(len(rows)), key=lambda i: y_at(max(rows[i], key=lambda m: m.width), middle)
@@ -128,16 +138,20 @@ def group_rows(page: OcrPage, same_row: float = SAME_ROW) -> tuple[OcrRow, ...]:
 
 
 CONTINUE_MARK = "↳"
-"""给模型看的文字里，"按位置看可能接着上一行"的行，行号后面加这个记号。"""
+"""Marker appended to the line number, in the text shown to the model, for lines that may continue
+the previous line by position."""
 
 MAX_LINE_GAP = 0.8
-"""上下两行之间的空隙不超过"字高 × 0.8"，才可能是同一段文字折行（再大就像空了一行）。"""
+"""The gap between two lines must be at most text height × 0.8 for them to be one wrapped paragraph
+(larger gaps look like an empty line)."""
 
 HEIGHT_RATIO = 1.45
-"""两行的字高相差超过这个倍数，不算同一段（标题和正文、大字和小字）。"""
+"""Lines whose text heights differ by more than this factor are not one paragraph (heading and body,
+large and small text)."""
 
 _LABEL = re.compile(r"^[^\s:：]{1,24}\s*[:：]")
-"""以"名称："开头的行（电话：、Date:），是另起的一项，不是接着上一行写的。"""
+"""Lines starting with "label:" (电话：, Date:) begin a new item rather than continuing the previous
+line."""
 _WORDY = re.compile(r"[A-Za-z\u4e00-\u9fff]")
 
 
@@ -152,18 +166,21 @@ def _row_height(row: OcrRow) -> float:
 
 
 def continues(above: OcrRow, below: OcrRow) -> bool:
-    """按位置看，below 是不是接着 above 写的（同一段文字折行，例如商品名、地址写成两行）。
+    """Whether below continues above by position (one value wrapped onto two lines, such as a
+    product name or address).
 
-    同时满足才算：
-    - 上下挨得很近：空隙不超过字高 × MAX_LINE_GAP；
-    - 字一样大：字高相差不超过 HEIGHT_RATIO 倍；
-    - 左边对齐：below 的第一块和 above 的某一块左边对齐（差不到 1.5 个字高）。
-      表格里商品名折行，第二行只在商品名那一列下面有字；
-    - below 的第一块是文字（不是金额、数量），也不是"名称："开头的另一项。
+        All of the following must hold:
+        - The lines are close: gap at most text height × MAX_LINE_GAP;
+        - Same text size: heights differ by at most HEIGHT_RATIO;
+        - Left-aligned: the first block of below aligns with the left edge of some block of above
+          (within 1.5 text heights). When a product name wraps in a table, the second line only
+          has text under the name column;
+        - The first block of below is text (not an amount or quantity) and not another "label:"
+          item.
 
-    这只是线索：是不是同一个值，由模型决定（例如店名下面一行是地址，位置上是"接着写的"，
-    但不属于店名），再由证据对齐核对。
-    """
+        This is only a hint: whether it is the same value is decided by the model (for example
+    the address under a shop name continues it by position but is not part of the name), and
+    evidence alignment verifies it."""
     h_above, h_below = _row_height(above), _row_height(below)
     h = min(h_above, h_below)
     if max(h_above, h_below) > HEIGHT_RATIO * h:
@@ -180,30 +197,32 @@ def continues(above: OcrRow, below: OcrRow) -> bool:
 
 
 def continuation_rows(rows: tuple[OcrRow, ...]) -> frozenset[int]:
-    """哪些行（行号）按位置看是接着上一行写的。"""
+    """Line numbers of lines that continue the previous line by position."""
     return frozenset(
         below.index for above, below in itertools.pairwise(rows) if continues(above, below)
     )
 
 
 def numbered_text(rows: tuple[OcrRow, ...], marks: frozenset[int] = frozenset()) -> str:
-    """给大模型看的文字：每行前面加上 [行号]；marks 里的行（可能接着上一行）行号后面加 ↳。"""
+    """Text for the LLM: each line prefixed with [line number]; lines in marks (possible
+    continuations) get ↳ after the number."""
     return "\n".join(
         f"[{row.index}]{CONTINUE_MARK if row.index in marks else ''} {row.text}" for row in rows
     )
 
 
-# ---- 列标题：上面一行是几个标题，下面一行（或几行）按列对齐写值 ----
+# ---- Column headers: a line of headers, with values aligned in columns on the line(s) below ----
 
 HEADER_GAP = 1.5
-"""标题行和值所在行之间的空隙不超过"字高 × 1.5"。"""
+"""Maximum gap between a header line and its value line: text height × 1.5."""
 
 _DIGIT = re.compile(r"\d")
 
 
 @dataclass(frozen=True)
 class HeaderColumn:
-    """一列：标题、按列对应的值（几行连起来）、值在第几行到第几行。"""
+    """A column: header, the values below it (several lines joined), and the line range of the
+    values."""
 
     label: str
     value: str
@@ -213,19 +232,20 @@ class HeaderColumn:
 
 @dataclass(frozen=True)
 class HeaderGroup:
-    """一组"列标题 + 值"：header_row 是标题所在的行。"""
+    """A group of column headers with values: header_row is the line of the headers."""
 
     header_row: int
     columns: tuple[HeaderColumn, ...]
 
 
 def _label_like(text: str) -> bool:
-    """像标题：有字、没有数字、不长（"Check In"、"Booking ID"、"房间数"）。"""
+    """Looks like a header: has letters, no digits, short ("Check In", "Booking ID", "房间数")."""
     return bool(_WORDY.search(text)) and not _DIGIT.search(text) and len(text) <= 40
 
 
 def _column_of(line: OcrLine, headers: tuple[OcrLine, ...], h: float) -> int | None:
-    """这块值在哪个标题下面：左边和标题对齐（差不到 1.5 个字高），或者中心落在标题的左右范围里。"""
+    """Header under which this value block sits: left-aligned with the header (within 1.5 text
+    heights), or its center within the header's horizontal extent."""
     x0, _, x1, _ = _box(line)
     cx = (x0 + x1) / 2
     best: tuple[float, int] | None = None
@@ -239,18 +259,19 @@ def _column_of(line: OcrLine, headers: tuple[OcrLine, ...], h: float) -> int | N
 
 
 def header_groups(rows: tuple[OcrRow, ...]) -> tuple[HeaderGroup, ...]:
-    """找出"上面一行是标题、下面按列写值"的地方。
+    """Find places where a line of headers is followed by values written in columns below.
 
-    酒店账单、发票抬头常这样排：
-        Hotel Details            Check In     Check Out    Rooms
-        OYO 4189 Resort ...,     31/12/2017   01/01/2018   1
-        25, Vembuliamman ...（地址，接着上一行写）
-    变成一行一行的文字以后，"1 在 Rooms 下面"这层关系就没了，模型只能猜。这里按位置把它对出来：
-    - 标题行至少 2 块，每块都像标题（有字、没有数字）；
-    - 下一行紧挨着（空隙不超过字高 × HEADER_GAP），至少 2 块分别对齐到不同的标题，
-      并且至少六成的块对得上；
-    - 再往下"接着上一行写"的行（continues），对得上哪一列就接到哪一列后面。
-    """
+        Hotel bills and invoice headers are often laid out like this:
+            Hotel Details            Check In     Check Out    Rooms
+            OYO 4189 Resort ...,     31/12/2017   01/01/2018   1
+            25, Vembuliamman ... (address, continuing the line above)
+        Once flattened into lines of text, the relation "1 is under Rooms" is lost and the model
+    can only guess. It is reconstructed here by position:
+        - The header line has at least 2 blocks, each looking like a header (letters, no digits);
+        - The next line follows closely (gap at most text height × HEADER_GAP), with at least 2
+          blocks aligned to different headers and at least 60% of blocks aligned;
+        - Further lines that continue the previous line (continues) are appended to whichever
+          column they align with."""
     groups: list[HeaderGroup] = []
     for n, (above, below) in enumerate(itertools.pairwise(rows)):
         headers = above.lines
@@ -294,7 +315,8 @@ def header_groups(rows: tuple[OcrRow, ...]) -> tuple[HeaderGroup, ...]:
 
 
 def layout_hints(rows: tuple[OcrRow, ...]) -> str:
-    """给模型看的"版面提示"：每组列标题一行，写明哪个值在哪个标题下面。没有就是空字符串。"""
+    """Layout hints for the model: one line per header group stating which value sits under which
+    header. Empty string if none."""
     lines: list[str] = []
     for group in header_groups(rows):
         pairs = "；".join(

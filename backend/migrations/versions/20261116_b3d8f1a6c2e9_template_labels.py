@@ -19,7 +19,8 @@ depends_on: str | Sequence[str] | None = None
 
 _JSON = sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql")
 
-# 写迁移时（2026-11-16）各国规则的编号，不从程序代码里引用：以后代码改了，这个迁移的结果也不变
+# Rule identifiers per country as of this migration (2026-11-16). Defined here instead of imported
+# from application code so that the migration result never changes.
 _RULE_COUNTRIES = {
     **dict.fromkeys(
         (
@@ -57,7 +58,8 @@ def upgrade() -> None:
     op.add_column("templates", sa.Column("countries", _JSON, server_default="[]", nullable=False))
     op.add_column("templates", sa.Column("tags", _JSON, server_default="[]", nullable=False))
 
-    # 原来的"类型"变成第一个功能领域；国家看最新版定义里的 region，没有就看选的规则
+    # The former "type" becomes the first domain; the country comes from the region in the latest
+    # definition, or from the selected rules.
     conn = op.get_bind()
     rows = conn.execute(
         sa.text(

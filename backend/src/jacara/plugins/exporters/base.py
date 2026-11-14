@@ -1,7 +1,8 @@
-"""导出扩展点：把处理结果写成别人能直接用的文件（Excel、CSV……）。
+"""Export extension point: write processing results to files others can use directly (Excel, CSV,
+…).
 
-导出器只接收已经处理好的结果，不做识别、抽取或判断，只负责"写成什么样"。
-"""
+Exporters receive finished results only; they never recognize, extract or judge, only decide the
+output format."""
 
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from jacara.core.i18n import tr
 from jacara.plugins.aligners.base import AlignedField
 from jacara.plugins.extractors.base import ExtractionResult
 from jacara.plugins.ocr.base import OcrPage
@@ -20,23 +22,24 @@ from jacara.plugins.validators.base import ValidationResult
 
 @dataclass(frozen=True)
 class RangeSetting:
-    """日期范围字段导出成什么样（ADR 0039）。"""
+    """Export format of a date range field."""
 
     export: str = "normalized"
-    """normalized 统一格式、original 原文、columns 拆成开始和结束两列。"""
+    """normalized (uniform format), original (source text), columns (separate start and end
+    columns)."""
     separator: str = " ~ "
     day_first: bool | None = None
-    """数字日期是不是 日/月（按模板的国家）。"""
+    """Whether numeric dates are day/month (from the template country)."""
 
 
 @dataclass(frozen=True)
 class Review:
-    """人工审核的结果（最新一次）。导出时显示这个值，而不是模型的原值。"""
+    """Manual review result (the latest). Exports show this value instead of the model value."""
 
     action: str
-    """edit（修改）或 confirm（确认原值是对的）。"""
+    """edit or confirm (the original value is correct)."""
     value: str | None
-    """审核之后的值（文字形式，和数据库里一样）。"""
+    """Post-review value (as text, as stored in the database)."""
     reason: str
     reviewed_at: datetime
 
@@ -47,85 +50,98 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class DocumentReport:
-    """一张单据走完整条流水线后的全部结果，导出器只看这个。"""
+    """All results of one document after the full pipeline; the only input of exporters."""
 
     source: str
-    """原始文件名，例如 receipt.jpg。"""
+    """Original file name, for example receipt.jpg."""
 
     extraction: ExtractionResult
     aligned: tuple[AlignedField, ...]
     checks: ValidationResult
 
     ocr_engine: str
-    """OCR 引擎和版本，例如 rapidocr 3.10.0。"""
+    """OCR engine and version, for example rapidocr 3.10.0."""
 
     processed_at: datetime
 
     page: int = 1
-    """这张单据从第几页开始，从 1 开始。"""
+    """First page of this document, 1-based."""
 
     last_page: int | None = None
-    """这张单据到第几页结束（ADR 0036）。只占一页是 None。"""
+    """Last page of this document. None for a single page."""
 
     pages: tuple[OcrPage, ...] = ()
-    """几页拼成的单据：每一页自己的 OCR 结果（存的时候一页一页存）。
-    只占一页时是空的，用 ocr_page。"""
+    """Stacked documents: the OCR result of each page (stored page by page). Empty for a single
+    page, which uses ocr_page."""
 
     page_starts: tuple[float, ...] = ()
-    """几页拼成的单据：每一页在拼成的长页上从多高开始，存出处时换回每一页自己的坐标。"""
+    """Stacked documents: y offset of each page on the tall page, used to convert evidence back to
+    each page's coordinates when storing."""
 
     text_source: str = "ocr"
-    """这一页的文字怎么来的：ocr（OCR 识别）或 pdf-text（PDF 文字层）。"""
+    """Source of the page text: ocr or pdf-text (PDF text layer)."""
 
     template: str = "receipt"
-    """用的模板名（templates/*.toml）。"""
+    """Template name (templates/*.toml)."""
 
     template_version: int = 1
-    """模板的版本号。模板改过之后，旧结果还能知道是按哪一版抽的。"""
+    """Template version, so older results remain attributable to the version used after the template
+    changes."""
 
     reviews: Mapping[str, Review] = field(default_factory=dict)
-    """字段名 → 人工审核结果。刚处理完、还没人审核时是空的（命令行导出就是这样）。"""
+    """Field name → manual review result. Empty right after processing (as in CLI exports)."""
 
     ocr_page: OcrPage | None = None
-    """这一页的 OCR 结果。流水线刚跑完时有，存进数据库给审核页面"点原文填值"用；导出器不用。"""
+    """OCR result of this page. Present after a pipeline run and stored for click-to-fill on the
+    review page; unused by exporters."""
 
     structure: PageStructure | None = None
-    """这一页的结构（文字块编号、版面区域、表格、标题 → 值，ADR 0034）。存进数据库；导出器不用。"""
+    """Structure of this page (text block indices, layout regions, tables, label → value pairs).
+    Stored in the database; unused by exporters."""
 
     labels: Mapping[str, str] = field(default_factory=dict)
-    """字段 ID → 中文名（模板里的 label），导出的列名用它。表格的列写成 items.amount。
-    没有的（命令行、老数据）就用字段 ID。"""
+    """Field ID → display name (label in the template), used as export column headers. Table columns
+    as items.amount. Field IDs are used when absent (CLI, legacy data)."""
 
     manual: frozenset[str] = frozenset()
-    """人工填的字段（模板里设成不让模型抽的），存的时候记成 origin = manual。"""
+    """Manual-entry fields (set in the template not to be extracted by the model), stored with
+    origin = manual."""
     computed: frozenset[str] = frozenset()
-    """按公式算出来的字段（ADR 0035），存的时候记成 origin = computed。"""
+    """Fields computed by formula, stored with origin = computed."""
 
     hidden: frozenset[str] = frozenset()
-    """模板里设成"不导出"的字段、表（items）和表的列（items.tax），导出时整列不写。"""
+    """Fields, tables (items) and table columns (items.tax) set not to export in the template; their
+    columns are omitted."""
 
     ranges: Mapping[str, RangeSetting] = field(default_factory=dict)
-    """日期范围字段（ADR 0039）：字段 ID（表格的列写成 items.period）→ 导出设置。"""
+    """Date range fields: field ID (table columns as items.period) → export settings."""
 
     template_version_id: uuid.UUID | None = None
-    """自动判断选中的"我的模板"版本（ADR 0038）。上传时直接选了模板的是 None（用文档上的）。"""
+    """Version of my template picked by automatic selection. None when the template was chosen at
+    upload (the document's template is used)."""
     classified: Mapping[str, Any] | None = None
-    """自动判断的经过（ADR 0038）：选了哪个、为什么、候选有哪些。没有自动判断是 None。"""
+    """Automatic selection details: what was chosen, why, and the candidates. None without automatic
+    selection."""
 
     @property
     def pages_label(self) -> str:
-        """ "第 3 页"或"第 3–4 页"。"""
+        """ "Page 3" or "Pages 3–4"."""
         last = self.last_page or self.page
-        return f"第 {self.page} 页" if last == self.page else f"第 {self.page}–{last} 页"
+        return (
+            tr("第 {page} 页", page=self.page)
+            if last == self.page
+            else tr("第 {first}–{last} 页", first=self.page, last=last)
+        )
 
 
 class Exporter(Protocol):
-    """导出器接口：任何类只要有 name、suffix 属性和 export 方法，就是一个导出器。"""
+    """Exporter interface: any class with name and suffix attributes and an export method is an
+    exporter."""
 
     name: str
     suffix: str
-    """文件后缀，例如 .xlsx。"""
+    """File suffix, for example .xlsx."""
 
     def export(self, reports: Sequence[DocumentReport], path: Path) -> None:
-        """把一张或多张单据的结果写进 path。"""
+        """Write the results of one or more documents to path."""
         ...

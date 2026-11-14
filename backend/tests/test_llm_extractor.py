@@ -1,8 +1,6 @@
-"""大模型抽取器：用一个假的模型后端测试，不需要启动 llama-server。"""
+"""LLM extractor, tested with a fake model backend; no llama-server required."""
 
 import json
-
-import pytest
 
 from jacara.plugins.extractors import (
     ExtractionError,
@@ -13,11 +11,13 @@ from jacara.plugins.extractors import (
 from jacara.plugins.model_backends import ChatMessage, ChatResult
 from jacara.templates import load_template
 
+from .conftest import raises
+
 RECEIPT_FIELDS = load_template("receipt").specs
 
 
 class FakeBackend:
-    """假的模型后端：不管问什么，都回答事先准备好的文字。它满足 ModelBackend 接口。"""
+    """Fake model backend: answers every request with prepared text. Implements ModelBackend."""
 
     name = "fake"
 
@@ -54,31 +54,31 @@ def test_values_rows_and_provenance(receipt_page):
         "store_name": (None, None),
         "document_no": (None, None),
         "date": ("2018-12-25", 4),
-        "total": (9.0, 6),  # 整数 9 转成 9.0
+        "total": (9.0, 6),  # The integer 9 becomes 9.0.
     }
     assert result.model == "fake-model"
     assert result.prompt_version == "extract-v8"
-    assert result.raw_output == backend.answer  # 原始回答原样保留
+    assert result.raw_output == backend.answer  # The raw answer is kept verbatim.
 
 
 def test_prompt_contains_numbered_rows(receipt_page):
     backend = FakeBackend(answer(total=(9.0, 6)))
     LlmExtractor(backend).extract(receipt_page, [FieldSpec("total", "number", "总额")])
     user_message = backend.received[-1].content
-    # 每块带编号、按位置排开（ADR 0034）；"Date:" 和日期是一对"标题 → 值"
+    # Each block indexed and laid out by position; "Date:" and the date form a label → value pair.
     assert "⟨4⟩Date:" in user_message and "⟨5⟩25/12/2018 8:13:39 PM" in user_message
     assert "⟨4⟩Date → ⟨5⟩25/12/2018 8:13:39 PM" in user_message
     assert backend.schema == build_schema([FieldSpec("total", "number", "总额")])
 
 
 def test_invalid_json_raises(receipt_page):
-    with pytest.raises(ExtractionError, match="不是合格的 JSON"):
+    with raises(ExtractionError, "不是合格的 JSON"):
         LlmExtractor(FakeBackend("好的，总额是 9 元")).extract(receipt_page, RECEIPT_FIELDS)
 
 
 def test_missing_field_raises(receipt_page):
     backend = FakeBackend(answer(merchant=("SHOP", 1)))
-    with pytest.raises(ExtractionError, match="缺少字段"):
+    with raises(ExtractionError, "缺少字段"):
         LlmExtractor(backend).extract(receipt_page, RECEIPT_FIELDS)
 
 

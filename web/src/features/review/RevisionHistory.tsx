@@ -4,6 +4,8 @@ import type { Revision } from '../../api/types'
 import { getValueHistory } from '../../api/values'
 import { useAuth } from '../../auth/useAuth'
 import { formatTime } from '../../utils/format'
+import { useTranslation } from 'react-i18next'
+import { t } from '../../i18n'
 
 const COLORS: Record<Revision['action'], string> = {
   edit: 'blue',
@@ -16,22 +18,23 @@ const COLORS: Record<Revision['action'], string> = {
 function describe(r: Revision): string {
   switch (r.action) {
     case 'confirm':
-      return ' 确认值是对的'
+      return t(' 确认值是对的')
     case 'delete':
-      return ' 删除了这一行'
+      return t(' 删除了这一行')
     case 'restore':
-      return ' 恢复了这一行'
+      return t(' 恢复了这一行')
     case 'compute':
-      return ` 改了参与计算的值，按公式重算 → ${r.new_value ?? '（算不出来）'}`
+      return ' ' + t('改了参与计算的值，按公式重算 → {{value}}', { value: r.new_value ?? t('（算不出来）') })
     default:
       return r.evidence
-        ? ` 从原文选取「${r.evidence.row_text}」→ ${r.new_value ?? '（空）'}`
-        : ` 改成 ${r.new_value ?? '（原文没有）'}`
+        ? ' ' + t('从原文选取「{{text}}」→ {{value}}', { text: r.evidence.row_text, value: r.new_value ?? t('（空）') })
+        : ' ' + t('改成 {{value}}', { value: r.new_value ?? t('（原文没有）') })
   }
 }
 
-/** 一个字段的经历：模型抽出了什么，之后谁、什么时候、改成了什么、为什么。 */
+/** History of a field: what the model extracted, then who changed it to what, when and why. */
 export function RevisionHistory({ valueId }: { valueId: string }) {
+  const { t } = useTranslation()
   const { me } = useAuth()
   const history = useQuery({
     queryKey: ['value-history', valueId],
@@ -45,15 +48,15 @@ export function RevisionHistory({ valueId }: { valueId: string }) {
     return null
   }
 
-  // 个人模式只有一个人；团队模式按 user_id 认出是不是自己
+  // Personal mode has a single user; team mode identifies one's own entries by user_id.
   const who = (userId: string) =>
-    me?.mode === 'personal' || me?.user?.id === userId ? '你' : '其他成员'
+    me?.mode === 'personal' || me?.user?.id === userId ? t('你') : t('其他成员')
   const original = history.data.value.value
 
   return (
     <div style={{ margin: '12px 0 0 0' }}>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        修改历史
+        {t('修改历史')}
       </Typography.Text>
       <Timeline
         style={{ marginTop: 8, fontSize: 12 }}
@@ -62,10 +65,10 @@ export function RevisionHistory({ valueId }: { valueId: string }) {
             color: 'gray',
             content:
               history.data.value.origin === 'manual'
-                ? '审核时人工增加'
+                ? t('审核时人工增加')
                 : history.data.value.origin === 'computed'
-                  ? `按公式算出：${original ?? '（算不出来）'}`
-                  : `模型抽出：${original ?? '（原文没有）'}`,
+                  ? t('按公式算出：{{value}}', { value: original ?? t('（算不出来）') })
+                  : t('模型抽出：{{value}}', { value: original ?? t('（原文没有）') }),
           },
           ...history.data.revisions.map((r) => ({
             key: r.id,
@@ -76,7 +79,7 @@ export function RevisionHistory({ valueId }: { valueId: string }) {
                   #{r.seq} {who(r.user_id)}
                   {describe(r)}
                 </div>
-                {r.reason && <Typography.Text type="secondary">原因：{r.reason}</Typography.Text>}
+                {r.reason && <Typography.Text type="secondary">{t('原因：{{reason}}', { reason: r.reason })}</Typography.Text>}
                 <div>
                   <Typography.Text type="secondary">{formatTime(r.created_at)}</Typography.Text>
                 </div>

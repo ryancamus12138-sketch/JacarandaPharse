@@ -1,4 +1,4 @@
-"""统计和数据导出接口：/api/v1/insights（ADR 0044）。"""
+"""Statistics and data export API: /api/v1/insights."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from jacara.core.deps import get_owner, get_session, get_storage
+from jacara.core.i18n import render
 from jacara.core.owner import Owner
 from jacara.core.storage import ObjectStorage
 from jacara.modules.documents.router import attachment
@@ -38,7 +39,8 @@ def corrections(
     ] = None,
     days: Annotated[int | None, Query(ge=1, le=3650, description="只看最近几天审核完成的")] = None,
 ) -> CorrectionStats:
-    """审核完成的单据里，每个字段人改了多少、改的是哪种错误、错了却没标黄的有几个。"""
+    """For reviewed documents: how often each field was corrected, the error kinds, and how many
+    wrong values were not flagged."""
     return service.corrections(template, days)
 
 
@@ -46,12 +48,12 @@ def corrections(
 def override_attribution(
     attribution_id: uuid.UUID, data: AttributionIn, service: Service
 ) -> AttributionOut:
-    """自动判断的错在哪一步不对：人改判（ADR 0053）。stage 写 null 撤销改判。"""
+    """Override an incorrect automatic attribution. stage null reverts the override."""
     try:
         return service.override(attribution_id, data)
     except InsightsError as err:
         status = {"not_found": 404, "invalid": 422}.get(err.code, 400)
-        raise HTTPException(status_code=status, detail=err.message) from err
+        raise HTTPException(status_code=status, detail=render(err.message)) from err
 
 
 @router.get("/dataset", summary="导出审核数据", response_class=Response)
@@ -61,6 +63,7 @@ def dataset(
     sensitive: Annotated[bool, Query(description="连敏感字段一起导出")] = False,
     files: Annotated[bool, Query(description="带上原文件")] = True,
 ) -> Response:
-    """审核完成的单据打包成 zip：原文件、训练数据（train.jsonl）、成对测评清单（pairs.toml）。"""
+    """Package reviewed documents into a zip: original files, training data (train.jsonl) and a
+    paired evaluation manifest (pairs.toml)."""
     filename, data = service.dataset(template, sensitive, files)
     return attachment(filename, data, "application/zip")

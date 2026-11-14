@@ -1,4 +1,5 @@
-"""系统信息。只读：只查不改，不显示任何密码（.env 只说"改没改过"）。"""
+"""System information. Read-only, and never shows any password (.env reports only whether defaults
+were changed)."""
 
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session
 from jacara import __version__
 from jacara.core.config import Settings
 from jacara.core.health import run_checks
+from jacara.core.i18n import tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import allowed, require
 from jacara.models import Document, ExtractedValue, Extraction, ValueRevision
@@ -44,13 +46,16 @@ class SystemService:
         found = self._info()
         if "system:manage" in allowed(self.owner):
             return found
-        # 不是管理员：只看版本、通不通、数据量；地址、文件名、路径、怎么修不给看（ADR 0063）
+        # Non-administrators see only version, reachability and data volume; addresses, file names,
+        # paths and remedies are withheld.
         found.model.server = ""
         found.model.file = None
         found.model.vision_file = None
         found.watch_dir = None
         found.services = [
-            ServiceCheck(name=s.name, ok=s.ok, detail="正常" if s.ok else "连不上，请找管理员")
+            ServiceCheck(
+                name=s.name, ok=s.ok, detail=tr("正常") if s.ok else tr("连不上，请找管理员")
+            )
             for s in found.services
         ]
         return found
@@ -62,7 +67,7 @@ class SystemService:
             model=self._model(),
             ocr=_ocr(),
             structure=StructureInfo(
-                layout="pp_layout_cdla（rapid-layout 自带）"
+                layout=tr("pp_layout_cdla（rapid-layout 自带）")
                 if self.settings.jacara_layout
                 else None,
                 table=table.name if (table := self.settings.table_model()) else None,
@@ -122,7 +127,8 @@ class SystemService:
 
 
 def vision_info(settings: Settings) -> VisionInfo:
-    """模型能不能看图（ADR 0038）：审核页决定显不显示"让模型看这块"。只问一次模型服务，很快。"""
+    """Whether the model can process images; the review page uses it to decide whether to offer "ask
+    the model about this region". Queries the model server once and is fast."""
     props = model_props(settings.model_server)
     modalities = props.get("modalities")
     mmproj = settings.find_mmproj()
@@ -134,7 +140,8 @@ def vision_info(settings: Settings) -> VisionInfo:
 
 
 def model_props(server: str) -> dict[str, Any]:
-    """问模型服务（llama-server 的 /props）现在加载的是哪个模型、上下文多长。连不上返回空。"""
+    """Ask the model server (llama-server /props) which model is loaded and its context length.
+    Empty if unreachable."""
     from jacara.core.config import model_api_key
 
     key = model_api_key()

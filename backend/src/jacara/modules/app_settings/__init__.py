@@ -1,1 +1,1 @@
-"""设置页上能改的设置（ADR 0063）。"""
+"""Settings editable on the settings page."""

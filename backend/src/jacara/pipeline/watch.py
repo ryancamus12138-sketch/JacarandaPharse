@@ -1,10 +1,13 @@
-"""监视文件夹（ADR 0036）：放进这个文件夹（含子文件夹）的图片和 PDF 自动导入。
+"""Watch folder: images and PDFs placed in this folder (including subfolders) are imported
+automatically.
 
-- 不动、不删、不改你的文件，只读；
-- 同一个文件（内容一样）只导入一次：重启之后再扫一遍，已经导入过的按文件指纹跳过；
-- 刚放进去、还在复制的文件先不读：最后修改时间离现在不到几秒的，等下一轮；
-- 导入时记下所在的文件夹（监视的文件夹名 + 子文件夹），文档列表可以按文件夹筛选。
-"""
+- Read-only: your files are never moved, deleted or modified;
+- Each file (by content) is imported once: after a restart the folder is rescanned and files
+  already imported are skipped by fingerprint;
+- Files still being copied are not read: files modified within the last few seconds wait for the
+  next scan;
+- The source folder (watch folder name + subfolder) is recorded on import, so the document list
+  can filter by folder."""
 
 from __future__ import annotations
 
@@ -26,12 +29,13 @@ log = logging.getLogger(__name__)
 
 SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".pdf"}
 SETTLE_SECONDS = 3.0
-"""文件最后一次修改后至少过这么久才读（还在复制的文件不读一半）。"""
+"""Minimum time since a file's last modification before it is read (files still being copied are
+never read half-way)."""
 
 
 @dataclass
 class Watcher:
-    """扫一个文件夹，把新文件导入。scan() 扫一次；run() 一直扫。"""
+    """Scan a folder and import new files. scan() scans once; run() scans continuously."""
 
     root: Path
     factory: sessionmaker[Session] | None
@@ -39,14 +43,15 @@ class Watcher:
     queue: TaskQueue
     owner: Owner
     template: str | None = None
-    """用哪个模板（我的模板的 id）；不写就用上一次用的。"""
+    """Template to use (id of one of my templates); defaults to the template used last."""
     split: str = "auto"
     seen: dict[Path, tuple[float, int]] = field(default_factory=dict)
-    """处理过的文件 → （修改时间，大小）。文件改了（时间或大小变了）会再看一次。"""
+    """Processed files → (modification time, size). A changed file (time or size) is examined
+    again."""
     now: Callable[[], float] = time.time
 
     def scan(self) -> list[tuple[Path, str]]:
-        """扫一次。返回 [(文件, "导入" / "以前导入过" / 失败原因)]。"""
+        """Scan once. Returns [(file, "imported" / "previously imported" / failure reason)]."""
         from jacara.modules.documents.service import DocumentError, DocumentService
 
         done: list[tuple[Path, str]] = []
@@ -83,12 +88,12 @@ class Watcher:
     def _wanted(self, path: Path) -> bool:
         if not path.is_file() or path.suffix.lower() not in SUFFIXES:
             return False
-        # 隐藏文件（.DS_Store、~$ 开头的临时文件）不要
+        # Skip hidden files (.DS_Store, temporary files starting with ~$).
         parts = path.relative_to(self.root).parts
         return not any(p.startswith((".", "~$")) for p in parts)
 
     def run(self, every: float = 5.0) -> None:
-        """一直扫，每隔 every 秒一次。Ctrl + C 停止。"""
+        """Scan continuously every every seconds. Stop with Ctrl + C."""
         while True:
             for path, result in self.scan():
                 print(f"{result}：{path.relative_to(self.root)}")

@@ -1,4 +1,5 @@
-"""模板多语言（ADR 0048）：字段名、表名、模板名可以写几种语言，审核页、导出可以切换。"""
+"""Multilingual templates: field, table and template names in several languages, switchable on the
+review page and in exports."""
 
 from __future__ import annotations
 
@@ -9,6 +10,8 @@ from openpyxl import load_workbook
 
 from jacara.templates import TemplateError, from_definition, parse_template
 from tests.test_template_library import detail, process, upload, values
+
+from .conftest import raises
 
 RAW = {
     "name": "demo",
@@ -42,7 +45,7 @@ def test_names_and_languages():
     template = parse_template(RAW, "demo")
     assert template.languages == ("zh", "en", "ja")
     assert template.title_in("ja") == "デモ請求書"
-    assert template.title_in("ko") == "演示发票"  # 没写的语言用中文
+    assert template.title_in("ko") == "演示发票"  # Languages not defined fall back to Chinese.
     assert template.labels("en") == {
         "invoice_no": "Invoice number",
         "total": "Total",
@@ -59,7 +62,8 @@ def test_names_go_into_the_prompt_once():
 
 
 def test_prompt_only_has_english_and_local_names():
-    """通用模板只给模型英文名；日本模板再加日文名（ADR 0049）。"""
+    """Generic templates give the model English names only; Japanese templates add Japanese
+    names."""
     generic = parse_template(RAW, "demo").specs[0].description
     assert "Invoice number" in generic and "請求書番号" not in generic
     japan = parse_template({**RAW, "countries": ["JP"]}, "demo").specs[0].description
@@ -84,7 +88,7 @@ def test_names_round_trip_through_definition():
 )
 def test_bad_names_say_why(names, message):
     raw = {**RAW, "fields": [{**RAW["fields"][1], "names": names}]}
-    with pytest.raises(TemplateError, match=message):
+    with raises(TemplateError, message):
         parse_template(raw, "demo")
 
 
@@ -128,12 +132,13 @@ def test_review_and_export_switch_language(client, factory, storage, receipt_pag
     assert "总额" in headers(None)
     assert "Total amount" in headers("en") and "总额" not in headers("en")
     assert "合計金額" in headers("ja")
-    assert "总额" in headers("ko")  # 没写的语言用中文
+    assert "总额" in headers("ko")  # Languages not defined fall back to Chinese.
     csv = client.get(f"/api/v1/documents/export.csv?ids={document_id}&lang=en")
     assert csv.status_code == 200 and "Total amount" in csv.content.decode("utf-8-sig")
 
 
-# ---------- 起步模板都能切换中英文，中国版质检报告（ADR 0048） ----------
+# ---------- Every starter template switches between Chinese and English; China quality inspection
+# report ----------
 
 
 def test_every_starter_has_english_names():
@@ -154,7 +159,8 @@ def test_cn_quality_report_rules():
     t = load_starter("cn_quality_report")
     assert t.countries == ("CN",) and t.foreign_rules() == []
     generic = {f.name for f in load_starter("quality_report").fields}
-    assert generic < {f.name for f in t.fields}  # 通用的字段都在，多了中国要求的
+    # All generic fields present, plus those required in China.
+    assert generic < {f.name for f in t.fields}
     assert REGIONS["cn_cma_no"] == "CN"
     cma = RULES["cn_cma_no"]
     assert cma.check({"cma_no": "2015 0012 3456"}) is None

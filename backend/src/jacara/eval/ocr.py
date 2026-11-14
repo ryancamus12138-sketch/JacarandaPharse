@@ -1,16 +1,20 @@
 # ruff: noqa: E501
-"""OCR 模型评测（ADR 0060）：在数据集（ADR 0059）的某一边上，比较两个识别（或检测）模型。
+"""OCR model evaluation: compare two recognition (or detection) models on one split of a library
+dataset.
 
-- 识别：每张小图只跑识别。指标照 TextRecMetric（RapidOCR 作者 SWHL 的识别评测工具，Apache-2.0）：
-  Exact Match（整行一模一样的比例）和 Char Match（1 − 平均归一化编辑距离，
-  NL = Levenshtein(预测, 标注) / max(len(预测), len(标注))）。另外数"只差空格、大小写、全角半角"的行
-  （ADR 0050 的错误标签 format）。
-- 检测：每张整页图只跑检测。照 PaddleOCR ppocr/metrics/eval_det_iou.py 的 DetectionIoUEvaluator
-  （iou_constraint=0.5、area_precision_constraint=0.5）算 Precision、Recall、H-mean。
-- 两个模型逐条配对：修好、弄坏、精确 McNemar；识别再按业务单据分组 bootstrap（和回放一样，ADR 0053）。
+- Recognition: only recognition runs on each line crop. Metrics follow TextRecMetric (the
+  recognition evaluation tool by SWHL, author of RapidOCR; Apache-2.0): Exact Match (share of
+  lines identical to the label) and Char Match (1 − mean normalized edit distance, NL =
+  Levenshtein(pred, label) / max(len(pred), len(label))). Lines that differ only in whitespace,
+  letter case or full-width/half-width forms are counted separately (the format error label).
+- Detection: only detection runs on each full-page image. Precision, Recall and H-mean follow
+  DetectionIoUEvaluator in PaddleOCR ppocr/metrics/eval_det_iou.py (iou_constraint=0.5,
+  area_precision_constraint=0.5).
+- The two models are paired per item: fixed, broken, exact McNemar test; for recognition,
+  additionally a bootstrap grouped by business document (as in replay).
 
-只读：不改模型选择、不改数据集。命令行（jacara eval ocr）和后台任务（网页上点"评测"）都用这里。
-"""
+Read-only: neither the model selection nor the dataset is modified. Used by the CLI (`jacara eval
+ocr`) and by the background task started from the web UI."""
 
 from __future__ import annotations
 
@@ -43,22 +47,23 @@ class EvalEngine(Protocol):
 
 @dataclass(frozen=True)
 class EvalArm:
-    """一边的模型。路径相对项目根目录；None 是 RapidOCR 自带的。"""
+    """Model of one arm. Paths are relative to the project root; None means the model bundled with
+    RapidOCR."""
 
     name: str
     label: str
     det: str | None = None
     rec: str | None = None
     dict_path: str | None = None
-    """识别字典。"""
+    """Recognition dictionary."""
     sha256: dict[str, str] = field(default_factory=dict)
 
 
-# ---- 识别 ----
+# ---- Recognition ----
 
 
 def levenshtein(a: str, b: str) -> int:
-    """编辑距离（插入、删除、替换各算 1），两行动态规划。"""
+    """Edit distance (insertion, deletion and substitution cost 1), two-row dynamic programming."""
     if len(a) < len(b):
         a, b = b, a
     previous = list(range(len(b) + 1))
@@ -71,7 +76,8 @@ def levenshtein(a: str, b: str) -> int:
 
 
 def normalized_distance(pred: str, truth: str) -> float:
-    """TextRecMetric 的 NL：编辑距离 / 两串里长的那个的长度；两个都是空的算 0。"""
+    """NL from TextRecMetric: edit distance divided by the length of the longer string; 0 when both
+    are empty."""
     longest = max(len(pred), len(truth))
     return levenshtein(pred, truth) / longest if longest else 0.0
 
@@ -130,7 +136,7 @@ def summarize_rec(lines: Sequence[RecLine], grouped: bool) -> dict[str, Any]:
     }
 
 
-# ---- 检测：PaddleOCR 的 DetectionIoUEvaluator ----
+# ---- Detection: PaddleOCR DetectionIoUEvaluator ----
 
 IOU_CONSTRAINT = 0.5
 AREA_PRECISION_CONSTRAINT = 0.5
@@ -138,22 +144,24 @@ AREA_PRECISION_CONSTRAINT = 0.5
 
 @dataclass
 class DetImage:
-    """一张图在一边的检测结果。"""
+    """Detection result of one image for one arm."""
 
     gt_care: int
     det_care: int
     matched: int
     gt_hit: list[bool]
-    """每个标注框（按原顺序；### 的是 False 且不算）有没有配上。"""
+    """Whether each ground-truth box (in original order) was matched; ### boxes are False and not
+    counted."""
 
 
 def evaluate_image(gt: Sequence[Box], det: Sequence[Sequence[tuple[float, float]]]) -> DetImage:
-    """照 PaddleOCR eval_det_iou.py 的 evaluate_image：
+    """Follows evaluate_image in PaddleOCR eval_det_iou.py:
 
-    - 不合法的多边形跳过；标注是 ### 的是"不计"（don't care）；
-    - 检测框和某个"不计"标注框的交集超过检测框面积的一半，这个检测框也不计；
-    - 按顺序找 IoU > 0.5、两边都还没配上、都不是"不计"的配成一对。
-    """
+    - Invalid polygons are skipped; ground-truth boxes labeled ### are don't-care;
+    - A detection whose intersection with a don't-care box exceeds half of its own area is
+      also don't-care;
+    - Pairs are matched in order where IoU > 0.5, both sides are unmatched and neither is
+      don't-care."""
     from shapely.geometry import Polygon
 
     gt_polys: list[Any] = []
@@ -198,7 +206,7 @@ def evaluate_image(gt: Sequence[Box], det: Sequence[Sequence[tuple[float, float]
 
 
 def det_metrics(results: Sequence[DetImage]) -> dict[str, Any]:
-    """combine_results：所有图的总数算 Precision、Recall、H-mean。"""
+    """combine_results: Precision, Recall and H-mean over the totals of all images."""
     gt = sum(r.gt_care for r in results)
     det = sum(r.det_care for r in results)
     matched = sum(r.matched for r in results)
@@ -249,7 +257,7 @@ def summarize_det(lines: Sequence[DetLine]) -> dict[str, Any]:
     }
 
 
-# ---- 跑 ----
+# ---- Run ----
 
 
 @dataclass
@@ -267,7 +275,8 @@ def run(
     engines: Callable[[EvalArm], EvalEngine],
     progress: Callable[[str], None] = lambda _: None,
 ) -> EvalResult:
-    """在数据集的 split 这一边上跑两个模型。engines(arm) 给出那一边的 OCR 引擎。"""
+    """Run both models on the given split of the dataset. engines(arm) returns the OCR engine of
+    that arm."""
     items = parsed.split(split)
     if not items:
         raise ValueError(f"数据集里没有 {split} 这一边")
@@ -337,7 +346,7 @@ def _pct(x: float) -> str:
 def summary_markdown(s: dict[str, Any], dataset: str) -> str:
     a_label, b_label = (arm["label"] for arm in s["arms"])
     head = [
-        "# OCR 模型评测（ADR 0060）",
+        "# OCR 模型评测",
         "",
         f"- 数据集：{dataset}，{s['split']} 这一边",
         f"- A：{a_label}；B：{b_label}",
@@ -381,7 +390,7 @@ def summary_markdown(s: dict[str, Any], dataset: str) -> str:
 
 
 def write_result(result: EvalResult, out: Path, dataset: str) -> Path:
-    """summary.md、summary.json、lines.jsonl（业务数据，只在本机）。"""
+    """summary.md, summary.json, lines.jsonl (business data; kept on this machine only)."""
     out.mkdir(parents=True, exist_ok=True)
     (out / "summary.json").write_text(
         json.dumps(result.summary, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -399,7 +408,8 @@ def lines_jsonl(result: EvalResult) -> bytes:
 
 
 def default_engine(arm: EvalArm) -> EvalEngine:
-    """真的 RapidOCR：设置（置信度门槛、长边）和日常处理一样，只换模型文件。"""
+    """Real RapidOCR with the same settings as regular processing (confidence threshold, longer
+    side); only the model files differ."""
     from jacara.core import config
     from jacara.plugins.ocr import OcrConfig, RapidOcrEngine
 

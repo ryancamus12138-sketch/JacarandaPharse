@@ -1,9 +1,10 @@
 import { Input, Modal, Typography } from 'antd'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 export interface ReasonRequest {
   title: string
-  /** 说明这一步会做什么。 */
+  /** Explains what this step will do. */
   description: string
   placeholder: string
   okText: string
@@ -11,7 +12,10 @@ export interface ReasonRequest {
   onOk: (reason: string) => void
 }
 
-/** 要写原因的操作（清空、删除一行、恢复一行）弹出这个框。原因必填，以后查记录时能看懂。 */
+/**
+ * Dialog for operations that require a reason (clear, delete a row, restore a row). The reason is mandatory
+ * so the history remains understandable.
+ */
 export function ReasonDialog({
   request,
   onClose,
@@ -19,6 +23,7 @@ export function ReasonDialog({
   request: ReasonRequest | null
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const [reason, setReason] = useState('')
   const ok = () => {
     if (!request || !reason.trim()) {
@@ -34,7 +39,7 @@ export function ReasonDialog({
       title={request?.title}
       okText={request?.okText}
       okButtonProps={{ danger: request?.danger, disabled: !reason.trim() }}
-      cancelText="取消"
+      cancelText={t('取消')}
       onOk={ok}
       onCancel={() => {
         setReason('')

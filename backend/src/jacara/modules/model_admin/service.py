@@ -1,10 +1,11 @@
-"""换模型（ADR 0046）。
+"""Model selection.
 
-只能选 models/ 文件夹里已有的文件（离线：不下载）。选的结果写进 models/selected.json，
-.env 里写了的（JACARA_MODEL 等）优先，网页上显示"由 .env 指定"。
-大模型和视觉模型在 jacara start 时加载，OCR、表格模型在后台任务启动时加载，
-所以改完要 jacara stop、jacara start 才生效；页面上比较"选的"和"正在用的"，不一样就提醒。
-"""
+Only files already present in models/ can be selected (offline; nothing is downloaded). The
+selection is written to models/selected.json; values set in .env (JACARA_MODEL and others) take
+precedence and the web UI shows "set by .env". The LLM and vision projector are loaded by `jacara
+start`, OCR and table models when background workers start, so changes take effect after `jacara
+stop` and `jacara start`; the page compares the selection with what is running and warns when
+they differ."""
 
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from jacara.core.config import CHOICES_FILE, PROJECT_ROOT, Settings, is_mmproj, model_choices
+from jacara.core.i18n import N_, tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.modules.audit.service import record
@@ -24,12 +26,12 @@ from jacara.modules.system.service import model_props
 MODELS = PROJECT_ROOT / "models"
 
 SLOTS: dict[str, str] = {
-    "model": "大模型",
-    "mmproj": "视觉模型",
-    "ocr_det": "OCR 文字检测",
-    "ocr_rec": "OCR 文字识别",
-    "ocr_dict": "OCR 识别字典",
-    "table": "表格结构模型",
+    "model": N_("大模型"),
+    "mmproj": N_("视觉模型"),
+    "ocr_det": N_("OCR 文字检测"),
+    "ocr_rec": N_("OCR 文字识别"),
+    "ocr_dict": N_("OCR 识别字典"),
+    "table": N_("表格结构模型"),
 }
 
 ENV_NAMES = {
@@ -44,7 +46,7 @@ ENV_NAMES = {
 
 class ModelFile(BaseModel):
     path: str
-    """相对项目根目录，例如 models/Qwen3.5-9B-Q4_K_M.gguf。"""
+    """Relative to the project root, for example models/Qwen3.5-9B-Q4_K_M.gguf."""
     name: str
     size: int
     modified: datetime
@@ -54,10 +56,10 @@ class Slot(BaseModel):
     key: str
     label: str
     current: str | None
-    """现在生效的文件（相对路径）；None：用自带的（OCR）或没有。"""
+    """File in effect (relative path); None: bundled (OCR) or none."""
     source: str
-    """env：.env 指定（网页上改不了）；choice：网页上选的；auto：models/ 里自动找到的；
-    builtin：用 RapidOCR 自带的；none：没有。"""
+    """env: set in .env (not editable in the web UI); choice: selected in the web UI; auto: detected
+    in models/; builtin: bundled with RapidOCR; none: none."""
     env: str
     files: list[ModelFile]
 
@@ -65,14 +67,15 @@ class Slot(BaseModel):
 class ModelsOut(BaseModel):
     slots: list[Slot]
     loaded: str | None
-    """模型服务现在加载的大模型文件名（连不上是 None）。"""
+    """LLM file currently loaded by the model server (None if unreachable)."""
     restart_needed: bool
-    """选的大模型和正在用的不一样：要 jacara stop、jacara start。"""
+    """The selected LLM differs from the running one: `jacara stop` and `jacara start` required."""
 
 
 class ModelsIn(BaseModel):
-    """要换的：键是 SLOTS 里的，值是 models/ 里的文件（相对路径）；空字符串 = 不用（视觉模型）
-    或用自带的（OCR、表格）；不写的不变。"""
+    """Changes: keys from SLOTS, values are files in models/ (relative paths); an empty string
+    disables the slot (vision projector) or uses the bundled model (OCR, table); omitted keys are
+    unchanged."""
 
     model: str | None = None
     mmproj: str | None = None
@@ -106,8 +109,8 @@ def _files(pattern: str, keep: object = None) -> list[ModelFile]:
 
 
 def candidates(slot: str) -> list[ModelFile]:
-    """每一项能选哪些文件：models/ 里按 ADR 0046 的位置放的，
-    加上模型库（ADR 0059）里这一种的版本。"""
+    """Selectable files per slot: files placed in the expected locations under models/, plus library
+    versions of this kind."""
     if slot == "model":
         found = _files("*.gguf", lambda p: not is_mmproj(p))
     elif slot == "mmproj":
@@ -139,7 +142,7 @@ def _hub_files(slot: str) -> list[ModelFile]:
         found.append(
             ModelFile(
                 path=str(path.relative_to(PROJECT_ROOT)),
-                name=f"{v.name} v{v.version}（模型库）",
+                name=tr("{name} v{version}（模型库）", name=v.name, version=v.version),
                 size=stat.st_size,
                 modified=datetime.fromtimestamp(stat.st_mtime, UTC),
             )
@@ -197,7 +200,7 @@ class ModelAdminService:
             slots.append(
                 Slot(
                     key=key,
-                    label=label,
+                    label=tr(label),
                     current=current,
                     source=source,
                     env=ENV_NAMES[key],
@@ -218,9 +221,15 @@ class ModelAdminService:
             if value:
                 allowed = {f.path for f in candidates(key)}
                 if value not in allowed:
-                    raise ModelError(f"{SLOTS[key]}只能选 models/ 里已有的文件，没有 {value}")
+                    raise ModelError(
+                        tr(
+                            "{slot}只能选 models/ 里已有的文件，没有 {file}",
+                            slot=tr(SLOTS[key]),
+                            file=value,
+                        )
+                    )
             elif key == "model":
-                raise ModelError("大模型不能不用")
+                raise ModelError(tr("大模型不能不用"))
             choices[key] = value
             changed[key] = value
         target = PROJECT_ROOT / CHOICES_FILE
