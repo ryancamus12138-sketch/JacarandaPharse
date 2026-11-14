@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, and_
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, and_
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 
@@ -104,6 +104,10 @@ class Document(Base, OwnedMixin, TimestampMixin):
 
 class Extraction(Base, OwnedMixin, TimestampMixin):
     __tablename__ = "extractions"
+    __table_args__ = (
+        # 迁移 c7d2a9e4f1b8（v2）建了这个索引，模型里一直没声明，alembic check 会报“多了一个索引”
+        Index("ix_extractions_document_run", "document_id", "run"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"), index=True)
