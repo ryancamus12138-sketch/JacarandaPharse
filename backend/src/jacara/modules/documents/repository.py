@@ -87,10 +87,10 @@ class DocumentRepository:
 
     def delete(self, document: Document) -> None:
         """把一个文档和它的全部结果从数据库里删掉：
-        错误归因 → 审核记录 → 字段 → 每一轮的抽取 → 备注 → OCR 样本 → 文档。"""
+        错误归因 → 审核记录 → 字段 → 检测样本 → 每一轮的抽取 → 备注 → OCR 样本 → 文档。"""
         from sqlalchemy import delete
 
-        from jacara.models import Comment, ErrorAttribution, OcrSample
+        from jacara.models import Comment, DetPage, ErrorAttribution, OcrSample
 
         extractions = select(Extraction.id).where(Extraction.document_id == document.id)
         values = select(ExtractedValue.id).where(ExtractedValue.extraction_id.in_(extractions))
@@ -101,6 +101,7 @@ class DocumentRepository:
         self.session.execute(
             delete(ExtractedValue).where(ExtractedValue.extraction_id.in_(extractions))
         )
+        self.session.execute(delete(DetPage).where(DetPage.document_id == document.id))
         self.session.execute(delete(Extraction).where(Extraction.document_id == document.id))
         self.session.execute(delete(Comment).where(Comment.document_id == document.id))
         self.session.execute(delete(OcrSample).where(OcrSample.document_id == document.id))

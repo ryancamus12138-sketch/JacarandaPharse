@@ -32,6 +32,12 @@ const ExportsPage = lazy(() =>
 const ReviewPage = lazy(() =>
   import('./features/review/ReviewPage').then((m) => ({ default: m.ReviewPage })),
 )
+const HubPage = lazy(() =>
+  import('./features/hub/HubPage').then((m) => ({ default: m.HubPage })),
+)
+const DetEditorPage = lazy(() =>
+  import('./features/ocr-samples/DetEditorPage').then((m) => ({ default: m.DetEditorPage })),
+)
 const SystemPage = lazy(() =>
   import('./features/system/SystemPage').then((m) => ({ default: m.SystemPage })),
 )
@@ -102,6 +108,12 @@ export default function App() {
                 </Page>} />
             <Route path="ocr-samples" element={<Page>
                   <OcrSamplesPage />
+                </Page>} />
+            <Route path="ocr-samples/det/:documentId/:page" element={<Page>
+                  <DetEditorPage />
+                </Page>} />
+            <Route path="hub" element={<Page>
+                  <HubPage />
                 </Page>} />
             <Route
               path="templates"

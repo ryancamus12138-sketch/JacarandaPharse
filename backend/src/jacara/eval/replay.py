@@ -7,7 +7,8 @@
 - 按业务单据分组配对（ADR 0052 的单据分组），同一组的几张算一个单位做 bootstrap；
 - 只读：不改数据库里的任何东西（审核数据、样本、划分都不动），结果写到 --out 的文件夹里。
 
-比较的范围（最小版）：单个字段（不含表格明细）。表格逐行对齐以后再做。
+比较的范围：单个字段，和表格明细（ADR 0062）。表格明细先把人审核后的行和抽出来的行一一配对
+（DocILE 明细识别评测的最大匹配，见 eval/tables.py），再逐格比；单个字段和明细格子分开统计。
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from math import comb
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -41,6 +42,9 @@ from jacara.plugins.exporters import DocumentReport
 from jacara.plugins.extractors.base import split_cell_name
 from jacara.plugins.ocr import OcrPage
 from jacara.plugins.ocr.loader import PdfRead
+
+if TYPE_CHECKING:
+    from jacara.eval.tables import CellResult, PredRow, TableSide, TruthRow
 
 Outcome = Literal["correct", "wrong", "missing", "extra", "empty"]
 """一个字段的结果：对了、值错了、该有没取到、不该有却给了值、两边都空（不算）。"""
@@ -96,6 +100,46 @@ class Row:
 
 
 @dataclass
+class CellPair:
+    """表格明细里人审核后的一格，在两边的结果（两边各自配对，所以配上的行可能不同）。"""
+
+    document_id: str
+    page: int
+    group: str
+    split: str | None
+    template: str
+    a: CellResult
+    b: CellResult
+
+    @property
+    def a_outcome(self) -> Outcome:
+        return self.a.outcome
+
+    @property
+    def b_outcome(self) -> Outcome:
+        return self.b.outcome
+
+
+@dataclass
+class TableExtra:
+    """一张单据上某一边抽出来、没有对应的人审核格子的：多出来的格子数和行数。"""
+
+    cells: int = 0
+    rows: int = 0
+
+
+class _Paired(Protocol):
+    """能做分组 bootstrap 的：单个字段（Row）或明细格子（CellPair）。"""
+
+    @property
+    def group(self) -> str: ...
+    @property
+    def a_outcome(self) -> Outcome: ...
+    @property
+    def b_outcome(self) -> Outcome: ...
+
+
+@dataclass
 class Skipped:
     document_id: str
     reason: str
@@ -124,6 +168,10 @@ class ReplayResult:
     manifest: Manifest
     models: dict[str, Counter[str]] = field(default_factory=dict)
     """每一边实际用的模型和提示词版本（"模型 / 提示词" → 张数）。"""
+    cells: list[CellPair] = field(default_factory=list)
+    """表格明细：人审核后的每一格（ADR 0062）。"""
+    extra: dict[str, TableExtra] = field(default_factory=dict)
+    """表格明细：每一边多出来的格子和行（A、B → 合计）。"""
 
 
 # ---- 比较 ----
@@ -171,7 +219,7 @@ def mcnemar_exact(fixed: int, broken: int) -> float:
     return min(1.0, 2 * tail)
 
 
-def _accuracy(rows: Sequence[Row], arm: Literal["a", "b"]) -> float:
+def _accuracy(rows: Sequence[_Paired], arm: Literal["a", "b"]) -> float:
     counted = [r for r in rows if (r.a_outcome if arm == "a" else r.b_outcome) != "empty"]
     if not counted:
         return 0.0
@@ -180,10 +228,10 @@ def _accuracy(rows: Sequence[Row], arm: Literal["a", "b"]) -> float:
 
 
 def group_bootstrap(
-    rows: Sequence[Row], rounds: int = BOOTSTRAP_ROUNDS, seed: int = 0
+    rows: Sequence[_Paired], rounds: int = BOOTSTRAP_ROUNDS, seed: int = 0
 ) -> tuple[float, float] | None:
     """B 减 A 的准确率差，按业务单据分组有放回地抽，取 95% 区间。少于 2 组不算。"""
-    groups: dict[str, list[Row]] = {}
+    groups: dict[str, list[_Paired]] = {}
     for r in rows:
         groups.setdefault(r.group, []).append(r)
     if len(groups) < 2:
@@ -277,9 +325,75 @@ def summarize(result: ReplayResult) -> dict[str, Any]:
         "by_field": dict(
             sorted(by_field.items(), key=lambda kv: -(kv[1]["fixed"] + kv[1]["broken"]))
         ),
+        "tables": _table_summary(result),
         "skipped": [asdict(s) for s in result.skipped],
         "models": {k: dict(v) for k, v in result.models.items()},
         "manifest": asdict(result.manifest),
+    }
+
+
+def _table_summary(result: ReplayResult) -> dict[str, Any] | None:
+    """表格明细（ADR 0062）：每一边的 micro 精确率、召回率、F1（DocILE LIR 的主指标），
+    人审核后每一格在两边的对错变化（精确 McNemar、分组 bootstrap，和单个字段一样）。"""
+    from jacara.eval.tables import TableSide, micro
+
+    cells = result.cells
+    if not cells:
+        return None
+    arms = {a["name"]: a for a in result.manifest.arms}
+
+    def side(name: Literal["a", "b"]) -> dict[str, Any]:
+        extra = result.extra.get(name.upper(), TableExtra())
+        m = micro([TableSide([c.a if name == "a" else c.b for c in cells], extra.cells, 0)])
+        return {
+            "label": arms[name.upper()]["label"],
+            "correct": m.correct,
+            "wrong": m.wrong,
+            "missing": m.missing,
+            "extra": m.extra,
+            "extra_rows": extra.rows,
+            "precision": round(m.precision, 4),
+            "recall": round(m.recall, 4),
+            "f1": round(m.f1, 4),
+            "flagged": sum((c.a if name == "a" else c.b).pred.flagged for c in cells),
+            "silent_errors": sum(
+                (c.a_outcome if name == "a" else c.b_outcome) in ("wrong", "missing", "extra")
+                and not (c.a if name == "a" else c.b).pred.flagged
+                for c in cells
+            ),
+        }
+
+    bad = ("wrong", "missing", "extra")
+    fixed = [c for c in cells if c.a_outcome in bad and c.b_outcome == "correct"]
+    broken = [c for c in cells if c.a_outcome == "correct" and c.b_outcome in bad]
+    groups = {c.group for c in cells}
+    counted = [c for c in cells if c.a_outcome != "empty" or c.b_outcome != "empty"]
+    ci = group_bootstrap(counted)
+    level = evidence_level(len(groups), len(counted))
+    by_column: dict[str, dict[str, int]] = {}
+    for c in cells:
+        stat = by_column.setdefault(
+            f"{c.template}:{c.a.table}.{c.a.column}", {"cells": 0, "fixed": 0, "broken": 0}
+        )
+        stat["cells"] += 1
+        stat["fixed"] += c in fixed
+        stat["broken"] += c in broken
+    return {
+        "documents": len({c.document_id for c in cells}),
+        "groups": len(groups),
+        "rows": len({(c.document_id, c.page, c.a.table, c.a.row) for c in cells}),
+        "cells": len(counted),
+        "a": side("a"),
+        "b": side("b"),
+        "fixed": len(fixed),
+        "broken": len(broken),
+        "mcnemar_p": round(mcnemar_exact(len(fixed), len(broken)), 4),
+        "bootstrap_ci": [round(ci[0], 4), round(ci[1], 4)] if ci else None,
+        "evidence": level,
+        "evidence_text": EVIDENCE_TEXT[level],
+        "by_column": dict(
+            sorted(by_column.items(), key=lambda kv: -(kv[1]["fixed"] + kv[1]["broken"]))
+        ),
     }
 
 
@@ -294,7 +408,7 @@ def summary_markdown(s: dict[str, Any]) -> str:
         "# 回放结果（ADR 0053）",
         "",
         f"- 比较：**A {a['label']}** 对 **B {b['label']}**，同一份 OCR 快照，和人审核过的值比",
-        f"- {s['documents']} 份文档、{s['groups']} 组业务单据、{s['rows']} 个字段（单个字段，不含表格明细）",
+        f"- {s['documents']} 份文档、{s['groups']} 组业务单据、{s['rows']} 个字段（单个字段；表格明细见下面单独一节）",
         f"- 证据：{s['evidence_text']}",
         "",
         "| | A | B |",
@@ -326,6 +440,8 @@ def summary_markdown(s: dict[str, Any]) -> str:
             f"| {k} | {v['fields']} | {v['fixed']} | {v['broken']} |" for k, v in changed[:30]
         ]
         lines.append("")
+    if s["tables"]:
+        lines += _tables_markdown(s["tables"])
     if s["skipped"]:
         reasons = Counter(x["reason"] for x in s["skipped"])
         lines += ["## 跳过的文档", ""] + [f"- {r}：{n} 份" for r, n in reasons.most_common()] + [""]
@@ -346,13 +462,47 @@ def summary_markdown(s: dict[str, Any]) -> str:
         f"- OCR：{', '.join(s['manifest']['ocr']) or '无'}",
         f"- jacara {s['manifest']['jacara_version']}，{s['manifest']['started_at']}",
         "",
-        "fields.jsonl 里有每个字段的原值，是你的业务数据：只放在本机，别提交、别外传。",
+        "fields.jsonl、cells.jsonl 里有每个字段和明细格子的原值，是你的业务数据：只放在本机，别提交、别外传。",
     ]
     return "\n".join(lines) + "\n"
 
 
+def _tables_markdown(t: dict[str, Any]) -> list[str]:
+    a, b = t["a"], t["b"]
+    ci = t["bootstrap_ci"]
+    lines = [
+        "## 表格明细（ADR 0062）",
+        "",
+        f"- {t['documents']} 份文档、{t['groups']} 组业务单据、人审核后 {t['rows']} 行、{t['cells']} 个格子",
+        "- 先把人审核后的行和抽出来的行一一配对（对上的格子总数最多的配法，DocILE 明细识别评测），再逐格比；"
+        "一格也没对上的不算配上",
+        f"- 证据：{t['evidence_text']}",
+        "",
+        "| | A | B |",
+        "|---|---|---|",
+        f"| 精确率 / 召回率 / F1（micro） | {_pct(a['precision'])} / {_pct(a['recall'])} / {_pct(a['f1'])} | {_pct(b['precision'])} / {_pct(b['recall'])} / {_pct(b['f1'])} |",
+        f"| 对 / 错 / 漏 / 多 | {a['correct']} / {a['wrong']} / {a['missing']} / {a['extra']} | {b['correct']} / {b['wrong']} / {b['missing']} / {b['extra']} |",
+        f"| 多出来的行 | {a['extra_rows']} | {b['extra_rows']} |",
+        f"| 错了没标黄 | {a['silent_errors']} | {b['silent_errors']} |",
+        "",
+        f"- B 修好了 **{t['fixed']}** 格、弄坏了 **{t['broken']}** 格（精确 McNemar p = {t['mcnemar_p']}）",
+        (
+            f"- 准确率差（B − A）按业务单据分组 bootstrap 的 95% 区间：{_pct(ci[0])} ～ {_pct(ci[1])}"
+            if ci
+            else "- 业务单据不到 2 组，不做 bootstrap"
+        ),
+        "",
+    ]
+    changed = [(k, v) for k, v in t["by_column"].items() if v["fixed"] or v["broken"]]
+    if changed:
+        lines += ["| 模板:表.列 | 格子数 | 修好 | 弄坏 |", "|---|---|---|---|"]
+        lines += [f"| {k} | {v['cells']} | {v['fixed']} | {v['broken']} |" for k, v in changed[:30]]
+        lines.append("")
+    return lines
+
+
 def write_result(result: ReplayResult, out: Path) -> Path:
-    """写出 summary.md、summary.json、fields.jsonl，返回 summary.md 的路径。"""
+    """写出 summary.md、summary.json、fields.jsonl、cells.jsonl（有表格明细时），返回 summary.md 的路径。"""
     out.mkdir(parents=True, exist_ok=True)
     s = summarize(result)
     (out / "summary.json").write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -360,6 +510,10 @@ def write_result(result: ReplayResult, out: Path) -> Path:
         for r in result.rows:
             item = asdict(r) | {"a_outcome": r.a_outcome, "b_outcome": r.b_outcome}
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
+    if result.cells:
+        with (out / "cells.jsonl").open("w", encoding="utf-8") as f:
+            for c in result.cells:
+                f.write(json.dumps(asdict(c), ensure_ascii=False) + "\n")
     md = out / "summary.md"
     md.write_text(summary_markdown(s), encoding="utf-8")
     return md
@@ -387,6 +541,10 @@ class _Unit:
     template: str
     values: dict[str, tuple[str, str | None, Pred]]
     """字段名 → (类型, 人审核过的值, 当时存下的结果)。"""
+    tables: dict[str, list[TruthRow]] = field(default_factory=dict)
+    """表名 → 人审核后的行（按显示顺序，删掉的行不在里面，人加的行在里面）。"""
+    stored_tables: dict[str, list[PredRow]] = field(default_factory=dict)
+    """表名 → 当时模型抽出来的行（按模型给的顺序，包括后来被人删掉的行）。"""
 
 
 @dataclass
@@ -412,6 +570,41 @@ def _stored(extraction: Extraction) -> dict[str, tuple[str, str | None, Pred]]:
         truth = None if v.deleted else v.current_value
         found[v.name] = (v.type, truth, Pred(v.value, bool(v.needs_review)))
     return found
+
+
+def _stored_tables(
+    extraction: Extraction,
+) -> tuple[dict[str, list[TruthRow]], dict[str, list[PredRow]]]:
+    """表格明细的标准答案和当时存下的结果（ADR 0062）。
+
+    标准答案按审核后的"当前结果"（pipeline/current.py：跳过删掉的行、按显示顺序编号）；
+    按公式算的列不算（和单个字段一样）。当时的结果只取模型抽的格子（人加的行模型没给过）。
+    """
+    from jacara.pipeline.current import current_values
+
+    truth: dict[str, dict[int, dict[str, tuple[str, str | None]]]] = {}
+    for value, shown in current_values(extraction):
+        cell = split_cell_name(shown)
+        if cell is None or value.origin not in ("model", "manual"):
+            continue
+        table, index, column = cell
+        truth.setdefault(table, {}).setdefault(index, {})[column] = (
+            value.type,
+            value.current_value,
+        )
+    stored: dict[str, dict[int, dict[str, Pred]]] = {}
+    for value in extraction.values:
+        cell = split_cell_name(value.name)
+        if cell is None or value.origin != "model":
+            continue
+        table, index, column = cell
+        stored.setdefault(table, {}).setdefault(index, {})[column] = Pred(
+            value.value, bool(value.needs_review)
+        )
+    return (
+        {t: [rows[i] for i in sorted(rows)] for t, rows in truth.items()},
+        {t: [rows[i] for i in sorted(rows)] for t, rows in stored.items()},
+    )
 
 
 def _template_of(session: Session, document: Document) -> TemplateChoice | None:
@@ -471,12 +664,15 @@ def _collect(
             split = assigned.split if assigned is not None else None
             if options.split and split != options.split:
                 continue
+            truth_tables, stored_tables = _stored_tables(e)
             units[e.page] = _Unit(
                 e.page,
                 str(group) if group is not None else f"doc:{document.id}:{e.page}",
                 split,
                 e.template,
                 _stored(e),
+                truth_tables,
+                stored_tables,
             )
             manifest.templates[e.template] = e.template_version
         if not units:
@@ -500,6 +696,7 @@ def _collect(
 
 
 def _predictions(reports: Iterable[DocumentReport]) -> dict[int, dict[str, Pred]]:
+    """每一页每个字段（包括表格的格子，名字是 items.2.amount）的预测。"""
     found: dict[int, dict[str, Pred]] = {}
     for report in reports:
         flagged = report.checks.fields_with_issues()
@@ -511,6 +708,25 @@ def _predictions(reports: Iterable[DocumentReport]) -> dict[int, dict[str, Pred]
             for a in report.aligned
         }
     return found
+
+
+def _pred_tables(preds: dict[str, Pred]) -> dict[str, list[PredRow]]:
+    """把 items.2.amount 这样的格子按表、按行号收成行。"""
+    tables: dict[str, dict[int, dict[str, Pred]]] = {}
+    for name, pred in preds.items():
+        cell = split_cell_name(name)
+        if cell is not None:
+            table, index, column = cell
+            tables.setdefault(table, {}).setdefault(index, {})[column] = pred
+    return {t: [rows[i] for i in sorted(rows)] for t, rows in tables.items()}
+
+
+def _compare_tables(
+    truth: dict[str, list[TruthRow]], pred: dict[str, list[PredRow]]
+) -> dict[str, TableSide]:
+    from jacara.eval.tables import compare_table
+
+    return {t: compare_table(t, truth.get(t, []), pred.get(t, [])) for t in sorted({*truth, *pred})}
 
 
 def replay(
@@ -544,6 +760,8 @@ def replay(
     built = {a.name: pipelines(a) for a in arms if not a.stored}
     models: dict[str, Counter[str]] = {a.name: Counter() for a in arms}
     rows: list[Row] = []
+    cells: list[CellPair] = []
+    extra = {a.name: TableExtra() for a in arms}
     for n, doc in enumerate(docs, start=1):
         progress(f"{n}/{len(docs)} {doc.filename}")
         try:
@@ -612,7 +830,26 @@ def replay(
                         b.get(name, Pred(None, False)),
                     )
                 )
-    return ReplayResult(rows, skipped, manifest, models)
+            sides = {
+                arm.name: _compare_tables(
+                    unit.tables,
+                    unit.stored_tables if arm.stored else _pred_tables(preds[arm.name][page]),
+                )
+                for arm in arms
+            }
+            for table, a_side in sides[a_name].items():
+                b_side = sides[b_name][table]
+                # 两边的 cells 都是按人审核后的行、列的顺序排的，一一对应
+                for a_cell, b_cell in zip(a_side.cells, b_side.cells, strict=True):
+                    cells.append(
+                        CellPair(
+                            str(doc.id), page, unit.group, unit.split, unit.template, a_cell, b_cell
+                        )
+                    )
+                for name, side in ((a_name, a_side), (b_name, b_side)):
+                    extra[name].cells += side.extra_cells
+                    extra[name].rows += side.extra_rows
+    return ReplayResult(rows, skipped, manifest, models, cells, extra)
 
 
 def _pages(

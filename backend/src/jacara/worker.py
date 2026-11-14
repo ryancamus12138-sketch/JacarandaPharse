@@ -17,6 +17,7 @@ from celery.signals import worker_ready
 
 from jacara.core.config import get_settings
 from jacara.core.queue import (
+    EVAL_OCR,
     EXTRACT_DOCUMENT,
     EXTRACT_QUEUE,
     PROCESS_DOCUMENT,
@@ -88,6 +89,15 @@ def extract_document_task(document_id: str, attempt: str) -> Outcome:
     return extract_document(
         uuid.UUID(document_id), attempt, storage=get_storage(), pipeline=get_pipeline()
     )
+
+
+@celery_app.task(name=EVAL_OCR)
+def eval_ocr_task(run_id: str) -> str:
+    """OCR 模型评测（ADR 0060）：在 OCR 工位上跑，每一边按自己的模型文件新建 OCR 引擎。"""
+    from jacara.core.db import get_session_factory
+    from jacara.modules.hub.evals import run_eval
+
+    return run_eval(uuid.UUID(run_id), get_session_factory(), get_storage())
 
 
 @worker_ready.connect

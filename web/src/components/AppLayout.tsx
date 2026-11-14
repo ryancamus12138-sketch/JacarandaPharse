@@ -3,6 +3,7 @@ import {
   AuditOutlined,
   BarChartOutlined,
   DashboardOutlined,
+  DatabaseOutlined,
   ExportOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
@@ -35,6 +36,7 @@ export function AppLayout() {
     { key: '/exports', icon: <ExportOutlined />, label: '导出记录' },
     { key: '/insights', icon: <BarChartOutlined />, label: '统计' },
     { key: '/ocr-samples', icon: <ScanOutlined />, label: 'OCR 样本' },
+    { key: '/hub', icon: <DatabaseOutlined />, label: '模型和数据集' },
     { key: '/system', icon: <InfoCircleOutlined />, label: '系统信息' },
     ...(can('user:manage')
       ? [{ key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' }]

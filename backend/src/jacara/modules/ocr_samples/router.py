@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
@@ -13,9 +13,16 @@ from jacara.core.deps import get_owner, get_session, get_storage
 from jacara.core.owner import Owner
 from jacara.core.storage import ObjectStorage
 from jacara.modules.documents.router import attachment
+from jacara.modules.hub.schemas import DatasetIn, DatasetOut
+from jacara.modules.ocr_samples.det import DetError, DetPageService
 from jacara.modules.ocr_samples.schemas import (
     BackfillOut,
     Category,
+    DetExportPreview,
+    DetPageIn,
+    DetPageList,
+    DetPageOut,
+    DetStatus,
     ExportKind,
     ExportPreview,
     ExportRecordOut,
@@ -41,6 +48,7 @@ from jacara.modules.ocr_samples.service import OcrSampleService, SampleError
 router = APIRouter(prefix="/ocr-samples", tags=["OCR 样本"])
 
 _STATUS = {
+    "conflict": status.HTTP_409_CONFLICT,
     "not_found": status.HTTP_404_NOT_FOUND,
     "invalid": status.HTTP_422_UNPROCESSABLE_CONTENT,
     "storage": status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -62,7 +70,18 @@ TemplateName = Annotated[str | None, Query(max_length=200, description="只看�
 Kind = Annotated[ExportKind, Query(description="train_val：训练和验证；test：锁定测试集")]
 
 
-def _http_error(err: SampleError) -> HTTPException:
+def get_det_service(
+    session: Annotated[Session, Depends(get_session)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
+    owner: Annotated[Owner, Depends(get_owner)],
+) -> DetPageService:
+    return DetPageService(session, owner, storage)
+
+
+DetService = Annotated[DetPageService, Depends(get_det_service)]
+
+
+def _http_error(err: SampleError | DetError) -> HTTPException:
     return HTTPException(status_code=_STATUS.get(err.code, 400), detail=err.message)
 
 
@@ -105,6 +124,113 @@ def export_preview(
 ) -> ExportPreview:
     """会导出几条、训练和验证各几组几行、验证集够不够、不导出的几条和原因。"""
     return service.preview(category, source_format, template, kind)
+
+
+@router.post("/export/dataset", summary="导出并存进数据集库", status_code=201)
+def export_to_dataset(
+    data: DatasetIn,
+    service: Service,
+    category: Categories = None,
+    source_format: Format = None,
+    template: TemplateName = None,
+    kind: Kind = "train_val",
+) -> DatasetOut:
+    """和导出 ZIP 一样（照常记导出记录），存进数据集库（ADR 0059），给 OCR 模型评测用。"""
+    try:
+        return service.export_to_dataset(
+            data.name, data.description, category, source_format, template, kind
+        )
+    except SampleError as err:
+        raise _http_error(err) from err
+
+
+# ---- 检测样本（ADR 0061） ----
+
+
+@router.get("/det-pages", summary="能做检测样本的页")
+def det_pages(
+    service: DetService,
+    status_: Annotated[DetStatus | None, Query(alias="status")] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> DetPageList:
+    """审核完成的单据里 OCR 认的页（有敏感字段的不算），和每页做到哪了。"""
+    return service.candidates(status_, offset, limit)
+
+
+@router.get("/det-pages/export/preview", summary="检测样本导出预览")
+def det_export_preview(service: DetService, kind: Kind = "train_val") -> DetExportPreview:
+    return service.preview(kind)
+
+
+@router.get("/det-pages/export", summary="导出检测样本 ZIP", response_class=Response)
+def det_export(service: DetService, kind: Kind = "train_val") -> Response:
+    """images/、det_gt_train.txt、det_gt_val.txt（或 det_gt_test.txt）、
+    manifest.jsonl、README.md。"""
+    try:
+        filename, data, _ = service.export(kind)
+    except DetError as err:
+        raise _http_error(err) from err
+    return attachment(filename, data, "application/zip")
+
+
+@router.post("/det-pages/export/dataset", summary="导出检测样本并存进数据集库", status_code=201)
+def det_export_to_dataset(
+    data: DatasetIn, service: DetService, kind: Kind = "train_val"
+) -> DatasetOut:
+    from jacara.core.config import get_settings
+    from jacara.core.permissions import require
+    from jacara.modules.hub.registry import HubError
+    from jacara.modules.hub.service import HubService
+
+    try:
+        require(service.owner, "value:review")
+        _, zipped, export_id = service.export(kind)
+        hub = HubService(service.session, service.owner, get_settings(), service.storage)
+        dataset = hub.save_dataset(
+            data.name, "ocr_det", "det_pages", data.description, zipped, export_id
+        )
+    except DetError as err:
+        raise _http_error(err) from err
+    except HubError as err:
+        raise HTTPException(status_code=_STATUS.get(err.code, 400), detail=err.message) from err
+    return hub.dataset_out(dataset)
+
+
+@router.get("/det-pages/{document_id}/{page}", summary="打开一页检测样本")
+def det_page(document_id: uuid.UUID, page: int, service: DetService) -> DetPageOut:
+    """存过的照存的；没存过的给预标注（OCR 的框 + 审核时改对的原文 + 框选的漏认）。"""
+    try:
+        return service.get(document_id, page)
+    except DetError as err:
+        raise _http_error(err) from err
+
+
+@router.put("/det-pages/{document_id}/{page}", summary="保存这一页的框")
+def save_det_page(
+    document_id: uuid.UUID, page: int, data: DetPageIn, service: DetService
+) -> DetPageOut:
+    try:
+        return service.save(document_id, page, data)
+    except DetError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/det-pages/{document_id}/{page}/{action}", summary="确认、不用、重新打开这一页")
+def set_det_page(
+    document_id: uuid.UUID,
+    page: int,
+    action: Literal["confirm", "exclude", "reopen"],
+    data: DetPageIn,
+    service: DetService,
+) -> DetPageOut:
+    """confirm：确认（PPOCRLabel 的确认，只有确认过的导出）；exclude：不用这一页；
+    reopen：改回没确认。都会同时保存带来的框。"""
+    target = {"confirm": "confirmed", "exclude": "excluded", "reopen": "draft"}[action]
+    try:
+        return service.save(document_id, page, data, target)
+    except DetError as err:
+        raise _http_error(err) from err
 
 
 @router.get("/export", summary="导出 ZIP", response_class=Response)

@@ -114,6 +114,14 @@ class RapidOcrEngine:
             return None
         return " ".join(texts), float(min(result.scores or (0.0,)))
 
+    def detect(self, image: Path) -> list[list[tuple[float, float]]]:
+        """只找字在哪（检测），不认字：每个框的四个角。OCR 模型评测（ADR 0060）用。"""
+        with self._lock:
+            result = self._load()(str(image), use_det=True, use_cls=False, use_rec=False)
+        if result.boxes is None:
+            return []
+        return [[(float(x), float(y)) for x, y in box] for box in result.boxes]
+
 
 def exif_size(image: Path) -> tuple[int, int]:
     """图片转正之后的宽高。

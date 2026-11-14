@@ -12,8 +12,10 @@ from jacara.modules.comments.models import Comment
 from jacara.modules.documents.models import Document, Extraction
 from jacara.modules.exports.models import Export
 from jacara.modules.fields.models import ExtractedValue, ValueRevision
+from jacara.modules.hub.models import Dataset, OcrEvalRun
 from jacara.modules.insights.models import ErrorAttribution
 from jacara.modules.ocr_samples.models import (
+    DetPage,
     DocGroupMember,
     OcrSample,
     OcrSampleExport,
@@ -28,12 +30,15 @@ __all__ = [
     "AuthSession",
     "Base",
     "Comment",
+    "Dataset",
+    "DetPage",
     "DocGroupMember",
     "Document",
     "ErrorAttribution",
     "Export",
     "ExtractedValue",
     "Extraction",
+    "OcrEvalRun",
     "OcrSample",
     "OcrSampleExport",
     "PairDecision",

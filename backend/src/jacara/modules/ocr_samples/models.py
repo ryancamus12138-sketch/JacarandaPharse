@@ -6,6 +6,7 @@ doc_group_members    业务单据（文件 + 这张单据的起始页）属于�
 split_assignments    每一组在某个划分版本里是训练、验证、锁定测试还是隔离。
 doc_pair_decisions   "这两张是不是同一张单据"人确认过的结果（PDF 和照片配对）。
 ocr_sample_exports   每次导出了哪些样本、哪个修订、分在哪边；以后发现重复时在这里记一笔。
+det_pages            检测样本（ADR 0061）：一页整页图上所有文字框，人调好、确认后导出给检测模型。
 """
 
 from __future__ import annotations
@@ -139,3 +140,35 @@ class OcrSampleExport(Base, OwnedMixin, TimestampMixin):
     affected: Mapped[list[Any]] = mapped_column(JsonColumn, default=list)
     """导出以后发现的问题：[{group, reason, at}]。
     例如这一组后来和另一组合并，可能一份训练、一份验证。"""
+
+
+class DetPage(Base, OwnedMixin, TimestampMixin):
+    """检测样本（ADR 0061）：一页上所有的文字框。照 PPOCRLabel 的流程：先用 OCR 结果预标注，
+    人调整以后"确认这一页"，只有确认过的导出。
+    图不另存，导出时按 page_png 重新画（和裁小图同一张图）。"""
+
+    __tablename__ = "det_pages"
+    __table_args__ = (UniqueConstraint("document_id", "page"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"), index=True)
+    extraction_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("extractions.id"))
+    """预标注用的哪一次抽取（那一轮的 OCR 结果）。"""
+    page: Mapped[int]
+    """文件的第几页（从 1 开始）。"""
+    unit_page: Mapped[int]
+    """这张单据在文件里从第几页开始：和 document_id 一起认出业务单据组（ADR 0052）。"""
+    width: Mapped[int]
+    height: Mapped[int]
+    boxes: Mapped[list[Any]] = mapped_column(JsonColumn)
+    """[{"points": [[x, y] × 4], "text": "图上的字", "ignore": false, "origin": …}]，
+    origin 是 ocr、sample、missed 或 manual。坐标是页面图（page_png）上的像素。
+    ignore 的导出成 ###。"""
+    status: Mapped[str] = mapped_column(String(12), default="draft")
+    """draft（还没确认）、confirmed（确认了，导出）、excluded（不用这一页）。"""
+    revision: Mapped[int] = mapped_column(default=1)
+    """改一次加 1。保存时要带上看到的修订号，不一样（别人刚改过）就拒绝。"""
+    ocr_engine: Mapped[str] = mapped_column(String(255), default="")
+    """预标注用的 OCR 引擎和模型。"""
+    confirmed_by: Mapped[uuid.UUID | None]
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

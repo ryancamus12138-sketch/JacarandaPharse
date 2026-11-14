@@ -210,8 +210,71 @@ class PairResult(BaseModel):
 class ExportRecordOut(BaseModel):
     id: uuid.UUID
     created_at: datetime
-    kind: ExportKind
+    kind: Literal["train_val", "test", "det", "det_test"]
+    """det、det_test：检测样本的导出（ADR 0061）。"""
     split_version: int
     counts: dict[str, Any]
     filters: dict[str, Any]
     affected: list[dict[str, Any]]
+
+
+# ---- 检测样本（ADR 0061） ----
+
+DetStatus = Literal["none", "draft", "confirmed", "excluded"]
+"""none：还没存过（打开时给预标注）；draft：存过还没确认；confirmed：确认了，导出；excluded：不用这一页。"""
+
+
+class DetBox(BaseModel):
+    points: list[list[float]] = Field(min_length=4, max_length=4)
+    """四个角 [[x, y] × 4]，页面图上的像素，从左上开始顺时针。"""
+    text: str = Field(default="", max_length=500)
+    ignore: bool = False
+    """看不清：导出成 ###，不参与训练。"""
+    origin: Literal["ocr", "sample", "missed", "manual"] = "manual"
+    """ocr：OCR 认的；sample：人审核时改对了原文的；missed：审核时框选的漏认；
+    manual：在这里画的。"""
+
+
+class DetPageItem(BaseModel):
+    document_id: uuid.UUID
+    filename: str
+    page: int
+    status: DetStatus
+    boxes: int
+    revision: int
+    confirmed_at: datetime | None
+
+
+class DetPageList(BaseModel):
+    items: list[DetPageItem]
+    total: int
+    counts: dict[str, int]
+    """每种状态几页；sensitive 是有敏感字段、不能做的页数。"""
+
+
+class DetPageOut(BaseModel):
+    document_id: uuid.UUID
+    filename: str
+    page: int
+    width: int
+    height: int
+    status: DetStatus
+    revision: int
+    boxes: list[DetBox]
+    ocr_engine: str
+    confirmed_at: datetime | None
+
+
+class DetPageIn(BaseModel):
+    revision: int = Field(ge=0)
+    """打开时看到的修订号（没存过是 0）。别人在这之后改过，保存会被拒绝。"""
+    boxes: list[DetBox] = Field(max_length=2000)
+
+
+class DetExportPreview(BaseModel):
+    kind: ExportKind = "train_val"
+    included: int
+    boxes: int
+    splits: dict[str, SplitCount]
+    excluded: dict[str, int]
+    split_version: int

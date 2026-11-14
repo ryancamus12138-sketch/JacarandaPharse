@@ -525,3 +525,26 @@ def test_hard_characters_come_from_misread_samples():
     texts, hard = corpus([wrong, right])  # type: ignore[list-item]
     assert texts == ["1.00", "9.00"]
     assert hard == {".": 1}
+
+
+# ---- 存进数据集库（ADR 0059） ----
+
+
+def test_export_straight_into_the_dataset_library(client, factory, document_id):
+    from jacara.models import Dataset, OcrSampleExport
+
+    turn_on(client)
+    assert (
+        pick(
+            client, values(client, document_id)["date"], DATE_LINE, "25/12/2018 8:18:39 PM"
+        ).status_code
+        == 201
+    )
+    response = client.post("/api/v1/ocr-samples/export/dataset", json={"name": "收据识别"})
+    assert response.status_code == 201, response.text
+    dataset = response.json()
+    assert (dataset["kind"], dataset["source"], dataset["version"]) == ("ocr_rec", "samples", 1)
+    assert sum(dataset["counts"].values()) == 1
+    with session_scope(factory) as session:
+        record = session.query(OcrSampleExport).one()  # 照常记了导出记录
+        assert session.query(Dataset).one().export_id == record.id

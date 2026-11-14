@@ -133,12 +133,18 @@ class FakeQueue:
 
     def __init__(self) -> None:
         self.sent: list[uuid.UUID] = []
+        self.evals: list[uuid.UUID] = []
         self.down = False
 
     def enqueue_document(self, document_id: uuid.UUID) -> None:
         if self.down:
             raise QueueError("任务队列（Valkey）连不上")
         self.sent.append(document_id)
+
+    def enqueue_eval(self, run_id: uuid.UUID) -> None:
+        if self.down:
+            raise QueueError("任务队列（Valkey）连不上")
+        self.evals.append(run_id)
 
 
 class RegionOcr:

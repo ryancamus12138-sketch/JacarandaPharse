@@ -22,7 +22,12 @@ export function ExportsTab() {
       dataIndex: 'kind',
       width: 140,
       render: (kind: ExportRecord['kind']) =>
-        kind === 'test' ? <Tag color="gold">锁定测试集</Tag> : <Tag color="blue">训练和验证</Tag>,
+        ({
+          train_val: <Tag color="blue">训练和验证</Tag>,
+          test: <Tag color="gold">锁定测试集</Tag>,
+          det: <Tag color="purple">检测：训练和验证</Tag>,
+          det_test: <Tag color="gold">检测：锁定测试集</Tag>,
+        })[kind],
     },
     { title: '划分版本', dataIndex: 'split_version', width: 90, align: 'right' },
     {

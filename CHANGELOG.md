@@ -5,7 +5,32 @@
 
 ## [未发布]
 
-v4 要做的见《JacarandaParse 功能全景与进度》第四节：评测数字重跑、断网验证、敏感字段打码、表格明细的回放和评测、API 密钥、权重离线导入、离线安装包、局域网部署、登录失败锁定等。
+v4 要做的见《JacarandaParse 功能全景与进度》第四节：评测数字重跑、断网验证、敏感字段打码、表格明细的评测（回放已做，见下）、API 密钥、离线安装包、局域网部署、登录失败锁定等。
+
+### 新增
+
+- 模型和数据集（ADR 0059）：菜单"模型和数据集"。模型库在 `models/hub/<模型名>/v<版本>/`，每个版本一张模型卡
+  （照 Hugging Face 的模型卡：README.md 顶上 YAML 写基础模型、数据集、许可；版本规则照 MLflow 模型注册表）。
+  网页上拖文件导入（几个 GB 的大模型也行，直接写进 models/hub，不先存临时目录）、打包导出、改模型卡、删除；
+  "用这个版本"就是写进 `models/selected.json`（ADR 0046），换回旧版本就是选旧版本。导入时检查：GGUF 文件头；
+  ONNX 能加载、输入输出的形状对得上种类；识别模型的类别数 = 字符表 + 2（RapidOCR 的规则），没有字符表又没传字典的拒绝
+  （不然 RapidOCR 会去网上下载字典）。只收 ONNX 和 GGUF，Paddle 模型在外面用 `paddlex --paddle2onnx` 转。
+  命令行离线导入：`jacara models import 文件 --name 名字 --kind ocr_rec [--dict 字典.txt]`，`jacara models list`。
+- 数据集库（ADR 0059）：数据集存对象存储（备份里有），按团队分。上传 PaddleOCR / PaddleX / PPOCRLabel 格式的识别、检测 zip
+  （检查 zip slip、zip 炸弹、图片能不能打开，格式不对的行计数报告）；OCR 样本页、检测样本页的导出可以直接"存进数据集库"。
+- OCR 模型评测（ADR 0060）：在数据集的某一边上比较两个识别（或检测）模型。识别照 TextRecMetric 算 Exact Match、
+  Char Match，检测照 PaddleOCR 的 DetectionIoUEvaluator 算 Precision、Recall、H-mean；修好、弄坏、精确 McNemar、
+  按业务单据分组 bootstrap。网页上点"评测"（后台队列跑），或命令行 `jacara eval ocr --dataset 名字 --b 模型名@v2`。
+- 检测样本（ADR 0061）："OCR 样本"页的"检测样本"：审核完成的单据，OCR 的框预标注（带上审核时改对的原文和框选的漏认），
+  在框编辑器里拖角、画框、删框、改字、标看不清，确认后导出 PaddleOCR 检测训练格式（det_gt_train.txt、det_gt_val.txt），
+  按业务单据分边。页上有敏感字段的不做。
+- 回放比较表格明细（ADR 0062）：人审核后的行和抽出来的行按 DocILE 的明细识别评测一一配对，再逐格比；
+  summary.md 多一节"表格明细"，逐格结果在 cells.jsonl。
+
+### 升级
+
+`uv sync`（新依赖 scipy；numpy、pyyaml、shapely 原来就装着，改成直接依赖），`uv run alembic upgrade head`
+（新表 datasets、ocr_eval_runs、det_pages），`cd web && npm run build`。
 
 ## [3.0.0] - 2026-11-13
 
