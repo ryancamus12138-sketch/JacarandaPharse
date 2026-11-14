@@ -5,8 +5,8 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: JacarandaParse 1.0.0\n"
-"POT-Creation-Date: 2026-11-14 15:21+0000\n"
-"PO-Revision-Date: 2026-11-14 15:21+0000\n"
+"POT-Creation-Date: 2026-11-14 16:02+0000\n"
+"PO-Revision-Date: 2026-11-14 16:02+0000\n"
 "Last-Translator: JacarandaParse\n"
 "Language: en\n"
 "Language-Team: English\n"
@@ -76,14 +76,14 @@ msgstr "Still empty or change-me: {names}"
 
 #: backend/src/jacara/core/health.py:38 backend/src/jacara/core/i18n.py:132
 #: backend/src/jacara/ops/backup.py:341
-#: backend/src/jacara/workbook/standard.py:249
-#: backend/src/jacara/workbook/standard.py:399
-#: backend/src/jacara/workbook/standard.py:528
-#: backend/src/jacara/workbook/standard.py:687
-#: backend/src/jacara/workbook/standard.py:730
-#: backend/src/jacara/workbook/standard.py:738
-#: backend/src/jacara/workbook/standard.py:761
-#: backend/src/jacara/workbook/standard.py:801
+#: backend/src/jacara/workbook/standard.py:251
+#: backend/src/jacara/workbook/standard.py:403
+#: backend/src/jacara/workbook/standard.py:532
+#: backend/src/jacara/workbook/standard.py:691
+#: backend/src/jacara/workbook/standard.py:734
+#: backend/src/jacara/workbook/standard.py:742
+#: backend/src/jacara/workbook/standard.py:765
+#: backend/src/jacara/workbook/standard.py:805
 msgid "、"
 msgstr ", "
 
@@ -322,6 +322,127 @@ msgstr "The web interface is not built. In the project run: cd web && npm instal
 #: backend/src/jacara/core/web.py:40
 msgid "接口不存在"
 msgstr "No such endpoint"
+
+#: backend/src/jacara/downloads/__init__.py:49
+msgid "Hugging Face"
+msgstr "Hugging Face"
+
+#: backend/src/jacara/downloads/__init__.py:50
+msgid "魔搭社区（ModelScope）"
+msgstr "ModelScope"
+
+#: backend/src/jacara/downloads/__init__.py:51
+msgid "hf-mirror.com（社区镜像）"
+msgstr "hf-mirror.com (community mirror)"
+
+#: backend/src/jacara/downloads/__init__.py:241
+#, python-brace-format
+msgid "磁盘空间不足：需要 {need:.1f} GB，可用 {free:.1f} GB"
+msgstr "Not enough disk space: {need:.1f} GB needed, {free:.1f} GB free"
+
+#: backend/src/jacara/downloads/__init__.py:279
+#: backend/src/jacara/downloads/__init__.py:303
+#, python-brace-format
+msgid "连续 {seconds} 秒几乎没有收到数据"
+msgstr "Almost no data received for {seconds} seconds"
+
+#: backend/src/jacara/downloads/__init__.py:323
+#, python-brace-format
+msgid "下载地址不是 HTTPS，已拒绝：{host}"
+msgstr "Refused a download address that is not HTTPS: {host}"
+
+#: backend/src/jacara/downloads/__init__.py:329
+msgid "连接超时"
+msgstr "Connection timed out"
+
+#: backend/src/jacara/downloads/__init__.py:331
+#, python-brace-format
+msgid "无法连接：{error}"
+msgstr "Cannot connect: {error}"
+
+#: backend/src/jacara/downloads/__init__.py:337
+msgid "重定向次数过多"
+msgstr "Too many redirects"
+
+#: backend/src/jacara/downloads/__init__.py:381
+#, python-brace-format
+msgid "服务器返回的文件范围或大小与清单不符：{range}"
+msgstr "The range or size the server returned does not match the list: {range}"
+
+#: backend/src/jacara/downloads/__init__.py:389
+#, python-brace-format
+msgid "服务器上的文件大小与清单不符：{size}"
+msgstr "The file size on the server does not match the list: {size}"
+
+#: backend/src/jacara/downloads/__init__.py:394
+#, python-brace-format
+msgid "服务器返回 HTTP {status}"
+msgstr "The server answered HTTP {status}"
+
+#: backend/src/jacara/downloads/__init__.py:412
+msgid "服务器发送的数据比清单中的文件大"
+msgstr "The server sent more data than the listed file has"
+
+#: backend/src/jacara/downloads/__init__.py:422
+#, python-brace-format
+msgid "连接中断：{error}"
+msgstr "Connection lost: {error}"
+
+#: backend/src/jacara/downloads/__init__.py:425
+msgid "连接中断，文件没有下载完整"
+msgstr "Connection lost before the file was complete"
+
+#: backend/src/jacara/downloads/manager.py:86
+#, python-brace-format
+msgid "未知的下载来源：{source}"
+msgstr "Unknown download source: {source}"
+
+#: backend/src/jacara/downloads/manager.py:90
+#, python-brace-format
+msgid "不在模型清单中：{names}"
+msgstr "Not in the model list: {names}"
+
+#: backend/src/jacara/downloads/manager.py:171
+#, python-brace-format
+msgid "出错了：{error}"
+msgstr "Something went wrong: {error}"
+
+#: backend/src/jacara/downloads/manager.py:199
+msgid "所有下载来源都失败了"
+msgstr "Every download source failed"
+
+#: backend/src/jacara/downloads/manager.py:216
+#: backend/src/jacara/downloads/manager.py:337
+msgid "没有选择文件"
+msgstr "No file chosen"
+
+#: backend/src/jacara/downloads/manager.py:241
+#, python-brace-format
+msgid "文件大小与清单不符：{name}（{size} 字节，应为 {expected} 字节）"
+msgstr "File size does not match the list: {name} ({size} bytes, should be {expected} bytes)"
+
+#: backend/src/jacara/downloads/manager.py:259
+#, python-brace-format
+msgid "校验不一致：{name} 与清单中的文件内容不同。文件留在原处，请删除后重新下载"
+msgstr "Check failed: {name} differs from the listed file. It was left where it is; delete it and download it again"
+
+#: backend/src/jacara/downloads/manager.py:266
+#, python-brace-format
+msgid "校验不一致：{name} 与清单中的文件内容不同"
+msgstr "Check failed: {name} differs from the listed file"
+
+#: backend/src/jacara/downloads/manager.py:272
+#, python-brace-format
+msgid "下载的文件校验不一致：{name}，已删除，请重试"
+msgstr "The downloaded file failed its check: {name}; it was deleted, please try again"
+
+#: backend/src/jacara/downloads/manager.py:288
+msgid "没有开始下载的用户"
+msgstr "No user started the download"
+
+#: backend/src/jacara/downloads/manager.py:399
+msgid "请选择 .gguf 模型文件"
+msgstr "Choose a .gguf model file"
 
 #: backend/src/jacara/formulas.py:39
 msgid "开始"
@@ -816,7 +937,7 @@ msgstr "Only the author or an administrator can delete this comment"
 #: backend/src/jacara/modules/comments/service.py:115
 #: backend/src/jacara/modules/documents/service.py:1095
 #: backend/src/jacara/modules/ocr_samples/det.py:246
-#: backend/src/jacara/modules/templates/service.py:1221
+#: backend/src/jacara/modules/templates/service.py:1223
 msgid "文档不存在"
 msgstr "Document not found"
 
@@ -824,52 +945,54 @@ msgstr "Document not found"
 msgid "备注不存在"
 msgstr "Comment not found"
 
-#: backend/src/jacara/modules/desktop/router.py:153
+#: backend/src/jacara/modules/desktop/router.py:154
+#: backend/src/jacara/modules/setup/router.py:206
 msgid "这台电脑无法打开系统的选择对话框，请直接输入完整路径"
 msgstr "This computer cannot open the system's selection dialog; enter the full path instead"
 
-#: backend/src/jacara/modules/desktop/router.py:164
+#: backend/src/jacara/modules/desktop/router.py:165
 msgid "另一项操作正在进行，请稍候"
 msgstr "Another operation is in progress, please wait"
 
-#: backend/src/jacara/modules/desktop/router.py:196
+#: backend/src/jacara/modules/desktop/router.py:197
 msgid "找不到这个文件"
 msgstr "File not found"
 
-#: backend/src/jacara/modules/desktop/router.py:205
+#: backend/src/jacara/modules/desktop/router.py:206
 msgid "只能打开 http 或 https 网址"
 msgstr "Only http and https addresses can be opened"
 
-#: backend/src/jacara/modules/desktop/router.py:215
+#: backend/src/jacara/modules/desktop/router.py:216
+#: backend/src/jacara/modules/setup/router.py:195
 msgid "找不到这个文件夹"
 msgstr "Folder not found"
 
-#: backend/src/jacara/modules/desktop/router.py:221
+#: backend/src/jacara/modules/desktop/router.py:222
 msgid "选择要监视的文件夹"
 msgstr "Choose a folder to watch"
 
-#: backend/src/jacara/modules/desktop/router.py:222
+#: backend/src/jacara/modules/desktop/router.py:223
 msgid "选择备份保存位置"
 msgstr "Choose where to save the backup"
 
-#: backend/src/jacara/modules/desktop/router.py:223
+#: backend/src/jacara/modules/desktop/router.py:224
 msgid "选择数据文件夹的新位置"
 msgstr "Choose a new location for the data folder"
 
-#: backend/src/jacara/modules/desktop/router.py:235
+#: backend/src/jacara/modules/desktop/router.py:236
 msgid "选择备份文件"
 msgstr "Choose a backup file"
 
-#: backend/src/jacara/modules/desktop/router.py:271
+#: backend/src/jacara/modules/desktop/router.py:272
 #: backend/src/jacara/ops/desktop_data.py:526
 msgid "请选择一个已存在的文件夹"
 msgstr "Choose an existing folder"
 
-#: backend/src/jacara/modules/desktop/router.py:295
+#: backend/src/jacara/modules/desktop/router.py:296
 msgid "请选择 .tar 或 .db 备份文件"
 msgstr "Choose a .tar or .db backup file"
 
-#: backend/src/jacara/modules/desktop/router.py:388
+#: backend/src/jacara/modules/desktop/router.py:393
 #, python-brace-format
 msgid "仍然找不到数据文件夹：{folder}"
 msgstr "Data folder still not found: {folder}"
@@ -922,7 +1045,7 @@ msgstr "The file exceeds {limit} MB"
 
 #: backend/src/jacara/modules/documents/service.py:222
 #: backend/src/jacara/modules/hub/service.py:229
-#: backend/src/jacara/modules/templates/service.py:706
+#: backend/src/jacara/modules/templates/service.py:708
 msgid "文件为空"
 msgstr "The file is empty"
 
@@ -935,8 +1058,8 @@ msgstr "The file is empty"
 #: backend/src/jacara/modules/ocr_samples/det.py:443
 #: backend/src/jacara/modules/ocr_samples/service.py:489
 #: backend/src/jacara/modules/ocr_samples/service.py:1161
-#: backend/src/jacara/modules/templates/service.py:727
-#: backend/src/jacara/modules/templates/service.py:808
+#: backend/src/jacara/modules/templates/service.py:729
+#: backend/src/jacara/modules/templates/service.py:810
 msgid "对象存储暂时不可用，请稍后再试"
 msgstr "Object storage is temporarily unavailable; please try again later"
 
@@ -2447,6 +2570,14 @@ msgstr "Photo"
 msgid "{key} 训练 {train} / 验证 {val}"
 msgstr "{key} training {train} / validation {val}"
 
+#: backend/src/jacara/modules/setup/router.py:202
+msgid "选择模型文件（.gguf）"
+msgstr "Choose a model file (.gguf)"
+
+#: backend/src/jacara/modules/setup/router.py:218
+msgid "请填写完整路径"
+msgstr "Enter the full path"
+
 #: backend/src/jacara/modules/system/service.py:57
 msgid "正常"
 msgstr "OK"
@@ -2505,132 +2636,132 @@ msgstr "In the {where} of the document, {side} \"{label}\""
 msgid "在单据{where}"
 msgstr "In the {where} of the document"
 
-#: backend/src/jacara/modules/templates/service.py:379
-#: backend/src/jacara/modules/templates/service.py:1149
+#: backend/src/jacara/modules/templates/service.py:380
+#: backend/src/jacara/modules/templates/service.py:1151
 msgid "此操作需要数据库会话"
 msgstr "This operation needs a database session"
 
-#: backend/src/jacara/modules/templates/service.py:412
+#: backend/src/jacara/modules/templates/service.py:413
 #, python-brace-format
 msgid "不存在名为 {row} 的表"
 msgstr "No table named {row}"
 
-#: backend/src/jacara/modules/templates/service.py:452
-#: backend/src/jacara/modules/templates/service.py:1213
+#: backend/src/jacara/modules/templates/service.py:453
+#: backend/src/jacara/modules/templates/service.py:1215
 msgid "模板不存在"
 msgstr "Template not found"
 
-#: backend/src/jacara/modules/templates/service.py:476
+#: backend/src/jacara/modules/templates/service.py:477
 #, python-brace-format
 msgid "此模板不存在第 {version} 版"
 msgstr "This template has no version {version}"
 
-#: backend/src/jacara/modules/templates/service.py:486
-#: backend/src/jacara/modules/templates/service.py:758
+#: backend/src/jacara/modules/templates/service.py:487
+#: backend/src/jacara/modules/templates/service.py:760
 #, python-brace-format
 msgid "不存在名为 {starter} 的起步模板"
 msgstr "No starter template named {starter}"
 
-#: backend/src/jacara/modules/templates/service.py:496
+#: backend/src/jacara/modules/templates/service.py:497
 msgid "请选择要复制的模板"
 msgstr "Choose the template to copy"
 
-#: backend/src/jacara/modules/templates/service.py:500
+#: backend/src/jacara/modules/templates/service.py:501
 #, python-brace-format
 msgid "{title}（副本）"
 msgstr "{title} (copy)"
 
-#: backend/src/jacara/modules/templates/service.py:512
+#: backend/src/jacara/modules/templates/service.py:513
 msgid "空白模板需填写内容后再保存"
 msgstr "Fill in a blank template before saving it"
 
-#: backend/src/jacara/modules/templates/service.py:514
+#: backend/src/jacara/modules/templates/service.py:515
 msgid "新建"
 msgstr "Created"
 
-#: backend/src/jacara/modules/templates/service.py:576
+#: backend/src/jacara/modules/templates/service.py:577
 #: backend/src/jacara/templates/__init__.py:890
 #, python-brace-format
 msgid "模板「{title}」"
 msgstr "Template \"{title}\""
 
-#: backend/src/jacara/modules/templates/service.py:579
+#: backend/src/jacara/modules/templates/service.py:580
 #: backend/src/jacara/templates/__init__.py:1005
-#: backend/src/jacara/workbook/standard.py:92
+#: backend/src/jacara/workbook/standard.py:94
 msgid "功能领域"
 msgstr "Domains"
 
-#: backend/src/jacara/modules/templates/service.py:582
-#: backend/src/jacara/workbook/standard.py:94
+#: backend/src/jacara/modules/templates/service.py:583
+#: backend/src/jacara/workbook/standard.py:96
 msgid "自定义标签"
 msgstr "Custom tags"
 
-#: backend/src/jacara/modules/templates/service.py:685
+#: backend/src/jacara/modules/templates/service.py:687
 #, python-brace-format
 msgid "导入（导出时为第 {version} 版）"
 msgstr "Imported (version {version} at export)"
 
-#: backend/src/jacara/modules/templates/service.py:708
+#: backend/src/jacara/modules/templates/service.py:710
 #, python-brace-format
 msgid "Excel 超过 {limit} MB"
 msgstr "The Excel file exceeds {limit} MB"
 
-#: backend/src/jacara/modules/templates/service.py:774
+#: backend/src/jacara/modules/templates/service.py:776
 #, python-brace-format
 msgid "从 Excel 创建：{filename}"
 msgstr "Created from Excel: {filename}"
 
-#: backend/src/jacara/modules/templates/service.py:800
+#: backend/src/jacara/modules/templates/service.py:802
 msgid "未找到上传的 Excel，请重新上传"
 msgstr "The uploaded workbook was not found; upload it again"
 
-#: backend/src/jacara/modules/templates/service.py:813
+#: backend/src/jacara/modules/templates/service.py:815
 msgid "对象存储未就绪"
 msgstr "Object storage is not ready"
 
-#: backend/src/jacara/modules/templates/service.py:852
+#: backend/src/jacara/modules/templates/service.py:854
 msgid "请选择我的模板，或选择“抽取所有键值对”"
 msgstr "Choose one of my templates, or \"Extract all key-value pairs\""
 
-#: backend/src/jacara/modules/templates/service.py:856
+#: backend/src/jacara/modules/templates/service.py:858
 #, python-brace-format
 msgid "模板「{title}」已归档，无法用于上传"
 msgstr "Template \"{title}\" is archived and cannot be used for uploads"
 
-#: backend/src/jacara/modules/templates/service.py:863
+#: backend/src/jacara/modules/templates/service.py:865
 msgid "此文档使用的模板已删除，请选择模板后重新处理"
 msgstr "This document's template was deleted; choose a template and reprocess"
 
-#: backend/src/jacara/modules/templates/service.py:901
+#: backend/src/jacara/modules/templates/service.py:903
 msgid "此文档未保存 OCR 结果（在更新前处理），请先重新处理后再试跑"
 msgstr "This document has no stored OCR results (processed before the update); reprocess it before a trial run"
 
-#: backend/src/jacara/modules/templates/service.py:904
+#: backend/src/jacara/modules/templates/service.py:906
 msgid "模型服务未就绪"
 msgstr "The model server is not ready"
 
-#: backend/src/jacara/modules/templates/service.py:975
+#: backend/src/jacara/modules/templates/service.py:977
 msgid "此文档未经“抽取所有键值对”处理，不能用作样例"
 msgstr "This document was not processed with \"Extract all key-value pairs\" and cannot be a sample"
 
-#: backend/src/jacara/modules/templates/service.py:982
+#: backend/src/jacara/modules/templates/service.py:984
 #, python-brace-format
 msgid "样例中不存在 {source}"
 msgstr "{source} is not in the sample"
 
-#: backend/src/jacara/modules/templates/service.py:994
+#: backend/src/jacara/modules/templates/service.py:996
 msgid "从样例创建模板"
 msgstr "Created from sample"
 
-#: backend/src/jacara/modules/templates/service.py:1016
+#: backend/src/jacara/modules/templates/service.py:1018
 msgid "在样例上框选创建模板"
 msgstr "Created by selection on a sample"
 
-#: backend/src/jacara/modules/templates/service.py:1045
+#: backend/src/jacara/modules/templates/service.py:1047
 msgid "从样例创建模板：沿用所选键值对，不重新抽取"
 msgstr "Created from sample: selected key-value pairs carried over without extracting again"
 
-#: backend/src/jacara/modules/templates/service.py:1223
+#: backend/src/jacara/modules/templates/service.py:1225
 msgid "此文档尚未处理完成"
 msgstr "This document is not processed yet"
 
@@ -3545,21 +3676,21 @@ msgid "审核原因"
 msgstr "Review reason"
 
 #: backend/src/jacara/plugins/exporters/excel.py:452
-#: backend/src/jacara/workbook/standard.py:115
+#: backend/src/jacara/workbook/standard.py:117
 msgid "是"
 msgstr "Yes"
 
 #: backend/src/jacara/plugins/exporters/excel.py:475
-#: backend/src/jacara/workbook/standard.py:42
-#: backend/src/jacara/workbook/standard.py:67
+#: backend/src/jacara/workbook/standard.py:44
 #: backend/src/jacara/workbook/standard.py:69
-#: backend/src/jacara/workbook/standard.py:72
-#: backend/src/jacara/workbook/standard.py:199
-#: backend/src/jacara/workbook/standard.py:583
-#: backend/src/jacara/workbook/standard.py:594
-#: backend/src/jacara/workbook/standard.py:612
-#: backend/src/jacara/workbook/standard.py:699
-#: backend/src/jacara/workbook/standard.py:750
+#: backend/src/jacara/workbook/standard.py:71
+#: backend/src/jacara/workbook/standard.py:74
+#: backend/src/jacara/workbook/standard.py:201
+#: backend/src/jacara/workbook/standard.py:587
+#: backend/src/jacara/workbook/standard.py:598
+#: backend/src/jacara/workbook/standard.py:616
+#: backend/src/jacara/workbook/standard.py:703
+#: backend/src/jacara/workbook/standard.py:754
 msgid "名称"
 msgstr "Name"
 
@@ -4420,7 +4551,7 @@ msgid "商家名称"
 msgstr "supplier name"
 
 #: backend/src/jacara/plugins/validators/rules.py:445
-#: backend/src/jacara/workbook/standard.py:38
+#: backend/src/jacara/workbook/standard.py:40
 msgid "日期"
 msgstr "Date"
 
@@ -4915,8 +5046,8 @@ msgid "参考文献"
 msgstr "References"
 
 #: backend/src/jacara/structure/engines.py:39
-#: backend/src/jacara/workbook/standard.py:52
-#: backend/src/jacara/workbook/standard.py:776
+#: backend/src/jacara/workbook/standard.py:54
+#: backend/src/jacara/workbook/standard.py:780
 msgid "公式"
 msgstr "Formula"
 
@@ -4931,7 +5062,7 @@ msgid "{where}：{what}最多 {limit} 个"
 msgstr "{where}: at most {limit} {what}"
 
 #: backend/src/jacara/templates/__init__.py:90
-#: backend/src/jacara/workbook/standard.py:93
+#: backend/src/jacara/workbook/standard.py:95
 msgid "国家和地区"
 msgstr "Countries and regions"
 
@@ -5037,7 +5168,7 @@ msgid "{where}：region 格式错误"
 msgstr "{where}: invalid region"
 
 #: backend/src/jacara/templates/__init__.py:1021
-#: backend/src/jacara/workbook/standard.py:90
+#: backend/src/jacara/workbook/standard.py:92
 msgid "模板名称"
 msgstr "Template name"
 
@@ -5354,350 +5485,350 @@ msgstr "The documents disagree:\n"
 msgid "{file}：{value}"
 msgstr "{file}: {value}"
 
-#: backend/src/jacara/workbook/standard.py:36
+#: backend/src/jacara/workbook/standard.py:38
 msgid "文字"
 msgstr "Text"
 
-#: backend/src/jacara/workbook/standard.py:37
+#: backend/src/jacara/workbook/standard.py:39
 msgid "数字"
 msgstr "Number"
 
-#: backend/src/jacara/workbook/standard.py:39
+#: backend/src/jacara/workbook/standard.py:41
 msgid "日期范围"
 msgstr "Date range"
 
-#: backend/src/jacara/workbook/standard.py:43
-#: backend/src/jacara/workbook/standard.py:199
-#: backend/src/jacara/workbook/standard.py:766
+#: backend/src/jacara/workbook/standard.py:45
+#: backend/src/jacara/workbook/standard.py:201
+#: backend/src/jacara/workbook/standard.py:770
 msgid "字段 ID"
 msgstr "Field ID"
 
-#: backend/src/jacara/workbook/standard.py:44
-#: backend/src/jacara/workbook/standard.py:91
-#: backend/src/jacara/workbook/standard.py:753
+#: backend/src/jacara/workbook/standard.py:46
+#: backend/src/jacara/workbook/standard.py:93
+#: backend/src/jacara/workbook/standard.py:757
 msgid "类型"
 msgstr "Type"
 
-#: backend/src/jacara/workbook/standard.py:45
-#: backend/src/jacara/workbook/standard.py:769
+#: backend/src/jacara/workbook/standard.py:47
+#: backend/src/jacara/workbook/standard.py:773
 msgid "必填"
 msgstr "Required"
 
-#: backend/src/jacara/workbook/standard.py:46
-#: backend/src/jacara/workbook/standard.py:770
+#: backend/src/jacara/workbook/standard.py:48
+#: backend/src/jacara/workbook/standard.py:774
 msgid "从单据抽取"
 msgstr "Extract"
 
-#: backend/src/jacara/workbook/standard.py:47
-#: backend/src/jacara/workbook/standard.py:771
+#: backend/src/jacara/workbook/standard.py:49
+#: backend/src/jacara/workbook/standard.py:775
 msgid "导出"
 msgstr "Export"
 
-#: backend/src/jacara/workbook/standard.py:48
-#: backend/src/jacara/workbook/standard.py:764
+#: backend/src/jacara/workbook/standard.py:50
+#: backend/src/jacara/workbook/standard.py:768
 msgid "敏感"
 msgstr "Sensitive"
 
-#: backend/src/jacara/workbook/standard.py:49
-#: backend/src/jacara/workbook/standard.py:773
+#: backend/src/jacara/workbook/standard.py:51
+#: backend/src/jacara/workbook/standard.py:777
 msgid "可选值"
 msgstr "Allowed values"
 
-#: backend/src/jacara/workbook/standard.py:50
-#: backend/src/jacara/workbook/standard.py:774
+#: backend/src/jacara/workbook/standard.py:52
+#: backend/src/jacara/workbook/standard.py:778
 msgid "别名"
 msgstr "Aliases"
 
-#: backend/src/jacara/workbook/standard.py:51
-#: backend/src/jacara/workbook/standard.py:95
-#: backend/src/jacara/workbook/standard.py:775
+#: backend/src/jacara/workbook/standard.py:53
+#: backend/src/jacara/workbook/standard.py:97
+#: backend/src/jacara/workbook/standard.py:779
 msgid "说明"
 msgstr "Description"
 
-#: backend/src/jacara/workbook/standard.py:53
-#: backend/src/jacara/workbook/standard.py:777
+#: backend/src/jacara/workbook/standard.py:55
+#: backend/src/jacara/workbook/standard.py:781
 msgid "不能重复"
 msgstr "Unique"
 
-#: backend/src/jacara/workbook/standard.py:54
-#: backend/src/jacara/workbook/standard.py:788
+#: backend/src/jacara/workbook/standard.py:56
+#: backend/src/jacara/workbook/standard.py:792
 msgid "日期范围导出"
 msgstr "Date range export"
 
-#: backend/src/jacara/workbook/standard.py:55
-#: backend/src/jacara/workbook/standard.py:806
+#: backend/src/jacara/workbook/standard.py:57
+#: backend/src/jacara/workbook/standard.py:810
 msgid "分隔符"
 msgstr "Separator"
 
-#: backend/src/jacara/workbook/standard.py:60
-#: backend/src/jacara/workbook/standard.py:555
-#: backend/src/jacara/workbook/standard.py:699
+#: backend/src/jacara/workbook/standard.py:62
+#: backend/src/jacara/workbook/standard.py:559
+#: backend/src/jacara/workbook/standard.py:703
 msgid "表格 ID"
 msgstr "Table ID"
 
-#: backend/src/jacara/workbook/standard.py:61
-#: backend/src/jacara/workbook/standard.py:562
+#: backend/src/jacara/workbook/standard.py:63
+#: backend/src/jacara/workbook/standard.py:566
 msgid "表格名称"
 msgstr "Table name"
 
-#: backend/src/jacara/workbook/standard.py:62
-#: backend/src/jacara/workbook/standard.py:563
+#: backend/src/jacara/workbook/standard.py:64
+#: backend/src/jacara/workbook/standard.py:567
 msgid "表格说明"
 msgstr "Table description"
 
-#: backend/src/jacara/workbook/standard.py:63
-#: backend/src/jacara/workbook/standard.py:564
+#: backend/src/jacara/workbook/standard.py:65
+#: backend/src/jacara/workbook/standard.py:568
 msgid "至少一行"
 msgstr "At least one row"
 
-#: backend/src/jacara/workbook/standard.py:64
-#: backend/src/jacara/workbook/standard.py:565
+#: backend/src/jacara/workbook/standard.py:66
+#: backend/src/jacara/workbook/standard.py:569
 msgid "导出整张表格"
 msgstr "Export whole table"
 
-#: backend/src/jacara/workbook/standard.py:67
-#: backend/src/jacara/workbook/standard.py:577
+#: backend/src/jacara/workbook/standard.py:69
+#: backend/src/jacara/workbook/standard.py:581
 msgid "条件"
 msgstr "Condition"
 
-#: backend/src/jacara/workbook/standard.py:67
-#: backend/src/jacara/workbook/standard.py:580
-#: backend/src/jacara/workbook/standard.py:589
+#: backend/src/jacara/workbook/standard.py:69
+#: backend/src/jacara/workbook/standard.py:584
+#: backend/src/jacara/workbook/standard.py:593
 msgid "启用"
 msgstr "Use"
 
-#: backend/src/jacara/workbook/standard.py:67
-#: backend/src/jacara/workbook/standard.py:585
+#: backend/src/jacara/workbook/standard.py:69
+#: backend/src/jacara/workbook/standard.py:589
 msgid "级别"
 msgstr "Severity"
 
-#: backend/src/jacara/workbook/standard.py:67
-#: backend/src/jacara/workbook/standard.py:586
+#: backend/src/jacara/workbook/standard.py:69
+#: backend/src/jacara/workbook/standard.py:590
 msgid "逐行检查的表格"
 msgstr "Per-row table"
 
-#: backend/src/jacara/workbook/standard.py:67
-#: backend/src/jacara/workbook/standard.py:590
+#: backend/src/jacara/workbook/standard.py:69
+#: backend/src/jacara/workbook/standard.py:594
 msgid "编号"
 msgstr "ID"
 
-#: backend/src/jacara/workbook/standard.py:69
-#: backend/src/jacara/workbook/standard.py:593
+#: backend/src/jacara/workbook/standard.py:71
+#: backend/src/jacara/workbook/standard.py:597
 msgid "对象 ID"
 msgstr "Entity ID"
 
-#: backend/src/jacara/workbook/standard.py:69
-#: backend/src/jacara/workbook/standard.py:595
+#: backend/src/jacara/workbook/standard.py:71
+#: backend/src/jacara/workbook/standard.py:599
 msgid "编号字段"
 msgstr "Key field"
 
-#: backend/src/jacara/workbook/standard.py:69
-#: backend/src/jacara/workbook/standard.py:596
+#: backend/src/jacara/workbook/standard.py:71
+#: backend/src/jacara/workbook/standard.py:600
 msgid "包含字段"
 msgstr "Fields included"
 
-#: backend/src/jacara/workbook/standard.py:71
-#: backend/src/jacara/workbook/standard.py:611
+#: backend/src/jacara/workbook/standard.py:73
+#: backend/src/jacara/workbook/standard.py:615
 msgid "参照表 ID"
 msgstr "Reference ID"
 
-#: backend/src/jacara/workbook/standard.py:73
-#: backend/src/jacara/workbook/standard.py:613
+#: backend/src/jacara/workbook/standard.py:75
+#: backend/src/jacara/workbook/standard.py:617
 msgid "对照字段"
 msgstr "Match field"
 
-#: backend/src/jacara/workbook/standard.py:74
-#: backend/src/jacara/workbook/standard.py:614
+#: backend/src/jacara/workbook/standard.py:76
+#: backend/src/jacara/workbook/standard.py:618
 msgid "对照列"
 msgstr "Match column"
 
-#: backend/src/jacara/workbook/standard.py:75
-#: backend/src/jacara/workbook/standard.py:602
+#: backend/src/jacara/workbook/standard.py:77
+#: backend/src/jacara/workbook/standard.py:606
 msgid "数据所在 sheet"
 msgstr "Data sheet"
 
-#: backend/src/jacara/workbook/standard.py:77
+#: backend/src/jacara/workbook/standard.py:79
 msgid "项目"
 msgstr "Item"
 
-#: backend/src/jacara/workbook/standard.py:77
+#: backend/src/jacara/workbook/standard.py:79
 msgid "内容"
 msgstr "Value"
 
-#: backend/src/jacara/workbook/standard.py:79
+#: backend/src/jacara/workbook/standard.py:81
 msgctxt "sheet"
 msgid "模板"
 msgstr "Template"
 
-#: backend/src/jacara/workbook/standard.py:80
+#: backend/src/jacara/workbook/standard.py:82
 msgctxt "sheet"
 msgid "字段"
 msgstr "Fields"
 
-#: backend/src/jacara/workbook/standard.py:81
+#: backend/src/jacara/workbook/standard.py:83
 msgctxt "sheet"
 msgid "表格"
 msgstr "Tables"
 
-#: backend/src/jacara/workbook/standard.py:82
+#: backend/src/jacara/workbook/standard.py:84
 msgctxt "sheet"
 msgid "规则"
 msgstr "Rules"
 
-#: backend/src/jacara/workbook/standard.py:83
+#: backend/src/jacara/workbook/standard.py:85
 msgctxt "sheet"
 msgid "对象"
 msgstr "Entities"
 
-#: backend/src/jacara/workbook/standard.py:84
+#: backend/src/jacara/workbook/standard.py:86
 msgctxt "sheet"
 msgid "参照表"
 msgstr "Reference tables"
 
-#: backend/src/jacara/workbook/standard.py:88
+#: backend/src/jacara/workbook/standard.py:90
 msgid "格式"
 msgstr "Format"
 
-#: backend/src/jacara/workbook/standard.py:89
+#: backend/src/jacara/workbook/standard.py:91
 msgid "格式版本"
 msgstr "Format version"
 
-#: backend/src/jacara/workbook/standard.py:96
+#: backend/src/jacara/workbook/standard.py:98
 msgid "主语言"
 msgstr "Primary language"
 
-#: backend/src/jacara/workbook/standard.py:97
+#: backend/src/jacara/workbook/standard.py:99
 msgid "导出时版本"
 msgstr "Version at export"
 
-#: backend/src/jacara/workbook/standard.py:98
+#: backend/src/jacara/workbook/standard.py:100
 msgid "提示"
 msgstr "Hint"
 
-#: backend/src/jacara/workbook/standard.py:101
+#: backend/src/jacara/workbook/standard.py:103
 #, python-brace-format
 msgid "名称（{lang}）"
 msgstr "Name ({lang})"
 
-#: backend/src/jacara/workbook/standard.py:102
+#: backend/src/jacara/workbook/standard.py:104
 #, python-brace-format
 msgid "说明（{lang}）"
 msgstr "Description ({lang})"
 
-#: backend/src/jacara/workbook/standard.py:103
+#: backend/src/jacara/workbook/standard.py:105
 #, python-brace-format
 msgid "表格名称（{lang}）"
 msgstr "Table name ({lang})"
 
-#: backend/src/jacara/workbook/standard.py:104
+#: backend/src/jacara/workbook/standard.py:106
 #, python-brace-format
 msgid "表格说明（{lang}）"
 msgstr "Table description ({lang})"
 
-#: backend/src/jacara/workbook/standard.py:105
+#: backend/src/jacara/workbook/standard.py:107
 #, python-brace-format
 msgid "模板名称（{lang}）"
 msgstr "Template name ({lang})"
 
-#: backend/src/jacara/workbook/standard.py:109
+#: backend/src/jacara/workbook/standard.py:111
 msgid "统一格式"
 msgstr "Uniform format"
 
-#: backend/src/jacara/workbook/standard.py:110
+#: backend/src/jacara/workbook/standard.py:112
 msgid "原文"
 msgstr "Source text"
 
-#: backend/src/jacara/workbook/standard.py:111
+#: backend/src/jacara/workbook/standard.py:113
 msgid "拆分为两列"
 msgstr "Two columns"
 
-#: backend/src/jacara/workbook/standard.py:113
+#: backend/src/jacara/workbook/standard.py:115
 msgid "错误"
 msgstr "Error"
 
-#: backend/src/jacara/workbook/standard.py:113
+#: backend/src/jacara/workbook/standard.py:115
 msgid "警告"
 msgstr "Warning"
 
-#: backend/src/jacara/workbook/standard.py:115
+#: backend/src/jacara/workbook/standard.py:117
 msgid "否"
 msgstr "No"
 
-#: backend/src/jacara/workbook/standard.py:116
+#: backend/src/jacara/workbook/standard.py:118
 msgid "通用"
 msgstr "Generic"
 
-#: backend/src/jacara/workbook/standard.py:265
+#: backend/src/jacara/workbook/standard.py:269
 msgid "修改后，在“模板”页点击“导入模板”并选择此文件。按原表导出的版式不包含在此文件中，如需迁移请使用 JSON 导出。"
 msgstr "After editing, click \"Import template\" on the Templates page and choose this file. The original-workbook layout is not included; use the JSON export to move it."
 
-#: backend/src/jacara/workbook/standard.py:375
+#: backend/src/jacara/workbook/standard.py:379
 #, python-brace-format
 msgid "参照-{label}"
 msgstr "Reference-{label}"
 
-#: backend/src/jacara/workbook/standard.py:526
+#: backend/src/jacara/workbook/standard.py:530
 #, python-brace-format
 msgid "「{sheet}」表中无法识别的项目已忽略：{names}"
 msgstr "Unrecognized items in sheet \"{sheet}\" were ignored: {names}"
 
-#: backend/src/jacara/workbook/standard.py:535
+#: backend/src/jacara/workbook/standard.py:539
 #, python-brace-format
 msgid "此文件由更新版本的 JacarandaParse 导出（格式版本 {found}），当前版本最高支持格式版本 {supported}，请升级后再导入"
 msgstr "This file was exported by a newer version of JacarandaParse (layout version {found}); this version supports up to layout version {supported}. Upgrade before importing"
 
-#: backend/src/jacara/workbook/standard.py:543
+#: backend/src/jacara/workbook/standard.py:547
 msgid "“模板”表中未填写模板名称"
 msgstr "The Template sheet has no template name"
 
-#: backend/src/jacara/workbook/standard.py:545
+#: backend/src/jacara/workbook/standard.py:549
 msgid "字段表"
 msgstr "Fields sheet"
 
-#: backend/src/jacara/workbook/standard.py:552
+#: backend/src/jacara/workbook/standard.py:556
 msgid "表格表"
 msgstr "Tables sheet"
 
-#: backend/src/jacara/workbook/standard.py:557
+#: backend/src/jacara/workbook/standard.py:561
 #, python-brace-format
 msgid "表格表第 {n} 行：未填写表 ID"
 msgstr "Tables sheet row {n}: no table ID"
 
-#: backend/src/jacara/workbook/standard.py:573
+#: backend/src/jacara/workbook/standard.py:577
 msgid "规则表"
 msgstr "Rules sheet"
 
-#: backend/src/jacara/workbook/standard.py:605
+#: backend/src/jacara/workbook/standard.py:609
 #, python-brace-format
 msgid "参照表第 {n} 行：未找到数据所在的 sheet「{sheet}」"
 msgstr "Reference tables row {n}: data sheet \"{sheet}\" not found"
 
-#: backend/src/jacara/workbook/standard.py:684
+#: backend/src/jacara/workbook/standard.py:688
 #, python-brace-format
 msgid "{sheet}第 {n} 行：级别只能为 {values}"
 msgstr "{sheet} row {n}: severity must be one of {values}"
 
-#: backend/src/jacara/workbook/standard.py:728
+#: backend/src/jacara/workbook/standard.py:732
 #, python-brace-format
 msgid "“{sheet}”表缺少以下列：{columns}"
 msgstr "Sheet \"{sheet}\" lacks these columns: {columns}"
 
-#: backend/src/jacara/workbook/standard.py:736
+#: backend/src/jacara/workbook/standard.py:740
 #, python-brace-format
 msgid "「{sheet}」表中无法识别的列已忽略：{columns}"
 msgstr "Unrecognized columns in sheet \"{sheet}\" were ignored: {columns}"
 
-#: backend/src/jacara/workbook/standard.py:752
+#: backend/src/jacara/workbook/standard.py:756
 #, python-brace-format
 msgid "{sheet}第 {n} 行：未填写名称"
 msgstr "{sheet} row {n}: no name"
 
-#: backend/src/jacara/workbook/standard.py:758
+#: backend/src/jacara/workbook/standard.py:762
 #, python-brace-format
 msgid "{sheet}第 {n} 行：类型只能为 {types}"
 msgstr "{sheet} row {n}: type must be one of {types}"
 
-#: backend/src/jacara/workbook/standard.py:798
+#: backend/src/jacara/workbook/standard.py:802
 #, python-brace-format
 msgid "{sheet}第 {n} 行：日期范围导出只能为 {values}"
 msgstr "{sheet} row {n}: date range export must be one of {values}"

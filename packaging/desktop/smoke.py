@@ -6,7 +6,8 @@ an unrelated folder with an empty data folder, and check what packaging can brea
 Checks, each of which fails when a file is missing from the package:
 - the database is created by the packaged migrations;
 - the interface translations load (English answers);
-- the starter templates, the table model (shipped with the program) and RapidOCR's models are found;
+- the starter templates, the table model (shipped with the program), RapidOCR's models and the list
+  of models offered for download are found;
 - a PDF passes OCR (PDF rendering, OpenCV, ONNX Runtime, layout model);
 - the watch folder imports a file placed in it;
 - a download asked to be saved lands in the Downloads folder;
@@ -85,6 +86,10 @@ def main() -> None:
         check(len(client.get("/api/v1/templates/starters").json()) > 0, "starter templates")
         info = client.get("/api/v1/system").json()
         check(info["structure"]["table"] == "slanet-plus.onnx", "table model shipped")
+        setup = client.get("/api/v1/setup").json()
+        listed = [f["filename"] for f in setup["files"]]
+        wanted = ["Qwen3.5-9B-Q4_K_M.gguf", "mmproj-F16.gguf"]
+        check(setup["needs_model"] is True and listed == wanted, "model download list shipped")
         saved = client.get(
             "/api/v1/templates/receipt/export?format=xlsx", headers={"X-Jacara-Save": "downloads"}
         ).json()

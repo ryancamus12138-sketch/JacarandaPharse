@@ -20,6 +20,7 @@ import { DesktopBridge } from './DesktopBridge'
 import { LanguageSwitch } from './LanguageSwitch'
 import { UserAvatar } from './UserAvatar'
 import { useTranslation } from 'react-i18next'
+import { useSetupRedirect } from '../features/setup/setupGate'
 
 /**
  * Shared frame of all pages after login: sidebar menu, user name and logout at the top; <Outlet /> renders
@@ -39,6 +40,8 @@ export function AppLayout() {
   const [collapsed, setCollapsed] = useState(true)
   const inSettings = location.pathname.startsWith('/settings')
   const sections = useSettingsSections()
+  // Desktop app without a large model: the first-start wizard opens once by itself.
+  useSetupRedirect()
 
   // Remember the page visited before entering settings.
   useEffect(() => {

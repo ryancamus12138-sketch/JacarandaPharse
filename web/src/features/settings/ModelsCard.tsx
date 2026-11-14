@@ -125,6 +125,11 @@ export function ModelsCard() {
             }
           />
         )}
+        {desktop && (
+          <Typography.Text>
+            {t('还没有推荐的大模型和视觉模型，或想重新下载？')} <Link to="/setup">{t('下载推荐模型')}</Link>
+          </Typography.Text>
+        )}
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {t('仅可选择本机已有的模型文件，不会联网下载。推荐通过')}{' '}
           <Link to="/hub">{t('模型和数据集')}</Link>{' '}

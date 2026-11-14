@@ -56,6 +56,7 @@ export const ACTION_LABELS: Record<string, string> = {
   get 'ocr_samples:det_exclude'() { return t('检测样本：排除页面') },
   get 'ocr_samples:det_export'() { return t('检测样本：导出') },
   get 'hub:model_import'() { return t('模型库：导入新版本') },
+  get 'hub:model_download'() { return t('模型库：下载模型') },
   get 'hub:model_use'() { return t('模型库：启用版本') },
   get 'hub:model_card'() { return t('模型库：编辑模型卡') },
   get 'hub:model_delete'() { return t('模型库：删除版本') },

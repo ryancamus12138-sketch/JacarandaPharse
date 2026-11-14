@@ -33,6 +33,9 @@ const HubPage = lazy(() =>
 const DetEditorPage = lazy(() =>
   import('./features/ocr-samples/DetEditorPage').then((m) => ({ default: m.DetEditorPage })),
 )
+const SetupWizard = lazy(() =>
+  import('./features/setup/SetupWizard').then((m) => ({ default: m.SetupWizard })),
+)
 const SettingsPage = lazy(() =>
   import('./features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })),
 )
@@ -140,6 +143,9 @@ export default function App() {
                 </Page>
               }
             />
+            <Route path="setup" element={<Page>
+                  <SetupWizard />
+                </Page>} />
             <Route path="settings/:section?" element={<Page>
                   <SettingsPage />
                 </Page>} />

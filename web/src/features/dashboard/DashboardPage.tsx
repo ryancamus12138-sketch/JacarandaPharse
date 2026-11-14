@@ -34,6 +34,7 @@ import type { DocumentSummary } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
 import { formatTime } from '../../utils/format'
 import { StatusTag } from '../documents/StatusTag'
+import { useNeedsModel } from '../setup/setupGate'
 import { useTranslation } from 'react-i18next'
 
 const POLL_MS = 3000 // Refresh every 3 seconds while files are queued or processing.
@@ -85,7 +86,8 @@ function StatCard({
         }
       />
       {note && (
-        <Typography.Text type="secondary" ellipsis={typeof note === 'string' ? { tooltip: note } : true} style={{ fontSize: token.fontSizeSM, display: 'block' }}>
+        // Wraps instead of being cut off: narrow cards and longer languages still show the whole note.
+        <Typography.Text type="secondary" style={{ fontSize: token.fontSizeSM, display: 'block' }}>
           {note}
         </Typography.Text>
       )}
@@ -139,6 +141,7 @@ export function DashboardPage() {
     refetchInterval: (query) => ((query.state.data?.queue.length ?? 0) > 0 ? POLL_MS : false),
   })
   const navigate = useNavigate()
+  const needsModel = useNeedsModel()
 
   if (dashboard.error) {
     return (
@@ -157,6 +160,19 @@ export function DashboardPage() {
 
   return (
     <Flex vertical gap={16}>
+      {needsModel && (
+        <Alert
+          type="warning"
+          showIcon
+          title={t('还没有识别模型')}
+          description={t('处理单据前，需要先下载或导入大模型。')}
+          action={
+            <Button type="primary" onClick={() => void navigate('/setup')}>
+              {t('准备模型')}
+            </Button>
+          }
+        />
+      )}
       <Row gutter={[16, 16]}>
         <Col xs={12} md={8} xl={4}>
           <StatCard

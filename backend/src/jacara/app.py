@@ -35,6 +35,7 @@ from jacara.modules.hub.router import router as hub_router
 from jacara.modules.insights.router import router as insights_router
 from jacara.modules.model_admin.router import router as models_router
 from jacara.modules.ocr_samples.router import router as ocr_samples_router
+from jacara.modules.setup.router import router as setup_router
 from jacara.modules.system.router import router as system_router
 from jacara.modules.templates.router import router as templates_router
 
@@ -82,6 +83,7 @@ def create_app() -> FastAPI:
     api.include_router(hub_router)
     api.include_router(settings_router)
     api.include_router(desktop_router)
+    api.include_router(setup_router)
     api.include_router(desktop_location_router)
 
     @api.get("/health", tags=["系统"], summary="服务是否在运行")

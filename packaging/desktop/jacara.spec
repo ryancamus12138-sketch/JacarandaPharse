@@ -5,7 +5,8 @@
 # Besides the code, the program reads files that PyInstaller does not find by following imports;
 # each is listed here, and the build stops when one is missing:
 # - jacara: starter templates (templates/*.toml), interface translations (locale/*/LC_MESSAGES/
-#   messages.mo) and the database migrations (migrations/, read by Alembic as files);
+#   messages.mo), the database migrations (migrations/, read by Alembic as files) and the list of
+#   models offered for download (downloads/models.lock, checked by parsing it);
 # - RapidOCR: its detection, recognition and orientation models and its configuration;
 # - rapid-layout: only the layout model layout_cdla.onnx. Its other weights (YOLOv8) are AGPL
 #   licensed and must not ship (ADR 0068 section 3.5);
@@ -50,7 +51,14 @@ migrations = sorted(
 )
 if not templates or not catalogs or not any(p.name == "env.py" for p in migrations):
     fail("templates, translations or migrations not found under backend/src/jacara")
-for path in [*templates, *catalogs, *migrations]:
+model_list = JACARA / "downloads" / "models.lock"
+try:
+    from jacara.downloads import parse_lock
+
+    parse_lock(model_list.read_text("utf-8"))
+except Exception as err:  # A malformed list must not ship.
+    fail(f"downloads/models.lock: {err}")
+for path in [*templates, *catalogs, *migrations, model_list]:
     datas.append((str(path), str(Path("jacara") / path.parent.relative_to(JACARA))))
 
 # ---- Models ----

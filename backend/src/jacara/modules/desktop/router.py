@@ -32,6 +32,7 @@ from jacara.core.i18n import tr
 from jacara.core.maintenance import MAINTENANCE, Job, JobBusy
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
+from jacara.downloads.manager import DOWNLOADS
 from jacara.ops.desktop_data import (
     DataError,
     backups_folder,
@@ -295,6 +296,8 @@ def restore_from(data: RestoreIn, owner: Manager) -> JobOut:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, tr("请选择 .tar 或 .db 备份文件"))
 
     def work(job: Job) -> dict[str, Any]:
+        # Model downloads write into the data folder: pause them (partial files are kept).
+        DOWNLOADS.pause()
         services().stop()
         reset_caches()
         try:
@@ -336,6 +339,8 @@ def move_folder(data: MoveIn, owner: Manager) -> JobOut:
         raise _bad(err) from err
 
     def work(job: Job) -> dict[str, Any]:
+        # Model downloads write into the data folder: pause them (partial files are kept).
+        DOWNLOADS.pause()
         services().stop()
         reset_caches()
         try:
