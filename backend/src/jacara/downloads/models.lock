@@ -1,4 +1,4 @@
-# Models the desktop app offers to download (ADR 0068 section 6). Shipped with the program and never
+# Models the desktop app offers to download. Shipped with the program and never
 # fetched at run time. Each file: model library name, size in bytes, SHA-256 of the whole file and
 # its address at each source, pinned to the commit that last changed it, so an update of the
 # repository cannot change what is downloaded. The size and SHA-256 are those of the files checked

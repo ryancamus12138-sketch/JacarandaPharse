@@ -41,13 +41,15 @@ class Spec:
     min: int | None = None
     max: int | None = None
     section: str = "processing"
-    """Settings page that shows it: processing (Recognition and processing) or data (Data and
-    backups)."""
+    """Settings page that shows it: processing (Recognition and processing), data (Data and
+    backups) or models (Models)."""
     desktop_only: bool = False
     """Only meaningful in the desktop app (its launcher does the work)."""
     live: bool = False
     """Read again on every use by the process that serves the page (the desktop launcher's
     automatic backup), so a change applies without restarting and does not ask for a restart."""
+    needs_builds: bool = False
+    """Only when the app ships several llama.cpp builds to choose from (Windows)."""
 
 
 SPECS: dict[str, Spec] = {
@@ -158,6 +160,20 @@ SPECS: dict[str, Spec] = {
         N_("启用接口文档页 /docs"),
         N_("便于开发调试；供他人使用时建议关闭，以减少接口细节暴露。"),
         "bool",
+    ),
+    "jacara_llama_device": Spec(
+        N_("计算设备"),
+        N_("运行大模型的设备"),
+        N_("自动：有可用的显卡（Vulkan）就用显卡，否则用 CPU。显卡运行出错时可改为 CPU。"),
+        "choice",
+        [
+            ("auto", N_("自动（推荐）")),
+            ("cpu", N_("CPU")),
+            ("vulkan", N_("显卡（Vulkan）")),
+        ],
+        section="models",
+        desktop_only=True,
+        needs_builds=True,
     ),
 }
 LEGACY = frozenset({"jacara_watch_dir", "jacara_watch_template"})
@@ -278,6 +294,12 @@ class AppSettingsService:
                 continue  # Fixed by the desktop app; nothing to choose.
             if spec.desktop_only and not effective.jacara_desktop:
                 continue
+            note = None
+            if spec.needs_builds:
+                from jacara.plugins.model_backends.llama_builds import device_note
+
+                if (note := device_note()) is None:
+                    continue
             value = getattr(effective, key)
             default = Settings.model_fields[key].default
             source = "env" if key in locked else "page" if key in saved else "default"
@@ -296,7 +318,7 @@ class AppSettingsService:
                     key=key,
                     group=tr(spec.group),
                     label=tr(spec.label),
-                    help=tr(spec.help),
+                    help=tr(spec.help) + (f" {note}" if note else ""),
                     kind=spec.kind,  # type: ignore[arg-type]
                     value=str(value) if isinstance(value, Path) else value,
                     default=str(default) if isinstance(default, Path) else default,

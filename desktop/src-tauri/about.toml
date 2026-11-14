@@ -1,0 +1,19 @@
+# cargo-about configuration: the licences of the shell's Rust crates, listed in THIRD_PARTY_LICENSES
+# by packaging/desktop/licenses.py (`cargo about generate --format json`).
+#
+# Only the crates built for the shipped targets are listed. For a crate offered under several
+# licences ("MIT OR Apache-2.0"), the first one in `accepted` that it offers is used. A crate
+# whose licence is not accepted stops the build; GPL, LGPL and AGPL are never accepted.
+# MPL-2.0 (file-level copyleft) is used unmodified by cssparser, selectors, dtoa-short and
+# option-ext; its notice requirement is met by the licence text in THIRD_PARTY_LICENSES.
+
+targets = ["aarch64-apple-darwin", "x86_64-pc-windows-msvc"]
+private = { ignore = true }
+accepted = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-3-Clause",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+]

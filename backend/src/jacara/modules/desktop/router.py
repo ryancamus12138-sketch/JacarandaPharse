@@ -2,7 +2,7 @@
 elsewhere every endpoint answers 404.
 
 - Downloads, revealing files and opening links: see core/desktop_files.py.
-- The data folder (ADR 0068 sections 6 and 13.5): backups, restoring, moving the folder, restarting
+- The data folder: backups, restoring, moving the folder, restarting
   the background services. These run as maintenance jobs (core/maintenance.py) that the page
   follows through GET /desktop/job.
 - System dialogs for choosing a folder or a backup file: a page cannot learn a folder's path."""
@@ -206,9 +206,13 @@ def open_link(data: OpenUrlIn) -> None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, tr("只能打开 http 或 https 网址")) from err
 
 
-@router.post("/open-folder", status_code=status.HTTP_204_NO_CONTENT, summary="打开数据或备份文件夹")
-def open_data_folder(which: Literal["data", "backups"]) -> None:
-    folder = data_home() if which == "data" else backups_folder()
+@router.post(
+    "/open-folder", status_code=status.HTTP_204_NO_CONTENT, summary="打开数据、备份或日志文件夹"
+)
+def open_data_folder(which: Literal["data", "backups", "logs"]) -> None:
+    from jacara.desktop import log_dir
+
+    folder = {"data": data_home, "backups": backups_folder, "logs": log_dir}[which]()
     folder.mkdir(parents=True, exist_ok=True)
     try:
         open_folder(folder)

@@ -1,0 +1,52 @@
+# llama.cpp builds shipped with the desktop app, pinned to one release.
+#
+# release b12359 is llama.cpp v1.0.0: the v1.0.0 release page names it in nightly-tag.txt
+# (https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0). Every file is downloaded from
+#   https://github.com/ggml-org/llama.cpp/releases/download/<release>/<file>
+# and checked against the size and the SHA-256 that GitHub publishes for the release asset; a
+# difference stops the build (packaging/desktop/fetch_llama.py).
+#
+# variant: the name of the folder inside the package (llama/<variant>/llama-server). On Windows the
+# app starts the Vulkan build when `llama-server --list-devices` of that build reports a GPU and the
+# CPU build otherwise; the user can choose on the Models settings page.
+# The Linux builds are only for checking the packaging on Linux; they are not shipped.
+
+version = 1
+release = "b12359"
+upstream_version = "1.0.0"
+license = "MIT"
+
+[[builds]]
+platform = "macos-arm64"
+variant = "metal"
+file = "llama-b12359-bin-macos-arm64.tar.gz"
+size = 16907811
+sha256 = "82b00abc740160e1b9980e6cc79c117345fa34af058c80e6c0a69aa8ddccde75"
+
+[[builds]]
+platform = "windows-x64"
+variant = "cpu"
+file = "llama-b12359-bin-win-cpu-x64.zip"
+size = 25097509
+sha256 = "837c1655e87df3b66989f4be33a792a1399c785bf259038dc75c900096683e69"
+
+[[builds]]
+platform = "windows-x64"
+variant = "vulkan"
+file = "llama-b12359-bin-win-vulkan-x64.zip"
+size = 38090643
+sha256 = "e8d18c6e4210cca87e7307c2ea78363ac8d158e4e1397358ec96ab70b53a0d5e"
+
+[[builds]]
+platform = "linux-x64"
+variant = "cpu"
+file = "llama-b12359-bin-ubuntu-x64.tar.gz"
+size = 23311084
+sha256 = "0bc1f091e8916102b6d8f2cf944233a620e90a0f856c72d0ce41150c65c2e72e"
+
+[[builds]]
+platform = "linux-arm64"
+variant = "cpu"
+file = "llama-b12359-bin-ubuntu-arm64.tar.gz"
+size = 18949862
+sha256 = "dc7aa17a67884619b7223870aca9fd6addbc01717713b04a714add1c31137359"

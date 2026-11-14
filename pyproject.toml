@@ -51,6 +51,7 @@ dev = [
 ]
 # Packaging the desktop app's backend: uv run --group desktop pyinstaller packaging/desktop/jacara.spec
 desktop = [
+    "pip-licenses>=5.5.5",
     "pyinstaller>=6.22.3",
 ]
 

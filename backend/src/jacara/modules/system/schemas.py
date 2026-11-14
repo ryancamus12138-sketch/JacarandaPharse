@@ -75,6 +75,35 @@ class DataInfo(BaseModel):
     """Total size of stored export files."""
 
 
+class ProcessStatus(BaseModel):
+    """One background process of the desktop app."""
+
+    name: str
+    """model, worker-read, worker-extract, worker-all or watch."""
+    state: str
+    """running, restarting, paused or stopped."""
+    starts: int
+    """Times started since the background services started (more than one: restarted)."""
+    note: str | None
+    """The last line the launcher noted for it (why it stopped, for example)."""
+
+
+class DesktopStatus(BaseModel):
+    data_dir: str
+    log_dir: str
+    processes: list[ProcessStatus]
+
+
+class Diagnostics(BaseModel):
+    text: str
+    """Plain text to paste into a problem report: versions, system, models, processes, services;
+    no document content, no names of documents, the home folder written as ~."""
+
+
+class LicenseText(BaseModel):
+    text: str
+
+
 class SystemInfo(BaseModel):
     version: str
     mode: str
@@ -87,3 +116,10 @@ class SystemInfo(BaseModel):
     templates: list[TemplateInfo]
     data: DataInfo
     services: list[ServiceCheck]
+    notice: str = ""
+    """Attribution from the NOTICE file shipped with the program (Apache 2.0 section 4(d))."""
+    license: str = "Apache-2.0"
+    third_party: bool = False
+    """The list of third-party licenses (THIRD_PARTY_LICENSES) is shipped with this build."""
+    desktop: DesktopStatus | None = None
+    """Desktop app only (and administrators): folders and background processes."""

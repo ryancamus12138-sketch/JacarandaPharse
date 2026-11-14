@@ -148,14 +148,22 @@ JacarandaParse（Tauri 主程序，Rust）
 - 随安装包附带 llama.cpp 官方发布的构建（MIT 许可）：
   - macOS：`llama-<版本>-bin-macos-arm64.tar.gz`（Metal 加速）。
   - Windows：`llama-<版本>-bin-win-cpu-x64.zip` 和 `llama-<版本>-bin-win-vulkan-x64.zip`。
-- 版本固定，在 `packaging/desktop/llama.lock` 中记录版本号和每个压缩包的 SHA-256；构建时下载并校验，不一致即失败。
-- **Windows 选择 CPU 还是 GPU**：首次启动时运行 Vulkan 版的 `llama-server --list-devices`（官方参数："列出可用设备
-  后退出"）；有可用显卡就用 Vulkan 版，否则用 CPU 版。结果记入设置，可在"模型"页手动切换。不附带 CUDA 版
-  （需要额外的 CUDA 运行库，体积大）。**此方案需在有独立显卡和无独立显卡的 Windows 实机上各验证一次。**
+- 版本固定，在 `packaging/desktop/llama.lock` 中记录版本号和每个压缩包的大小和 SHA-256；构建时
+  `packaging/desktop/fetch_llama.py` 下载并校验，不一致即失败。现在固定为 b12359，即 llama.cpp v1.0.0
+  （v1.0.0 发布页的 `nightly-tag.txt` 写的就是 b12359）。只保留 `llama-server` 用到的文件：macOS 按 `@rpath` 加载命令
+  逐个找出它加载的动态库（版本链接展开为文件）；Windows 保留 `llama-server.exe` 和除其他工具专用库（`*-impl.dll`）
+  外的全部 DLL，因为 ggml 运行时按名字加载 CPU 和显卡后端（`ggml-cpu-*.dll`、`ggml-vulkan.dll`）。
+- macOS 构建要求 macOS 13.3；onnxruntime 的 wheel 要求 macOS 14.0，所以安装包的最低系统版本是 14.0（7.2 节）。
+- **Windows 选择 CPU 还是 GPU**：设置 `jacara_llama_device`（自动 / CPU / 显卡（Vulkan），默认自动）。自动时运行
+  Vulkan 版的 `llama-server --list-devices`（官方参数："列出可用设备后退出"），输出里有 `VulkanN: …` 设备行就用
+  Vulkan 版，只有 `(none)` 或运行出错、30 秒内没结束就用 CPU 版。检测结果按构建（文件夹名、大小、修改时间）记在
+  `data/llama-devices.json`，同一个构建只检测一次，更新程序后重新检测。"模型"页的"计算设备"只在安装包里有不止一个
+  构建时显示（即只在 Windows 上），说明文字里写检测到的显卡。不附带 CUDA 版（需要额外的 CUDA 运行库，体积大）。
+  **此方案需在有独立显卡和无独立显卡的 Windows 实机上各验证一次。**
 - 保留现有保护措施：每次启动生成随机 API 密钥，通过环境变量 `LLAMA_API_KEY` 传给 `llama-server`；只监听
   `127.0.0.1`；关闭自带网页（`--no-webui`）；macOS 上设置 `GGML_METAL_BF16_DISABLE=1`。
-- `server_command` 查找 `llama-server` 的顺序改为：先看新设置 `JACARA_LLAMA_SERVER`（桌面版指向安装包内的文件），
-  再在系统路径中查找。
+- `server_command` 查找 `llama-server` 的顺序：先看设置 `JACARA_LLAMA_SERVER`，再用安装包内附带的构建
+  （`plugins/model_backends/llama_builds.py` 按上一条选择），最后在系统路径中查找。
 
 ### 3.5 OCR、版面和表格模型
 
@@ -163,9 +171,11 @@ JacarandaParse（Tauri 主程序，Rust）
 - 版面模型：只打包 `rapid_layout/models/layout_cdla.onnx`。`rapid-layout` 也提供 YOLOv8 版面模型，其权重是 AGPL 许可
   （见 `structure/engines.py` 的说明），违反规则 10。**构建脚本检查打包结果中 `rapid_layout` 目录只有
   `layout_cdla.onnx`，出现其他权重文件即构建失败。**
-- 表格模型 SLANet-plus（Apache 2.0，约 7 MB）：现在要求用户自己下载。桌面版改为随安装包附带，构建时按 README 中已有
-  的 SHA-256 校验。后端先找数据目录的 `models/table/slanet-plus.onnx`（用户自己放的优先），找不到再用程序资源目录
-  （PyInstaller 的 `sys._MEIPASS`）中附带的那份；「设置 → 模型」里显示为「随程序附带」。
+- 表格模型 SLANet-plus（Apache 2.0，约 7 MB）：现在要求用户自己下载。桌面版改为随安装包附带：构建时
+  `packaging/desktop/fetch_table_model.py` 按 README 中已有的地址、大小和 SHA-256 下载并校验，spec 再校验一次。
+  桌面版只用程序资源目录（PyInstaller 的 `sys._MEIPASS`）中附带的那份或用户导入的版本，不再读数据目录里散放的
+  `models/table/slanet-plus.onnx`（这类文件在放入文件夹列表中可以导入，6 节）；「设置 → 模型」里显示为
+  「SLANet-plus（PaddleOCR 模型，程序内置，7.4 MB）」。
 
 ### 3.6 网页
 
@@ -258,8 +268,23 @@ JacarandaParse（Tauri 主程序，Rust）
 | 设置 → 识别和处理 | 监视文件夹可以设多个，每个单独选模板；桌面版用系统对话框选择文件夹（见下） |
 | 设置 → 识别和处理、模型 | 桌面版有"重新启动后台"按钮，不必退出程序就能让新设置和新模型生效（见下） |
 | 设置 → 模型 | 首次启动向导（见下）；Windows 增加"计算设备：自动 / CPU / 显卡（Vulkan）" |
-| 设置 → 关于和诊断 | 显示版本、署名（NOTICE 内容）、许可、第三方许可清单、数据目录和日志目录，"打开数据文件夹"按钮 |
+| 设置 → 关于和诊断 | 显示版本、署名（NOTICE 内容）、许可、第三方许可清单、数据目录和日志目录，"打开数据文件夹"按钮（见下） |
 | 全站提示 | 18 个文件中约 40 处提到 `jacara start`、`docker compose`、`brew install` 等命令。桌面版改为界面操作的说法，例如"重新启动 JacarandaParse 后生效" |
+
+**关于和诊断**
+
+- "关于"卡片：版本、署名（`NOTICE` 原文）、许可（Apache-2.0）、"许可证全文""署名""第三方许可"三个链接（打开程序包内的
+  `LICENSE`、`NOTICE`、`THIRD_PARTY_LICENSES`，`GET /api/v1/system/licenses/{license|notice|third_party}`；这个版本
+  没有附带的文件显示"这个版本没有附带 …"），以及"复制诊断信息"按钮。
+- 诊断信息参照 Obsidian 的"Show debug info → Copy to clipboard"：纯文本，分为系统、模型、后台进程、检查、数据几段，
+  键名用英文（反馈问题时不受界面语言影响）；包括版本、系统和内存、所选模型文件和大小、`llama-server --version`、
+  各后台进程的状态和启动次数、`jacara doctor` 的检查结果。不含单据内容和文件名，用户主目录写成 `~`。
+  只有管理员能取（`GET /api/v1/system/diagnostics`，个人版即本机用户）。复制用浏览器剪贴板接口，不可用时退回到
+  选中文本框再复制。
+- "文件夹"卡片：数据文件夹、备份文件夹、日志文件夹（macOS `~/Library/Logs/JacarandaParse`，Windows
+  `<数据文件夹>\logs`），各有"打开"按钮。
+- "后台进程"卡片：模型服务、识别、抽取、监视文件夹各一行，状态为运行中 / 正在重新启动 / 已暂停 / 已停止，
+  重新启动过的显示次数和最近一次原因。"服务状态"卡片是原来系统信息页的检查结果。
 
 **备份和恢复**
 
@@ -517,6 +542,8 @@ Hugging Face 上的文件 SHA-256 一致：
   可执行文件，不适合单文件夹。
 - 桌面版不需要的依赖不打包：`celery`、`kombu`、`redis`（Valkey 客户端）、`boto3`、`psycopg`，在 spec 的 `excludes`
   中排除（它们在代码里都只在服务器方式的分支中按需导入）。**这样 LGPL 许可的 `psycopg` 不会出现在安装包中。**
+  `scipy` 也排除：只有评测命令（开发工具）用它，它的 macOS wheel 还带着 GCC 的 Fortran 运行库。`check_bundle.py`
+  检查这些包确实不在打包结果中，`licenses.py` 也不把它们列入许可清单。
 - 构建配置：`packaging/desktop/jacara.spec`，入口 `packaging/desktop/jacara_desktop.py`，构建工具在依赖组 `desktop`
   （`uv run --group desktop pyinstaller packaging/desktop/jacara.spec`）。PyInstaller 只跟随 import 收集代码，程序
   按文件读取的内容在 spec 中逐项列出，缺一项就构建失败：起步模板（`templates/**/*.toml`）、界面翻译（`.mo`）、
@@ -526,8 +553,17 @@ Hugging Face 上的文件 SHA-256 一致：
 - 数据库迁移放在程序包内（`jacara/migrations`），后端按包的位置找到它们，不依赖当前文件夹；开发时
   `uv run alembic ...` 仍通过项目根目录的 `alembic.ini`。
 - 冒烟测试：`packaging/desktop/smoke.py` 从无关的文件夹、空数据目录启动打包结果，检查迁移、翻译、起步模板、
-  附带的表格模型、PDF 通过 OCR、监视文件夹导入、保存到"下载"文件夹、关闭标准输入后退出。2026-11-15 在 Linux
-  （aarch64）上构建并全部通过（打包结果约 407 MB）；macOS 和 Windows 上在第 5 步的自动构建中运行。
+  附带的表格模型、`LICENSE` / `NOTICE` / `THIRD_PARTY_LICENSES` 能读到、诊断信息里有附带的 `llama-server` 的版本
+  且不含主目录、PDF 通过 OCR、监视文件夹导入、保存到"下载"文件夹、完整备份和恢复、关闭标准输入后退出。
+  2026-11-15 在 Linux（aarch64）上构建并全部通过（打包结果约 407 MB）；加入 llama.cpp 和许可清单后在 Linux（x86_64）
+  上再次全部通过（打包结果约 518 MB，其中 llama.cpp 约 78 MB）；换成 `build_opencv.py` 构建的 OpenCV 后
+  同样全部通过，`test_opencv_resize.py` 和 OCR、版面、表格的测试也通过，打包结果约 509 MB（不再有 FFmpeg 等视频库）。macOS 和 Windows 上在自动构建中运行（7.3 节）。
+- 打包检查：`packaging/desktop/check_bundle.py` 在 Tauri 打包前检查打包结果：必需文件齐全、每个 `llama-server`
+  能运行 `--version`；模型权重只有 RapidOCR 自带的、`layout_cdla.onnx` 和 SLANet-plus（出现 YOLOv8 等 AGPL 权重或
+  `.gguf` 即失败）；没有 `tests`、`docs` 目录和 `.md` 文档；没有 GPL 库（x264、x265 等只有 GPL 版 FFmpeg 才会链接的库，
+  或内嵌配置含 `--enable-gpl` / `--enable-nonfree`、内嵌许可字符串为 GPL 的 FFmpeg 库）；排除的包确实不在。
+  macOS 上还检查每个二进制文件要求的最低系统版本不高于 `tauri.conf.json` 的设置，并逐个 ad-hoc 签名后
+  `codesign --verify --strict`（8.1 节）。
 - PyInstaller 不能跨平台构建，macOS 包在 macOS 上构建，Windows 包在 Windows 上构建。
 - 说明：PyInstaller 打包的是 `.pyc` 字节码，有心人可以还原出接近源码的内容。源码不公开主要靠"不发布源码"，
   不靠打包工具。若以后需要更强的保护，再评估 Nuitka。
@@ -539,7 +575,22 @@ Hugging Face 上的文件 SHA-256 一致：
   "下载引导程序"方式；Windows 10（2018 年 4 月更新及以后）和 Windows 11 已自带 WebView2，通常无需下载。
   不提供 MSI（MSI 只在企业批量部署时需要）。
 - macOS 最低系统版本：构建后检查各二进制文件（Python 运行库、onnxruntime、llama-server）要求的最低版本，取最高者写入
-  `tauri.conf.json` 的 `bundle.macOS.minimumSystemVersion` 和 README。
+  `tauri.conf.json` 的 `bundle.macOS.minimumSystemVersion` 和 README。现在是 14.0（onnxruntime 的 wheel 标为
+  `macosx_14_0_arm64`；llama.cpp 要求 13.3），`check_bundle.py` 每次构建都核对。
+- 外壳在 `desktop/`：`desktop/src-tauri`（Rust，tauri 2.12、tauri-plugin-single-instance、tauri-plugin-opener）和
+  `desktop/splash`（启动页）。`desktop/package.json` 只装 Tauri 命令行工具（`@tauri-apps/cli`），与 `web/` 的前端依赖
+  分开，所以根目录仍然没有 `package.json`。外壳的行为：
+  - 只有一个窗口，先显示本地启动页，同时启动 `resource_dir/backend/jacara-backend desktop`，环境变量
+    `JACARA_HOME`（数据文件夹：系统的本地应用数据文件夹加程序名，即 Electron `userData` 的命名方式）、
+    `JACARA_LOG_DIR`、`JACARA_WEB_DIR`、`JACARA_WATCH_STDIN=1`；后端的标准错误写入日志文件夹的 `backend.log`，
+    外壳自己的记录写 `app.log`；Windows 上以 `CREATE_NO_WINDOW` 启动，不出现命令行窗口。
+  - 后端输出 `JACARA_READY <地址>` 后窗口打开这个地址；后端没能启动或意外退出时回到启动页，显示原因和日志文件夹。
+  - 窗口内只允许启动页和后端自己的地址，其他链接用系统浏览器打开；窗口不接管文件拖放
+    （`disable_drag_drop_handler`），网页收到的是 HTML5 拖放。
+  - 再次打开程序时把已有窗口调到前面（单实例插件）。
+  - 退出时关闭后端的标准输入，最多等 20 秒（后端自己 10 秒内停止 worker 和模型服务），还没退出才强制结束。
+  - `bundle.resources` 把 `dist/jacara-backend/` 映射为 `backend/`、`web/dist/` 映射为 `web/`。已在 Linux 上用
+    `tauri build --bundles deb` 核对映射和可执行权限。
 
 ### 7.3 自动构建
 
@@ -549,6 +600,28 @@ Hugging Face 上的文件 SHA-256 一致：
 - 构建步骤：安装依赖 → 构建网页 → 下载并校验 llama.cpp 和表格模型 → PyInstaller 打包后端 → 运行
   `packaging/desktop/smoke.py` → 生成许可清单 → 检查 AGPL 权重和签名 → Tauri 打包 → 计算 SHA-256。
 - 后端测试也在 Windows 上运行一遍（现有代码只在 macOS 上运行过，进程管理、路径、信号处理需要验证）。
+- 实现：`.github/workflows/desktop.yml`。手动运行时只构建，安装包留在工作流的构件中；推送 `v*` 标签时把安装包和
+  `.sha256` 文件放进本仓库的**草稿**发布，人工检查后再发布（改为发布到公开仓库是第 6 步）。每台运行器依次：
+  `check_versions.py`（`pyproject.toml`、`web/package.json`、`desktop/package.json`、`Cargo.toml`、
+  `tauri.conf.json` 的版本一致，标签与版本一致）→ `uv sync --locked --group desktop` → 后端测试 →（macOS）从源码构建
+  不含 FFmpeg 的 OpenCV（见下）并运行 `test_opencv_resize.py` → 网页 → `fetch_llama.py`、`fetch_table_model.py` →
+  `licenses.py` → PyInstaller → `smoke.py` → `check_bundle.py`（macOS 加 `--sign`）→ `tauri-apps/tauri-action@v1`
+  （`projectPath: desktop`，不上传更新清单）→（macOS）`codesign --verify --deep --strict` 检查 `.app` →
+  每个安装包的 SHA-256。
+- **macOS 的 OpenCV 从源码构建**：PyPI 上 `opencv-python-headless` 的 macOS wheel（4.9 到 5.0 都是）带的 FFmpeg
+  是用 `--enable-gpl` 构建的：`cv2` 加载 `libavcodec`，`libavcodec` 链接 `libx264`、`libx265`（GPL-2.0 及以上），
+  4.13.0.92 还带 `librubberband`、`libvidstab`、`libpostproc`。项目页说"All wheels ship with FFmpeg licensed under
+  the LGPLv2.1"，与 macOS wheel 的实际内容不符。程序只读图片和 PDF，不读写视频，所以 macOS 安装包改用
+  `packaging/desktop/build_opencv.py` 构建的 wheel：按 `packaging/desktop/opencv.lock` 固定的
+  opencv-python 发布标签和提交（与 `uv.lock` 同一版本，4.14 起有 KleidiCV 的越界读取，已在 `pyproject.toml` 中限制），
+  按其 README 的手动构建方法（`ENABLE_HEADLESS=1`，另加 `CMAKE_ARGS`）构建：`WITH_FFMPEG=OFF`、
+  `WITH_GSTREAMER=OFF`（不带任何视频库）；`OPENCV_FORCE_3RDPARTY_BUILD=ON`，zlib、libpng、libjpeg、libtiff、libwebp、
+  OpenJPEG、OpenEXR 用 OpenCV 自带的源码编译，不链接构建机上碰巧装着的库（macOS 运行器上的 Homebrew）；
+  `WITH_AVIF=OFF`（AVIF 只能用构建机上的库）。在 Linux 上试构建时，不加这个开关的 `cv2` 链接了系统的
+  libjpeg、libpng、libtiff、libwebp。安装后检查 `cv2.getBuildInformation()` 的 Video I/O 中没有 FFmpeg，
+  且 `cv2` 只链接系统库（macOS：`/System/Library`、`/usr/lib`）。之后的步骤不再同步环境（`uv run --no-sync`），
+  否则 uv 会装回 PyPI 的 wheel。构建好的 wheel 按 `opencv.lock` 的内容缓存。Windows 的 wheel 只带 OpenCV 自己构建的 LGPL 版 FFmpeg 插件
+  （`opencv_videoio_ffmpeg*.dll`，内嵌许可字符串为"LGPL version 2.1 or later"），照常使用。
 - 不支持 Intel Mac：GitHub 已停用最后一个 Intel Mac 标准镜像（`macos-13`），只剩 `macos-15-intel` 维持到 2027 年秋；
   Python 也已把 Intel Mac 降为二级支持。Intel Mac 没有 Metal 加速的大模型推理，9B 模型速度也难以接受。
 
@@ -590,16 +663,33 @@ Hugging Face 上的文件 SHA-256 一致：
 
   Apache 2.0 第 4 条（d）项要求转发者保留 NOTICE 中的署名；第 6 条不授予使用作者名称的权利。`LICENSE` 末尾的
   `Copyright [yyyy] [name of copyright owner]` 是许可原文附带的填写示例，保持原样。
-- **第三方许可清单**（`THIRD_PARTY_LICENSES`，随安装包发布，"关于"页可以查看），构建时自动生成：
-  - Python 依赖：`pip-licenses`（MIT）带 `--with-license-file --with-notice-file`，并用 `--fail-on` 拦截
-    GPL、AGPL、LGPL（一旦出现即构建失败）。
+- **第三方许可清单**（`THIRD_PARTY_LICENSES`，随安装包发布，"关于"页可以查看），构建时由
+  `packaging/desktop/licenses.py` 自动生成，写到 `build/desktop/THIRD_PARTY_LICENSES`，spec 把它打进程序包：
+  - Python 依赖：`uv tree --frozen --no-dev --no-dedupe` 去掉不打包的包（7.1 节）得到运行时依赖；许可名称用
+    `pip-licenses`（MIT）；许可原文收全每个包带的所有许可和声明文件（元数据中的 `License-File`（PEP 639）、
+    `.dist-info` 里的、导入包顶层的，例如 onnxruntime 的 `ThirdPartyNotices.txt`、opencv 的
+    `LICENSE-3RD-PARTY.txt`、shapely 的 `LICENSE_GEOS`），因为 `pip-licenses` 每个包只取一个文件。
+    包的许可是 GPL、LGPL 或 AGPL 即构建失败。元数据没写许可的包（huey）在脚本中写明许可，并要求包里有许可文件。
+  - 包在许可文件中声明的随附组件（NumPy 等 wheel 用的"Name: / Files: / License:"格式）：GPL 系的只允许两项，
+    其余即构建失败：GCC 运行库（GPL-3.0-or-later WITH GCC-exception-3.1，运行库例外允许用 GCC 编译并与之组合的程序
+    按任意条款发布；Windows 的 NumPy 的 OpenBLAS 库内含它）和 libquadmath（LGPL-2.1-or-later，独立的动态库）。
+    实际打进安装包的二进制文件另由 `check_bundle.py` 检查（7.1 节）。
   - 网页依赖：`license-checker-rseidelsohn`（BSD-3-Clause）带 `--production`。
-  - Tauri 的 Rust 依赖：`cargo-about`。
-  - 手工补充：llama.cpp（MIT）、Python 运行时（PSF 许可）、RapidOCR 和版面模型、SLANet-plus（Apache 2.0）。
+  - Tauri 的 Rust 依赖：`cargo-about`（0.9.3，`generate --format json`），配置在 `desktop/src-tauri/about.toml`：
+    只列发布目标（`aarch64-apple-darwin`、`x86_64-pc-windows-msvc`）编译进去的 crate；接受的许可依次为 Apache-2.0、
+    MIT、BSD-3-Clause、Unicode-3.0、Zlib、MPL-2.0，多许可的 crate 取其中第一个被接受的，GPL 系从不接受。
+    检查针对选中的许可（例如某个 crate 写"MIT OR Apache-2.0 OR LGPL-2.1-or-later"，选中的是 Apache-2.0）。
+    同一份许可原文只印一次，后面列出用它的 crate（cargo-about 自带模板的做法）。
+  - 手工补充：llama.cpp（MIT）和它在 Windows 上带的 LLVM OpenMP 运行库（Apache-2.0 WITH LLVM-exception）、
+    Python 运行时（PSF 许可）、PyInstaller 引导程序（GPL-2.0-or-later WITH Bootloader-exception）、
+    PaddleOCR 的 OCR、版面和表格模型（Apache 2.0）。
   - 模型不随安装包分发，但在清单和 README 中注明：Qwen3.5-9B 为 Apache 2.0，GGUF 文件来自 unsloth 的转换仓库，
     同样标为 Apache 2.0。
 - **现有依赖的许可检查结果**（2026-11-14，后端 97 个包、前端 8 个直接依赖）：
   - 没有 GPL、AGPL。
+  - 2026-11-15 生成许可清单时补充：随包分发的范围是 61 个 Python 包、81 个网页包、251 个 Rust crate；包本身的许可
+    没有 GPL 系。但 `opencv-python-headless` 的 macOS wheel 带 GPL 版 FFmpeg 和 x264、x265，macOS 安装包因此改用
+    从源码构建的 OpenCV（7.3 节）。用 PyPI wheel 在本机打出的测试包含这些库，不能对外分发。
   - `psycopg`、`psycopg-binary` 为 LGPL-3.0：桌面版不打包（7.1 节）。
   - `certifi`、`tqdm` 为 MPL-2.0（文件级要求）：不修改其源码，附上许可原文即可。
   - 前端直接依赖全部为 MIT；间接依赖在构建时由上面的工具全量检查。
@@ -831,3 +921,10 @@ llama-server。安装包经过压缩，下载体积会更小。准确数字以�
 - wry：`runOpenPanelWithParameters`（`setCanChooseDirectories`）— https://github.com/tauri-apps/wry/blob/dev/src/wkwebview/class/wry_web_view_ui_delegate.rs
 - platformdirs — https://pypi.org/project/platformdirs/
 - PyInstaller：Using Spec Files（datas、hiddenimports）— https://pyinstaller.org/en/stable/spec-files.html
+- opencv-python：PyPI 项目页（FFmpeg 许可说明、Manual builds：ENABLE_HEADLESS、CMAKE_ARGS）— https://pypi.org/project/opencv-python/
+- opencv-python：维护者建议不带 FFmpeg 构建以避开随附库的许可问题 — https://github.com/opencv/opencv-python/issues/1097
+- FFmpeg：License and Legal Considerations（用到 GPL 部分时整个 FFmpeg 适用 GPL；LGPL 合规清单要求不用 `--enable-gpl`、`--enable-nonfree`，不用 libx264 等 GPL 库）— https://www.ffmpeg.org/legal.html
+- GCC Runtime Library Exception 3.1 — https://www.gnu.org/licenses/gcc-exception-3.1.html
+- cargo-about：Configuration（targets、accepted、private）— https://embarkstudios.github.io/cargo-about/cli/generate/config.html
+- tauri-action（v1 输入：projectPath、tauriScript、tagName、releaseDraft、uploadUpdaterJson、uploadWorkflowArtifacts）— https://github.com/tauri-apps/tauri-action
+- astral-sh/setup-uv（按提交固定版本）— https://github.com/astral-sh/setup-uv

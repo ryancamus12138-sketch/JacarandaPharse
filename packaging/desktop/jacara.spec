@@ -1,4 +1,4 @@
-# PyInstaller spec of the desktop app's backend: one-folder mode (ADR 0068 section 7.1).
+# PyInstaller spec of the desktop app's backend: one-folder mode.
 #
 #   uv run pyinstaller packaging/desktop/jacara.spec --noconfirm
 #
@@ -9,9 +9,12 @@
 #   models offered for download (downloads/models.lock, checked by parsing it);
 # - RapidOCR: its detection, recognition and orientation models and its configuration;
 # - rapid-layout: only the layout model layout_cdla.onnx. Its other weights (YOLOv8) are AGPL
-#   licensed and must not ship (ADR 0068 section 3.5);
+#   licensed and must not ship;
 # - rapid-table: its configuration (the table model itself is ours, below);
 # - the table structure model SLANet-plus, checked against its published SHA-256;
+# - the llama.cpp builds prepared by fetch_llama.py (llama/<variant>/);
+# - LICENSE, NOTICE and the third-party licence list made by licenses.py (shown under Settings →
+#   About and diagnostics; Apache 2.0 section 4(d) asks for the NOTICE to ship);
 # - package metadata read at run time with importlib.metadata (versions shown in the app).
 # Modules loaded by name (uvicorn's "jacara.app:app", uvicorn's protocol implementations, Alembic's
 # environment script) are listed as hidden imports.
@@ -24,6 +27,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy
 
 ROOT = Path(SPECPATH).resolve().parents[1]
 JACARA = ROOT / "backend" / "src" / "jacara"
+BUILD = ROOT / "build" / "desktop"
 
 TABLE_MODEL = ROOT / "models" / "table" / "slanet-plus.onnx"
 TABLE_MODEL_SHA256 = "d57a942af6a2f57d6a4a0372573c696a2379bf5857c45e2ac69993f3b334514b"
@@ -80,6 +84,21 @@ if sha256(TABLE_MODEL) != TABLE_MODEL_SHA256:
     fail(f"table model checksum differs from the published one: {TABLE_MODEL}")
 datas.append((str(TABLE_MODEL), "models/table"))
 
+# ---- llama.cpp ----
+llama = BUILD / "llama"
+servers = sorted(llama.glob("*/llama-server*"))
+if not servers:
+    fail(f"no llama.cpp build in {llama}: run packaging/desktop/fetch_llama.py first")
+for variant in sorted(p for p in llama.iterdir() if p.is_dir()):
+    datas += [(str(f), f"llama/{variant.name}") for f in sorted(variant.iterdir()) if f.is_file()]
+
+# ---- Licences ----
+licences = [ROOT / "LICENSE", ROOT / "NOTICE", BUILD / "THIRD_PARTY_LICENSES"]
+for path in licences:
+    if not path.is_file():
+        fail(f"{path} missing (THIRD_PARTY_LICENSES: run packaging/desktop/licenses.py first)")
+    datas.append((str(path), "."))
+
 # ---- Other package files and metadata ----
 datas += collect_data_files("fastapi_offline")
 for name in ("jacara", "rapidocr", "rapid_layout", "rapid_table", "pdfplumber", "onnxruntime"):
@@ -98,7 +117,7 @@ a = Analysis(
     datas=datas,
     hiddenimports=hiddenimports,
     # The desktop app uses SQLite, local files and Huey: no Celery, Valkey, S3 or PostgreSQL client.
-    # Leaving out psycopg also keeps its LGPL licence out of the installer (ADR 0068 section 7.1).
+    # Leaving out psycopg also keeps its LGPL licence out of the installer.
     excludes=[
         "celery",
         "kombu",
@@ -108,6 +127,9 @@ a = Analysis(
         "psycopg",
         "psycopg_binary",
         "psycopg_c",
+        # Used only by the evaluation commands (development tools); its macOS wheel also carries
+        # the GCC Fortran runtime, which the app does not need.
+        "scipy",
         "tkinter",
     ],
 )

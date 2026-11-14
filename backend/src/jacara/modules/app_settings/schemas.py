@@ -29,7 +29,7 @@ class SettingItem(BaseModel):
     options: list[Option] = []
     min: int | None = None
     max: int | None = None
-    section: Literal["processing", "data"] = "processing"
+    section: Literal["processing", "data", "models"] = "processing"
     """Settings page that shows it: Recognition and processing, or Data and backups."""
     live: bool = False
     """Applies without restarting the background services."""

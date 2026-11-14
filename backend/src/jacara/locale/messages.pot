@@ -4,7 +4,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: JacarandaParse 1.0.0\n"
-"POT-Creation-Date: 2026-11-14 18:27+0000\n"
+"POT-Creation-Date: 2026-11-14 19:33+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -698,193 +698,217 @@ msgstr ""
 msgid "比较的两侧须同为数字或同为日期"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:55
-#: backend/src/jacara/modules/app_settings/service.py:66
-#: backend/src/jacara/modules/app_settings/service.py:76
-#: backend/src/jacara/modules/app_settings/service.py:84
+#: backend/src/jacara/modules/app_settings/service.py:57
+#: backend/src/jacara/modules/app_settings/service.py:68
+#: backend/src/jacara/modules/app_settings/service.py:78
+#: backend/src/jacara/modules/app_settings/service.py:86
 msgid "识别"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:56
+#: backend/src/jacara/modules/app_settings/service.py:58
 msgid "由模型读取原图"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:57
+#: backend/src/jacara/modules/app_settings/service.py:59
 msgid "照片、扫描件的 OCR 结果不准确时，由视觉模型读取原图。需先配置视觉模型。"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:60
+#: backend/src/jacara/modules/app_settings/service.py:62
 msgid "仅在 OCR 不可靠时使用（推荐）"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:61
+#: backend/src/jacara/modules/app_settings/service.py:63
 msgid "每张都使用（较慢）"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:62
+#: backend/src/jacara/modules/app_settings/service.py:64
 msgid "不使用"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:67
+#: backend/src/jacara/modules/app_settings/service.py:69
 msgid "PDF 文字读取方式"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:69
+#: backend/src/jacara/modules/app_settings/service.py:71
 msgid "渲染为图像后执行 OCR，与照片流程相同，PDF 文本层仅用于核对；仅读取文本层速度较快，但只适用于确认无误的电子版。"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:73
+#: backend/src/jacara/modules/app_settings/service.py:75
 msgid "渲染为图像后 OCR（推荐）"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:73
+#: backend/src/jacara/modules/app_settings/service.py:75
 msgid "仅读取 PDF 文本层"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:77
+#: backend/src/jacara/modules/app_settings/service.py:79
 msgid "OCR 图像长边像素上限"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:78
+#: backend/src/jacara/modules/app_settings/service.py:80
 msgid "超过上限的图像将先缩小。数值越大，小字识别越准确，但速度越慢。"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:85
+#: backend/src/jacara/modules/app_settings/service.py:87
 msgid "版面分析"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:86
+#: backend/src/jacara/modules/app_settings/service.py:88
 msgid "抽取前使用版面模型识别标题、正文、表格及页眉页脚。"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:90
-#: backend/src/jacara/modules/app_settings/service.py:96
+#: backend/src/jacara/modules/app_settings/service.py:92
+#: backend/src/jacara/modules/app_settings/service.py:98
 msgid "从人工修改中学习"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:91
+#: backend/src/jacara/modules/app_settings/service.py:93
 msgid "抽取时提供历史修改示例"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:92
+#: backend/src/jacara/modules/app_settings/service.py:94
 msgid "将同一模板此前经人工修改的值提供给模型，以减少重复错误。"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:97
+#: backend/src/jacara/modules/app_settings/service.py:99
 msgid "示例选择方式"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:99
+#: backend/src/jacara/modules/app_settings/service.py:101
 msgid "决定把哪些历史修改给模型看。近期修改较多的：最常被改、最近改过的字段优先，每个字段最多 2 条，共最多 8 条。整理后：只用模型自己造成的错误（OCR 认错的字不算），同类错误合并计数；模板字段改过后，旧示例不再使用；同一开票方已有 3 份以上审核过的单据时，优先用它自己的示例。"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:106
+#: backend/src/jacara/modules/app_settings/service.py:108
 msgid "近期修改较多的（默认）"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:107
+#: backend/src/jacara/modules/app_settings/service.py:109
 msgid "整理后（只用模型的错误）"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:111
-#: backend/src/jacara/modules/app_settings/service.py:117
-#: backend/src/jacara/modules/app_settings/service.py:126
+#: backend/src/jacara/modules/app_settings/service.py:113
+#: backend/src/jacara/modules/app_settings/service.py:119
+#: backend/src/jacara/modules/app_settings/service.py:128
 msgid "后台和导入"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:112
+#: backend/src/jacara/modules/app_settings/service.py:114
 msgid "后台双阶段并行"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:113
+#: backend/src/jacara/modules/app_settings/service.py:115
 msgid "OCR 与模型并行运行，批量导入更快；关闭可节省数百 MB 内存。"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:118
+#: backend/src/jacara/modules/app_settings/service.py:120
 msgid "监视文件夹"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:120
+#: backend/src/jacara/modules/app_settings/service.py:122
 msgid "放入这些文件夹（含子文件夹）的图片和 PDF 将自动导入，原文件保持不变，重复文件将跳过。每个文件夹可以使用不同的模板。"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:127
+#: backend/src/jacara/modules/app_settings/service.py:129
 msgid "上传文件大小上限（MB）"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:128
+#: backend/src/jacara/modules/app_settings/service.py:130
 msgid "超过此大小的文件将被拒绝。"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:134
-#: backend/src/jacara/modules/app_settings/service.py:146
+#: backend/src/jacara/modules/app_settings/service.py:136
+#: backend/src/jacara/modules/app_settings/service.py:148
 msgid "自动备份"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:135
+#: backend/src/jacara/modules/app_settings/service.py:137
 msgid "每天自动备份数据库"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:137
+#: backend/src/jacara/modules/app_settings/service.py:139
 msgid "每天把数据库备份到数据文件夹的 backups/auto/。只含数据库，不含上传的文件；需要完整保护时，请定期用「立即备份」存到另一块磁盘。"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:147
+#: backend/src/jacara/modules/app_settings/service.py:149
 msgid "保留的自动备份份数"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:148
+#: backend/src/jacara/modules/app_settings/service.py:150
 msgid "超过这个数目时，删除最早的自动备份。"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:157
+#: backend/src/jacara/modules/app_settings/service.py:159
 msgid "安全"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:158
+#: backend/src/jacara/modules/app_settings/service.py:160
 msgid "启用接口文档页 /docs"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:159
+#: backend/src/jacara/modules/app_settings/service.py:161
 msgid "便于开发调试；供他人使用时建议关闭，以减少接口细节暴露。"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:205
+#: backend/src/jacara/modules/app_settings/service.py:165
+msgid "计算设备"
+msgstr ""
+
+#: backend/src/jacara/modules/app_settings/service.py:166
+msgid "运行大模型的设备"
+msgstr ""
+
+#: backend/src/jacara/modules/app_settings/service.py:167
+msgid "自动：有可用的显卡（Vulkan）就用显卡，否则用 CPU。显卡运行出错时可改为 CPU。"
+msgstr ""
+
+#: backend/src/jacara/modules/app_settings/service.py:170
+msgid "自动（推荐）"
+msgstr ""
+
+#: backend/src/jacara/modules/app_settings/service.py:171
+msgid "CPU"
+msgstr ""
+
+#: backend/src/jacara/modules/app_settings/service.py:172
+msgid "显卡（Vulkan）"
+msgstr ""
+
+#: backend/src/jacara/modules/app_settings/service.py:221
 #, python-brace-format
 msgid "{label}：值无效"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:212
+#: backend/src/jacara/modules/app_settings/service.py:228
 #, python-brace-format
 msgid "{label}：需在 {min}～{max} 之间"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:218
+#: backend/src/jacara/modules/app_settings/service.py:234
 #, python-brace-format
 msgid "{label}：需填写已存在文件夹的完整路径"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:238
+#: backend/src/jacara/modules/app_settings/service.py:254
 #, python-brace-format
 msgid "{label}：找不到文件夹 {folder}，需填写已存在文件夹的完整路径"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:253
+#: backend/src/jacara/modules/app_settings/service.py:269
 #, python-brace-format
 msgid "{label}：{folder} 与另一个监视文件夹重复或互相包含"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:327
+#: backend/src/jacara/modules/app_settings/service.py:349
 #, python-brace-format
 msgid "{label}：{reason}"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:337
+#: backend/src/jacara/modules/app_settings/service.py:359
 #, python-brace-format
 msgid "设置页无法修改 {key}"
 msgstr ""
 
-#: backend/src/jacara/modules/app_settings/service.py:342
+#: backend/src/jacara/modules/app_settings/service.py:364
 #, python-brace-format
 msgid "{label}由 .env 中的 {env} 指定，无法在页面上修改"
 msgstr ""
@@ -1005,37 +1029,37 @@ msgstr ""
 msgid "只能打开 http 或 https 网址"
 msgstr ""
 
-#: backend/src/jacara/modules/desktop/router.py:216
+#: backend/src/jacara/modules/desktop/router.py:220
 #: backend/src/jacara/modules/setup/router.py:276
 msgid "找不到这个文件夹"
 msgstr ""
 
-#: backend/src/jacara/modules/desktop/router.py:222
+#: backend/src/jacara/modules/desktop/router.py:226
 msgid "选择要监视的文件夹"
 msgstr ""
 
-#: backend/src/jacara/modules/desktop/router.py:223
+#: backend/src/jacara/modules/desktop/router.py:227
 msgid "选择备份保存位置"
 msgstr ""
 
-#: backend/src/jacara/modules/desktop/router.py:224
+#: backend/src/jacara/modules/desktop/router.py:228
 msgid "选择数据文件夹的新位置"
 msgstr ""
 
-#: backend/src/jacara/modules/desktop/router.py:236
+#: backend/src/jacara/modules/desktop/router.py:240
 msgid "选择备份文件"
 msgstr ""
 
-#: backend/src/jacara/modules/desktop/router.py:272
+#: backend/src/jacara/modules/desktop/router.py:276
 #: backend/src/jacara/ops/desktop_data.py:526
 msgid "请选择一个已存在的文件夹"
 msgstr ""
 
-#: backend/src/jacara/modules/desktop/router.py:296
+#: backend/src/jacara/modules/desktop/router.py:300
 msgid "请选择 .tar 或 .db 备份文件"
 msgstr ""
 
-#: backend/src/jacara/modules/desktop/router.py:393
+#: backend/src/jacara/modules/desktop/router.py:397
 #, python-brace-format
 msgid "仍然找不到数据文件夹：{folder}"
 msgstr ""
@@ -2602,15 +2626,20 @@ msgstr ""
 msgid "请填写完整路径"
 msgstr ""
 
-#: backend/src/jacara/modules/system/service.py:57
+#: backend/src/jacara/modules/system/router.py:55
+#, python-brace-format
+msgid "这个版本没有附带 {name}"
+msgstr ""
+
+#: backend/src/jacara/modules/system/service.py:73
 msgid "正常"
 msgstr ""
 
-#: backend/src/jacara/modules/system/service.py:57
+#: backend/src/jacara/modules/system/service.py:73
 msgid "无法连接，请联系管理员"
 msgstr ""
 
-#: backend/src/jacara/modules/system/service.py:70
+#: backend/src/jacara/modules/system/service.py:86
 msgid "pp_layout_cdla（rapid-layout 内置）"
 msgstr ""
 
@@ -3778,6 +3807,15 @@ msgstr ""
 msgid "未知的模型后端：{backend}，可用后端：{available}"
 msgstr ""
 
+#: backend/src/jacara/plugins/model_backends/llama_builds.py:102
+#, python-brace-format
+msgid "检测到的显卡：{devices}"
+msgstr ""
+
+#: backend/src/jacara/plugins/model_backends/llama_builds.py:103
+msgid "没有检测到可用的显卡（Vulkan），自动选择时使用 CPU。"
+msgstr ""
+
 #: backend/src/jacara/plugins/model_backends/llama_server.py:25
 msgid "模型服务要求密钥，但密钥错误。如模型由 jacara start 启动，请重新运行 jacara start"
 msgstr ""
@@ -3838,11 +3876,11 @@ msgstr ""
 msgid "模型服务的上下文长度"
 msgstr ""
 
-#: backend/src/jacara/plugins/model_backends/server.py:17
+#: backend/src/jacara/plugins/model_backends/server.py:21
 msgid "未找到 llama-server。在 Mac 上请先运行：brew install llama.cpp"
 msgstr ""
 
-#: backend/src/jacara/plugins/model_backends/server.py:18
+#: backend/src/jacara/plugins/model_backends/server.py:22
 msgid "安装不完整，缺少 llama-server，请重新安装 JacarandaParse"
 msgstr ""
 

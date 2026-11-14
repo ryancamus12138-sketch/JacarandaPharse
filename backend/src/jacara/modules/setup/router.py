@@ -1,4 +1,4 @@
-"""First-start wizard of the desktop app: /api/v1/setup (ADR 0068 section 6). Only in the desktop
+"""First-start wizard of the desktop app: /api/v1/setup. Only in the desktop
 app; elsewhere every endpoint answers 404.
 
 The wizard appears while no large model is found. It offers the models of models.lock to download

@@ -1,4 +1,4 @@
-"""Model downloads of the desktop app (ADR 0068 section 6, "First-start wizard and model download").
+"""Model downloads of the desktop app (first-start wizard and model download).
 
 The files offered are listed in models.lock, shipped with the program and never fetched at run time:
 each with its size, its SHA-256 and its address at each source, pinned to a fixed commit. Downloads
@@ -50,7 +50,7 @@ SOURCES: dict[str, str] = {
     "modelscope": N_("魔搭社区（ModelScope）"),
     "hf_mirror": N_("hf-mirror.com（社区镜像）"),
 }
-"""Source ids in priority order (ADR 0068): the official repository first, the community mirror
+"""Source ids in priority order: the official repository first, the community mirror
 last."""
 
 STALL_SECONDS = 30.0
@@ -62,7 +62,7 @@ MIN_SPEED = 1
 
 CONNECT_SECONDS = 30.0
 SPACE_MARGIN = 1024**3
-"""Free space needed besides the rest of the file (1 GB, ADR 0068)."""
+"""Free space needed besides the rest of the file (1 GB)."""
 
 MAX_REDIRECTS = 10
 CHUNK = 1024 * 1024

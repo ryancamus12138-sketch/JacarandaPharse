@@ -26,8 +26,8 @@ export interface SettingItem {
   options: { value: string; label: string }[]
   min: number | null
   max: number | null
-  /** Settings page that shows it: Recognition and processing, or Data and backups. */
-  section: 'processing' | 'data'
+  /** Settings page that shows it: Recognition and processing, Data and backups, or Models. */
+  section: 'processing' | 'data' | 'models'
   /** Applies without restarting the background services. */
   live: boolean
 }

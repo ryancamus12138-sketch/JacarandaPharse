@@ -8,6 +8,9 @@ Checks, each of which fails when a file is missing from the package:
 - the interface translations load (English answers);
 - the starter templates, the table model (shipped with the program), RapidOCR's models and the list
   of models offered for download are found;
+- About and diagnostics: LICENSE, NOTICE and THIRD_PARTY_LICENSES are shipped and readable, the
+  shipped llama-server runs (its version is in the diagnostics) and the diagnostics name no folder
+  under the home folder;
 - a PDF passes OCR (PDF rendering, OpenCV, ONNX Runtime, layout model);
 - the watch folder imports a file placed in it;
 - a download asked to be saved lands in the Downloads folder;
@@ -86,6 +89,27 @@ def main() -> None:
         check(len(client.get("/api/v1/templates/starters").json()) > 0, "starter templates")
         info = client.get("/api/v1/system").json()
         check(info["structure"]["table"] == "slanet-plus.onnx", "table model shipped")
+        check(
+            info["license"] == "Apache-2.0" and "JacarandaParse" in info["notice"],
+            "NOTICE shipped",
+        )
+        texts = {
+            which: client.get(f"/api/v1/system/licenses/{which}")
+            for which in ("license", "notice", "third_party")
+        }
+        check(
+            info["third_party"] is True
+            and all(r.status_code == 200 for r in texts.values())
+            and "Apache License" in texts["license"].json()["text"]
+            and "Python packages" in texts["third_party"].json()["text"],
+            "licence texts shipped",
+        )
+        report = client.get("/api/v1/system/diagnostics").json()["text"]
+        check(
+            "Model server: " in report and "(version: " in report,
+            "shipped llama-server runs (diagnostics)",
+        )
+        check(str(home) not in report, "diagnostics write the home folder as ~")
         setup = client.get("/api/v1/setup").json()
         listed = [f["filename"] for f in setup["files"]]
         wanted = ["Qwen3.5-9B-Q4_K_M.gguf", "mmproj-F16.gguf"]

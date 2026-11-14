@@ -250,6 +250,17 @@ export interface SystemInfo {
     export_bytes: number
   }
   services: { name: string; ok: boolean; detail: string; hint: string }[]
+  /** Attribution from the NOTICE file shipped with the program. */
+  notice?: string
+  license?: string
+  /** The list of third-party licenses is shipped with this build. */
+  third_party?: boolean
+  /** Desktop app only (administrators): folders and background processes. */
+  desktop?: {
+    data_dir: string
+    log_dir: string
+    processes: { name: string; state: 'running' | 'restarting' | 'paused' | 'stopped'; starts: number; note: string | null }[]
+  } | null
 }
 
 /** Paginated list (backend DocumentPage). */

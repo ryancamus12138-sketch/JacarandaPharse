@@ -132,7 +132,7 @@ def _files(pattern: str, keep: object = None) -> list[ModelFile]:
 def candidates(slot: str) -> list[ModelFile]:
     """Selectable files per slot: the default shipped with the program (table model) and the
     imported versions of this kind; outside the desktop app also files placed in the expected
-    locations under models/. The desktop app runs imported models only (ADR 0068): loose files are
+    locations under models/. The desktop app runs imported models only: loose files are
     offered for import in the setup wizard instead."""
     if config.get_settings().jacara_desktop:
         found: list[ModelFile] = []

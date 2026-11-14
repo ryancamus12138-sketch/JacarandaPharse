@@ -119,7 +119,7 @@ export async function chooseBackupFile(): Promise<string | null> {
   return (await api<{ path: string | null }>('/desktop/choose-file', { method: 'POST' })).path
 }
 
-export function openFolder(which: 'data' | 'backups'): Promise<void> {
+export function openFolder(which: 'data' | 'backups' | 'logs'): Promise<void> {
   return api<void>(`/desktop/open-folder?which=${which}`, { method: 'POST' })
 }
 

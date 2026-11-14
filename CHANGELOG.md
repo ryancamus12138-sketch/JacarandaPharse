@@ -192,6 +192,35 @@
     （断开链接），它指向的原文件不动。删除或导入后变空的子文件夹一并删除，只剩 .DS_Store、Thumbs.db、desktop.ini 的也算空。
   - 新接口 `/api/v1/setup`（只在桌面版可用）。审计日志新增"模型库：下载模型"。
   - 修好：工作台卡片底部的小字放不下时被截断成"…"，现在换行完整显示。
+- 桌面版第三步第 4 批：「设置 → 关于和诊断」（ADR 0068 第 6 节）：
+  - 显示版本、署名（`NOTICE`）、许可，可以打开许可证全文、署名和第三方许可清单（新接口
+    `GET /api/v1/system/licenses/{license|notice|third_party}`）。新增仓库根目录的 `NOTICE`。
+  - "复制诊断信息"：系统、模型、后台进程、检查结果和数据的纯文本，用于反馈问题；不含单据内容和文件名，主目录写成 `~`
+    （新接口 `GET /api/v1/system/diagnostics`，只有管理员可用）。
+  - 数据、备份、日志三个文件夹各有"打开"按钮；"后台进程"卡片显示模型服务、识别、抽取、监视文件夹的状态和重启次数。
+- 桌面版第四步：打包后端（ADR 0068 第 3.4、7.1、9 节）：
+  - 安装包附带 llama.cpp 官方构建 b12359（v1.0.0）：macOS 一个（Metal），Windows 两个（CPU、Vulkan）。
+    `packaging/desktop/llama.lock` 固定每个文件的大小和 SHA-256，`packaging/desktop/fetch_llama.py` 下载、校验，
+    只留 `llama-server` 用到的文件。
+  - Windows 新设置"计算设备"（「设置 → 模型」，自动 / CPU / 显卡（Vulkan））：自动时用 Vulkan 版的
+    `llama-server --list-devices` 检测显卡，每个构建只检测一次（`data/llama-devices.json`）。只有一个构建时不显示。
+  - `packaging/desktop/fetch_table_model.py` 下载并校验附带的表格模型；桌面版不再读数据文件夹里散放的
+    `models/table/slanet-plus.onnx`（在放入文件夹列表中导入）。
+  - `packaging/desktop/licenses.py` 生成 `THIRD_PARTY_LICENSES`（Python、网页、Rust 依赖和手工补充的部分），
+    包的许可是 GPL、LGPL、AGPL 即构建失败；随附组件中的 GPL 系只允许 GCC 运行库例外和 libquadmath。
+    新开发依赖 `pip-licenses`（`desktop` 组）。
+  - `packaging/desktop/check_bundle.py` 检查打包结果：必需文件、`llama-server` 能运行、只有允许的模型权重、
+    没有测试和文档、没有 GPL 库（x264、x265 和 GPL 版 FFmpeg）、排除的包确实不在；macOS 还检查最低系统版本并
+    ad-hoc 签名。`scipy` 不再打进安装包（只有评测命令用）。
+  - macOS 用从源码构建、不含 FFmpeg 的 OpenCV（`packaging/desktop/build_opencv.py`、`opencv.lock`）：PyPI 上
+    `opencv-python-headless` 的 macOS wheel 链接 GPL 的 x264、x265。
+  - 冒烟测试加上许可文件、诊断信息和附带的 `llama-server`。
+- 桌面版第五步：Tauri 外壳和自动构建（ADR 0068 第 7.2、7.3、8.1 节）：
+  - `desktop/`：Tauri 2 外壳和启动页。启动打包好的后端，就绪后打开它的页面；后端没能启动或意外退出时显示原因和
+    日志文件夹；外部链接用系统浏览器打开；只运行一个实例；退出时等后端停好（最多 20 秒）。
+  - 安装包：macOS `.dmg`（Apple 芯片，macOS 14.0 起，ad-hoc 签名），Windows NSIS `-setup.exe`（按用户安装）。
+  - `.github/workflows/desktop.yml`：在 macOS 15 和 Windows 上测试、打包、检查，`v*` 标签时生成草稿发布并附 SHA-256；
+    `packaging/desktop/check_versions.py` 检查各处版本号一致。
 - 修好：「设置 → 模型」里，模型文件是链接（指向别处的同一个文件）时，「当前使用」显示成完整路径，
   而不是下拉列表里的文件名，刷新后依旧。现在先按原样比较路径，再按解析链接后的路径比较。
 

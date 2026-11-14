@@ -94,8 +94,12 @@ class Settings(BaseSettings):
     model_server: str = "http://127.0.0.1:8080"
 
     jacara_llama_server: Path | None = None
-    """llama-server executable. Defaults to llama-server on PATH; the desktop edition points it to
-    the copy bundled with the app."""
+    """llama-server executable. Defaults to the build shipped with the desktop app
+    (plugins/model_backends/llama_builds.py), then to llama-server on PATH."""
+
+    jacara_llama_device: Literal["auto", "cpu", "vulkan"] = "auto"
+    """Which shipped llama.cpp build runs the model when the app has several (Windows: cpu and
+    vulkan). auto: the Vulkan build when it reports a GPU, otherwise the CPU build."""
 
     jacara_model: Path | None = None
     """Model file (.gguf) started by `jacara start`. Defaults to the only .gguf file in models/."""
@@ -147,7 +151,7 @@ class Settings(BaseSettings):
     jacara_watch_folders: list[WatchFolder] = []
     """Watch folders set on the settings page, each with its own template (see watch_folders())."""
     jacara_auto_backup: bool = True
-    """Desktop app: back up the database once a day into backups/auto/ (ADR 0068 13.5)."""
+    """Desktop app: back up the database once a day into backups/auto/."""
     jacara_auto_backup_keep: int = 14
     """Desktop app: automatic database backups kept (Immich's default: 14)."""
     jacara_watch_user: str | None = None
@@ -190,7 +194,7 @@ class Settings(BaseSettings):
             return path if path.is_absolute() else data_home() / path
         chosen = chosen_file("model")
         if chosen or self.jacara_desktop:
-            # The desktop app runs only what is in use in the model library (ADR 0068): loose
+            # The desktop app runs only what is in use in the model library: loose
             # files in models/ are offered for import in the wizard instead.
             return chosen
         found = sorted(p for p in (data_home() / "models").glob("*.gguf") if not is_mmproj(p))
@@ -414,6 +418,7 @@ PAGE_EDITABLE = (
     "jacara_auto_backup_keep",
     "max_upload_mb",
     "jacara_api_docs",
+    "jacara_llama_device",
 )
 """Settings editable on the settings page. Database and object storage addresses and credentials,
 and the edition (personal or team), can only be set in .env."""

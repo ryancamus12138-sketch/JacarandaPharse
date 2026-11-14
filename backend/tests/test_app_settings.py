@@ -38,7 +38,8 @@ def test_defaults_then_page_value_wins(client, factory):
         found["jacara_vision"]["value"] == "auto" and found["jacara_vision"]["source"] == "default"
     )
     assert {o["value"] for o in found["jacara_vision"]["options"]} == {"auto", "always", "off"}
-    desktop_only = {"jacara_auto_backup", "jacara_auto_backup_keep"}  # Not outside the desktop app.
+    # Not outside the desktop app.
+    desktop_only = {"jacara_auto_backup", "jacara_auto_backup_keep", "jacara_llama_device"}
     assert set(found) == set(config.PAGE_EDITABLE) - LEGACY - desktop_only
 
     response = client.put(

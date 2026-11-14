@@ -11,3 +11,13 @@ export function getVision(): Promise<{ sees_images: boolean; mode: string; file:
 export function getSystemInfo(): Promise<SystemInfo> {
   return api<SystemInfo>('/system')
 }
+
+/** Text for a problem report (administrators): versions, system, models, processes, checks; no document content. */
+export async function getDiagnostics(): Promise<string> {
+  return (await api<{ text: string }>('/system/diagnostics')).text
+}
+
+/** LICENSE, NOTICE or the third-party license list shipped with the program. */
+export async function getLicenseText(which: 'license' | 'notice' | 'third_party'): Promise<string> {
+  return (await api<{ text: string }>(`/system/licenses/${which}`)).text
+}

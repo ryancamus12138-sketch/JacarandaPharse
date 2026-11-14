@@ -86,6 +86,10 @@ web/          前端（React + TypeScript + Vite + Ant Design + react-router + T
   src/features/     按功能分的页面：documents（列表、上传、导出）、review（审核工作台）、admin（用户管理、审计日志）
   src/utils/        小工具：文件大小、时间格式、saveFile()
 deploy/       部署相关
+desktop/      桌面版外壳（ADR 0068）：src-tauri/（Rust，Tauri 2）、splash/（启动页）；package.json 只装 Tauri 命令行工具
+packaging/desktop/  桌面版打包：jacara.spec（PyInstaller）、fetch_llama.py / llama.lock、fetch_table_model.py、
+              licenses.py（THIRD_PARTY_LICENSES）、check_bundle.py、smoke.py、check_versions.py、
+              build_opencv.py / opencv.lock（macOS 用不含 FFmpeg 的 OpenCV）
 docs/adr/     架构决策记录
 compose.yaml  开发用基础设施：PostgreSQL、Valkey、SeaweedFS
 ```
@@ -238,10 +242,14 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
 - 模板有主语言（ADR 0066）：`label`、`title`、`description` 是主语言的，别的语言放 `names`、`titles`、`descriptions`。
   起步模板 `.toml` 用中文写，每处 `description` 后面跟 `descriptions = { en = "..." }`，开头的依据注释对应 `[basis]` 的 `en`；
   改中文说明时英文一起改，`backend/tests/test_i18n_api.py` 会检查。
-- 不提交 `.env`、数据集、模型文件、`node_modules/`、`web/dist/`。密钥只放在 `.env`。要提交 `web/package-lock.json`。
+- 不提交 `.env`、数据集、模型文件、`node_modules/`、`web/dist/`、`build/`、`dist/`、`desktop/src-tauri/target/`。
+  密钥只放在 `.env`。要提交 `web/package-lock.json`、`desktop/package-lock.json`、`desktop/src-tauri/Cargo.lock`。
 - 前端调用后端只通过 `web/src/api/`，页面里不直接写 `fetch`。按钮显不显示看 `/auth/me` 的 `permissions`，但真正的权限检查在后端。
-- **npm 命令只在 `web/` 里运行。** 根目录不应该有 `package.json`、`package-lock.json`、`node_modules/`，
+- **npm 命令只在 `web/` 里运行**（唯一的例外是 `desktop/`，那里只有 Tauri 命令行工具，不装前端依赖）。
+  根目录不应该有 `package.json`、`package-lock.json`、`node_modules/`，
   否则网页里会有两份 React（白屏、`Invalid hook call`）。`web/` 里只放前端文件，不要有 `__init__.py`。
+- 桌面版安装包不能带 GPL / AGPL 的东西，也包括依赖的 wheel 里随附的二进制库：`check_bundle.py` 会拦下
+  x264、x265 和 GPL 版 FFmpeg，`licenses.py` 会拦下 GPL 系许可的包。加依赖后跑一遍下面的桌面版打包命令。
 
 ## 常用命令
 
@@ -250,6 +258,18 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
 ./scripts/install.sh                      # 用户：第一次安装（uv sync --no-dev + jacara setup）
 uv run jacara setup                       # 生成 .env（随机密钥、个人版）、启动 Docker、建表、检查模型；可以重复运行
 ./scripts/build_release.sh                # 维护者：打发布包到 release/（推 v* 标签时 GitHub Actions 自动打包发布）
+
+# 桌面版打包（ADR 0068；推 v* 标签或手动运行 .github/workflows/desktop.yml 时自动构建，下面是本机构建的顺序）
+uv sync --group desktop
+uv run --no-sync python packaging/desktop/build_opencv.py --install   # 只在 macOS：换成不含 FFmpeg 的 OpenCV；之后都用 --no-sync
+cd web && npm ci && npm run build && cd ..
+uv run --no-sync python packaging/desktop/fetch_llama.py               # llama.cpp（按 llama.lock 校验）
+uv run --no-sync python packaging/desktop/fetch_table_model.py         # 表格模型（按 SHA-256 校验）
+uv run --no-sync python packaging/desktop/licenses.py                  # THIRD_PARTY_LICENSES（先 cargo install cargo-about --version 0.9.3 --locked --features cli）
+uv run --no-sync pyinstaller packaging/desktop/jacara.spec --noconfirm
+uv run --no-sync python packaging/desktop/smoke.py dist/jacara-backend/jacara-backend 样例.pdf 样例.jpg
+uv run --no-sync python packaging/desktop/check_bundle.py dist/jacara-backend --sign   # macOS 加 --sign
+cd desktop && npm ci && npm run tauri build                            # 安装包在 desktop/src-tauri/target/release/bundle/
 
 # 环境
 uv sync                                   # 安装依赖

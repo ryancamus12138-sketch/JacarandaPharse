@@ -10,9 +10,13 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from jacara.core.advice import pick
 from jacara.core.i18n import N_, stored
+
+if TYPE_CHECKING:
+    from jacara.core.config import Settings
 
 NO_SERVER = N_("未找到 llama-server。在 Mac 上请先运行：brew install llama.cpp")
 NO_SERVER_DESKTOP = N_("安装不完整，缺少 llama-server，请重新安装 JacarandaParse")
@@ -38,6 +42,20 @@ long receipt the prompt is about 3000 tokens and each item line about 30, so 327
 hundred lines. Previously 8192."""
 
 
+def llama_server_path(settings: Settings) -> Path | None:
+    """The llama-server to start: JACARA_LLAMA_SERVER, then the build shipped with the desktop app
+    (on Windows the CPU or the Vulkan build), then the one on the search path."""
+    from jacara.plugins.model_backends.llama_builds import choose
+
+    chosen = settings.jacara_llama_server
+    if chosen is not None and chosen.is_file():
+        return chosen
+    if (shipped := choose(settings)) is not None:
+        return shipped
+    found = shutil.which("llama-server")
+    return Path(found) if found else None
+
+
 def server_command(
     model: Path,
     *,
@@ -51,14 +69,11 @@ def server_command(
         mmproj is the vision projector file; when given, the model can process images."""
     from jacara.core.config import get_settings
 
-    bundled = get_settings().jacara_llama_server
-    exe = (
-        str(bundled) if bundled is not None and bundled.is_file() else shutil.which("llama-server")
-    )
+    exe = llama_server_path(get_settings())
     if exe is None:
         raise FileNotFoundError(stored(pick(NO_SERVER_DESKTOP, NO_SERVER)))
     return [
-        exe,
+        str(exe),
         "-m", str(model),
         "--alias", model.stem,  # Model name reported in answers; recorded in extraction results.
         "--host", "127.0.0.1",  # Local access only.

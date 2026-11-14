@@ -303,7 +303,7 @@ export function ProcessingSettings() {
   })
   const data = settings.data
   // Settings of the data page (automatic backups) are shown there.
-  const shown = (data?.items ?? []).filter((i) => i.section !== 'data')
+  const shown = (data?.items ?? []).filter((i) => i.section === 'processing')
   const groups = [...new Set(shown.map((i) => i.group))]
   return (
     <Flex vertical gap={16}>

@@ -75,7 +75,7 @@ RUNTIME = {
     "JACARA_QUEUE": "huey",
     "JACARA_API_DOCS": "false",
 }
-"""Settings fixed for the desktop edition (ADR 0068), passed to every child process."""
+"""Settings fixed for the desktop edition, passed to every child process."""
 
 
 def self_command(*args: str) -> list[str]:
@@ -276,6 +276,10 @@ class Child:
     given_up: bool = False
     paused: bool = False
     """Stopped on purpose for a while (see Supervisor.pause); not restarted meanwhile."""
+    starts: int = 0
+    """Times started since the services started (more than one: it was restarted)."""
+    last_note: str | None = None
+    """The last line the launcher wrote to this child's log (why it stopped, for example)."""
 
     def start(self) -> None:
         if self.build is not None:
@@ -295,9 +299,20 @@ class Child:
                 stderr=subprocess.STDOUT,
             )
         self.started = time.monotonic()
+        self.starts += 1
+
+    def state(self) -> str:
+        """running, restarting (exited, about to start again), paused, or stopped (given up or
+        not started)."""
+        if self.paused:
+            return "paused"
+        if self.process is not None and self.process.poll() is None:
+            return "running"
+        return "stopped" if self.given_up or self.process is None else "restarting"
 
     def note(self, text: str) -> None:
         """Append a line from the launcher to this child's log."""
+        self.last_note = text
         stamp = datetime.now().astimezone().isoformat(timespec="seconds")
         with _log(self.name) as log:
             log.write(f"[{stamp}] jacara desktop: {text}\n".encode())
@@ -418,10 +433,16 @@ def requeue_waiting(
     return len(ids)
 
 
-def _log(name: str) -> IO[bytes]:
+def log_dir() -> Path:
+    """Logs of the desktop app: JACARA_LOG_DIR (the shell passes the system's log folder),
+    otherwise logs/ in the data folder."""
     from jacara.core.config import data_home
 
-    folder = Path(os.environ.get("JACARA_LOG_DIR") or data_home() / "logs")
+    return Path(os.environ.get("JACARA_LOG_DIR") or data_home() / "logs")
+
+
+def _log(name: str) -> IO[bytes]:
+    folder = log_dir()
     folder.mkdir(parents=True, exist_ok=True)
     return (folder / f"{name}.log").open("ab")
 
@@ -430,7 +451,7 @@ AUTO_BACKUP_FIRST = 60.0
 """Seconds after start-up before the first check for an automatic backup."""
 
 AUTO_BACKUP_EVERY = 3600.0
-"""Seconds between checks; a backup is made when the last one is a day old (ADR 0068 13.5)."""
+"""Seconds between checks; a backup is made when the last one is a day old."""
 
 DAY = 86400.0
 
@@ -463,6 +484,16 @@ class Services:
         self.model_key = model_key
         self.supervisor: Supervisor | None = None
         self.lock = threading.Lock()
+
+    def status(self) -> list[dict[str, object]]:
+        """Each child process: name, state (Child.state), how often it was started, and the last
+        line the launcher noted for it."""
+        with self.lock:
+            children = list(self.supervisor.children) if self.supervisor is not None else []
+        return [
+            {"name": c.name, "state": c.state(), "starts": c.starts, "note": c.last_note}
+            for c in children
+        ]
 
     def children(self) -> list[Child]:
         from jacara.core.config import get_settings
@@ -580,7 +611,7 @@ def open_data() -> None:
 
 
 def _auto_backups(stopping: threading.Event) -> None:
-    """Make the daily automatic database backup (ADR 0068 13.5) while the app runs."""
+    """Make the daily automatic database backup while the app runs."""
     from jacara.core.config import get_settings
     from jacara.core.maintenance import MAINTENANCE
     from jacara.ops.desktop_data import auto_backup, last_auto_backup

@@ -27,6 +27,10 @@ data/
 node_modules/
 web/dist/
 
+# ===== Desktop app shell (Tauri) =====
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
 # ===== Editors and OS =====
 .vscode/
 .idea/

@@ -1,5 +1,5 @@
 """The data folder of the desktop app: full and automatic backups, restoring them, and moving the
-data folder to another place (ADR 0068 sections 6 and 13.5).
+data folder to another place.
 
 Layout of the data folder (data_home()):
   jacara.db, queue.db      database and task queue

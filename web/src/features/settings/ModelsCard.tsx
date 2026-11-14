@@ -5,6 +5,8 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import { ApiError } from '../../api/client'
 import { chooseModels, getModels, type ModelSlot } from '../../api/models'
+import { getSettings, updateSettings } from '../../api/settings'
+import { SettingRow } from './ProcessingSettings'
 import { useAuth } from '../../auth/useAuth'
 import { useDesktop } from '../../desktop'
 import { formatBytes } from '../../utils/format'
@@ -37,6 +39,36 @@ function emptyLabel(s: ModelSlot): string | undefined {
  * (OCR models into models/ocr/, table models into models/table/) and reload this page. Changes take effect
  * after `jacara stop` and `jacara start`.
  */
+/** Settings shown with the models (Windows: which llama.cpp build runs the model). */
+function ModelSettings() {
+  const { t } = useTranslation()
+  const { message } = App.useApp()
+  const queryClient = useQueryClient()
+  const settings = useQuery({ queryKey: ['app-settings'], queryFn: getSettings })
+  const save = useMutation({
+    mutationFn: updateSettings,
+    onSuccess: (data) => {
+      queryClient.setQueryData(['app-settings'], data)
+      void message.success(t('已保存。点击“重新启动后台”后生效'))
+    },
+    onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
+  })
+  const items = (settings.data?.items ?? []).filter((i) => i.section === 'models')
+  if (items.length === 0) return null
+  return (
+    <Flex vertical gap={8}>
+      {items.map((item) => (
+        <SettingRow
+          key={`${item.key}:${String(item.value)}`}
+          item={item}
+          disabled={!settings.data?.can_change || save.isPending}
+          onChange={(value) => save.mutate({ [item.key]: value })}
+        />
+      ))}
+    </Flex>
+  )
+}
+
 export function ModelsCard() {
   const { t } = useTranslation()
   const { message } = App.useApp()
@@ -155,6 +187,7 @@ export function ModelsCard() {
           )}
         </Typography.Text>
         <Table rowKey="key" size="small" pagination={false} columns={columns} dataSource={models.data?.slots ?? []} />
+        {desktop && <ModelSettings />}
       </Flex>
     </Card>
   )
