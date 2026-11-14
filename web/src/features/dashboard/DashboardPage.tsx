@@ -21,6 +21,7 @@ import {
   Tag,
   Tooltip,
   Typography,
+  theme,
 } from 'antd'
 import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router'
@@ -52,6 +53,7 @@ function StatCard({
   note?: ReactNode
 }) {
   const navigate = useNavigate()
+  const { token } = theme.useToken()
   return (
     <Card
       size="small"
@@ -62,15 +64,24 @@ function StatCard({
       <Statistic
         title={
           <Flex gap={6} align="center">
-            <span style={{ color }}>{icon}</span>
-            {title}
+            <span style={{ color, flex: 'none' }}>{icon}</span>
+            {/* One line in every language, so the numbers of all cards stay aligned; the full title
+                is shown on hover when it does not fit. */}
+            <Typography.Text type="secondary" ellipsis={{ tooltip: title }} style={{ minWidth: 0 }}>
+              {title}
+            </Typography.Text>
           </Flex>
         }
         value={value}
-        suffix={suffix}
+        suffix={
+          suffix && (
+            // The unit is smaller than the number and secondary, so the number reads first.
+            <span style={{ fontSize: token.fontSize, color: token.colorTextSecondary }}>{suffix}</span>
+          )
+        }
       />
       {note && (
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        <Typography.Text type="secondary" ellipsis={typeof note === 'string' ? { tooltip: note } : true} style={{ fontSize: token.fontSizeSM, display: 'block' }}>
           {note}
         </Typography.Text>
       )}

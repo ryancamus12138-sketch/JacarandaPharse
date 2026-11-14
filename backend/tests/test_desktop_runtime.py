@@ -90,6 +90,14 @@ def test_migrations_build_the_full_schema_on_sqlite(home):
     with engine.connect() as conn:
         context = MigrationContext.configure(conn, opts={"compare_type": True})
         assert compare_metadata(context, Base.metadata) == []
+        # The comparison does not cover column defaults: every default written by the migrations
+        # must also be a valid SQLite expression (PostgreSQL's now() is not).
+        tables = conn.execute(text("SELECT name FROM sqlite_master WHERE type = 'table'"))
+        for (table,) in tables.all():
+            for column in conn.execute(text(f'PRAGMA table_info("{table}")')).all():
+                default = column[4]
+                if default is not None:
+                    conn.execute(text(f"SELECT {default}"))
     engine.dispose()
 
 

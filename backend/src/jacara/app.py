@@ -6,6 +6,8 @@ API documentation: http://127.0.0.1:8000/docs (disable with JACARA_API_DOCS=fals
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi_offline import FastAPIOffline
@@ -13,6 +15,7 @@ from fastapi_offline import FastAPIOffline
 from jacara import __version__
 from jacara.core.config import get_settings
 from jacara.core.i18n import LanguageMiddleware
+from jacara.core.local_guard import LocalGuard
 from jacara.core.permissions import PermissionDenied
 from jacara.core.web import mount_web
 from jacara.modules.app_settings.router import router as settings_router
@@ -81,6 +84,9 @@ def create_app() -> FastAPI:
 
     app.include_router(api)
     app.add_middleware(LanguageMiddleware)
+    # Added last, so it runs first: refused requests never reach the application. The token is
+    # set only by the desktop launcher and is read from the environment, never from .env.
+    app.add_middleware(LocalGuard, token=os.environ.get("JACARA_DESKTOP_TOKEN"))
 
     @app.exception_handler(PermissionDenied)
     def permission_denied(request: Request, err: PermissionDenied) -> JSONResponse:

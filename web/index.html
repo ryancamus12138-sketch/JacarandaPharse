@@ -10,8 +10,9 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png" />
     <!-- iOS home screen icon -->
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <!-- Installable app: name and 192/512 px icons are in the manifest -->
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Installable app: name and 192/512 px icons are in the manifest. use-credentials: browsers
+         fetch the manifest without cookies otherwise, and the desktop edition requires its cookie -->
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
     <meta name="theme-color" content="#6a4fc4" />
   </head>
   <body>

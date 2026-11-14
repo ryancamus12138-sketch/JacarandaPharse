@@ -33,7 +33,7 @@ def dist(tmp_path, monkeypatch) -> Path:
 
 
 def _client() -> Iterator[TestClient]:
-    with TestClient(create_app()) as client:
+    with TestClient(create_app(), base_url="http://127.0.0.1") as client:
         yield client
 
 

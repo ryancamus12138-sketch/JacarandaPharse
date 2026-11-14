@@ -11,6 +11,8 @@ Usage:
   jacara start [--model MODEL.gguf]          Start model, workers and web service; open the
                                              browser (default model: the only .gguf in models/)
   jacara stop                                Stop everything started by `jacara start`
+  jacara desktop                             Run all services for the desktop app (data directory:
+                                             JACARA_HOME)
   jacara backfill-ocr                        Store OCR results for documents processed by
                                              older versions
   jacara api [--reload]                      Start the web service only
@@ -139,6 +141,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_start.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     sub.add_parser("stop", help="停掉 jacara start 启动的全部（模型、后台任务、Web 服务）")
+    sub.add_parser(
+        "desktop",
+        help="桌面版使用：以 JACARA_HOME 为数据目录启动全部服务（由桌面程序调用）",
+    )
     p_backup = sub.add_parser(
         "backup", help="备份：数据库和对象存储里的文件打进一个包（先 jacara stop）"
     )
@@ -317,6 +323,10 @@ def main(argv: list[str] | None = None) -> int:
         return _backup_commands(args)
     if args.command == "stop":
         return _stop_running()
+    if args.command == "desktop":
+        from jacara.desktop import run_desktop
+
+        return run_desktop()
     if args.command == "backfill-ocr":
         return _backfill_ocr()
     if args.command == "user":
@@ -1056,8 +1066,15 @@ def _backfill_ocr() -> int:
 
 
 def _worker(stage: str = "all") -> int:
+    import os
+
+    from jacara.desktop import WATCH_STDIN, on_stdin_closed
     from jacara.worker import run_worker
 
+    if os.environ.get(WATCH_STDIN) == "1":
+        # Started by the desktop launcher: exit as soon as the launcher is gone. Documents in
+        # progress are marked as interrupted at the next start.
+        on_stdin_closed(lambda: os._exit(0))
     names = {"all": "后台任务", "read": "后台任务（OCR 工位）", "extract": "后台任务（模型工位）"}
     print(f"{names[stage]}已启动，等待上传的文件（Ctrl + C 停止）")
     run_worker(stage)  # type: ignore[arg-type]

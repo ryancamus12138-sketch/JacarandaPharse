@@ -45,7 +45,12 @@ def server_command(
     found.
 
         mmproj is the vision projector file; when given, the model can process images."""
-    exe = shutil.which("llama-server")
+    from jacara.core.config import get_settings
+
+    bundled = get_settings().jacara_llama_server
+    exe = (
+        str(bundled) if bundled is not None and bundled.is_file() else shutil.which("llama-server")
+    )
     if exe is None:
         raise FileNotFoundError(
             stored("未找到 llama-server。在 Mac 上请先运行：brew install llama.cpp")

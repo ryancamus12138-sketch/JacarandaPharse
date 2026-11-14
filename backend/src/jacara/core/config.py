@@ -78,6 +78,10 @@ class Settings(BaseSettings):
 
     model_server: str = "http://127.0.0.1:8080"
 
+    jacara_llama_server: Path | None = None
+    """llama-server executable. Defaults to llama-server on PATH; the desktop edition points it to
+    the copy bundled with the app."""
+
     jacara_model: Path | None = None
     """Model file (.gguf) started by `jacara start`. Defaults to the only .gguf file in models/."""
 

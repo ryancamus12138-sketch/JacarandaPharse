@@ -18,7 +18,7 @@ depends_on: str | Sequence[str] | None = None
 
 def _created() -> sa.Column:
     return sa.Column(
-        "created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+        "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
     )
 
 

@@ -232,5 +232,6 @@ def client(factory, storage, queue) -> Iterator[TestClient]:
     app.dependency_overrides[get_storage] = lambda: storage
     app.dependency_overrides[get_queue] = lambda: queue
     app.dependency_overrides[get_ocr] = lambda: region_ocr
-    with TestClient(app) as test_client:
+    # Base URL on 127.0.0.1: the local access guard refuses any other Host header.
+    with TestClient(app, base_url="http://127.0.0.1") as test_client:
         yield test_client

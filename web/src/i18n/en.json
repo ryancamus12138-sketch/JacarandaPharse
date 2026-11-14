@@ -1121,7 +1121,7 @@
   "（人工改判）": "(reclassified by a person)",
   "{{pending_fields}} 个字段待确认，已跳过 {{skipped}} 份": "{{pending_fields}} fields to confirm, {{skipped}} skipped",
   "{{pending_fields}} 个字段待确认": "{{pending_fields}} fields to confirm",
-  "排队及处理中": "Queued and processing",
+  "排队及处理中": "In progress",
   "份已处理": "processed",
   "已审核 {{reviewed_today}} 份": "{{reviewed_today}} reviewed",
   "每页耗时": "Time per page",
