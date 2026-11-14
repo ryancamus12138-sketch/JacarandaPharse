@@ -85,14 +85,14 @@ export function FormulaInput({
   if (rowTable) {
     groups.push({
       type: 'group',
-      label: t('{{label}}这一行的列', { label: rowTable.label }),
+      label: t('{{label}}当前行的列', { label: rowTable.label }),
       children: rowTable.columns.filter(usable).map((c) => item(c.name, c.label, c.name)),
     })
   }
   if (!rowTable || kind === 'formula') {
     groups.push({
       type: 'group',
-      label: t('字段（只列数字和日期）'),
+      label: t('字段（仅列出数字和日期）'),
       children: [
         ...fields.filter(usable).map((f) => item(f.name, f.label, f.name)),
         // Date range: start and end are dates; days is a number.
@@ -111,7 +111,7 @@ export function FormulaInput({
       ...tbl.columns
         .filter((c) => c.type === 'number')
         .map((c) => item(`sum(${tbl.name}.${c.name})`, t('{{label}}的{{label2}}合计', { label: tbl.label, label2: c.label }), `sum(${tbl.name}.${c.name})`)),
-      item(`count(${tbl.name})`, t('{{label}}有几行', { label: tbl.label }), `count(${tbl.name})`),
+      item(`count(${tbl.name})`, t('{{label}}的行数', { label: tbl.label }), `count(${tbl.name})`),
     ])
     if (sums.length) groups.push({ type: 'group', label: t('表格'), children: sums })
   }
@@ -131,8 +131,8 @@ export function FormulaInput({
         : []),
       item('round(', t('四舍五入'), 'round(x, 2)'),
       item('abs(', t('绝对值'), 'abs(x)'),
-      item('min(', t('取小的'), 'min(a, b)'),
-      item('max(', t('取大的'), 'max(a, b)'),
+      item('min(', t('取较小值'), 'min(a, b)'),
+      item('max(', t('取较大值'), 'max(a, b)'),
     ],
   })
 
@@ -154,7 +154,7 @@ export function FormulaInput({
             trigger={['click']}
             menu={{ items: groups, onClick: ({ key }) => insert(key), style: { maxHeight: 360, overflowY: 'auto' } }}
           >
-            <Tooltip title={t('插入字段或函数：列出这个模板现在有哪些字段')}>
+            <Tooltip title={t('插入字段或函数：列出此模板当前的全部字段')}>
               <Button icon={<FunctionOutlined />} aria-label={t('插入字段或函数')} />
             </Tooltip>
           </Dropdown>

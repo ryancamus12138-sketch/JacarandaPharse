@@ -67,9 +67,9 @@ export function RulesCard({
     set({ custom_rules: custom.map((c, j) => (j === i ? { ...c, ...patch } : c)) })
 
   return (
-    <Card title={t('规则（选了 {{value}} 条）', { value: draft.rules.length + custom.length })} size="small">
+    <Card title={t('规则（已选 {{value}} 条）', { value: draft.rules.length + custom.length })} size="small">
       <Typography.Paragraph type="secondary">
-        {t('规则用单据上的数字互相验证（例如 明细合计 = 总额）。这里只列跟这个模板有关的规则： 要用的字段模板里都有的通用规则，和上面选的国家的规则；加了字段、选了国家，相关的规则会出现在这里。 别的检查在"自己写的规则"里写。必填字段没值也会标红。')}
+        {t('规则通过单据上的数据交叉验证（例如：明细合计 = 总额）。此处仅列出与本模板相关的规则：所需字段在模板中齐全的通用规则，以及上方所选国家的规则；添加字段或选择国家后，相关规则将显示于此。其他检查请在“自定义规则”中编写。必填字段为空时同样标红。')}
       </Typography.Paragraph>
       <List
         size="small"
@@ -95,13 +95,13 @@ export function RulesCard({
               {rule.country && <Tag color="geekblue">{countryName(rule.country)}</Tag>}
               {missing.length > 0 && (
                 <Typography.Text type={on ? 'warning' : 'secondary'} style={{ fontSize: 12 }}>
-                  {t('缺字段')}{' '}{missing.join(t('、'))}
-                  {on && !readOnly ? t('，保存时会去掉') : ''}
+                  {t('缺少字段')}{' '}{missing.join(t('、'))}
+                  {on && !readOnly ? t('，保存时将移除') : ''}
                 </Typography.Text>
               )}
               {missing.length === 0 && on && !readOnly && rule.country && !countries.includes(rule.country) && (
                 <Typography.Text type="warning" style={{ fontSize: 12 }}>
-                  {t('上面没选{{countryName}}，保存时会去掉', { countryName: countryName(rule.country) })}
+                  {t('上方未选择{{countryName}}，保存时将移除', { countryName: countryName(rule.country) })}
                 </Typography.Text>
               )}
             </Flex>
@@ -110,20 +110,20 @@ export function RulesCard({
       />
 
       <Typography.Title level={5} style={{ marginTop: 16 }}>
-        {t('自己写的规则')}
+        {t('自定义规则')}
       </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-        {t('点条件输入框右边的')}{' '}<FunctionOutlined />{' '}{t('按钮，会列出这个模板现在有哪些字段（中文名和字段 ID）、 表格合计和比较符号，点一下就插进去；写的时候下面会用中文显示条件的意思，写错了会说哪里错。 例如')}{' '}<Typography.Text code>sum(items.amount) == total</Typography.Text>{t('（明细金额合计 = 总额）、')}
-        <Typography.Text code>total &lt;= 5000</Typography.Text>{t('（总额不超过 5000）。 选"每一行"时每行单独检查，按钮里列的是那张表的列。金额相等允许差半分钱。')}
+        {t('点击条件输入框右侧的')}{' '}<FunctionOutlined />{' '}{t('按钮，将列出此模板当前的字段（名称和字段 ID）、表格合计及比较符号，点击即可插入；编写时下方会以文字形式显示条件含义，并指出错误位置。例如')}{' '}<Typography.Text code>sum(items.amount) == total</Typography.Text>{t('（明细金额合计 = 总额）、')}
+        <Typography.Text code>total &lt;= 5000</Typography.Text>{t('（总额不超过 5000）。选择“每一行”时逐行检查，按钮中列出该表的列。金额相等比较允许 0.005 的误差。')}
       </Typography.Paragraph>
-      {custom.length === 0 && readOnly && <Typography.Text type="secondary">{t('没有')}</Typography.Text>}
+      {custom.length === 0 && readOnly && <Typography.Text type="secondary">{t('无')}</Typography.Text>}
       <Flex vertical gap={8}>
         {custom.map((c, i) => (
           <Flex key={i} gap={8} align="center" wrap>
             <Input
               value={c.title}
               disabled={readOnly}
-              placeholder={t('名字（可以不写）')}
+              placeholder={t('名称（选填）')}
               onChange={(e) => setCustom(i, { title: e.target.value })}
               style={{ width: 200 }}
             />
@@ -135,7 +135,7 @@ export function RulesCard({
                 fields={draft.fields}
                 tables={draft.tables}
                 row={c.per_row}
-                placeholder={t('条件：点右边的按钮选字段，例如 明细金额合计 == 总额')}
+                placeholder={t('条件：点击右侧按钮选择字段，例如 明细金额合计 == 总额')}
                 onChange={(check) => setCustom(i, { check })}
               />
             </div>
@@ -164,7 +164,7 @@ export function RulesCard({
                 type="text"
                 danger
                 icon={<DeleteOutlined />}
-                aria-label={t('删掉这条规则')}
+                aria-label={t('删除此规则')}
                 onClick={() => set({ custom_rules: custom.filter((_, j) => j !== i) })}
               />
             )}
@@ -179,7 +179,7 @@ export function RulesCard({
             set({ custom_rules: [...custom, { title: '', check: '', severity: 'error', per_row: null }] })
           }
         >
-          {t('加一条规则')}
+          {t('添加规则')}
         </Button>
       )}
     </Card>

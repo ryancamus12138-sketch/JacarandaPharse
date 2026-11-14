@@ -97,7 +97,7 @@ def _job(document_id: uuid.UUID, factory: sessionmaker[Session] | None) -> Job:
     with session_scope(factory) as session:
         document = session.get_one(Document, document_id)
         if document.storage_key is None:
-            raise StorageError(stored("没有原始文件"))
+            raise StorageError(stored("无原始文件"))
         return Job(
             document.storage_key,
             document.filename,
@@ -225,7 +225,7 @@ def process_document(
     try:
         job = _job(document_id, factory)
         with _original(job, storage) as path:
-            _report(document_id, stored("识别文字"), 5, factory)
+            _report(document_id, stored("文字识别"), 5, factory)
             started = time.perf_counter()
             pages = pipeline.read(path, job.pdf_read)
             read_ms = _ms(started)
@@ -270,7 +270,7 @@ def read_document(
     try:
         job = _job(document_id, factory)
         with _original(job, storage) as path:
-            _report(document_id, stored("识别文字"), 5, factory)
+            _report(document_id, stored("文字识别"), 5, factory)
             started = time.perf_counter()
             pages = pipeline.read(path, job.pdf_read)
             read_ms = _ms(started)
@@ -280,7 +280,7 @@ def read_document(
             # attempt: the model stage accepts only this hand-off (tasks from before a reprocess are
             # stale).
             document.timings = {"attempt": attempt, "read_ms": read_ms, "handed_at": time.time()}
-            document.stage = stored("文字已认好，排队等模型")
+            document.stage = stored("文字识别完成，排队等待模型")
             document.progress = 10
         send(document_id, attempt)
         return "read"
@@ -446,7 +446,7 @@ def reset_interrupted(factory: sessionmaker[Session] | None = None) -> int:
             .where(Document.status == "processing")
             .values(
                 status="failed",
-                error=stored("处理到一半时 worker 被关闭了，请重新处理"),
+                error=stored("处理过程中 worker 被关闭，请重新处理"),
                 stage=None,
                 progress=None,
                 processed_at=func.now(),
@@ -461,8 +461,8 @@ def describe_error(err: Exception) -> str:
     if isinstance(err, ModelBackendError | ExtractionError | UnsupportedFileError):
         return str(err)  # These errors are already human-readable messages.
     if isinstance(err, StorageError):
-        return stored("对象存储里取不到原始文件")
-    return stored("处理时出现意外错误（{kind}），详情见 worker 日志", kind=type(err).__name__)
+        return stored("无法从对象存储读取原始文件")
+    return stored("处理时发生意外错误（{kind}），详情请查看 worker 日志", kind=type(err).__name__)
 
 
 def suffix_for(filename: str, content_type: str | None) -> str:

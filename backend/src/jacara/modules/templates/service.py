@@ -375,7 +375,7 @@ class TemplateService:
     @property
     def repo(self) -> TemplateRepository:
         if self.session is None:
-            raise RuntimeError(tr("这个操作要数据库会话"))
+            raise RuntimeError(tr("此操作需要数据库会话"))
         return TemplateRepository(self.session)
 
     # ---- Read ----
@@ -408,7 +408,7 @@ class TemplateService:
             labels[t.name] = t.label
             labels |= {f"{t.name}.{c.name}": c.label for c in t.columns}
         if data.row is not None and data.row not in tables:
-            return FormulaCheckOut(ok=False, message=tr("没有叫 {row} 的表", row=data.row))
+            return FormulaCheckOut(ok=False, message=tr("不存在名为 {row} 的表", row=data.row))
         if data.row is not None:
             columns = next(t.columns for t in data.tables if t.name == data.row)
             labels |= {c.name: c.label for c in columns}
@@ -448,7 +448,7 @@ class TemplateService:
         if template_id is not None and self.session is not None:
             found = self.repo.get(template_id, self.owner.team_id)
             if found is None:
-                raise TemplateFailure("not_found", tr("找不到这个模板"))
+                raise TemplateFailure("not_found", tr("模板不存在"))
             out = self._mine_out(found)
             return out.model_copy(
                 update={
@@ -472,7 +472,7 @@ class TemplateService:
         found = self._find(template_id)
         match = next((v for v in found.versions if v.version == version), None)
         if match is None:
-            raise TemplateFailure("not_found", tr("这个模板没有第 {version} 版", version=version))
+            raise TemplateFailure("not_found", tr("此模板不存在第 {version} 版", version=version))
         return self._out(found, match)
 
     # ---- Create, save, archive ----
@@ -482,7 +482,7 @@ class TemplateService:
         if data.source == "starter":
             if data.starter not in STARTERS:
                 raise TemplateFailure(
-                    "invalid", tr("没有叫 {starter} 的起步模板", starter=data.starter)
+                    "invalid", tr("不存在名为 {starter} 的起步模板", starter=data.starter)
                 )
             # The copy starts in the interface language; its primary language can be changed later.
             base = load_starter_in(data.starter, language())
@@ -508,7 +508,7 @@ class TemplateService:
             definition = definition_of(content)
             labels = (content.domains, content.countries, content.tags)
         else:
-            raise TemplateFailure("invalid", tr("空白模板要先填好内容再保存"))
+            raise TemplateFailure("invalid", tr("空白模板需填写内容后再保存"))
         found = self._new(
             title, category, description, source, definition, stored("新建"), labels=labels
         )
@@ -679,7 +679,7 @@ class TemplateService:
             data.description.strip(),
             "import",
             definition,
-            stored("导入（导出时是第 {version} 版）", version=data.version),
+            stored("导入（导出时为第 {version} 版）", version=data.version),
             labels=(
                 data.domains or ([data.category.strip()] if data.category.strip() else []),
                 # Older template files and standard workbooks have no country: infer it from the
@@ -700,15 +700,18 @@ class TemplateService:
         from jacara.workbook.standard import StandardError, from_excel, is_standard
 
         if not data:
-            raise TemplateFailure("invalid", tr("文件是空的"))
+            raise TemplateFailure("invalid", tr("文件为空"))
         if len(data) > MAX_EXCEL_MB * 1024 * 1024:
             raise TemplateFailure("invalid", tr("Excel 超过 {limit} MB", limit=MAX_EXCEL_MB))
         if is_standard(data):
             try:
-                template = TemplateFile.model_validate(from_excel(data))
+                read = from_excel(data)
+                template = TemplateFile.model_validate(read.template)
             except (StandardError, ValueError) as err:
                 raise TemplateFailure("invalid", str(err)) from err
-            return ExcelAnalysisOut(kind="standard", filename=filename, template=template)
+            return ExcelAnalysisOut(
+                kind="standard", filename=filename, template=template, ignored=read.ignored
+            )
         upload_id = uuid.uuid4()
         try:
             out = self._analysis(filename, data, upload_id)
@@ -749,7 +752,7 @@ class TemplateService:
         ]
         if choice.starter and choice.starter not in STARTERS:
             raise TemplateFailure(
-                "invalid", tr("没有叫 {starter} 的起步模板", starter=choice.starter)
+                "invalid", tr("不存在名为 {starter} 的起步模板", starter=choice.starter)
             )
         key = self._store_workbook(data)
         try:
@@ -765,7 +768,7 @@ class TemplateService:
             choice.description.strip(),
             "excel",
             definition,
-            stored("从 Excel 建：{filename}", filename=filename),
+            stored("从 Excel 创建：{filename}", filename=filename),
         )
         return self._mine_out(found)
 
@@ -791,7 +794,7 @@ class TemplateService:
             data = self._storage().get(_upload_key(upload_id))
             name = self._storage().get(_upload_key(upload_id) + ".name").decode()
         except StorageError as err:
-            raise TemplateFailure("not_found", tr("找不到上传的 Excel，请重新上传")) from err
+            raise TemplateFailure("not_found", tr("未找到上传的 Excel，请重新上传")) from err
         return data, name
 
     def _store_workbook(self, data: bytes) -> str:
@@ -804,7 +807,7 @@ class TemplateService:
 
     def _storage(self) -> ObjectStorage:
         if self.storage is None:
-            raise TemplateFailure("unavailable", tr("对象存储没有准备好"))
+            raise TemplateFailure("unavailable", tr("对象存储未就绪"))
         return self.storage
 
     def delete(self, template_id: uuid.UUID) -> int:
@@ -843,20 +846,18 @@ class TemplateService:
             return self._last_choice()
         template_id = _uuid(choice)
         if template_id is None:
-            raise TemplateFailure("invalid", tr('请选择我的模板，或者"抽取所有键值对"'))
+            raise TemplateFailure("invalid", tr("请选择我的模板，或选择“抽取所有键值对”"))
         found = self._find(template_id)
         if found.archived:
             raise TemplateFailure(
-                "invalid", tr("模板「{title}」已经归档了，不能再用来上传", title=found.title)
+                "invalid", tr("模板「{title}」已归档，无法用于上传", title=found.title)
             )
         return Pick(self.repo.latest(found).id)
 
     def latest_version_id(self, template_id: uuid.UUID) -> uuid.UUID:
         found = self.repo.get(template_id, self.owner.team_id)
         if found is None:
-            raise TemplateFailure(
-                "invalid", tr("这份文档用的模板已经删除了，请选一个模板再重新处理")
-            )
+            raise TemplateFailure("invalid", tr("此文档使用的模板已删除，请选择模板后重新处理"))
         return self.repo.latest(found).id
 
     def _last_choice(self) -> Pick:
@@ -894,10 +895,10 @@ class TemplateService:
         pages = [e for e in document.extractions if e.ocr is not None][:MAX_TRIAL_PAGES]
         if not pages:
             raise TemplateFailure(
-                "invalid", tr("这份文档没有存 OCR 结果（更新前处理的），请先重新处理一次再试跑")
+                "invalid", tr("此文档未保存 OCR 结果（在更新前处理），请先重新处理后再试跑")
             )
         if self.pipeline is None:
-            raise TemplateFailure("unavailable", tr("模型服务没有准备好"))
+            raise TemplateFailure("unavailable", tr("模型服务未就绪"))
         from jacara.pipeline.pages import pages_json, stack_pages
         from jacara.pipeline.store import page_from_json
         from jacara.structure.graph import structure_from_json
@@ -968,14 +969,14 @@ class TemplateService:
         document = self._document(data.document_id)
         current = document.extractions
         if not current or any(e.template != DISCOVER for e in current):
-            raise TemplateFailure("invalid", tr('这份文档不是"抽取所有键值对"处理的，不能当样例'))
+            raise TemplateFailure("invalid", tr("此文档未经“抽取所有键值对”处理，不能用作样例"))
         sources = {v.name: v for v in current[0].values}
         fields: list[dict[str, Any]] = []
         for f in data.fields:
             item = f.model_dump(exclude={"source"})
             original = sources.get(f.source) if f.source else None
             if f.source and original is None:
-                raise TemplateFailure("invalid", tr("样例里没有 {source}", source=f.source))
+                raise TemplateFailure("invalid", tr("样例中不存在 {source}", source=f.source))
             if original is not None and original.label and original.label != f.label:
                 item["aliases"] = list(dict.fromkeys([*f.aliases, original.label]))
             fields.append(item)
@@ -987,7 +988,7 @@ class TemplateService:
             data.description.strip(),
             f"sample:{document.id}",
             definition,
-            stored("用样例建模板"),
+            stored("从样例创建模板"),
         )
         version = self.repo.latest(found)
         template = self._template(found, version)
@@ -1009,7 +1010,7 @@ class TemplateService:
             data.description.strip(),
             f"boxes:{document.id}",
             definition,
-            stored("在样例上框选建模板"),
+            stored("在样例上框选创建模板"),
         )
         return self._mine_out(found)
 
@@ -1038,7 +1039,7 @@ class TemplateService:
                 template_version=template.version,
                 template_version_id=version.id,
                 run=run,
-                run_reason=stored("用样例建模板：选中的键值对搬过来，不重新抽取"),
+                run_reason=stored("从样例创建模板：沿用所选键值对，不重新抽取"),
                 duration_ms=0,
                 raw_output=old.raw_output,
                 checks={},
@@ -1142,7 +1143,7 @@ class TemplateService:
 
     def session_or_fail(self) -> Session:
         if self.session is None:
-            raise RuntimeError(tr("这个操作要数据库会话"))
+            raise RuntimeError(tr("此操作需要数据库会话"))
         return self.session
 
     def _new(
@@ -1206,7 +1207,7 @@ class TemplateService:
     def _find(self, template_id: uuid.UUID) -> TemplateRecord:
         found = self.repo.get(template_id, self.owner.team_id)
         if found is None:
-            raise TemplateFailure("not_found", tr("找不到这个模板"))
+            raise TemplateFailure("not_found", tr("模板不存在"))
         return found
 
     def _document(self, document_id: uuid.UUID) -> Document:
@@ -1214,9 +1215,9 @@ class TemplateService:
 
         document = DocumentRepository(self.session_or_fail()).get(document_id, self.owner.team_id)
         if document is None:
-            raise TemplateFailure("not_found", tr("找不到这个文档"))
+            raise TemplateFailure("not_found", tr("文档不存在"))
         if document.status not in ("done", "reviewed"):
-            raise TemplateFailure("conflict", tr("这份文档还没处理完"))
+            raise TemplateFailure("conflict", tr("此文档尚未处理完成"))
         return document
 
     def _template(self, found: TemplateRecord, version: TemplateVersion) -> Template:

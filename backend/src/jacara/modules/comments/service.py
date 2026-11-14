@@ -42,14 +42,14 @@ class CommentService:
         document = self._document(document_id)
         body = data.body.strip()
         if not body:
-            raise CommentError("invalid", tr("备注不能是空的"))
+            raise CommentError("invalid", tr("备注不能为空"))
         field = (data.field_name or "").strip() or None
         page = data.page if field else None
         if field and page is None:
-            raise CommentError("invalid", tr("写在字段上的备注要说明是第几页"))
+            raise CommentError("invalid", tr("字段备注需指定页码"))
         if page is not None and page > document.page_count:
             raise CommentError(
-                "invalid", tr("这份文档只有 {page_count} 页", page_count=document.page_count)
+                "invalid", tr("此文档仅有 {page_count} 页", page_count=document.page_count)
             )
         comment = self.repo.add(
             Comment(
@@ -95,7 +95,7 @@ class CommentService:
     def delete(self, comment_id: uuid.UUID) -> None:
         comment = self._find(comment_id)
         if comment.user_id != self.owner.user_id and self.owner.role != "admin":
-            raise CommentError("forbidden", tr("只有写这条备注的人或管理员能删"))
+            raise CommentError("forbidden", tr("仅备注作者或管理员可删除"))
         record(
             self.session,
             self.owner,
@@ -111,14 +111,14 @@ class CommentService:
     def _document(self, document_id: uuid.UUID) -> Document:
         document = self.session.get(Document, document_id)
         if document is None or document.team_id != self.owner.team_id:
-            raise CommentError("not_found", tr("找不到这个文档"))
+            raise CommentError("not_found", tr("文档不存在"))
         require(self.owner, "document:read", document.team_id)
         return document
 
     def _find(self, comment_id: uuid.UUID) -> Comment:
         comment = self.repo.get(comment_id, self.owner.team_id)
         if comment is None:
-            raise CommentError("not_found", tr("找不到这条备注"))
+            raise CommentError("not_found", tr("备注不存在"))
         require(self.owner, "document:read", comment.team_id)
         return comment
 

@@ -360,9 +360,9 @@ def test_standard_excel_error_says_which_row(client):
     assert info is not None
     info.title = "模板"
     info.append(["项目", "内容"])
-    info.append(["模板名", "坏的"])
+    info.append(["模板名称", "坏的"])
     fields = book.create_sheet("字段")
-    fields.append(["中文名", "字段ID", "类型", "必填"])
+    fields.append(["名称", "字段 ID", "类型", "必填"])
     fields.append(["总额", "total", "金额", "是"])
     response = client.post("/api/v1/templates/excel", files={"file": ("x.xlsx", xlsx(book), XLSX)})
     assert response.status_code == 422

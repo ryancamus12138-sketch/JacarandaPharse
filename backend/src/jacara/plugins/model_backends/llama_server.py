@@ -21,7 +21,7 @@ from jacara.plugins.model_backends.base import (
     ModelConfig,
 )
 
-WRONG_KEY = N_("模型服务要密钥，但密钥不对。模型是 jacara start 启动的话，请重新运行 jacara start")
+WRONG_KEY = N_("模型服务要求密钥，但密钥错误。如模型由 jacara start 启动，请重新运行 jacara start")
 
 VISION_CACHE_S = 60
 """Once queried, the image capability is cached for one minute."""
@@ -103,14 +103,14 @@ class LlamaServerBackend:
         except httpx.ConnectError as err:
             raise ModelBackendError(
                 stored(
-                    "连不上模型服务 {base_url}。请先运行 `uv run jacara serve` 启动模型。",
+                    ("无法连接模型服务 {base_url}。请先运行 `uv run jacara serve` 启动模型。"),
                     base_url=self.config.base_url,
                 )
             ) from err
         except httpx.TimeoutException as err:
             raise ModelBackendError(
                 stored(
-                    "模型超过 {timeout_s:.0f} 秒没有回答，可以调大 timeout_s。",
+                    "模型超过 {timeout_s:.0f} 秒未响应，可调大 timeout_s。",
                     timeout_s=self.config.timeout_s,
                 )
             ) from err
@@ -139,8 +139,10 @@ class LlamaServerBackend:
             )
             raise ModelBackendError(
                 stored(
-                    "模型的回答太长，写到 {limit} 被截断了。可以调大上下文长度（jacara serve "
-                    "--context）后重试。",
+                    (
+                        "模型输出过长，在 {limit} 处被截断。可调大上下文长度（jacara "
+                        "serve --context）后重试。"
+                    ),
                     limit=limit,
                 )
             )
@@ -208,22 +210,22 @@ class LlamaServerBackend:
         except httpx.ConnectError as err:
             raise ModelBackendError(
                 stored(
-                    "连不上模型服务 {base_url}。请先运行 `uv run jacara serve` 启动模型。",
+                    ("无法连接模型服务 {base_url}。请先运行 `uv run jacara serve` 启动模型。"),
                     base_url=self.config.base_url,
                 )
             ) from err
         except httpx.TimeoutException as err:
             raise ModelBackendError(
                 stored(
-                    "模型超过 {timeout_s:.0f} 秒没有回答，可以调大 timeout_s。",
+                    "模型超过 {timeout_s:.0f} 秒未响应，可调大 timeout_s。",
                     timeout_s=self.config.timeout_s,
                 )
             ) from err
         if finish == "length":
             raise ModelBackendError(
                 stored(
-                    "模型的回答太长，写到模型服务的上下文长度被截断了。"
-                    "可以调大上下文长度（jacara serve --context）后重试。"
+                    "模型输出过长，达到模型服务的上下文长度后被截断。可调大上下文"
+                    "长度（jacara serve --context）后重试。"
                 )
             )
         return ChatResult(

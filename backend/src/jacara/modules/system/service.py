@@ -54,7 +54,7 @@ class SystemService:
         found.watch_dir = None
         found.services = [
             ServiceCheck(
-                name=s.name, ok=s.ok, detail=tr("正常") if s.ok else tr("连不上，请找管理员")
+                name=s.name, ok=s.ok, detail=tr("正常") if s.ok else tr("无法连接，请联系管理员")
             )
             for s in found.services
         ]
@@ -67,7 +67,7 @@ class SystemService:
             model=self._model(),
             ocr=_ocr(),
             structure=StructureInfo(
-                layout=tr("pp_layout_cdla（rapid-layout 自带）")
+                layout=tr("pp_layout_cdla（rapid-layout 内置）")
                 if self.settings.jacara_layout
                 else None,
                 table=table.name if (table := self.settings.table_model()) else None,

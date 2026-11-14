@@ -47,7 +47,7 @@ def create_ocr_engine(config: OcrConfig | None = None) -> OcrEngine:
     if factory is None:
         raise ValueError(
             stored(
-                "未知的 OCR 引擎：{engine}，可用的有：{available}",
+                "未知的 OCR 引擎：{engine}，可用引擎：{available}",
                 engine=config.engine,
                 available=join_items(available_engines()),
             )

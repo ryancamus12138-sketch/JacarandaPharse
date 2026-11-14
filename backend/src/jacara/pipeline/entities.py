@@ -76,7 +76,7 @@ def entity_conflicts(
             if not different:
                 continue
             shown = tr("；").join(
-                tr("《{filename}》写的是「{value}」", filename=f, value=v)
+                tr("《{filename}》中为「{value}」", filename=f, value=v)
                 for f, v in list(different.items())[:3]
             )
             if len(different) > 3:
@@ -84,9 +84,9 @@ def entity_conflicts(
             issues.append(
                 {
                     "rule": ENTITY_CONFLICT,
-                    "title": tr("{label}：和别的单据不一致", label=entity.label),
+                    "title": tr("{label}：与其他单据不一致", label=entity.label),
                     "message": tr(
-                        "同一个{key_label}「{key}」，{documents}，这里是「{value}」",
+                        "同一{key_label}「{key}」，{documents}，此处为「{value}」",
                         key_label=labels.get(entity.key, entity.key),
                         key=key,
                         documents=shown,

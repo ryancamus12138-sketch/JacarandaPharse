@@ -36,7 +36,7 @@ export function Tip({
     <Alert
       type="info"
       showIcon
-      closable={{ 'aria-label': t('关掉这个提示') }}
+      closable={{ 'aria-label': t('关闭此提示') }}
       title={title}
       description={description}
       style={style}

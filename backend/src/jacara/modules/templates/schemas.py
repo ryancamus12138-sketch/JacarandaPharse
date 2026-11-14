@@ -484,6 +484,9 @@ class ExcelAnalysisOut(BaseModel):
     starter_title: str = ""
     auto_columns: dict[str, str] = {}
     """Columns filled automatically by the system: auto value → display name."""
+    ignored: list[str] = []
+    """Standard template workbooks: notes on columns and rows that were not recognized and were
+    therefore not imported."""
 
 
 class ExcelBuildIn(BaseModel):

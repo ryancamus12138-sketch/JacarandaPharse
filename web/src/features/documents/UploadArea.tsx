@@ -114,18 +114,18 @@ export function UploadArea() {
       />
       <Flex gap={12} wrap align="center" style={{ marginBottom: 12 }}>
         <Flex align="center" gap={8}>
-          <Tooltip title={t('一个 PDF 里扫了好几张发票，或者一张账单有好几页。自动判断：看页上的“第 2 页 共 3 页”，没有就让模型判断这一页是不是上一页的续页')}>
-            <Typography.Text>{t('一个文件里有几张单据：')}</Typography.Text>
+          <Tooltip title={t('适用于一个 PDF 中扫描了多张发票，或一张账单包含多页的情况。自动判断：依据页面上的“第 2 页 共 3 页”等页码信息；无页码时由模型判断该页是否为上一页的续页')}>
+            <Typography.Text>{t('每个文件的单据数：')}</Typography.Text>
           </Tooltip>
           <Select value={split} onChange={setSplit} options={SPLIT_OPTIONS} style={{ width: 240 }} />
         </Flex>
         <Checkbox checked={skipDuplicate} onChange={(e) => setSkipDuplicate(e.target.checked)}>
-          {t('跳过以前传过的文件（内容一样的）')}
+          {t('跳过已上传过的文件（内容相同）')}
         </Checkbox>
         <Input
           value={group}
           onChange={(e) => setGroup(e.target.value)}
-          placeholder={t('归到文件夹（可以不填），如 2026-10 出差')}
+          placeholder={t('归入文件夹（选填），如“2026-10 出差”')}
           allowClear
           style={{ width: 280 }}
         />
@@ -140,7 +140,7 @@ export function UploadArea() {
         <p className="ant-upload-drag-icon">
           <InboxOutlined />
         </p>
-        <p className="ant-upload-text">{t('把收据、发票拖到这里，或者点击选择文件（一次可以选几百个）')}</p>
+        <p className="ant-upload-text">{t('将收据、发票拖到此处，或点击选择文件（单次可选择数百个）')}</p>
         <p className="ant-upload-hint">
           {t('支持图片（JPG、PNG、WebP、TIFF）和 PDF，单个文件最大 {{MAX_MB}} MB', { MAX_MB })}
         </p>
@@ -150,7 +150,7 @@ export function UploadArea() {
           <Button icon={<FolderOpenOutlined />}>{t('选择整个文件夹')}</Button>
         </Upload>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {t('子文件夹也会一起导入，列表里可以按文件夹筛选。要自动导入一个文件夹，见“系统信息”里的监视文件夹。')}
+          {t('子文件夹将一并导入，可在列表中按文件夹筛选。如需自动导入某个文件夹，请参阅“系统信息”中的监视文件夹。')}
         </Typography.Text>
       </Flex>
       {batch.total > 0 && (
@@ -163,7 +163,7 @@ export function UploadArea() {
           title={
             busy
               ? t('正在上传 {{done}} / {{total}}', { done: batch.done, total: batch.total })
-              : t('传完了 {{total}} 个文件，正在排队处理', { total: batch.total })
+              : t('已上传 {{total}} 个文件，正在排队处理', { total: batch.total })
           }
           description={
             <>
@@ -172,10 +172,10 @@ export function UploadArea() {
                 size="small"
                 status={busy ? 'active' : batch.failed.length ? 'exception' : 'success'}
               />
-              {batch.skipped > 0 && <div>{t('跳过 {{skipped}} 个以前传过的文件', { skipped: batch.skipped })}</div>}
+              {batch.skipped > 0 && <div>{t('已跳过 {{skipped}} 个已上传过的文件', { skipped: batch.skipped })}</div>}
               {batch.failed.length > 0 && (
                 <div>
-                  {t('{{length}} 个没传上：', { length: batch.failed.length })}
+                  {t('{{length}} 个文件上传失败：', { length: batch.failed.length })}
                   {batch.failed.slice(0, 5).map((f) => (
                     <div key={f.name}>
                       {t('{{name}}：{{reason}}', { name: f.name, reason: f.reason })}

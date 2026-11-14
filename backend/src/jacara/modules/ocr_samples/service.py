@@ -1,4 +1,3 @@
-# ruff: noqa: E501
 """OCR correction samples: collection during review, management on the samples page, and export as
 PaddleOCR recognition training data."""
 
@@ -259,7 +258,7 @@ def _crop(storage: ObjectStorage, sample: OcrSample, document: Document) -> None
 
     try:
         if document.storage_key is None:
-            raise ValueError(stored("这个文档没有保存原始文件"))
+            raise ValueError(stored("此文档未保存原始文件"))
         data = storage.get(document.storage_key)
         page = page_png(data, document.content_type == "application/pdf", sample.page)
         if sample.kind == "line":
@@ -466,14 +465,14 @@ class OcrSampleService:
     def _find(self, sample_id: uuid.UUID) -> OcrSample:
         sample = self.session.get(OcrSample, sample_id)
         if sample is None or sample.team_id != self.owner.team_id:
-            raise SampleError("not_found", tr("找不到这条样本"))
+            raise SampleError("not_found", tr("样本不存在"))
         return sample
 
     def image(self, sample_id: uuid.UUID) -> bytes:
         require(self.owner, "value:read")
         sample = self._find(sample_id)
         if sample.crop_key is None or self.storage is None:
-            raise SampleError("not_found", tr("这条样本没有裁图（裁图失败了，可以重试）"))
+            raise SampleError("not_found", tr("此样本无裁剪图像（裁剪失败，可重试）"))
         try:
             return self.storage.get(sample.crop_key)
         except StorageError as err:
@@ -486,7 +485,7 @@ class OcrSampleService:
         if change.transcription is not None:
             truth = clean(change.transcription)
             if truth is None:
-                raise SampleError("invalid", tr("图中原文不能是空的，也不能有 Tab、换行"))
+                raise SampleError("invalid", tr("图中原文不能为空，也不能包含 Tab 或换行"))
             if truth != sample.transcription:
                 detail["transcription"] = [sample.transcription, truth]
                 sample.transcription = truth
@@ -501,7 +500,7 @@ class OcrSampleService:
         verified = False
         if change.status is not None and change.status != sample.status:
             if sample.status == "failed":
-                raise SampleError("invalid", tr("裁图失败的样本先重试"))
+                raise SampleError("invalid", tr("请先重试裁剪失败的样本"))
             verified = sample.status == "pending" and change.status == "ready"
             if verified and change.category is None:
                 # Approved: reclassify using the transcription confirmed by the reviewer.
@@ -543,7 +542,7 @@ class OcrSampleService:
         created = 0
         for revision, value in rows:
             if revision.id in done:
-                skipped[tr("已经有样本了")] += 1
+                skipped[tr("样本已存在")] += 1
                 continue
             reason = self._backfill_one(revision, value)
             if reason:
@@ -589,7 +588,7 @@ class OcrSampleService:
             for extraction in document.extractions:
                 for value in extraction.values:
                     if value.id in done:
-                        skipped[tr("已经收过了")] += 1
+                        skipped[tr("已收集")] += 1
                         continue
                     reason = self._confirmed_one(document, extraction, value)
                     if reason:
@@ -607,29 +606,29 @@ class OcrSampleService:
         self, document: Document, extraction: Extraction, value: ExtractedValue
     ) -> str | None:
         if value.deleted or value.origin != "model" or value.value is None:
-            return tr("没有值")
+            return tr("无值")
         if (value.current_value or "").strip() != value.value.strip():
-            return tr("人改过（这是错例，用补收）")
+            return tr("经人工修改（属于错例，请使用补收）")
         if document.storage_key is None or self.storage is None:
-            return tr("没有原始文件")
+            return tr("无原始文件")
         evidence = value.evidence or {}
         if not evidence.get("bbox"):
-            return tr("没有出处")
+            return tr("无出处")
         page = int(evidence.get("page") or extraction.page)
         ocr = ocr_page_json(extraction.ocr, page, extraction.page) or {}
         if ocr.get("engine", extraction.source) == "pdf-text":
-            return tr("这一页的字是 PDF 自带的，不是 OCR 认的")
+            return tr("此页文字来自 PDF 文本层，而非 OCR 识别")
         template = template_of(extraction)
         field = generic_field(value.name)
         if _sensitive(template, field):
-            return tr("敏感字段不收")
+            return tr("不收集敏感字段")
         box = [float(v) for v in evidence["bbox"]]
         same = [ln for ln in ocr.get("lines", []) if _same_box(ln.get("box"), box)]
         if len(same) != 1 or not same[0].get("polygon"):
-            return tr("出处不是正好一整块原文")
+            return tr("出处不是恰好一整块原文")
         text = clean(str(same[0]["text"]))
         if text is None or not only_value(value.type, value.value, text):
-            return tr("这一块里除了值还有别的字")
+            return tr("此文字块除值外还包含其他文字")
         labels = labels_of(extraction)
         sample = OcrSample(
             id=uuid.uuid4(),
@@ -686,19 +685,19 @@ class OcrSampleService:
         """Backfill one sample; returns the reason if it cannot be collected."""
         evidence = revision.evidence
         if not evidence or not evidence.get("bbox"):
-            return tr("手打的值（没点原文、没框），不知道在图上哪里")
+            return tr("手动输入的值（未点选原文或框选），无法确定在图像中的位置")
         extraction = value.extraction
         document = extraction.document
         if document.storage_key is None or self.storage is None:
-            return tr("没有原始文件")
+            return tr("无原始文件")
         page = int(evidence.get("page") or extraction.page)
         ocr = ocr_page_json(extraction.ocr, page, extraction.page) or {}
         if ocr.get("engine", extraction.source) == "pdf-text":
-            return tr("这一页的字是 PDF 自带的，不是 OCR 认的")
+            return tr("此页文字来自 PDF 文本层，而非 OCR 识别")
         template = template_of(extraction)
         field = generic_field(value.name)
         if _sensitive(template, field):
-            return tr("敏感字段不收")
+            return tr("不收集敏感字段")
         box = [float(v) for v in evidence["bbox"]]
         lines = list(ocr.get("lines", []))
         if evidence.get("drawn"):
@@ -717,7 +716,7 @@ class OcrSampleService:
                 ocr_text = str(evidence.get("text") or "") or None
             guess = clean(ocr_text or "") or clean(revision.new_value or "")
         if guess is None:
-            return tr("没有能当原文的文字")
+            return tr("没有可作为原文的文字")
         labels = labels_of(extraction)
         sample = OcrSample(
             id=uuid.uuid4(),
@@ -759,14 +758,14 @@ class OcrSampleService:
         require(self.owner, "value:review")
         sample = self._find(sample_id)
         if sample.status != "failed":
-            raise SampleError("invalid", tr("这条样本没有失败，不用重试"))
+            raise SampleError("invalid", tr("此样本未失败，无需重试"))
         document = self.session.get(Document, sample.document_id)
         if document is None or self.storage is None:
-            raise SampleError("not_found", tr("找不到原来的文档"))
+            raise SampleError("not_found", tr("原文档不存在"))
         _crop(self.storage, sample, document)
         self.session.flush()
         if sample.status == "failed":
-            raise SampleError("storage", tr("还是没裁出来：{error}", error=sample.error))
+            raise SampleError("storage", tr("仍未裁剪成功：{error}", error=sample.error))
         return self._out([sample])[0]
 
     # ---- Grouping ----
@@ -904,16 +903,16 @@ class OcrSampleService:
         a = (change.a.document_id, change.a.page)
         b = (change.b.document_id, change.b.page)
         if a == b:
-            raise SampleError("invalid", tr("两边是同一张单据"))
+            raise SampleError("invalid", tr("两侧为同一单据"))
         for unit in (a, b):
             document = self.session.get(Document, unit[0])
             if document is None or document.team_id != self.owner.team_id:
-                raise SampleError("not_found", tr("找不到这张单据"))
+                raise SampleError("not_found", tr("单据不存在"))
             if not any(e.page == unit[1] for e in document.extractions):
                 raise SampleError(
                     "invalid",
                     tr(
-                        "{filename} 没有从第 {page} 页开始的单据",
+                        "{filename} 中没有从第 {page} 页开始的单据",
                         filename=document.filename,
                         page=unit[1],
                     ),
@@ -937,7 +936,7 @@ class OcrSampleService:
                 split=None,
                 quarantined=False,
                 affected_exports=0,
-                message=tr("已记下：不是同一张，不再提名"),
+                message=tr("已记录：不是同一张单据，不再推荐"),
             )
         result = groups.merge(self.session, team, user, a, b)
         record(
@@ -952,11 +951,14 @@ class OcrSampleService:
         )
         message = (
             tr(
-                "已合并。两组以前导出过、分在不同边，整组隔离，{affected_exports} 次导出受影响",
+                (
+                    "已合并。两个分组此前已导出且位于不同划分，整组已隔离，{affec"
+                    "ted_exports} 次导出受影响"
+                ),
                 affected_exports=result.affected_exports,
             )
             if result.quarantined and result.affected_exports
-            else tr("已合并成一组（{split}）", split=tr(groups.SPLIT_NAMES[result.split]))
+            else tr("已合并为一组（{split}）", split=tr(groups.SPLIT_NAMES[result.split]))
         )
         return PairResult(
             group_id=result.group_id,
@@ -988,11 +990,11 @@ class OcrSampleService:
             quarantined=result.quarantined,
             affected_exports=result.affected_exports,
             message=tr(
-                "已拆开。原来的组导出过，两边都隔离，{affected_exports} 次导出受影响",
+                ("已拆分。原分组已导出，两部分均已隔离，{affected_exports} 次导出受影响"),
                 affected_exports=result.affected_exports,
             )
             if result.quarantined
-            else tr("已拆开"),
+            else tr("已拆分"),
         )
 
     def export_records(self) -> list[ExportRecordOut]:
@@ -1043,15 +1045,15 @@ class OcrSampleService:
             group = members[(sample.document_id, sample.unit_page)]
             split = (splits.get(group) or groups.ensure_split(self.session, team, group)).split
             if sample.status == "withdrawn":
-                excluded[tr("撤回了")] += 1
+                excluded[tr("已撤回")] += 1
             elif sample.status == "pending":
-                excluded[tr("补收的，还没复核")] += 1
+                excluded[tr("补收样本，尚未复核")] += 1
             elif sample.status != "ready" or not sample.crop_key or not sample.crop_sha256:
-                excluded[tr("裁图失败，没有图")] += 1
+                excluded[tr("裁剪失败，无图像")] += 1
             elif clean(sample.transcription) != sample.transcription:
-                excluded[tr("图中原文是空的或有 Tab、换行")] += 1
+                excluded[tr("图中原文为空或包含 Tab、换行")] += 1
             elif split == "quarantined":
-                excluded[tr("所在的组被隔离了（合并或拆开时发现已经导出过）")] += 1
+                excluded[tr("所在分组已被隔离（合并或拆分时发现已导出）")] += 1
             elif kind == "train_val" and split == "test_locked":
                 excluded[tr("锁定测试集（单独导出）")] += 1
             elif kind == "test" and split != "test_locked":
@@ -1066,11 +1068,11 @@ class OcrSampleService:
         kept: list[tuple[OcrSample, uuid.UUID, str]] = []
         for same in by_image.values():
             if len({s.transcription for s, _, _ in same}) > 1:
-                excluded[tr("同一张图有两种写法")] += len(same)
+                excluded[tr("同一图像存在两种转写")] += len(same)
                 continue
             kept.append(same[0])
             if len(same) > 1:
-                excluded[tr("同一张图重复，只留一份")] += len(same) - 1
+                excluded[tr("同一图像重复，仅保留一份")] += len(same) - 1
         kept.sort(key=lambda e: (e[0].created_at, str(e[0].id)))
         return kept, excluded
 
@@ -1149,7 +1151,7 @@ class OcrSampleService:
             raise SampleError("storage", tr("对象存储暂时不可用，请稍后再试"))
         kept, excluded = self._selection(category, source_format, template, kind)
         if not kept:
-            raise SampleError("invalid", tr("没有能导出的样本"))
+            raise SampleError("invalid", tr("没有可导出的样本"))
         team = self.owner.team_id
         seed = groups.split_seed(self.session, team)
         version = groups.split_version(self.session, team)
@@ -1168,7 +1170,7 @@ class OcrSampleService:
                     with Image.open(io.BytesIO(png)) as picture:
                         picture.verify()  # The image decodes.
                 except Exception:  # Image missing or corrupt in storage: skip this sample.
-                    excluded[tr("图片找不到或打不开")] += 1
+                    excluded[tr("图片不存在或无法打开")] += 1
                     continue
                 number = len(exported) + 1
                 name = f"crop_img/s_{number:04d}.png"
@@ -1209,7 +1211,7 @@ class OcrSampleService:
                 )
                 exported.append((sample, group, split))
             if not exported:
-                raise SampleError("storage", tr("样本的图片都找不到了"))
+                raise SampleError("storage", tr("样本图像均不存在"))
             for part in ("train", "val", "test"):
                 if part in lists:
                     archive.writestr(f"rec_gt_{part}.txt", "".join(lists[part]).encode("utf-8"))
@@ -1300,15 +1302,15 @@ class OcrSampleService:
 def _evidence(groups_: int, rows: int) -> Evidence:
     """Validation set sufficiency (starting thresholds from an external review)."""
     if groups_ == 0:
-        return Evidence(level="none", message=tr("这次没有验证集（组太少，或都分进了训练集）"))
+        return Evidence(level="none", message=tr("本次无验证集（分组过少，或全部分配至训练集）"))
     where = tr("验证集 {groups} 组、{rows} 行", groups=groups_, rows=rows)
     if groups_ < 10 or rows < 50:
         return Evidence(
-            level="process", message=tr("{where}：只能检查流程，不能说明模型好坏", where=where)
+            level="process", message=tr("{where}：仅可验证流程，不能反映模型优劣", where=where)
         )
     if groups_ >= 15 and rows >= 100:
-        return Evidence(level="trend", message=tr("{where}：可以看整体趋势", where=where))
-    return Evidence(level="thin", message=tr("{where}：偏少，趋势仅供参考", where=where))
+        return Evidence(level="trend", message=tr("{where}：可参考整体趋势", where=where))
+    return Evidence(level="thin", message=tr("{where}：数量偏少，趋势仅供参考", where=where))
 
 
 def _readme(
@@ -1333,15 +1335,15 @@ def _readme(
             version=version,
             time=datetime.now(),
         ),
-        tr("一共 {n} 条。", n=len(samples)),
+        tr("共 {n} 条。", n=len(samples)),
         "",
-        tr("这是你自己的业务数据，不要放进代码仓库、不要上传到公开的地方。"),
+        tr("以上为业务数据，请勿提交到代码仓库或上传至公开位置。"),
         "",
         tr("## 划分"),
         "",
         *(
             tr(
-                "- {name}：{groups} 组（独立的业务单据）、{rows} 行（`rec_gt_{split}.txt`）",
+                ("- {name}：{groups} 组（独立业务单据）、{rows} 行（`rec_gt_{split}.txt`）"),
                 name=names[k],
                 groups=v.groups,
                 rows=v.rows,
@@ -1357,17 +1359,25 @@ def _readme(
         lines += [
             "",
             tr(
-                "按单据分组：同一张单据（重新处理的几轮、PDF 和照片、重复上传的同一个文件）的样本全在同一边，多次导出始终在同一边（`document_group` 是稳定的组号，不含业务信息）。80/20 是按组的目标比例，组少时行数比例会偏。`rec_gt.txt` 是训练集和验证集合起来。锁定测试集不在这里，单独导出。"
+                "按单据分组：同一单据（包括各轮重新处理、PDF 与照片、重复上传"
+                "的同一文件）的样本位于同一划分，多次导出保持不变（`document_"
+                "group` 为稳定组号，不含业务信息）。80/20 为按组计算的目标比"
+                "例，组数较少时行数比例会有偏差。`rec_gt.txt` 为训练集与验证"
+                "集的合集。锁定测试集不包含在内，需单独导出。"
             ),
         ]
     lines += [
         "",
         tr("## 文件"),
         "",
-        tr("- `crop_img/`：每条一张单行小图，文件名只是编号。"),
-        tr("- `rec_gt_*.txt`：每行一条，图片路径、一个 Tab、图上原样的文字（UTF-8，无 BOM）。"),
+        tr("- `crop_img/`：每条样本一张单行图像，文件名仅为编号。"),
+        tr("- `rec_gt_*.txt`：每行一条，格式为图片路径、Tab、与图像一致的文字（UTF-8，无 BOM）。"),
         tr(
-            "- `manifest.jsonl`：每行一条的详细信息：OCR 当时读成什么（`ocr_text`）、分类、错误标签、模板、字段、组号、分在哪边（`split`）、划分版本、标签修订号（`sample_revision`）、来源、首轮 OCR 的版本。"
+            "- `manifest.jsonl`：每行一条样本的详细信息：当时的 OCR 结果"
+            "（`ocr_text`）、分类、错误标签、模板（`template_id`、`templa"
+            "te`）、字段（`field`、`field_label`）、组号、所属划分（`spli"
+            "t`）、划分版本、标签修订号（`sample_revision`）、来源及首轮 "
+            "OCR 版本。"
         ),
         "",
         tr("## 分类"),
@@ -1383,7 +1393,10 @@ def _readme(
         ),
         "",
         tr(
-            '认错字、漏认是错例；认对的行是审核时核对过、OCR 本来就读对的。微调时错例和认对的行一起用，只用错例模型会把原来认得好的字"忘掉"。原因未确定的：图和首轮识别时的不完全一样，看过再决定用不用。'
+            "识别错误和漏识别属于错例；识别正确的行是审核时核对过、OCR 原"
+            "本就识别正确的行。微调时应将错例与识别正确的行一同使用，仅使"
+            "用错例会导致模型遗忘原本识别正确的字符。原因未确定的样本：图"
+            "像与首轮识别时不完全一致，请查看后再决定是否使用。"
         ),
         "",
     ]
@@ -1400,7 +1413,7 @@ def _readme(
     distributions: list[Distribution] = summary["distributions"]
     if distributions:
         titles = {"template": tr("模板"), "category": tr("分类"), "source_format": tr("来源")}
-        lines += [tr("## 分布（只报告，不为凑比例挪组）"), ""]
+        lines += [tr("## 分布（仅供参考，不为平衡比例调整分组）"), ""]
         for by, title in titles.items():
             rows = [d for d in distributions if d.by == by]
             if rows:
@@ -1414,7 +1427,7 @@ def _readme(
         lines.append("")
     if excluded:
         lines += [
-            tr("## 没有导出的"),
+            tr("## 未导出"),
             "",
             *(tr("- {reason}：{n} 条", reason=reason, n=n) for reason, n in excluded.most_common()),
             "",
@@ -1422,41 +1435,56 @@ def _readme(
     lines += [
         tr("## 在 PaddleOCR 里训练识别模型"),
         "",
-        tr("1. 解压到一个文件夹，例如 `/data/jacara_ocr`。"),
+        tr("1. 解压至一个目录，例如 `/data/jacara_ocr`。"),
         tr(
-            "2. 识别训练配置里：`Train.dataset.data_dir` 和 `Eval.dataset.data_dir` 写这个文件夹，`Train.dataset.label_file_list` 写 `rec_gt_train.txt`，`Eval.dataset.label_file_list` 写 `rec_gt_val.txt`（`SimpleDataSet` 直接能读）。"
+            "2. 在识别训练配置中：将 `Train.dataset.data_dir` 和 `Eval.da"
+            "taset.data_dir` 设为该目录，`Train.dataset.label_file_list` "
+            "设为 `rec_gt_train.txt`，`Eval.dataset.label_file_list` 设为"
+            " `rec_gt_val.txt`（`SimpleDataSet` 可直接读取）。"
         ),
         tr(
-            "3. 用和系统现在用的识别模型同一系列的配置、字典和预训练权重做微调；字典里没有的字训练时会被跳过，最好先检查一遍。"
+            "3. 使用与系统当前识别模型同系列的配置、字典和预训练权重进行"
+            "微调；字典中不存在的字符在训练时会被跳过，建议事先检查。"
         ),
         tr(
-            '4. 训练好后导出推理模型、转成 ONNX，放进项目的 `models/ocr/`（文件名带 rec），在系统信息页"换模型"里选上，jacara stop、jacara start 后生效。'
+            "4. 训练完成后导出推理模型并转换为 ONNX，在“模型和数据集”页导"
+            "入（种类选择“OCR 文字识别”），再在“设置 → 模型”中选择，执行 "
+            "jacara stop 和 jacara start 后生效。"
         ),
         "",
         tr(
-            '反复看验证集的结果来调训练，验证集会慢慢"被调过"；正式验收用锁定测试集，或者新进的单据。'
+            "反复依据验证集结果调整训练，会使结果逐渐过拟合验证集；正式验"
+            "收请使用锁定测试集或新进单据。"
         ),
         "",
         tr("## 数量和配比（PaddleOCR 微调文档的建议）"),
         "",
         tr(
-            "- 不改字典时，识别数据建议至少 {minimum} 行；这次 {n} 行，还不够，先攒或按下面合成补。",
+            (
+                "- 不修改字典时，识别数据建议至少 {minimum} 行；本次 {n} 行，"
+                "数量不足，请继续积累或按下文合成补充。"
+            ),
             minimum=PADDLE_MINIMUM,
             n=len(samples),
         )
         if len(samples) < PADDLE_MINIMUM
         else tr(
-            "- 不改字典时，识别数据建议至少 {minimum} 行；这次 {n} 行。",
+            "- 不修改字典时，识别数据建议至少 {minimum} 行；本次 {n} 行。",
             minimum=PADDLE_MINIMUM,
             n=len(samples),
         ),
         tr(
-            "- 这些场景数据和通用的真实数据（例如 LSVT、RCTW、MTWI）每轮大约 1:1 混着训练，用 `Train.dataset.ratio_list` 调（例如场景 1.0、通用 0.1），免得只认得这一种单据。"
+            "- 场景数据与通用真实数据（如 LSVT、RCTW、MTWI）每轮约按 1:1 "
+            "混合训练，可通过 `Train.dataset.ratio_list` 调整（如场景 1.0"
+            "、通用 0.1），以免模型只适应此类单据。"
         ),
         tr(
-            "- 某些字老认错时，用 TextRenderer 这类工具合成补充：语料用 `corpus/real_text.txt`（图上原样的文字），重点合成 `corpus/hard_chars.txt` 里的字；原有数据和合成数据的比例 10:1 到 5:1，学习率调小。"
+            "- 某些字符反复识别错误时，可使用 TextRenderer 等工具合成补充"
+            "：语料使用 `corpus/real_text.txt`（与图像一致的文字），重点"
+            "合成 `corpus/hard_chars.txt` 中的字符；真实数据与合成数据比"
+            "例为 10:1 至 5:1，并调低学习率。"
         ),
-        tr("- 训练出来的模型先用回放（jacara eval replay）和锁定测试集比过，再换上去。"),
+        tr("- 训练得到的模型需先通过回放（jacara eval replay）和锁定测试集对比验证，再启用。"),
         "",
     ]
     return "\n".join(lines)

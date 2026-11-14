@@ -51,8 +51,8 @@ import { DEFAULT_LANGUAGE, newTemplateLanguage, untranslated, withLanguage } fro
 const STATUS_TEXT: Record<string, [string, string]> = {
   matched: [msg('有出处'), 'green'],
   fuzzy: [msg('相似'), 'gold'],
-  not_found: [msg('找不到出处'), 'red'],
-  empty: [msg('原文没有'), 'default'],
+  not_found: [msg('未找到出处'), 'red'],
+  empty: [msg('原文缺失'), 'default'],
 }
 
 function draftOf(tpl: Template): TemplateIn {
@@ -139,11 +139,11 @@ export function TemplateEditorPage() {
     return (
       <Result
         status="warning"
-        title={t('打不开这个模板')}
+        title={t('无法打开此模板')}
         subTitle={text}
         extra={
           <Link to="/templates">
-            <Button>{t('回模板列表')}</Button>
+            <Button>{t('返回模板列表')}</Button>
           </Link>
         }
       />
@@ -178,7 +178,7 @@ function Editor({ template }: { template: Template }) {
     setLanguage(next)
     if (missing > 0) {
       void message.warning(
-        t('主语言改成了{{languageName}}。有 {{count}} 处还没有{{languageName}}版本，先保留原来的文字，记得改过来', {
+        t('主语言已改为{{languageName}}。有 {{count}} 处尚无{{languageName}}版本，暂时保留原文字，请补充翻译', {
           languageName: languageName(next),
           count: missing,
         }),
@@ -229,7 +229,7 @@ function Editor({ template }: { template: Template }) {
       void queryClient.invalidateQueries({ queryKey: ['templates'] })
       queryClient.setQueryData(['template', tpl.id], { ...template, ...tpl, versions: template.versions })
       void queryClient.invalidateQueries({ queryKey: ['template', tpl.id] })
-      void message.success(t('已保存第 {{version}} 版。以后上传、重新处理用这一版，旧文档不变', { version: tpl.version }))
+      void message.success(t('已保存第 {{version}} 版。之后的上传和重新处理将使用此版本，已有文档不受影响', { version: tpl.version }))
     },
     onError,
   })
@@ -240,14 +240,14 @@ function Editor({ template }: { template: Template }) {
 
   const dirty = JSON.stringify({ ...draft, note: '' }) !== JSON.stringify(draftOf(template))
   const problem =
-    (!draft.title.trim() ? t('模板名不能空') : null) ??
-    (draft.fields.length === 0 ? t('至少要有一个字段') : null) ??
+    (!draft.title.trim() ? t('模板名称不能为空') : null) ??
+    (draft.fields.length === 0 ? t('至少需要一个字段') : null) ??
     fieldsProblem(draft.fields, t('字段里')) ??
     draft.tables
       .map(
         (tbl) =>
-          (!FIELD_ID.test(tbl.name) ? t('表格 ID「{{name}}」只能用小写英文字母、数字和下划线', { name: tbl.name }) : null) ??
-          (tbl.columns.length === 0 ? t('表格「{{label}}」至少要有一列', { label: tbl.label }) : null) ??
+          (!FIELD_ID.test(tbl.name) ? t('表格 ID「{{name}}」只能包含小写英文字母、数字和下划线', { name: tbl.name }) : null) ??
+          (tbl.columns.length === 0 ? t('表格「{{label}}」至少需要一列', { label: tbl.label }) : null) ??
           fieldsProblem(tbl.columns, t('表格「{{label}}」', { label: tbl.label })),
       )
       .find((p) => p !== null) ??
@@ -265,7 +265,7 @@ function Editor({ template }: { template: Template }) {
               <Button icon={<ArrowLeftOutlined />}>{t('模板')}</Button>
             </Link>
             <Typography.Text strong>{isNew ? t('新建模板') : template.title}</Typography.Text>
-            {isNew ? <Tag color="orange">{t('还没保存')}</Tag> : <Tag>{t('第 {{version}} 版', { version: template.version })}</Tag>}
+            {isNew ? <Tag color="orange">{t('未保存')}</Tag> : <Tag>{t('第 {{version}} 版', { version: template.version })}</Tag>}
             {template.archived && <Tag>{t('已归档')}</Tag>}
             <LabelTags
               template={{ ...template, domains: draft.domains, countries: draft.countries, tags: draft.tags }}
@@ -293,7 +293,7 @@ function Editor({ template }: { template: Template }) {
             ) : (
               <Space.Compact>
                 <Input
-                  placeholder={t('这一版改了什么（可以不写）')}
+                  placeholder={t('本版本修改说明（选填）')}
                   value={draft.note}
                   onChange={(e) => set({ note: e.target.value })}
                   style={{ width: 260 }}
@@ -320,21 +320,21 @@ function Editor({ template }: { template: Template }) {
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            title={t('填好字段后点右上角“保存”，才会加到我的模板里')}
-            description={t('离开这个页面不保存，什么都不会留下。')}
+            title={t('填写字段后点击右上角“保存”，模板才会添加到我的模板')}
+            description={t('未保存就离开此页面，内容将不会保留。')}
           />
         )}
         {template.used > 0 && !readOnly && (
           <Tip
             id="editor-template-used"
             style={{ marginBottom: 12 }}
-            title={t('有 {{used}} 份文档用这个模板', { used: template.used })}
-            description={t('保存新版本不会改它们已有的结果；想按新版本重新抽，在审核页面点“重新处理”。')}
+            title={t('已有 {{used}} 份文档使用此模板', { used: template.used })}
+            description={t('保存新版本不会改变这些文档已有的结果；如需按新版本重新抽取，请在审核页点击“重新处理”。')}
           />
         )}
         {!readOnly && <StarterFormulas template={template} draft={draft} set={set} />}
         <Descriptions column={{ xs: 1, md: 3 }} size="small">
-          <Descriptions.Item label={language === primary ? t('模板名') : t('模板名（{{languageName}}）', { languageName: languageName(language) })}>
+          <Descriptions.Item label={language === primary ? t('模板名称') : t('模板名（{{languageName}}）', { languageName: languageName(language) })}>
             {language === primary ? (
               <Input value={draft.title} disabled={readOnly} onChange={(e) => set({ title: e.target.value })} />
             ) : (
@@ -367,7 +367,7 @@ function Editor({ template }: { template: Template }) {
           </Descriptions.Item>
           <Descriptions.Item
             label={
-              <Tooltip title={t('名称和说明都用这种语言写；审核页、导出默认显示这种语言的名称，给模型的说明也用它')}>
+              <Tooltip title={t('名称和说明均以此语言编写；审核页和导出默认显示此语言的名称，提供给模型的说明也使用此语言')}>
                 {t('主语言')}
               </Tooltip>
             }
@@ -403,7 +403,7 @@ function Editor({ template }: { template: Template }) {
         size="small"
         extra={
           <Flex align="center" gap={8}>
-            <Tooltip title={t('名称和说明可以写几种语言：审核页、导出、预览时切换。没写的语言显示主语言的。名称也会告诉模型单据上可能这么写')}>
+            <Tooltip title={t('名称和说明可填写多种语言，在审核页、导出和预览中切换；未填写的语言显示主语言内容。各语言名称也会提供给模型，作为单据上可能出现的写法')}>
               <Typography.Text type="secondary">{t('编辑语言')}</Typography.Text>
             </Tooltip>
             <Select
@@ -453,13 +453,13 @@ function Editor({ template }: { template: Template }) {
                 })
               }
             >
-              {t('加一张表')}
+              {t('添加表格')}
             </Button>
           )
         }
       >
         {draft.tables.length === 0 ? (
-          <Empty description={t('没有表格。商品明细、航段这种行数不固定的，用表格')} />
+          <Empty description={t('暂无表格。行数不固定的内容（如商品明细、航段）请使用表格')} />
         ) : (
           <Flex vertical gap={16}>
             {draft.tables.map((tbl, i) => (
@@ -511,7 +511,7 @@ function Editor({ template }: { template: Template }) {
                       icon={<DeleteOutlined />}
                       onClick={() => set({ tables: draft.tables.filter((_, j) => j !== i) })}
                     >
-                      {t('删掉这张表')}
+                      {t('删除此表格')}
                     </Button>
                   )
                 }
@@ -521,7 +521,7 @@ function Editor({ template }: { template: Template }) {
                     value={tbl.description}
                     disabled={readOnly}
                     autoSize={{ minRows: 1, maxRows: 3 }}
-                    placeholder={t('给模型的说明：表在单据哪里、哪些行不算（小计、合计……）')}
+                    placeholder={t('给模型的说明：表格在单据中的位置、哪些行不计入（小计、合计等）')}
                     onChange={(e) => setTable(i, { description: e.target.value })}
                     style={{ marginBottom: 8 }}
                   />
@@ -588,12 +588,12 @@ function Editor({ template }: { template: Template }) {
           }
         >
           <Typography.Paragraph type="secondary">
-            {t('用')}<b>{t('已保存的最新版')}</b>{t('（第 {{version}} 版）在一份处理过的文档上抽一次，看看抽出什么。 不保存、不改文档。要等模型跑完，每页十几秒。', { version: template.version })}
+            {t('使用')}<b>{t('已保存的最新版本')}</b>{t('（第 {{version}} 版）对一份已处理的文档执行一次抽取，以预览结果。结果不保存，也不修改文档。需等待模型运行完成，每页约十几秒。', { version: template.version })}
           </Typography.Paragraph>
           <Flex gap={8} wrap style={{ marginBottom: 12 }}>
             <Select
               style={{ minWidth: 320 }}
-              placeholder={t('选一份文档')}
+              placeholder={t('选择文档')}
               value={trialDoc}
               onChange={setTrialDoc}
               loading={documents.isPending}
@@ -608,7 +608,7 @@ function Editor({ template }: { template: Template }) {
             >
               {t('试跑')}
             </Button>
-            {dirty && <Typography.Text type="warning">{t('有没保存的修改：试跑用的是已保存的版本')}</Typography.Text>}
+            {dirty && <Typography.Text type="warning">{t('存在未保存的修改：试跑使用已保存的版本')}</Typography.Text>}
           </Flex>
           {trial.data && <TrialView result={trial.data} />}
         </Card>
@@ -657,7 +657,7 @@ function Editor({ template }: { template: Template }) {
               ),
             ]}
             columns={[
-              { title: t('中文名'), dataIndex: 'label' },
+              { title: t('名称'), dataIndex: 'label' },
               { title: t('字段 ID'), dataIndex: 'name' },
               { title: t('类型'), dataIndex: 'type' },
               { title: t('必填'), dataIndex: 'required', render: (r: boolean) => (r ? t('是') : '') },
@@ -676,7 +676,7 @@ function TrialView({ result }: { result: TrialResult }) {
   return (
     <Flex vertical gap={12}>
       <Typography.Text type="secondary">
-        {t('第 {{version}} 版，用时 {{toFixed}} 秒', { version: result.version, toFixed: (result.duration_ms / 1000).toFixed(1) })}
+        {t('第 {{version}} 版，耗时 {{toFixed}} 秒', { version: result.version, toFixed: (result.duration_ms / 1000).toFixed(1) })}
       </Typography.Text>
       {result.pages.map((page) => (
         <Flex key={page.page} vertical gap={8}>
@@ -757,7 +757,7 @@ function StarterFormulas({
       type="warning"
       showIcon
       style={{ marginBottom: 12 }}
-      title={t('起步模板后来加了公式，这份模板还没有')}
+      title={t('起步模板已新增公式，此模板尚未同步')}
       description={
         <>
           {pending.map(([key, formula]) => (
@@ -765,12 +765,12 @@ function StarterFormulas({
               {labels.get(key)} = <Typography.Text code>{formula}</Typography.Text>
             </div>
           ))}
-          <div>{t('套用后这些字段按公式算，不再让模型从单据上找。套用后点右上角保存。')}</div>
+          <div>{t('应用后，这些字段将按公式计算，不再由模型从单据中抽取。应用后请点击右上角保存。')}</div>
         </>
       }
       action={
         <Button size="small" type="primary" onClick={apply}>
-          {t('套用')}
+          {t('应用')}
         </Button>
       }
     />

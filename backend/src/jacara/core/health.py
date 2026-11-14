@@ -16,7 +16,7 @@ TIMEOUT_S = 3
 """Timeout in seconds for each check. Unreachable services usually fail immediately rather than
 waiting for the full timeout."""
 
-_START_INFRA = N_("运行 docker compose up -d 启动，再用 docker compose ps 看状态")
+_START_INFRA = N_("运行 docker compose up -d 启动，再用 docker compose ps 查看状态")
 
 
 @dataclass(frozen=True)
@@ -35,10 +35,10 @@ def check_secrets(settings: Settings) -> Check:
         return Check(
             tr(".env 密钥"),
             False,
-            tr("还是空的或 change-me：{names}", names=tr("、").join(weak)),
-            tr("用 openssl rand -hex 16 生成随机值填进 .env"),
+            tr("仍为空或 change-me：{names}", names=tr("、").join(weak)),
+            tr("使用 openssl rand -hex 16 生成随机值并填入 .env"),
         )
-    return Check(tr(".env 密钥"), True, tr("都已改成自己的值"))
+    return Check(tr(".env 密钥"), True, tr("均已设置为自定义值"))
 
 
 def check_web(settings: Settings) -> Check:
@@ -48,7 +48,7 @@ def check_web(settings: Settings) -> Check:
     if index.is_file():
         return Check(tr("网页"), True, tr("已打包（{web_dist}）", web_dist=settings.web_dist))
     return Check(
-        tr("网页"), False, tr("还没打包，打开 8000 只会看到提示"), "cd web && npm run build"
+        tr("网页"), False, tr("尚未构建，访问 8000 端口只会显示提示页"), "cd web && npm run build"
     )
 
 
@@ -68,7 +68,7 @@ def check_postgres(settings: Settings) -> Check:
     except psycopg.OperationalError as err:
         hint = tr(_START_INFRA)
         if "password authentication failed" in str(err):
-            hint = tr(".env 里的 POSTGRES_PASSWORD 和数据库创建时用的不一样")
+            hint = tr(".env 中的 POSTGRES_PASSWORD 与数据库创建时使用的不一致")
         return Check("PostgreSQL", False, _first_line(err), hint)
     return Check(
         "PostgreSQL", True, tr("版本 {value}", value=version[0] if version else tr("未知"))
@@ -117,7 +117,7 @@ def check_s3(settings: Settings) -> Check:
     except ClientError as err:
         code = err.response.get("Error", {}).get("Code", "")
         return Check(
-            "SeaweedFS", False, tr("S3 拒绝访问（{code}）", code=code), tr(".env 里的 S3 密钥不对")
+            "SeaweedFS", False, tr("S3 拒绝访问（{code}）", code=code), tr(".env 中的 S3 密钥错误")
         )
     except BotoCoreError as err:
         return Check("SeaweedFS", False, _first_line(err), tr(_START_INFRA))
@@ -128,7 +128,10 @@ def check_s3(settings: Settings) -> Check:
     return Check(
         "SeaweedFS",
         True,
-        tr("已连接，存储桶 {s3_bucket} 还没创建（上传文件时会创建）", s3_bucket=settings.s3_bucket),
+        tr(
+            "已连接，存储桶 {s3_bucket} 尚未创建（首次上传时自动创建）",
+            s3_bucket=settings.s3_bucket,
+        ),
     )
 
 
@@ -139,14 +142,17 @@ def check_model(settings: Settings) -> Check:
         response = httpx.get(f"{settings.model_server}/health", timeout=TIMEOUT_S)
     except httpx.HTTPError as err:
         return Check(
-            "llama-server", False, _first_line(err), tr("运行 uv run jacara serve --model 模型文件")
+            "llama-server",
+            False,
+            _first_line(err),
+            tr("运行 uv run jacara serve --model <模型文件>"),
         )
     if response.status_code != 200:
         return Check(
             "llama-server",
             False,
             tr("服务返回 {status_code}", status_code=response.status_code),
-            tr("模型可能还在加载，稍等再试"),
+            tr("模型可能仍在加载，请稍后重试"),
         )
     return Check(
         "llama-server", True, tr("已就绪（{model_server}）", model_server=settings.model_server)

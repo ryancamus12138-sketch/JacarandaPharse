@@ -30,7 +30,7 @@ def _num(values: Values, name: str) -> float:
     value = values[name]
     if not isinstance(value, float):
         raise TypeError(
-            stored("字段 {name} 应该是数字，实际是 {value}", name=name, value=repr(value))
+            stored("字段 {name} 应为数字，实际为 {value}", name=name, value=repr(value))
         )
     return value
 
@@ -45,7 +45,7 @@ def check_change(values: Values) -> str | None:
     if abs(expected - change) < TOLERANCE:
         return None
     return stored(
-        "现金 {cash} − 总额 {total} = {expected}，但找零是 {change}",
+        "现金 {cash} − 总额 {total} = {expected}，但找零为 {change}",
         cash=_money(cash),
         total=_money(total),
         expected=_money(expected),
@@ -60,7 +60,7 @@ def check_rounding(values: Values) -> str | None:
     if abs(expected - total) < TOLERANCE:
         return None
     return stored(
-        "小计 {subtotal} + 调整 {rounding} = {expected}，但总额是 {total}",
+        ("小计 {subtotal} + 调整 {rounding} = {expected}，但总额为 {total}"),
         subtotal=_money(subtotal),
         rounding=_money(rounding),
         expected=_money(expected),
@@ -72,12 +72,12 @@ def check_cash_covers_total(values: Values) -> str | None:
     cash, total = _num(values, "cash"), _num(values, "total")
     if cash + TOLERANCE >= total:
         return None
-    return stored("现金 {cash} 比总额 {total} 还少", cash=_money(cash), total=_money(total))
+    return stored("现金 {cash} 少于总额 {total}", cash=_money(cash), total=_money(total))
 
 
 def check_positive_total(values: Values) -> str | None:
     total = _num(values, "total")
-    return None if total > 0 else stored("总额是 {total}，应该大于 0", total=_money(total))
+    return None if total > 0 else stored("总额为 {total}，应大于 0", total=_money(total))
 
 
 def _date_exists(field: str) -> Callable[[Values], str | None]:
@@ -99,7 +99,7 @@ def _date_not_future(field: str) -> Callable[[Values], str | None]:
             return None  # Invalid dates are handled by the previous rule.
         if day <= date.today():
             return None
-        return stored("日期 {day} 在今天之后", day=day)
+        return stored("日期 {day} 晚于今天", day=day)
 
     return check
 
@@ -132,8 +132,10 @@ def check_items_sum(values: Values) -> str | None:
         return None
     label = stored("小计") if target == "subtotal" else stored("总额")
     return stored(
-        "{rows} 行商品金额加起来是 {added}，但{label}是 {expected}（可能漏了行、多了行，"
-        "或者有税、折扣没算进去）",
+        (
+            "{rows} 行商品金额合计为 {added}，但{label}为 {expected}（可"
+            "能遗漏或多出行，或有税费、折扣未计入）"
+        ),
         rows=len(amounts),
         added=_money(added),
         label=label,
@@ -150,7 +152,7 @@ def check_item_line(values: Values) -> str | None:
     if abs(abs(expected) - abs(amount)) < ITEM_TOLERANCE:
         return None
     return stored(
-        "数量 {quantity:g} × 单价 {price} = {expected}，但金额是 {amount}",
+        ("数量 {quantity:g} × 单价 {price} = {expected}，但金额为 {amount}"),
         quantity=quantity,
         price=_money(price),
         expected=_money(expected),
@@ -181,7 +183,7 @@ def check_cn_invoice_no(values: Values) -> str | None:
     number = _text(values, "invoice_no").replace(" ", "")
     if number.isdigit() and len(number) == 20:
         return None
-    return stored("发票号码 {number} 不是 20 位数字（数电发票的号码是 20 位）", number=number)
+    return stored("发票号码 {number} 不是 20 位数字（数电发票号码为 20 位）", number=number)
 
 
 def check_cn_tax_balance(values: Values) -> str | None:
@@ -190,7 +192,7 @@ def check_cn_tax_balance(values: Values) -> str | None:
     if abs(amount + tax - grand) < ITEM_TOLERANCE:
         return None
     return stored(
-        "合计金额 {amount} + 合计税额 {tax} = {expected}，但价税合计是 {grand}",
+        ("合计金额 {amount} + 合计税额 {tax} = {expected}，但价税合计为 {grand}"),
         amount=_money(amount),
         tax=_money(tax),
         expected=_money(amount + tax),
@@ -204,7 +206,7 @@ def check_cn_items_amount(values: Values) -> str | None:
     if abs(added - expected) < ITEM_TOLERANCE:
         return None
     return stored(
-        "{count} 行金额加起来是 {added}，但合计金额是 {expected}",
+        "{count} 行金额合计为 {added}，但合计金额为 {expected}",
         count=count,
         added=_money(added),
         expected=_money(expected),
@@ -218,7 +220,7 @@ def check_cn_items_tax(values: Values) -> str | None:
     if abs(added - expected) < max(ITEM_TOLERANCE, 0.01 * count):
         return None
     return stored(
-        "{count} 行税额加起来是 {added}，但合计税额是 {expected}",
+        "{count} 行税额合计为 {added}，但合计税额为 {expected}",
         count=count,
         added=_money(added),
         expected=_money(expected),
@@ -230,11 +232,11 @@ def check_cn_words(values: Values) -> str | None:
     grand = _num(values, "grand_total")
     parsed = parse_chinese_amount(words)
     if parsed is None:
-        return stored("大写金额「{words}」读不懂，可能识别错了字", words=words)
+        return stored("无法解析大写金额「{words}」，可能存在识别错误", words=words)
     if abs(parsed - grand) < TOLERANCE:
         return None
     return stored(
-        "大写「{words}」是 {parsed}，但小写价税合计是 {grand}",
+        "大写「{words}」为 {parsed}，但小写价税合计为 {grand}",
         words=words,
         parsed=_money(parsed),
         grand=_money(grand),
@@ -251,7 +253,7 @@ def check_fare_tax_balance(values: Values) -> str | None:
     if abs(amount + tax - total) < ITEM_TOLERANCE:
         return None
     return stored(
-        "金额 {amount} + 税额 {tax} = {expected}，但票价是 {total}",
+        "金额 {amount} + 税额 {tax} = {expected}，但票价为 {total}",
         amount=_money(amount),
         tax=_money(tax),
         expected=_money(amount + tax),
@@ -271,8 +273,10 @@ def check_air_total(values: Values) -> str | None:
         return None
     if other:
         return stored(
-            "票价 {fare} + 燃油附加费 {fuel} + 民航发展基金 {fund} + 其他税费 {other} = "
-            "{expected}，但合计是 {total}",
+            (
+                "票价 {fare} + 燃油附加费 {fuel} + 民航发展基金 {fund} + 其他"
+                "税费 {other} = {expected}，但合计为 {total}"
+            ),
             fare=_money(fare),
             fuel=_money(fuel),
             fund=_money(fund),
@@ -281,7 +285,7 @@ def check_air_total(values: Values) -> str | None:
             total=_money(total),
         )
     return stored(
-        "票价 {fare} + 燃油附加费 {fuel} + 民航发展基金 {fund} = {expected}，但合计是 {total}",
+        ("票价 {fare} + 燃油附加费 {fuel} + 民航发展基金 {fund} = {expected}，但合计为 {total}"),
         fare=_money(fare),
         fuel=_money(fuel),
         fund=_money(fund),
@@ -314,8 +318,10 @@ def check_air_vat(values: Values) -> str | None:
     if abs(expected - vat) < 0.02:
         return None
     return stored(
-        "(票价 {fare} + 燃油附加费 {fuel}) ÷ (1 + {rate:.0%}) × {rate:.0%} = {expected}，"
-        "但增值税税额是 {vat}",
+        (
+            "(票价 {fare} + 燃油附加费 {fuel}) ÷ (1 + {rate:.0%}) × {rate"
+            ":.0%} = {expected}，但增值税税额为 {vat}"
+        ),
         fare=_money(fare),
         fuel=_money(fuel),
         rate=rate,
@@ -333,7 +339,7 @@ def check_lines_net(values: Values) -> str | None:
     if abs(added - expected) < ITEM_TOLERANCE:
         return None
     return stored(
-        "{count} 行金额加起来是 {added}，但不含税合计是 {expected}",
+        "{count} 行金额合计为 {added}，但不含税合计为 {expected}",
         count=count,
         added=_money(added),
         expected=_money(expected),
@@ -349,7 +355,7 @@ def check_net_tax_gross(values: Values) -> str | None:
     if abs(net + tax - gross) < ITEM_TOLERANCE:
         return None
     return stored(
-        "不含税合计 {net} + 税额 {tax} = {expected}，但含税合计是 {gross}",
+        ("不含税合计 {net} + 税额 {tax} = {expected}，但含税合计为 {gross}"),
         net=_money(net),
         tax=_money(tax),
         expected=_money(net + tax),
@@ -361,7 +367,7 @@ def check_due_not_above_gross(values: Values) -> str | None:
     due, gross = _num(values, "amount_due"), _num(values, "gross_total")
     if due <= gross + TOLERANCE:
         return None
-    return stored("应付金额 {due} 比含税合计 {gross} 还多", due=_money(due), gross=_money(gross))
+    return stored("应付金额 {due} 超过含税合计 {gross}", due=_money(due), gross=_money(gross))
 
 
 def abn_valid(text: str) -> bool | None:
@@ -379,7 +385,7 @@ def _abn_check(field: str) -> Callable[[Values], str | None]:
     def check(values: Values) -> str | None:
         text = _text(values, field)
         if abn_valid(text) is False:
-            return stored("ABN {text} 的校验位不对（可能识别错了一位数字）", text=text)
+            return stored("ABN {text} 校验位错误（可能有一位数字识别错误）", text=text)
         return None
 
     return check
@@ -397,7 +403,8 @@ def check_au_buyer_1000(values: Values) -> str | None:
     if _text(values, "buyer_name") or _text(values, "buyer_tax_id"):
         return None
     return stored(
-        "含税合计 {gross} ≥ 1,000，澳洲税务发票要写买方名称或 ABN，这里没有", gross=_money(gross)
+        ("含税合计 {gross} ≥ 1,000，澳洲税务发票需注明买方名称或 ABN，但此处缺失"),
+        gross=_money(gross),
     )
 
 
@@ -406,7 +413,7 @@ def check_au_tax_invoice_title(values: Values) -> str | None:
     if _tax_invoice(values):
         return None
     return stored(
-        "单据标题是「{title}」，澳洲税务发票要写明 Tax invoice",
+        "单据标题为「{title}」，澳洲税务发票需注明 Tax invoice",
         title=_text(values, "document_title"),
     )
 
@@ -418,7 +425,7 @@ def check_au_gst_eleventh(values: Values) -> str | None:
     if gst <= gross / 11 + ITEM_TOLERANCE:
         return None
     return stored(
-        "GST {gst} 比含 GST 总额 {gross} 的 1/11（{limit}）还多",
+        "GST {gst} 超过含 GST 总额 {gross} 的 1/11（{limit}）",
         gst=_money(gst),
         gross=_money(gross),
         limit=_money(gross / 11),
@@ -437,7 +444,7 @@ def check_ato_evidence(values: Values) -> str | None:
             (N_("商家名称"), bool(_text(values, "merchant"))),
             (N_("日期"), bool(_text(values, "date"))),
             (
-                N_("买了什么（明细或描述）"),
+                N_("购买内容（明细或描述）"),
                 bool(_text(values, "description")) or bool(_amounts(values)),
             ),
         )
@@ -445,7 +452,7 @@ def check_ato_evidence(values: Values) -> str | None:
     ]
     if not missing:
         return None
-    return stored("做报销凭证还缺：{missing}", missing=join_items(missing))
+    return stored("作为报销凭证尚缺：{missing}", missing=join_items(missing))
 
 
 def check_ato_gst_credit(values: Values) -> str | None:
@@ -466,7 +473,7 @@ def check_ato_gst_credit(values: Values) -> str | None:
     if not missing:
         return None
     return stored(
-        "总额 {total} 超过 82.50，要抵 GST 还缺：{missing}",
+        "总额 {total} 超过 82.50，抵扣 GST 尚缺：{missing}",
         total=_money(total),
         missing=join_items(missing),
     )
@@ -479,7 +486,7 @@ def check_gst_eleventh(values: Values) -> str | None:
     if gst <= total / 11 + ITEM_TOLERANCE:
         return None
     return stored(
-        "GST {gst} 比总额 {total} 的 1/11（{limit}）还多",
+        "GST {gst} 超过总额 {total} 的 1/11（{limit}）",
         gst=_money(gst),
         total=_money(total),
         limit=_money(total / 11),
@@ -501,7 +508,7 @@ def check_receipt_balance(values: Values) -> str | None:
     parts += [stored("+ 小费 {tip}", tip=_money(tip))] if tip else []
     parts += [stored("+ 调整 {rounding}", rounding=_money(rounding))] if rounding else []
     return stored(
-        "{terms} = {expected}，但总额是 {total}",
+        "{terms} = {expected}，但总额为 {total}",
         terms=_terms(parts),
         expected=_money(expected),
         total=_money(total),
@@ -530,7 +537,9 @@ def check_stay_order(values: Values) -> str | None:
     stay = _stay(values)
     if stay is None or stay[1] > stay[0]:
         return None
-    return stored("离店 {check_out} 不在入住 {check_in} 之后", check_out=stay[1], check_in=stay[0])
+    return stored(
+        "离店日期 {check_out} 未晚于入住日期 {check_in}", check_out=stay[1], check_in=stay[0]
+    )
 
 
 def check_stay_nights(values: Values) -> str | None:
@@ -539,7 +548,7 @@ def check_stay_nights(values: Values) -> str | None:
     if stay is None or (stay[1] - stay[0]).days == nights:
         return None
     return stored(
-        "入住 {check_in} 到离店 {check_out} 是 {days} 晚，但写的是 {nights:g} 晚",
+        ("入住 {check_in} 至离店 {check_out} 为 {days} 晚，但填写的是 {nights:g} 晚"),
         check_in=stay[0],
         check_out=stay[1],
         days=(stay[1] - stay[0]).days,
@@ -655,7 +664,7 @@ TEMPLATE_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "au_buyer_1000",
-        N_("1,000 澳元以上的税务发票写了买方"),
+        N_("1,000 澳元及以上的税务发票注明买方"),
         ("gross_total",),
         check_au_buyer_1000,
         "warning",
@@ -665,7 +674,7 @@ TEMPLATE_RULES: tuple[Rule, ...] = (
     Rule("buyer_abn", N_("买方 ABN 校验位正确"), ("buyer_tax_id",), _abn_check("buyer_tax_id")),
     Rule(
         "au_tax_invoice_title",
-        N_("写明是税务发票（ATO）"),
+        N_("注明为税务发票（ATO）"),
         ("document_title",),
         check_au_tax_invoice_title,
         "warning",
@@ -680,7 +689,7 @@ TEMPLATE_RULES: tuple[Rule, ...] = (
     Rule("merchant_abn", N_("商家 ABN 校验位正确"), ("merchant_abn",), _abn_check("merchant_abn")),
     Rule(
         "ato_evidence",
-        N_("收据有商家、日期、内容、金额（ATO）"),
+        N_("收据包含商家、日期、内容及金额（ATO）"),
         ("total",),
         check_ato_evidence,
         "warning",
@@ -688,7 +697,7 @@ TEMPLATE_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "ato_gst_credit",
-        N_("超过 82.50 澳元是税务发票（ATO）"),
+        N_("超过 82.50 澳元时为税务发票（ATO）"),
         ("total",),
         check_ato_gst_credit,
         "warning",
@@ -759,24 +768,28 @@ def check_lab_flag(values: Values) -> str | None:
     shown = str(values.get("reference")).strip()
     if high is not None and value > high and flag != "high":
         return stored(
-            "结果 {value:g} 高于参考范围 {shown}，但没有标 ↑（偏高）", value=value, shown=shown
+            "结果 {value:g} 高于参考范围 {shown}，但未标注 ↑（偏高）", value=value, shown=shown
         )
     if low is not None and value < low and flag != "low":
         return stored(
-            "结果 {value:g} 低于参考范围 {shown}，但没有标 ↓（偏低）", value=value, shown=shown
+            "结果 {value:g} 低于参考范围 {shown}，但未标注 ↓（偏低）", value=value, shown=shown
         )
     inside = (low is None or value >= low) and (high is None or value <= high)
     if inside and flag == "high":
-        return stored("结果 {value:g} 在参考范围 {shown} 内，却标了偏高", value=value, shown=shown)
+        return stored(
+            "结果 {value:g} 位于参考范围 {shown} 内，但标注为偏高", value=value, shown=shown
+        )
     if inside and flag == "low":
-        return stored("结果 {value:g} 在参考范围 {shown} 内，却标了偏低", value=value, shown=shown)
+        return stored(
+            "结果 {value:g} 位于参考范围 {shown} 内，但标注为偏低", value=value, shown=shown
+        )
     return None
 
 
 LAB_RULES: tuple[Rule, ...] = (
     Rule(
         "lab_flag",
-        N_("超出参考范围的结果标了高低"),
+        N_("超出参考范围的结果已标注高低"),
         ("result", "reference"),
         check_lab_flag,
         "warning",
@@ -808,7 +821,7 @@ def _sum_equals(table: str, column: str, total: str, what: str) -> Callable[[Val
         if abs(added - expected) <= max(ITEM_TOLERANCE, abs(expected) * 0.005):
             return None
         return stored(
-            "{rows} 行的{noun}加起来是 {added:g}，但合计写的是 {expected:g}（可能漏了行或多了行）",
+            ("{rows} 行的{noun}合计为 {added:g}，但合计值为 {expected:g}（可能遗漏或多出行）"),
             rows=len(rows),
             noun=noun,
             added=added,
@@ -822,14 +835,14 @@ def check_net_not_over_gross(values: Values) -> str | None:
     net, gross = _num(values, "net_weight"), _num(values, "gross_weight")
     if net <= gross + TOLERANCE:
         return None
-    return stored("净重 {net:g} 比毛重 {gross:g} 还大（毛重 = 净重 + 包装）", net=net, gross=gross)
+    return stored("净重 {net:g} 大于毛重 {gross:g}（毛重 = 净重 + 包装）", net=net, gross=gross)
 
 
 def check_total_net_not_over_gross(values: Values) -> str | None:
     net, gross = _num(values, "total_net_weight"), _num(values, "total_gross_weight")
     if net <= gross + TOLERANCE:
         return None
-    return stored("总净重 {net:g} 比总毛重 {gross:g} 还大", net=net, gross=gross)
+    return stored("总净重 {net:g} 大于总毛重 {gross:g}", net=net, gross=gross)
 
 
 _CONTAINER = re.compile(r"^([A-Z]{3}[UJZR])(\d{6})(\d)$")
@@ -860,13 +873,13 @@ def check_container_no(values: Values) -> str | None:
     m = _CONTAINER.match(number)
     if m is None:
         return stored(
-            "集装箱号「{raw}」格式不对（应是 4 个字母 + 7 位数字，如 MSKU1234565）", raw=raw
+            ("集装箱号「{raw}」格式错误（应为 4 个字母 + 7 位数字，如 MSKU1234565）"), raw=raw
         )
     expected = container_check_digit(number)
     if expected == int(m[3]):
         return None
     return stored(
-        "集装箱号「{raw}」最后一位校验位应是 {expected}，可能有字认错了", raw=raw, expected=expected
+        "集装箱号「{raw}」的校验位应为 {expected}，可能存在识别错误", raw=raw, expected=expected
     )
 
 
@@ -880,13 +893,14 @@ def check_awb_no(values: Values) -> str | None:
     m = _AWB.match(raw.strip())
     if m is None:
         return stored(
-            "运单号「{raw}」格式不对（应是 3 位航空公司代码 + 8 位数字，如 176-12345675）", raw=raw
+            ("运单号「{raw}」格式错误（应为 3 位航空公司代码 + 8 位数字，如 176-12345675）"),
+            raw=raw,
         )
     serial = m[2] + m[3]
     if int(serial[:7]) % 7 == int(serial[7]):
         return None
     return stored(
-        "运单号「{raw}」的校验位应是 {expected}，可能有数字认错了",
+        "运单号「{raw}」的校验位应为 {expected}，可能存在数字识别错误",
         raw=raw,
         expected=int(serial[:7]) % 7,
     )
@@ -904,8 +918,10 @@ def check_rate_line(values: Values) -> str | None:
     if abs(expected - total) <= max(ITEM_TOLERANCE, abs(total) * 0.005):
         return None
     return stored(
-        "计费重量 {weight:g} × 费率 {rate:g} = {expected}，但这一行运费是 "
-        "{total}（如果是最低运费 M 类可以忽略）",
+        (
+            "计费重量 {weight:g} × 费率 {rate:g} = {expected}，但此行运费"
+            "为 {total}（如为最低运费 M 类可忽略）"
+        ),
         weight=weight,
         rate=rate,
         expected=_money(expected),
@@ -930,7 +946,7 @@ def check_waybill_fees(values: Values) -> str | None:
         return None
     shown = _plus(list(parts.items()))
     return stored(
-        "{shown} = {added}，但费用合计是 {total}",
+        "{shown} = {added}，但费用合计为 {total}",
         shown=shown,
         added=_money(added),
         total=_money(total),
@@ -974,10 +990,10 @@ def check_qc_conclusion(values: Values) -> str | None:
     verdicts = [_verdict(v) for _, v in judgments]
     failed = [v for (_, v), r in zip(judgments, verdicts, strict=True) if r == "fail"]
     if conclusion == "pass" and failed:
-        return stored("有 {failed} 项判定不合格，结论却写的是合格", failed=len(failed))
+        return stored("有 {failed} 项判定为不合格，但结论为合格", failed=len(failed))
     if conclusion == "fail" and verdicts and all(r == "pass" for r in verdicts):
         return stored(
-            "{verdicts} 项判定都合格，结论却写的是不合格（请看是否还有表外的项目）",
+            ("{verdicts} 项判定均合格，但结论为不合格（请检查是否有表外项目）"),
             verdicts=len(verdicts),
         )
     return None
@@ -992,7 +1008,7 @@ def _date_order(first: str, second: str, what: str) -> Callable[[Values], str | 
             b = date.fromisoformat(str(values[second]))
         except ValueError:
             return None  # Invalid dates themselves are handled by other rules.
-        return None if a <= b else stored("{noun}：{a} 在 {b} 之后", noun=noun, a=a, b=b)
+        return None if a <= b else stored("{noun}：{a} 晚于 {b}", noun=noun, a=a, b=b)
 
     return check
 
@@ -1005,13 +1021,13 @@ def check_cma_no(values: Values) -> str | None:
     raw = str(values.get("cma_no") or "")
     if _CMA.match(re.sub(r"\s", "", raw)):
         return None
-    return stored("资质认定证书编号「{raw}」应是 12 位数字，可能有字认错了", raw=raw)
+    return stored("资质认定证书编号「{raw}」应为 12 位数字，可能存在识别错误", raw=raw)
 
 
 LOGISTICS_RULES: tuple[Rule, ...] = (
     Rule(
         "packing_packages",
-        N_("每行件数加起来 = 总件数"),
+        N_("各行件数之和 = 总件数"),
         ("packages.*.cartons", "total_packages"),
         _sum_equals("packages", "cartons", "total_packages", N_("件数")),
         "warning",
@@ -1019,7 +1035,7 @@ LOGISTICS_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "packing_quantity",
-        N_("每行数量加起来 = 总数量"),
+        N_("各行数量之和 = 总数量"),
         ("packages.*.quantity", "total_quantity"),
         _sum_equals("packages", "quantity", "total_quantity", N_("数量")),
         "warning",
@@ -1027,7 +1043,7 @@ LOGISTICS_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "packing_net",
-        N_("每行净重加起来 = 总净重"),
+        N_("各行净重之和 = 总净重"),
         ("packages.*.net_weight", "total_net_weight"),
         _sum_equals("packages", "net_weight", "total_net_weight", N_("净重")),
         "warning",
@@ -1035,7 +1051,7 @@ LOGISTICS_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "packing_gross",
-        N_("每行毛重加起来 = 总毛重"),
+        N_("各行毛重之和 = 总毛重"),
         ("packages.*.gross_weight", "total_gross_weight"),
         _sum_equals("packages", "gross_weight", "total_gross_weight", N_("毛重")),
         "warning",
@@ -1043,7 +1059,7 @@ LOGISTICS_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "packing_volume",
-        N_("每行体积加起来 = 总体积"),
+        N_("各行体积之和 = 总体积"),
         ("packages.*.volume", "total_volume"),
         _sum_equals("packages", "volume", "total_volume", N_("体积")),
         "warning",
@@ -1065,7 +1081,7 @@ LOGISTICS_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "delivery_quantity",
-        N_("每行数量加起来 = 合计数量"),
+        N_("各行数量之和 = 合计数量"),
         ("items.*.quantity", "total_quantity"),
         _sum_equals("items", "quantity", "total_quantity", N_("数量")),
         "warning",
@@ -1088,7 +1104,7 @@ LOGISTICS_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "bl_packages",
-        N_("每个集装箱的件数加起来 = 总件数"),
+        N_("各集装箱件数之和 = 总件数"),
         ("containers.*.packages", "total_packages"),
         _sum_equals("containers", "packages", "total_packages", N_("件数")),
         "warning",
@@ -1096,7 +1112,7 @@ LOGISTICS_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "bl_weight",
-        N_("每个集装箱的毛重加起来 = 总毛重"),
+        N_("各集装箱毛重之和 = 总毛重"),
         ("containers.*.gross_weight", "total_gross_weight"),
         _sum_equals("containers", "gross_weight", "total_gross_weight", N_("毛重")),
         "warning",
@@ -1104,7 +1120,7 @@ LOGISTICS_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "bl_measurement",
-        N_("每个集装箱的体积加起来 = 总体积"),
+        N_("各集装箱体积之和 = 总体积"),
         ("containers.*.measurement", "total_measurement"),
         _sum_equals("containers", "measurement", "total_measurement", N_("体积")),
         "warning",
@@ -1120,7 +1136,7 @@ LOGISTICS_RULES: tuple[Rule, ...] = (
     Rule("awb_no", N_("航空运单号校验位正确（IATA）"), ("awb_no",), check_awb_no, "warning"),
     Rule(
         "awb_pieces",
-        N_("计费行件数加起来 = 总件数"),
+        N_("各计费行件数之和 = 总件数"),
         ("rates.*.pieces", "total_pieces"),
         _sum_equals("rates", "pieces", "total_pieces", N_("件数")),
         "warning",
@@ -1128,7 +1144,7 @@ LOGISTICS_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "awb_weight",
-        N_("计费行毛重加起来 = 总毛重"),
+        N_("各计费行毛重之和 = 总毛重"),
         ("rates.*.gross_weight", "total_gross_weight"),
         _sum_equals("rates", "gross_weight", "total_gross_weight", N_("毛重")),
         "warning",
@@ -1159,7 +1175,7 @@ LOGISTICS_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "cn_cma_no",
-        N_("资质认定证书编号是 12 位数字（CMA）"),
+        N_("资质认定证书编号为 12 位数字（CMA）"),
         ("cma_no",),
         check_cma_no,
         "warning",
@@ -1285,10 +1301,10 @@ class RuleValidator:
                     Issue(
                         OPTIONS,
                         stored("可选值：{label}", label=label),
-                        stored("「{value}」不在可选值里（{listed}……）", value=value, listed=listed)
+                        stored("「{value}」不在可选值中（{listed}……）", value=value, listed=listed)
                         if len(options) > 10
                         else stored(
-                            "「{value}」不在可选值里（{listed}）", value=value, listed=listed
+                            "「{value}」不在可选值中（{listed}）", value=value, listed=listed
                         ),
                         (name,),
                         "warning",
@@ -1310,7 +1326,7 @@ class RuleValidator:
                         LOOKUP,
                         stored("参照表：{label}", label=label),
                         stored(
-                            "「{value}」在参照表《{label}》里找不到，对照不出编号",
+                            "「{value}」在参照表《{label}》中未找到，无法对照编号",
                             value=value,
                             label=label,
                         ),
@@ -1329,7 +1345,7 @@ class RuleValidator:
                 Issue(
                     REQUIRED,
                     stored("必填：{label}", label=label),
-                    stored("必填字段「{label}」没有值", label=label),
+                    stored("必填字段「{label}」为空", label=label),
                     (name,),
                     "error",
                 )

@@ -12,6 +12,7 @@ import {
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Alert,
   App,
   Button,
   Card,
@@ -164,7 +165,7 @@ export function TemplatesPage() {
         try {
           data = JSON.parse(await file.text())
         } catch {
-          throw new Error(t('{{name}} 不是导出的模板文件（JSON 格式不对）', { name: file.name }))
+          throw new Error(t('{{name}} 不是有效的模板导出文件（JSON 格式错误）', { name: file.name }))
         }
         await importJson.mutateAsync(data)
         return
@@ -178,7 +179,28 @@ export function TemplatesPage() {
       if (!template) return
       modal.confirm({
         title: t('导入模板「{{title}}」？', { title: template.title }),
-        content: t('这是标准模板 Excel：{{length}} 个字段、{{length2}} 张表格、{{length3}} 条规则。导入后是一个新的我的模板（第 1 版）。', { length: template.fields.length, length2: template.tables.length, length3: template.rules.length }),
+        width: 560,
+        content: (
+          <Flex vertical gap={8}>
+            <span>
+              {t('此文件为标准模板 Excel：{{length}} 个字段、{{length2}} 张表格、{{length3}} 条规则。导入后将创建一个新模板（第 1 版）。', { length: template.fields.length, length2: template.tables.length, length3: template.rules.length + (template.custom_rules?.length ?? 0) })}
+            </span>
+            {(analysis.ignored ?? []).length > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                title={t('以下内容无法识别，不会导入；如为拼写错误，请修改表头后重新上传')}
+                description={
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {(analysis.ignored ?? []).map((note) => (
+                      <li key={note}>{note}</li>
+                    ))}
+                  </ul>
+                }
+              />
+            )}
+          </Flex>
+        ),
         okText: t('导入'),
         cancelText: t('取消'),
         onOk: () => importJson.mutateAsync(template),
@@ -211,8 +233,8 @@ export function TemplatesPage() {
     onSuccess: ({ done, failed }) => {
       setPickedMine(new Set())
       void queryClient.invalidateQueries({ queryKey: ['templates'] })
-      if (failed.length) void message.warning(t('删除了 {{done}} 个；没删成：{{failed}}', { done, failed: failed.join(t('、')) }))
-      else void message.success(t('删除了 {{done}} 个模板', { done }))
+      if (failed.length) void message.warning(t('已删除 {{done}} 个；未能删除：{{failed}}', { done, failed: failed.join(t('、')) }))
+      else void message.success(t('已删除 {{done}} 个模板', { done }))
     },
     onError,
   })
@@ -232,8 +254,8 @@ export function TemplatesPage() {
     onSuccess: ({ done, failed }) => {
       setPickedStarters(new Set())
       void queryClient.invalidateQueries({ queryKey: ['templates'] })
-      if (failed.length) void message.warning(t('添加了 {{done}} 个；没加成：{{failed}}', { done, failed: failed.join(t('、')) }))
-      else void message.success(t('添加了 {{done}} 个模板到我的模板', { done }))
+      if (failed.length) void message.warning(t('已添加 {{done}} 个；未能添加：{{failed}}', { done, failed: failed.join(t('、')) }))
+      else void message.success(t('已将 {{done}} 个模板添加到我的模板', { done }))
     },
     onError,
   })
@@ -250,9 +272,9 @@ export function TemplatesPage() {
             {list.length > 10 ? t(' 等 {{length}} 个', { length: list.length }) : ''}
           </Typography.Text>
           <Typography.Text type="secondary">
-            {t('删除后不再出现在模板列表和上传里，不能恢复。')}
-            {used > 0 ? t('其中 {{used}} 个有文档用过，那些文档照常能看、能导出。', { used }) : ''}
-            {t('删除前可以先导出备份。')}
+            {t('删除后将不再出现在模板列表和上传选项中，且无法恢复。')}
+            {used > 0 ? t('其中 {{used}} 个已被文档使用，这些文档仍可正常查看和导出。', { used }) : ''}
+            {t('删除前可先导出备份。')}
           </Typography.Text>
         </Flex>
       ),
@@ -267,11 +289,11 @@ export function TemplatesPage() {
     const fresh = list.filter((tpl) => !added.has(`starter:${tpl.name}`))
     const skipped = list.length - fresh.length
     if (fresh.length === 0) {
-      void message.info(t('选中的都已经添加过了'))
+      void message.info(t('所选模板均已添加'))
       return
     }
     modal.confirm({
-      title: t('把 {{length}} 个起步模板添加到我的模板？', { length: fresh.length }),
+      title: t('将 {{length}} 个起步模板添加到我的模板？', { length: fresh.length }),
       width: 520,
       content: (
         <Flex vertical gap={8}>
@@ -280,9 +302,9 @@ export function TemplatesPage() {
             {fresh.length > 10 ? t(' 等 {{length}} 个', { length: fresh.length }) : ''}
           </Typography.Text>
           {skipped > 0 && (
-            <Typography.Text type="secondary">{t('另外 {{skipped}} 个已经添加过，跳过（要再加一份就点卡片上的"添加到我的模板"）。', { skipped })}</Typography.Text>
+            <Typography.Text type="secondary">{t('另有 {{skipped}} 个已添加，将跳过（如需再添加一份，请点击卡片上的“添加到我的模板”）。', { skipped })}</Typography.Text>
           )}
-          <Typography.Text type="secondary">{t('每个都会复制一份成为你的模板（第 1 版），之后可以随便改，不影响原版。')}</Typography.Text>
+          <Typography.Text type="secondary">{t('每个模板将复制为你的模板（第 1 版），之后的修改不影响原版。')}</Typography.Text>
         </Flex>
       ),
       okText: t('添加 {{length}} 个', { length: fresh.length }),
@@ -295,7 +317,7 @@ export function TemplatesPage() {
     modal.confirm({
       title: t('删除「{{title}}」？', { title: template.title }),
       content:
-        t('删除后，这个模板不再出现在模板列表和上传里，不能恢复。用过它的文档不受影响，照常能看、能导出。删除前可以先导出备份。'),
+        t('删除后，此模板将不再出现在模板列表和上传选项中，且无法恢复。已使用此模板的文档不受影响，仍可正常查看和导出。删除前可先导出备份。'),
       okText: t('删除'),
       okButtonProps: { danger: true },
       cancelText: t('取消'),
@@ -340,9 +362,9 @@ export function TemplatesPage() {
                 return false
               }}
             >
-              <Tooltip title={t('选公司要交的那张 Excel，按它的样子建模板（导出时填回它）；也可以选导出的模板文件（标准 Excel 或 JSON）')}>
+              <Tooltip title={t('选择需要提交的 Excel 表格，按其版式创建模板（导出时回填至该表格）；也可选择导出的模板文件（标准 Excel 或 JSON）')}>
                 <Button icon={<UploadOutlined />} loading={importOne.isPending}>
-                  {t('从 Excel 建 / 导入模板')}
+                  {t('从 Excel 创建 / 导入模板')}
                 </Button>
               </Tooltip>
             </Upload>
@@ -350,7 +372,7 @@ export function TemplatesPage() {
         </Flex>
         {archivedCount > 0 && (
           <Button type="link" onClick={() => setShowArchived((on) => !on)}>
-            {showArchived ? t('隐藏归档的') : t('显示归档的（{{archivedCount}}）', { archivedCount })}
+            {showArchived ? t('隐藏已归档') : t('显示已归档（{{archivedCount}}）', { archivedCount })}
           </Button>
         )}
       </Flex>
@@ -386,11 +408,11 @@ export function TemplatesPage() {
       )}
       <Tip
         id="templates-from-sample"
-        title={t('也可以用样例建模板')}
-        description={t('公司有固定要交的 Excel（报销表、登记表），点"从 Excel 建"选它，按它的样子建模板，导出时直接填回它。也可以上传时选"抽取所有键值对"，处理完在审核页面把需要的字段存成模板。')}
+        title={t('也可以通过样例创建模板')}
+        description={t('如需按固定格式提交 Excel（如报销表、登记表），可点击“从 Excel 创建”并选择该表格，按其版式创建模板，导出时直接回填。也可在上传时选择“抽取所有键值对”，处理完成后在审核页将所需字段保存为模板。')}
       />
       {visible.length === 0 ? (
-        <Empty description={t('还没有自己的模板。从起步模板库添加一个，或者新建空白模板')} />
+        <Empty description={t('暂无模板。可从起步模板库添加，或新建空白模板')} />
       ) : shown.length === 0 ? (
         <Empty description={t('没有符合筛选条件的模板')}>
           <Button onClick={() => setMineFilters(NO_FILTERS)}>{t('清空筛选')}</Button>
@@ -435,12 +457,12 @@ export function TemplatesPage() {
                           key="more"
                           menu={{
                             items: [
-                              { key: 'copy', icon: <CopyOutlined />, label: t('复制一份') },
-                              { key: 'labels', icon: <TagsOutlined />, label: t('改标签') },
+                              { key: 'copy', icon: <CopyOutlined />, label: t('创建副本') },
+                              { key: 'labels', icon: <TagsOutlined />, label: t('编辑标签') },
                               {
                                 key: 'archive',
                                 icon: <InboxOutlined />,
-                                label: tpl.archived ? t('恢复') : t('归档（不再出现在上传里）'),
+                                label: tpl.archived ? t('恢复') : t('归档（不再出现在上传选项中）'),
                               },
                               { key: 'delete', icon: <DeleteOutlined />, label: t('删除'), danger: true },
                             ],
@@ -468,16 +490,16 @@ export function TemplatesPage() {
                   <LabelTags template={tpl} />
                 </Flex>
                 <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ minHeight: 44 }}>
-                  {tpl.description || t('（没有说明）')}
+                  {tpl.description || t('（无说明）')}
                 </Typography.Paragraph>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {counts(tpl)}
-                  {tpl.updated_at ? t(' · 改于 {{formatTime}}', { formatTime: formatTime(tpl.updated_at) }) : ''}
+                  {tpl.updated_at ? t(' · 修改于 {{formatTime}}', { formatTime: formatTime(tpl.updated_at) }) : ''}
                 </Typography.Text>
                 <br />
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {SOURCE_TEXT[sourceKind(tpl.source)] ?? ''}
-                  {tpl.used ? t(' · {{used}} 份文档用过', { used: tpl.used }) : t(' · 还没有文档用过')}
+                  {tpl.used ? t(' · 已用于 {{used}} 份文档', { used: tpl.used }) : t(' · 尚未被文档使用')}
                   {tpl.last_used_at ? t('，最近 {{formatTime}}', { formatTime: formatTime(tpl.last_used_at) }) : ''}
                 </Typography.Text>
               </Card>
@@ -491,7 +513,7 @@ export function TemplatesPage() {
   const starterList = (
     <Flex vertical gap={16}>
       <Typography.Text type="secondary">
-        {t('添加到我的模板后可以随便改，不影响原版。')}
+        {t('添加到我的模板后可自由修改，不影响原版。')}
       </Typography.Text>
       <TemplateFilters
         templates={starters.data ?? []}
@@ -530,7 +552,7 @@ export function TemplatesPage() {
       {regionGroups(startersShown).map(([region, group]) => (
         <Flex key={region} vertical gap={8}>
           <Typography.Title level={5} style={{ margin: 0 }}>
-            {region ? countryName(region) : t('通用（不分国家）')}
+            {region ? countryName(region) : t('通用（适用于所有国家）')}
             <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: 400, marginInlineStart: 8 }}>
               {t('{{length}} 个', { length: group.length })}
             </Typography.Text>
@@ -559,7 +581,7 @@ export function TemplatesPage() {
                     <Button key="preview" type="link" icon={<EyeOutlined />} onClick={() => setPreviewing(tpl)}>
                       {t('预览')}
                     </Button>,
-                    <Tooltip key="add" title={canManage ? undefined : t('没有"管理模板"的权限')}>
+                    <Tooltip key="add" title={canManage ? undefined : t('没有“管理模板”权限')}>
                       <Button
                         type="link"
                         icon={<PlusOutlined />}
@@ -651,7 +673,7 @@ export function TemplatesPage() {
                   {canManage ? t('编辑') : t('查看详情')}
                 </Button>
               ) : (
-                <Tooltip title={canManage ? undefined : t('没有"管理模板"的权限')}>
+                <Tooltip title={canManage ? undefined : t('没有“管理模板”权限')}>
                   <Button
                     type="primary"
                     icon={<PlusOutlined />}
@@ -691,7 +713,7 @@ function LabelsDialog({
   const save = useMutation({
     mutationFn: () => setTemplateLabels(template.id ?? '', labels),
     onSuccess: () => {
-      void message.success(t('已改「{{title}}」的标签', { title: template.title }))
+      void message.success(t('已更新「{{title}}」的标签', { title: template.title }))
       onSaved()
       onClose()
     },
@@ -709,7 +731,7 @@ function LabelsDialog({
       width={640}
     >
       <Typography.Paragraph type="secondary">
-        {t('标签只用来分类、筛选，改了不出新版本，也不影响用过它的文档。')}
+        {t('标签仅用于分类和筛选；修改标签不会生成新版本，也不影响已使用该模板的文档。')}
       </Typography.Paragraph>
       <LabelFields {...labels} onChange={(patch) => setLabels((l) => ({ ...l, ...patch }))} />
     </Modal>
@@ -726,8 +748,8 @@ function ExportMenu({ onExport }: { onExport: (format: 'xlsx' | 'json') => void 
     <Dropdown
       menu={{
         items: [
-          { key: 'xlsx', label: t('Excel（能看、能改，改完再导入）') },
-          { key: 'json', label: t('JSON（全部内容，连按原表导出的样式）') },
+          { key: 'xlsx', label: t('Excel（可查看和编辑，修改后可再次导入）') },
+          { key: 'json', label: t('JSON（完整内容，包括按原表导出的版式）') },
         ],
         onClick: ({ key }) => onExport(key as 'xlsx' | 'json'),
       }}

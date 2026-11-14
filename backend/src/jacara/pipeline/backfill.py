@@ -72,7 +72,7 @@ def backfill_document(
             if not 1 <= extraction.page <= len(pages):
                 raise ValueError(
                     stored(
-                        "{filename}：第 {page} 页在文件里找不到",
+                        "{filename}：文件中不存在第 {page} 页",
                         filename=filename,
                         page=extraction.page,
                     )

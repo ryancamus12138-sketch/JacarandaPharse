@@ -103,7 +103,7 @@ def build_definition(
 
     def add_field(c: ColumnChoice) -> str:
         if not c.field:
-            raise BuildError(tr("「{header}」还没有字段 ID", header=c.header))
+            raise BuildError(tr("「{header}」尚无字段 ID", header=c.header))
         existing = fields.get(c.field)
         if existing is None:
             fields[c.field] = _field(c)
@@ -136,11 +136,11 @@ def build_definition(
                 )
                 if not c.field:
                     raise BuildError(
-                        tr("「{name}」的「{header}」还没有列 ID", name=s.name, header=c.header)
+                        tr("「{name}」的「{header}」尚无列 ID", name=s.name, header=c.header)
                     )
                 if any(col["name"] == c.field for col in table["columns"]):
                     raise BuildError(
-                        tr("「{name}」里列 ID {field} 重复了", name=s.name, field=c.field)
+                        tr("「{name}」中列 ID {field} 重复", name=s.name, field=c.field)
                     )
                 table["columns"].append(_field(c))
                 refs[key] = f"{tables[s.name]}.{c.field}"
@@ -152,7 +152,7 @@ def build_definition(
         key_column = next((c for c in s.columns if c.header == s.key_header), None)
         if key_column is None or refs.get(f"{s.name}::{key_column.header}") is None:
             raise BuildError(
-                tr("对象表「{name}」要选一列当编号（从单据抽或人工填的列）", name=s.name)
+                tr("对象表「{name}」需选择一列作为编号（从单据抽取或人工填写的列）", name=s.name)
             )
         members = [
             refs[f"{s.name}::{c.header}"] for c in s.columns if f"{s.name}::{c.header}" in refs
@@ -183,7 +183,7 @@ def build_definition(
         if s.match_field and not match_field:
             raise BuildError(
                 tr(
-                    "参照表「{name}」要对照的列「{column}」没有建成字段",
+                    "参照表「{name}」的对照列「{column}」未创建为字段",
                     name=s.name,
                     column=s.match_field.split("::")[-1],
                 )
@@ -248,7 +248,7 @@ def build_definition(
     }
     if not definition["fields"]:
         raise BuildError(
-            tr("没有任何字段：至少要有一张单据表或对象表，或者明细表里标一列“单据上的字段”")
+            tr("没有任何字段：至少需要一张单据表或对象表，或在明细表中将一列设为“单据级字段”")
         )
     return definition
 

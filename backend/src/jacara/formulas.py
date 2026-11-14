@@ -83,17 +83,17 @@ def parse_formula(text: str, scope: Scope) -> Formula:
     Raises FormulaError on errors."""
     source = text.strip()
     if not source:
-        raise FormulaError(stored("公式是空的"))
+        raise FormulaError(stored("公式为空"))
     if len(source) > 500:
-        raise FormulaError(stored("公式太长了（最多 500 个字）"))
+        raise FormulaError(stored("公式过长（最多 500 个字符）"))
     try:
         tree = ast.parse(source, mode="eval").body
     except SyntaxError as err:
-        raise FormulaError(stored("公式写得不对：{source}", source=source)) from err
+        raise FormulaError(stored("公式有误：{source}", source=source)) from err
     used: dict[str, set[str]] = {"fields": set(), "columns": set(), "tables": set()}
     kind = _check(tree, scope, used)
     if kind != "number":
-        raise FormulaError(stored("公式算出来要是数字（两个日期相减得到天数）"))
+        raise FormulaError(stored("公式结果须为数字（两个日期相减得到天数）"))
     return Formula(
         text=source,
         tree=tree,
@@ -106,13 +106,15 @@ def parse_formula(text: str, scope: Scope) -> Formula:
 def _check(node: ast.expr, scope: Scope, used: dict[str, set[str]]) -> Kind:
     if isinstance(node, ast.Constant):
         if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
-            raise FormulaError(stored("公式里只能写数字，不能写 {value}", value=repr(node.value)))
+            raise FormulaError(
+                stored("公式中只能使用数字，不能使用 {value}", value=repr(node.value))
+            )
         return "number"
     if isinstance(node, ast.Name):
         return _name(node.id, scope, used)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
         if _check(node.operand, scope, used) != "number":
-            raise FormulaError(stored("日期前面不能加正负号"))
+            raise FormulaError(stored("日期前不能添加正负号"))
         return "number"
     if isinstance(node, ast.BinOp) and type(node.op) in _SYMBOLS:
         left = _check(node.left, scope, used)
@@ -121,23 +123,23 @@ def _check(node: ast.expr, scope: Scope, used: dict[str, set[str]]) -> Kind:
             return "number"
         if left == right == "date" and isinstance(node.op, ast.Sub):
             return "number"  # Subtracting two dates gives the difference in days.
-        raise FormulaError(stored("日期只能和日期相减（得到天数），不能和数字一起算"))
+        raise FormulaError(stored("日期只能与日期相减（得到天数），不能与数字运算"))
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and not node.keywords:
         return _call(node.func.id, node.args, scope, used)
     if isinstance(node, ast.Attribute):
         if isinstance(node.value, ast.Name) and _kind_of(node.value.id, scope) == "date_range":
             if node.attr not in _RANGE_PARTS:
                 raise FormulaError(
-                    stored("日期范围只能取 .start、.end、.days，不能取 .{attr}", attr=node.attr)
+                    stored("日期范围只能使用 .start、.end、.days，不能使用 .{attr}", attr=node.attr)
                 )
             if scope.row is not None and node.value.id in scope.row:
                 used["columns"].add(node.value.id)
             else:
                 used["fields"].add(node.value.id)
             return _RANGE_PARTS[node.attr]
-        raise FormulaError(stored("表格的列要放在 sum() 里，例如 sum(items.amount)"))
+        raise FormulaError(stored("表格的列需放在 sum() 中，例如 sum(items.amount)"))
     raise FormulaError(
-        stored("公式里只能用字段、数字、+ - * /、括号和 sum、count、round、abs、min、max")
+        stored("公式中只能使用字段、数字、+ - * /、括号及 sum、count、round、abs、min、max")
     )
 
 
@@ -156,13 +158,13 @@ def _name(name: str, scope: Scope, used: dict[str, set[str]]) -> Kind:
         used["fields"].add(name)
     elif name in scope.tables:
         raise FormulaError(
-            stored("{name} 是一张表，要写成 sum({name}.列名) 或 count({name})", name=name)
+            stored("{name} 是表格，需写作 sum({name}.列名) 或 count({name})", name=name)
         )
     else:
         raise FormulaError(stored("没有叫 {name} 的字段", name=name))
     if kind == "date_range":
         raise FormulaError(
-            stored("{name} 是日期范围，要写 {name}.start、{name}.end 或 {name}.days", name=name)
+            stored(("{name} 是日期范围，需写作 {name}.start、{name}.end 或 {name}.days"), name=name)
         )
     if kind not in ("number", "date"):
         raise FormulaError(stored("{name} 是文字字段，不能参与计算", name=name))
@@ -172,13 +174,13 @@ def _name(name: str, scope: Scope, used: dict[str, set[str]]) -> Kind:
 def _call(func: str, args: Sequence[ast.expr], scope: Scope, used: dict[str, set[str]]) -> Kind:
     if func in _AGGREGATES:
         if scope.row is not None:
-            raise FormulaError(stored("每一行的公式里不能用 {func}()", func=func))
+            raise FormulaError(stored("逐行公式中不能使用 {func}()", func=func))
         if len(args) != 1:
-            raise FormulaError(stored("{func}() 里只能写一项", func=func))
+            raise FormulaError(stored("{func}() 只能包含一个参数", func=func))
         arg = args[0]
         if func == "count":
             if not (isinstance(arg, ast.Name) and arg.id in scope.tables):
-                raise FormulaError(stored("count() 里写表名，例如 count(items)"))
+                raise FormulaError(stored("count() 中需填写表名，例如 count(items)"))
             used["tables"].add(arg.id)
             return "number"
         if not (
@@ -186,11 +188,11 @@ def _call(func: str, args: Sequence[ast.expr], scope: Scope, used: dict[str, set
             and isinstance(arg.value, ast.Name)
             and arg.value.id in scope.tables
         ):
-            raise FormulaError(stored("sum() 里写 表名.列名，例如 sum(items.amount)"))
+            raise FormulaError(stored("sum() 中需填写 表名.列名，例如 sum(items.amount)"))
         columns = scope.tables[arg.value.id]
         if arg.attr not in columns:
             raise FormulaError(
-                stored("表 {table} 没有叫 {attr} 的列", table=arg.value.id, attr=arg.attr)
+                stored("表 {table} 中没有名为 {attr} 的列", table=arg.value.id, attr=arg.attr)
             )
         if columns[arg.attr] != "number":
             raise FormulaError(
@@ -200,18 +202,18 @@ def _call(func: str, args: Sequence[ast.expr], scope: Scope, used: dict[str, set
         return "number"
     if func not in _FUNCTIONS:
         raise FormulaError(
-            stored("没有 {func}() 这个函数，能用的有 sum、count、round、abs、min、max", func=func)
+            stored(("不支持函数 {func}()，可用函数：sum、count、round、abs、min、max"), func=func)
         )
     if func == "round" and len(args) == 2:
         if not (isinstance(args[1], ast.Constant) and isinstance(args[1].value, int)):
-            raise FormulaError(stored("round(x, n) 的 n 要写整数，表示保留几位小数"))
+            raise FormulaError(stored("round(x, n) 中的 n 需为整数，表示保留的小数位数"))
     elif func in ("round", "abs") and len(args) != 1:
-        raise FormulaError(stored("{func}() 里写一项，round 可以再加保留几位小数", func=func))
+        raise FormulaError(stored("{func}() 需包含一个参数；round 可另加保留的小数位数", func=func))
     elif func in ("min", "max") and len(args) < 2:
-        raise FormulaError(stored("{func}() 里至少写两项", func=func))
+        raise FormulaError(stored("{func}() 至少需要两个参数", func=func))
     for arg in args:
         if _check(arg, scope, used) != "number":
-            raise FormulaError(stored("{func}() 只能算数字", func=func))
+            raise FormulaError(stored("{func}() 仅适用于数字", func=func))
     return "number"
 
 
@@ -259,7 +261,7 @@ def evaluate(formula: Formula, inputs: Inputs) -> Outcome:
     except ZeroDivisionError:
         return Outcome(None, problem=stored("除以 0"))
     if not isinstance(result, (int, float)) or not math.isfinite(result):
-        return Outcome(None, problem=stored("算出来不是数字"))
+        return Outcome(None, problem=stored("计算结果不是数字"))
     return Outcome(round(float(result), 6))
 
 
@@ -406,7 +408,7 @@ def order(formulas: Mapping[str, Formula]) -> list[str]:
         if name in done:
             return
         if name in visiting:
-            raise FormulaError(stored("公式互相引用了：{name}", name=name))
+            raise FormulaError(stored("公式存在循环引用：{name}", name=name))
         visiting.add(name)
         formula = formulas[name]
         for dep in formula.fields | formula.columns:
@@ -472,23 +474,23 @@ def parse_condition(text: str, scope: Scope) -> Condition:
     or both sides dates."""
     source = text.strip()
     if not source:
-        raise FormulaError(stored("条件是空的"))
+        raise FormulaError(stored("条件为空"))
     if len(source) > 500:
-        raise FormulaError(stored("条件太长了（最多 500 个字）"))
+        raise FormulaError(stored("条件过长（最多 500 个字符）"))
     try:
         tree = ast.parse(source, mode="eval").body
     except SyntaxError as err:
-        raise FormulaError(stored("条件写得不对：{source}", source=source)) from err
+        raise FormulaError(stored("条件有误：{source}", source=source)) from err
     if not isinstance(tree, ast.Compare) or len(tree.ops) != 1:
         raise FormulaError(
             stored(
-                "条件要写成 左边 比较 右边，例如 sum(items.amount) == total（比较用 == != < "
-                "<= > >=）"
+                "条件格式应为 左侧 比较符 右侧，例如 sum(items.amount) == tot"
+                "al（比较符：== != < <= > >=）"
             )
         )
     op = type(tree.ops[0])
     if op not in _COMPARE:
-        raise FormulaError(stored("比较只能用 == != < <= > >="))
+        raise FormulaError(stored("比较符只能使用 == != < <= > >="))
     sides = []
     kinds = []
     for node in (tree.left, tree.comparators[0]):
@@ -504,7 +506,7 @@ def parse_condition(text: str, scope: Scope) -> Condition:
             )
         )
     if kinds[0] != kinds[1]:
-        raise FormulaError(stored("比较的两边要都是数字，或者都是日期"))
+        raise FormulaError(stored("比较的两侧须同为数字或同为日期"))
     return Condition(source, sides[0], op, sides[1])
 
 

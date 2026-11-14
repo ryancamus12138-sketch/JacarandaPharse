@@ -49,7 +49,7 @@ export function IssueToggle({ checks }: { checks: Checks }) {
           ...(errors > 0 ? {} : { color: '#d48806', borderColor: '#ffd666' }),
         }}
       >
-        {t('{{length}} 处需要核对', { length: issues.length })}{errors > 0 ? t('（{{errors}} 处有错）', { errors }) : ''}
+        {t('{{length}} 处需要核对', { length: issues.length })}{errors > 0 ? t('（{{errors}} 处错误）', { errors }) : ''}
         {open ? <UpOutlined /> : <DownOutlined />}
       </Button>
       {open &&

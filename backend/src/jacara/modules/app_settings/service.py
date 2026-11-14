@@ -44,82 +44,85 @@ class Spec:
 SPECS: dict[str, Spec] = {
     "jacara_vision": Spec(
         N_("识别"),
-        N_("让模型看原图"),
-        N_("照片、扫描件 OCR 认不准时，让视觉模型看着原图读。要先放好视觉模型。"),
+        N_("由模型读取原图"),
+        N_("照片、扫描件的 OCR 结果不准确时，由视觉模型读取原图。需先配置视觉模型。"),
         "choice",
         [
-            ("auto", N_("OCR 不可靠时才看（推荐）")),
-            ("always", N_("每张都看（慢）")),
-            ("off", N_("不看")),
+            ("auto", N_("仅在 OCR 不可靠时使用（推荐）")),
+            ("always", N_("每张都使用（较慢）")),
+            ("off", N_("不使用")),
         ],
     ),
     "jacara_pdf_read": Spec(
         N_("识别"),
-        N_("PDF 怎么读文字"),
+        N_("PDF 文字读取方式"),
         N_(
-            "画成图做 OCR，和照片走同一条路，PDF 自带的文字只拿来核对；只读自带文字快，"
-            "但只适合确定干净的电子版。"
+            "渲染为图像后执行 OCR，与照片流程相同，PDF 文本层仅用于核对；"
+            "仅读取文本层速度较快，但只适用于确认无误的电子版。"
         ),
         "choice",
-        [("image", N_("画成图做 OCR（推荐）")), ("text", N_("只读 PDF 自带的文字"))],
+        [("image", N_("渲染为图像后 OCR（推荐）")), ("text", N_("仅读取 PDF 文本层"))],
     ),
     "jacara_ocr_max_side": Spec(
         N_("识别"),
-        N_("OCR 时图片长边最多多少像素"),
-        N_("超过的先缩小。大一点小字认得更准，但更慢。"),
+        N_("OCR 图像长边像素上限"),
+        N_("超过上限的图像将先缩小。数值越大，小字识别越准确，但速度越慢。"),
         "int",
         min=1000,
         max=8000,
     ),
     "jacara_layout": Spec(
         N_("识别"),
-        N_("先找页面上的区域"),
-        N_("抽取前用版面模型找出标题、正文、表格、页眉页脚。"),
+        N_("版面分析"),
+        N_("抽取前使用版面模型识别标题、正文、表格及页眉页脚。"),
         "bool",
     ),
     "jacara_learn": Spec(
-        N_("从人改过的地方学"),
-        N_("抽取时带上以前人改过的例子"),
-        N_("同一个模板以前人工改过的值告诉模型，少犯同样的错。"),
+        N_("从人工修改中学习"),
+        N_("抽取时提供历史修改示例"),
+        N_("将同一模板此前经人工修改的值提供给模型，以减少重复错误。"),
         "bool",
     ),
     "jacara_learn_mode": Spec(
-        N_("从人改过的地方学"),
-        N_("怎么挑例子"),
-        N_("整理过的：只用错在模型的、合并重复、去掉过期的。换之前先用回放比一比。"),
+        N_("从人工修改中学习"),
+        N_("示例选择方式"),
+        N_("整理后：仅保留模型导致的错误，合并重复项并去除过期项。切换前请先通过回放对比效果。"),
         "choice",
-        [("recent", N_("最近改得多的（默认）")), ("curated", N_("整理过的"))],
+        [("recent", N_("近期修改较多的（默认）")), ("curated", N_("整理后"))],
     ),
     "jacara_pipeline": Spec(
         N_("后台和导入"),
-        N_("后台分两个工位"),
-        N_("OCR 和模型同时干活，批量导入更快；关掉省几百 MB 内存。"),
+        N_("后台双阶段并行"),
+        N_("OCR 与模型并行运行，批量导入更快；关闭可节省数百 MB 内存。"),
         "bool",
     ),
     "jacara_watch_dir": Spec(
         N_("后台和导入"),
         N_("监视文件夹"),
-        N_("放进去的图片和 PDF 自动导入，不动原文件，重复的跳过。写完整路径；空着就不监视。"),
+        N_(
+            "放入的图片和 PDF 将自动导入，原文件保持不变，重复文件将跳过"
+            "。请填写完整路径；留空则不监视。"
+        ),
         "path",
     ),
     "jacara_watch_template": Spec(
         N_("后台和导入"),
-        N_("监视文件夹用的模板"),
-        N_("我的模板的 id；空着就用上一次上传时选的。"),
+        N_("监视文件夹使用的模板"),
+        N_("我的模板的 id；留空则使用上次上传时选择的模板。"),
         "text",
     ),
     "max_upload_mb": Spec(
         N_("后台和导入"),
-        N_("上传文件最大多少 MB"),
-        N_("一个文件超过这么大就不收。"),
+        N_("上传文件大小上限（MB）"),
+        N_("超过此大小的文件将被拒绝。"),
         "int",
         min=1,
         max=500,
     ),
     "jacara_api_docs": Spec(
         N_("安全"),
-        N_("打开接口文档页 /docs"),
-        N_("开发时有用；给别人用时建议关掉，少暴露一些接口细节。"),
+        N_("启用接口文档页 /docs"),
+        N_("便于开发调试；供他人使用时建议关闭，以减少接口细节暴露。"),
         "bool",
     ),
 }
@@ -162,20 +165,20 @@ def _check(key: str, value: Any) -> Any:
     try:
         checked = TypeAdapter(annotation).validate_python(value)
     except ValidationError as err:
-        raise SettingsError("invalid", tr("{label}：值不对", label=tr(spec.label))) from err
+        raise SettingsError("invalid", tr("{label}：值无效", label=tr(spec.label))) from err
     if spec.kind == "int" and (
         (spec.min is not None and checked < spec.min)
         or (spec.max is not None and checked > spec.max)
     ):
         raise SettingsError(
             "invalid",
-            tr("{label}：要在 {min}～{max} 之间", label=tr(spec.label), min=spec.min, max=spec.max),
+            tr("{label}：需在 {min}～{max} 之间", label=tr(spec.label), min=spec.min, max=spec.max),
         )
     if spec.kind == "path" and checked is not None:
         path = Path(checked).expanduser()
         if not path.is_absolute() or not path.is_dir():
             raise SettingsError(
-                "invalid", tr("{label}：要写一个已经存在的文件夹的完整路径", label=tr(spec.label))
+                "invalid", tr("{label}：需填写已存在文件夹的完整路径", label=tr(spec.label))
             )
         return str(path)
     if spec.kind == "text":
@@ -226,12 +229,12 @@ class AppSettingsService:
         changed: dict[str, Any] = {}
         for key, value in data.values.items():
             if key not in SPECS:
-                raise SettingsError("invalid", tr("设置页不能改 {key}", key=key))
+                raise SettingsError("invalid", tr("设置页无法修改 {key}", key=key))
             if key in locked:
                 raise SettingsError(
                     "invalid",
                     tr(
-                        "{label}由 .env 里的 {env} 指定，页面上改不了",
+                        "{label}由 .env 中的 {env} 指定，无法在页面上修改",
                         label=tr(SPECS[key].label),
                         env=key.upper(),
                     ),

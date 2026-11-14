@@ -61,7 +61,7 @@ def add_user(session: Session, team_id: uuid.UUID, data: UserCreate) -> User:
     repo = AuthRepository(session)
     username = data.username.lower()
     if repo.user_by_username(username) is not None:
-        raise AuthError("conflict", tr("用户名 {username} 已经有人用了", username=username))
+        raise AuthError("conflict", tr("用户名 {username} 已被使用", username=username))
     user = User(
         team_id=team_id,
         username=username,
@@ -92,7 +92,7 @@ class AuthService:
             # The request is rolled back by the error raised below; commit first so that the failure
             # record persists.
             self.session.commit()
-            raise AuthError("bad_credentials", tr("用户名或密码不对"))
+            raise AuthError("bad_credentials", tr("用户名或密码错误"))
 
         token = new_token()
         now = datetime.now(UTC)
@@ -145,12 +145,12 @@ class AuthService:
         """Change one's own password; the current password is required. Other devices are logged
         out; the current session stays."""
         if get_settings().jacara_mode == "personal" or token is None:
-            raise AuthError("conflict", tr("个人模式没有账号，不用密码"))
+            raise AuthError("conflict", tr("个人模式无账号，无需密码"))
         user = self.repo.user(owner.user_id, owner.team_id)
         if user is None or not verify_password(user.password_hash, data.old_password):
-            raise AuthError("invalid", tr("原密码不对"))
+            raise AuthError("invalid", tr("原密码错误"))
         if verify_password(user.password_hash, data.new_password):
-            raise AuthError("invalid", tr("新密码不能和原来的一样"))
+            raise AuthError("invalid", tr("新密码不能与原密码相同"))
         user.password_hash = hash_password(data.new_password)
         self.repo.revoke_sessions(user.id, datetime.now(UTC), keep=token_hash(token))
         record(self.session, owner, "auth:password_change", "user", user.id)
@@ -170,10 +170,10 @@ class AuthService:
             who = owner_of(user) if user else None
             record(self.session, who, "auth:reset_failed", username=data.username.lower())
             self.session.commit()
-            raise AuthError("bad_code", tr("用户名或重设码不对，或者重设码已经用过、过期了"))
+            raise AuthError("bad_code", tr("用户名或重设码错误，或重设码已使用、已过期"))
         if verify_password(user.password_hash, data.password):
             # The code is not revoked; the user may retry with a different password.
-            raise AuthError("invalid", tr("新密码不能和原来的一样"))
+            raise AuthError("invalid", tr("新密码不能与原密码相同"))
         user.password_hash = hash_password(data.password)
         reset.used_at = now
         self.repo.revoke_sessions(user.id, now)
@@ -215,11 +215,11 @@ class UserService:
         require(self.owner, "user:manage")
         user = self.repo.user(user_id, self.owner.team_id)
         if user is None:
-            raise AuthError("not_found", tr("找不到这个用户"))
+            raise AuthError("not_found", tr("用户不存在"))
         if user.id == self.owner.user_id and (
             (change.role is not None and change.role != user.role) or change.is_active is False
         ):
-            raise AuthError("conflict", tr("不能修改自己的角色或停用自己，免得没人能管理"))
+            raise AuthError("conflict", tr("不能修改自己的角色或停用自己，以免无人可管理系统"))
 
         changed = change.model_dump(exclude_none=True)
         if "permissions" in changed:
@@ -240,9 +240,9 @@ class UserService:
         require(self.owner, "user:manage")
         user = self.repo.user(user_id, self.owner.team_id)
         if user is None:
-            raise AuthError("not_found", tr("找不到这个用户"))
+            raise AuthError("not_found", tr("用户不存在"))
         if not user.is_active:
-            raise AuthError("conflict", tr("这个用户已停用，先启用再生成重设码"))
+            raise AuthError("conflict", tr("此用户已停用，请先启用再生成重设码"))
         now = datetime.now(UTC)
         self.repo.void_reset_codes(user.id, now)
         code = new_reset_code()

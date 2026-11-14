@@ -72,7 +72,7 @@ def test_pdf_pages_are_read_by_ocr_and_keep_the_text_layer_aside(tmp_path, ocr):
     layer = [ln.text for ln in page.text_layer]
     assert "1234567898" in layer  # The text layer is wrong but kept aside.
     assert not any("old" in t for t in layer)  # Invisible old OCR text is excluded.
-    assert "看不见的字" in page.models["note"]
+    assert "不可见字符" in page.models["note"]
 
 
 def test_text_mode_still_reads_only_the_text_layer(tmp_path, ocr):
@@ -98,7 +98,7 @@ def test_wrong_text_layer_never_overwrites_ocr(tmp_path, ocr):
     sources = {c.source: c.text for c in checked.candidates}
     assert "1234567898" in sources["text_layer"]
     assert sources.get("zoom", "1234567890").endswith("1234567890")
-    assert "PDF 文字层这里写的是" in checked.note
+    assert "PDF 文本层此处为" in checked.note
 
 
 def test_agreeing_text_layer_is_only_recorded(tmp_path, ocr):
@@ -144,8 +144,8 @@ def test_layer_and_ocr_agree_but_the_value_does_not(tmp_path, ocr):
         [aligned("r", "number", 78.6, line_with(page, "78.5"))], page, None, Zoom(path, ocr)
     )
     assert checked.layer == "conflict" and checked.needs_review
-    assert "PDF 文字层和 OCR 这里都是「78.5」，和现在的值「78.6」对不上" in render(checked.note)
-    assert "和文字层、OCR 一致" in render(checked.note)
+    assert "PDF 文本层与 OCR 此处均为「78.5」，与当前值「78.6」不符" in render(checked.note)
+    assert "与文本层和 OCR 一致" in render(checked.note)
     assert "不一样" not in checked.note
 
 
@@ -162,14 +162,14 @@ def test_missing_field_is_looked_for_next_to_its_label(tmp_path, ocr):
     path = write(tmp_path, wrong_invoice())
     page = load_pages(path, ocr)[0]
     missing = AlignedField(
-        ExtractedField("total", "number", None), "empty", None, False, "模型说原文里没有这个字段"
+        ExtractedField("total", "number", None), "empty", None, False, "模型判断原文中没有此字段"
     )
     tpl = template(spec("total", "Total", required=True))
     [checked] = check_fields([missing], page, tpl, Zoom(path, ocr))
     assert checked.field.value is None  # Left empty until accepted.
     assert checked.needs_review
     assert any(c.value == "128" for c in checked.candidates)
-    assert "模型没有给出「Total」" in render(checked.note)
+    assert "模型未给出「Total」" in render(checked.note)
 
 
 def test_required_field_without_label_waits_for_review(tmp_path, ocr):
@@ -200,7 +200,7 @@ def test_form_values_and_their_visibility(tmp_path, ocr):
         AlignedField(ExtractedField("secret", "number", None), "empty", None, False),
     ]
     amount, secret = check_fields(empty, page, tpl)
-    assert any(c.source == "form" and render(c.note) == "页面上能看到" for c in amount.candidates)
+    assert any(c.source == "form" and render(c.note) == "页面可见" for c in amount.candidates)
     assert any(c.source == "form" and render(c.note) == "页面不可见" for c in secret.candidates)
     assert any(c.source == "form" and c.visible is True for c in amount.candidates)
     assert any(c.source == "form" and c.visible is False for c in secret.candidates)

@@ -62,7 +62,9 @@ def _id_rule(
     def check(values: Values) -> str | None:
         raw = _text(values, field)
         if valid(raw) is False:
-            return stored("{label}「{raw}」格式或校验位不对，可能有字认错了", label=label, raw=raw)
+            return stored(
+                "{label}「{raw}」格式或校验位错误，可能存在识别错误", label=label, raw=raw
+            )
         return None
 
     return check
@@ -79,7 +81,7 @@ def _allowed_rates(rates: tuple[float, ...], where: str) -> Callable[[Values], s
             return None
         shown = join_items(f"{r:g}%" for r in rates)
         return stored(
-            "税率「{raw}」不是{place}现行的税率（{shown}）", raw=raw, place=place, shown=shown
+            "税率「{raw}」不是{place}现行税率（{shown}）", raw=raw, place=place, shown=shown
         )
 
     return check
@@ -253,7 +255,7 @@ def check_sg_gst(values: Values) -> str | None:
         rate,
         "net_total",
         "tax_total",
-        stored("新加坡 {day} 适用的 GST 是 {rate:g}%", day=day.isoformat(), rate=rate),
+        stored("新加坡 {day} 适用的 GST 税率为 {rate:g}%", day=day.isoformat(), rate=rate),
     )(values)
 
 
@@ -281,7 +283,10 @@ def check_in_invoice_no(values: Values) -> str | None:
     if len(raw) <= 16 and re.fullmatch(r"[A-Za-z0-9/\-]+", raw):
         return None
     return stored(
-        "发票号「{raw}」不符合印度 GST 规则第 46 条 (b)：最多 16 个字符，只能用字母、数字、- 和 /",
+        (
+            "发票号「{raw}」不符合印度 GST 规则第 46 条 (b)：最多 16 个字"
+            "符，只能包含字母、数字、- 和 /"
+        ),
         raw=raw,
     )
 
@@ -291,10 +296,12 @@ def check_in_tax_split(values: Values) -> str | None:
     both."""
     cgst, sgst, igst = (_number(values, f) or 0 for f in ("cgst", "sgst", "igst"))
     if igst and (cgst or sgst):
-        return stored("同一张发票既有 IGST 又有 CGST/SGST：跨邦只收 IGST，邦内只收 CGST + SGST")
+        return stored(
+            "同一张发票同时包含 IGST 与 CGST/SGST：跨邦交易仅征收 IGST，邦内交易仅征收 CGST + SGST"
+        )
     if (cgst or sgst) and abs(cgst - sgst) > MONEY:
         return stored(
-            "CGST {cgst:,.2f} 和 SGST {sgst:,.2f} 应该相等（各占一半）", cgst=cgst, sgst=sgst
+            "CGST {cgst:,.2f} 与 SGST {sgst:,.2f} 应相等（各占一半）", cgst=cgst, sgst=sgst
         )
     return None
 
@@ -325,7 +332,7 @@ def check_nz_gst_3_23(values: Values) -> str | None:
     if gst is None or gross is None or gst <= gross * 3 / 23 + MONEY:
         return None
     return stored(
-        "GST {gst:,.2f} 比含税总额 {gross:,.2f} 的 3/23（{limit:,.2f}）还多（GST 15%）",
+        ("GST {gst:,.2f} 超过含税总额 {gross:,.2f} 的 3/23（{limit:,.2f}）（GST 15%）"),
         gst=gst,
         gross=gross,
         limit=gross * 3 / 23,
@@ -384,7 +391,10 @@ def check_de_kassenbeleg(values: Values) -> str | None:
         return None
     items = join_items(missing)
     return stored(
-        "德国收银条例（KassenSichV）第 6 条要求的{items}没读到；没有安全模块信息的小票可能不合规，请看一眼原件",
+        (
+            "未读取到德国收银条例（KassenSichV）第 6 条要求的{items}；缺"
+            "少安全模块信息的小票可能不合规，请核对原件"
+        ),
         items=items,
     )
 
@@ -422,7 +432,7 @@ def check_th_buyer_branch(values: Values) -> str | None:
     """Director-General Notification No. 199: when the buyer is VAT-registered, the buyer's tax id
     and "head office / branch" (สำนักงานใหญ่ / สาขาที่) must be shown."""
     if _text(values, "buyer_tax_id") and not _text(values, "buyer_branch"):
-        return stored("写了买方税号，但没写买方是总店还是第几号分店（泰国税务厅公告第 199 号）")
+        return stored("已填写买方税号，但未注明买方为总店或分店编号（泰国税务厅公告第 199 号）")
     return None
 
 
@@ -464,7 +474,10 @@ def check_id_ppn(values: Values) -> str | None:
     ):
         problems.append(
             stored(
-                "计税基础 {dpp:,.0f} 既不是销售价 {price:,.0f}，也不是它的 11/12（{reduced:,.0f}）",
+                (
+                    "计税基础 {dpp:,.0f} 既不等于销售价 {price:,.0f}，也不等于其 "
+                    "11/12（{reduced:,.0f}）"
+                ),
                 dpp=dpp,
                 price=price,
                 reduced=price * 11 / 12,
@@ -623,7 +636,7 @@ def check_vn_reduced_rate(values: Values) -> str | None:
     if rate is None or day is None or abs(rate - 8) > 0.001 or day <= date(2026, 12, 31):
         return None
     return stored(
-        "{day} 开的发票税率是 8%：越南国会第 204/2025 号决议的减税到 2026-12-31 为止",
+        ("{day} 开具的发票税率为 8%：越南国会第 204/2025 号决议的减税措施有效期至 2026-12-31"),
         day=day.isoformat(),
     )
 
@@ -646,14 +659,14 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     # Japan
     _id(
         "jp_registration_no",
-        N_("发票登记号是 T + 13 位数字"),
+        N_("发票登记号为 T + 13 位数字"),
         "seller_tax_id",
         jp_registration_no,
         N_("发票登记号"),
     ),
     Rule(
         "jp_tax_per_rate",
-        N_("各税率的消费税额对得上（每张发票每个税率只进位一次）"),
+        N_("各税率的消费税额正确（每张发票每个税率仅取整一次）"),
         ("gross_total",),
         check_jp_tax_per_rate,
         "warning",
@@ -662,7 +675,7 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "jp_rates",
-        N_("税率是 10% 或 8%"),
+        N_("税率为 10% 或 8%"),
         ("tax_rate",),
         _allowed_rates((10, 8, 0), N_("日本")),
         "warning",
@@ -707,7 +720,7 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     _id(
         "tw_invoice_no",
-        N_("发票号码是 2 个英文字母 + 8 位数字"),
+        N_("发票号码为 2 个英文字母 + 8 位数字"),
         "invoice_no",
         tw_invoice_no,
         N_("发票号码"),
@@ -729,20 +742,20 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "sg_gst_rate",
-        N_("GST = 不含税金额 × 当时的税率（2024 年起 9%）"),
+        N_("GST = 不含税金额 × 当期税率（2024 年起为 9%）"),
         ("net_total", "tax_total"),
         check_sg_gst,
         "warning",
     ),
     Rule(
         "sg_full_over_1000",
-        N_("超过 S$1,000 要有客户名称和地址"),
+        N_("超过 S$1,000 需注明客户名称和地址"),
         ("gross_total",),
         _needs_over(
             1000,
             "gross_total",
             ("buyer_name", "buyer_address"),
-            N_("新加坡税务局规定：超过 S$1,000 不能用简易税务发票，要写客户名称和地址"),
+            N_("新加坡税务局规定：超过 S$1,000 时不得使用简易税务发票，需注明客户名称和地址"),
         ),
         "warning",
         requires=("buyer_name", "buyer_address"),
@@ -750,13 +763,14 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     # Malaysia
     Rule(
         "my_validated",
-        N_("已经过马来西亚税务局（LHDN）验证（有唯一编号 UIN）"),
+        N_("已通过马来西亚税务局（LHDN）验证（含唯一编号 UIN）"),
         ("gross_total",),
         lambda v: (
             None
             if _text(v, "uin")
             else stored(
-                "没读到马来西亚税务局（LHDN）的唯一编号（UIN）：不是已验证的电子发票，或者二维码旁的编号没认出来"
+                "未读取到马来西亚税务局（LHDN）的唯一编号（UIN）：可能不是已"
+                "验证的电子发票，或二维码旁的编号未被识别"
             )
         ),
         "warning",
@@ -765,28 +779,28 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     # Vietnam
     _id(
         "vn_seller_mst",
-        N_("卖方税号是 10 或 13 位"),
+        N_("卖方税号为 10 或 13 位"),
         "seller_tax_id",
         vn_tax_code,
         N_("卖方税号"),
     ),
     _id(
         "vn_buyer_mst",
-        N_("买方税号是 10 或 13 位"),
+        N_("买方税号为 10 或 13 位"),
         "buyer_tax_id",
         vn_tax_code,
         N_("买方税号"),
     ),
     Rule(
         "vn_rates",
-        N_("增值税税率是 0%、5%、8% 或 10%"),
+        N_("增值税税率为 0%、5%、8% 或 10%"),
         ("tax_rate",),
         _allowed_rates((0, 5, 8, 10), N_("越南")),
         "warning",
     ),
     Rule(
         "vn_reduced_8",
-        N_("8% 减税税率只到 2026-12-31"),
+        N_("8% 减征税率有效期至 2026-12-31"),
         ("tax_rate", "issue_date"),
         check_vn_reduced_rate,
         "warning",
@@ -815,7 +829,7 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "in_tax_split",
-        N_("IGST 和 CGST、SGST 不同时出现，CGST = SGST"),
+        N_("IGST 不与 CGST、SGST 同时出现，且 CGST = SGST"),
         ("gross_total",),
         check_in_tax_split,
         "warning",
@@ -839,13 +853,13 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "nz_buyer_over_1000",
-        N_("超过 $1,000 要写买方名称"),
+        N_("超过 $1,000 需注明买方名称"),
         ("gross_total",),
         _needs_over(
             1000,
             "gross_total",
             ("buyer_name",),
-            N_("新西兰商品及服务税法第 19K 条：超过 $1,000 要有买方名称和一项识别信息"),
+            N_("新西兰商品及服务税法第 19K 条：超过 $1,000 需注明买方名称及一项识别信息"),
         ),
         "warning",
         requires=("buyer_name",),
@@ -860,7 +874,7 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "gb_rates",
-        N_("VAT 税率是 20%、5% 或 0%"),
+        N_("VAT 税率为 20%、5% 或 0%"),
         ("tax_rate",),
         _allowed_rates((20, 5, 0), N_("英国")),
         "warning",
@@ -868,14 +882,15 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "gb_full_over_250",
-        N_("超过 £250 要有客户名称和地址"),
+        N_("超过 £250 需注明客户名称和地址"),
         ("gross_total",),
         _needs_over(
             250,
             "gross_total",
             ("buyer_name", "buyer_address"),
             N_(
-                "英国税务海关总署规定（VAT Notice 700/21）：超过 £250 不能用简易发票，要写客户名称和地址"
+                "英国税务海关总署规定（VAT Notice 700/21）：超过 £250 时不得"
+                "使用简易发票，需注明客户名称和地址"
             ),
         ),
         "warning",
@@ -891,7 +906,7 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "de_rates",
-        N_("增值税税率是 19%、7% 或 0%"),
+        N_("增值税税率为 19%、7% 或 0%"),
         ("tax_rate",),
         _allowed_rates((19, 7, 0), N_("德国")),
         "warning",
@@ -899,20 +914,20 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "de_full_over_250",
-        N_("超过 250 € 要写收票方和发票号"),
+        N_("超过 250 € 需注明收票方和发票号"),
         ("gross_total",),
         _needs_over(
             250,
             "gross_total",
             ("buyer_name", "invoice_no"),
-            N_("小额发票（德国增值税实施条例第 33 条）只到 250 €，超过要写收票方和发票号"),
+            N_("小额发票（德国增值税实施条例第 33 条）上限为 250 €，超过时需注明收票方和发票号"),
         ),
         "warning",
         requires=("buyer_name", "invoice_no"),
     ),
     Rule(
         "de_kassenbeleg",
-        N_("收银小票有 TSE 安全模块信息"),
+        N_("收银小票包含 TSE 安全模块信息"),
         ("gross_total",),
         check_de_kassenbeleg,
         "warning",
@@ -949,17 +964,17 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "th_title",
-        N_("标题写明“税务发票”（ใบกำกับภาษี）"),
+        N_("标题注明“税务发票”（ใบกำกับภาษี）"),
         ("document_title",),
         _title_has(
             ("ใบกำกับภาษี", "tax invoice"),
-            N_("泰国税法第 86/4 条要求在显眼处写明“税务发票”（ใบกำกับภาษี）"),
+            N_("泰国税法第 86/4 条要求在显著位置注明“税务发票”（ใบกำกับภาษี）"),
         ),
         "warning",
     ),
     Rule(
         "th_buyer_branch",
-        N_("写了买方税号就要写买方总店或分店"),
+        N_("填写买方税号时需注明买方总店或分店"),
         ("buyer_tax_id",),
         check_th_buyer_branch,
         "warning",
@@ -968,14 +983,14 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     # Indonesia
     _id(
         "id_seller_npwp",
-        N_("卖方税号（NPWP）是 15 或 16 位"),
+        N_("卖方税号（NPWP）为 15 或 16 位"),
         "seller_tax_id",
         id_npwp,
         N_("卖方税号（NPWP）"),
     ),
     _id(
         "id_faktur_no",
-        N_("增值税发票编号是 16 或 17 位"),
+        N_("增值税发票编号为 16 或 17 位"),
         "invoice_no",
         id_faktur_no,
         N_("增值税发票编号"),
@@ -1004,11 +1019,11 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "ph_invoice_title",
-        N_("标题写明 Invoice"),
+        N_("标题注明 Invoice"),
         ("document_title",),
         _title_has(
             ("invoice",),
-            N_("菲律宾税务局 2024 年第 7 号规定：主要凭证是 Invoice，标题要有 Invoice 字样"),
+            N_("菲律宾税务局 2024 年第 7 号规定：主要凭证为 Invoice，标题需包含 Invoice 字样"),
         ),
         "warning",
     ),
@@ -1029,7 +1044,7 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "fr_rates",
-        N_("增值税税率是 20%、10%、5.5% 或 2.1%"),
+        N_("增值税税率为 20%、10%、5.5% 或 2.1%"),
         ("tax_rate",),
         _allowed_rates((20, 10, 5.5, 2.1, 0), N_("法国")),
         "warning",
@@ -1052,7 +1067,7 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "it_rates",
-        N_("增值税税率是 22%、10%、5% 或 4%"),
+        N_("增值税税率为 22%、10%、5% 或 4%"),
         ("tax_rate",),
         _allowed_rates((22, 10, 5, 4, 0), N_("意大利")),
         "warning",
@@ -1091,7 +1106,7 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "es_rates",
-        N_("增值税税率是 21%、10% 或 4%"),
+        N_("增值税税率为 21%、10% 或 4%"),
         ("tax_rate",),
         _allowed_rates((21, 10, 4, 0), N_("西班牙")),
         "warning",
@@ -1103,7 +1118,10 @@ COUNTRY_RULES: tuple[Rule, ...] = (
         ("gross_total",),
         lambda v: (
             stored(
-                "西班牙简易发票的金额 {amount:,.2f} 超过 400 €：只有开票条例第 4.1 条列的行业（零售、餐饮、客运等）能到 3,000 €",
+                (
+                    "西班牙简易发票金额 {amount:,.2f} 超过 400 €：仅开票条例第 4."
+                    "1 条所列行业（零售、餐饮、客运等）的上限为 3,000 €"
+                ),
                 amount=_number(v, "gross_total") or 0,
             )
             if "simplificada" in _text(v, "document_title").lower()
@@ -1123,7 +1141,7 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "nl_rates",
-        N_("增值税税率是 21%、9% 或 0%"),
+        N_("增值税税率为 21%、9% 或 0%"),
         ("tax_rate",),
         _allowed_rates((21, 9, 0), N_("荷兰")),
         "warning",
@@ -1131,13 +1149,13 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "nl_full_over_100",
-        N_("超过 € 100 要有发票号、买方和卖方增值税号"),
+        N_("超过 € 100 需注明发票号及买卖双方增值税号"),
         ("gross_total",),
         _needs_over(
             100,
             "gross_total",
             ("invoice_no", "buyer_name", "seller_tax_id"),
-            N_("荷兰简易发票只到 € 100，超过要写发票号、买方和卖方增值税号"),
+            N_("荷兰简易发票上限为 € 100，超过时需注明发票号及买卖双方增值税号"),
         ),
         "warning",
         requires=("invoice_no", "buyer_name", "seller_tax_id"),
@@ -1159,7 +1177,7 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "pl_rates",
-        N_("增值税税率是 23%、8%、5% 或 0%"),
+        N_("增值税税率为 23%、8%、5% 或 0%"),
         ("tax_rate",),
         _allowed_rates((23, 8, 5, 0), N_("波兰")),
         "warning",
@@ -1175,7 +1193,7 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "ca_rates",
-        N_("税率是 GST 5% 或 HST 13%、14%、15%"),
+        N_("税率为 GST 5% 或 HST 13%、14%、15%"),
         ("tax_rate",),
         _allowed_rates((5, 13, 14, 15, 0), N_("加拿大")),
         "warning",
@@ -1183,26 +1201,26 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "ca_regno_100",
-        N_("$100 以上要写 GST/HST 登记号"),
+        N_("$100 及以上需注明 GST/HST 登记号"),
         ("gross_total",),
         _needs_over(
             99.99,
             "gross_total",
             ("seller_tax_id",),
-            N_("加拿大进项税抵扣信息条例第 3 条 (b)：$100 及以上要有供应商的 GST/HST 登记号"),
+            N_("加拿大进项税抵扣信息条例第 3 条 (b)：$100 及以上需注明供应商的 GST/HST 登记号"),
         ),
         "warning",
         requires=("seller_tax_id",),
     ),
     Rule(
         "ca_buyer_500",
-        N_("$500 以上要写买方和付款条件"),
+        N_("$500 及以上需注明买方和付款条件"),
         ("gross_total",),
         _needs_over(
             499.99,
             "gross_total",
             ("buyer_name", "payment_terms"),
-            N_("加拿大进项税抵扣信息条例第 3 条 (c)：$500 及以上要有买方名称和付款条件"),
+            N_("加拿大进项税抵扣信息条例第 3 条 (c)：$500 及以上需注明买方名称和付款条件"),
         ),
         "warning",
         requires=("buyer_name", "payment_terms"),
@@ -1210,7 +1228,7 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     # United Arab Emirates
     _id(
         "ae_trn",
-        N_("税号（TRN）是 15 位数字"),
+        N_("税号（TRN）为 15 位数字"),
         "seller_tax_id",
         digits_15,
         N_("税号（TRN）"),
@@ -1224,18 +1242,18 @@ COUNTRY_RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "ae_title",
-        N_("标题写明 Tax Invoice（税务发票）"),
+        N_("标题注明 Tax Invoice（税务发票）"),
         ("document_title",),
         _title_has(
             ("tax invoice", "فاتورة ضريبية"),
-            N_("阿联酋增值税实施条例第 59 条要求写明 Tax Invoice（税务发票）"),
+            N_("阿联酋增值税实施条例第 59 条要求注明 Tax Invoice（税务发票）"),
         ),
         "warning",
     ),
     # Saudi Arabia
     _id(
         "sa_vat_no",
-        N_("增值税号是 15 位数字"),
+        N_("增值税号为 15 位数字"),
         "seller_tax_id",
         digits_15,
         N_("增值税号"),

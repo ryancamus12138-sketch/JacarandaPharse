@@ -81,7 +81,7 @@ def test_page_out_of_range(client):
     document_id = upload(client, "invoice.pdf", make_pdf(2), "application/pdf")
     response = client.get(f"/api/v1/documents/{document_id}/pages/3/image")
     assert response.status_code == 404
-    assert "只有 2 页" in response.json()["detail"]
+    assert "仅有 2 页" in response.json()["detail"]
     assert client.get(f"/api/v1/documents/{document_id}/pages/0/image").status_code == 422
 
 
@@ -89,4 +89,4 @@ def test_broken_file(client):
     document_id = upload(client, "broken.png", b"not really a png", "image/png")
     response = client.get(f"/api/v1/documents/{document_id}/pages/1/image")
     assert response.status_code == 422
-    assert "打不开" in response.json()["detail"]
+    assert "无法打开" in response.json()["detail"]

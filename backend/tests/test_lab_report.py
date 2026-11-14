@@ -28,11 +28,11 @@ def test_flags_match_the_reference_range():
         return check_lab_flag({"result": result, "reference": reference, "flag": flag})
 
     assert check("12.3", "3.5-9.5", "↑") is None
-    assert "没有标 ↑" in (check("12.3", "3.5-9.5") or "")
-    assert "没有标 ↓" in (check("2.1", "3.5～9.5", "") or "")
+    assert "未标注 ↑" in (check("12.3", "3.5-9.5") or "")
+    assert "未标注 ↓" in (check("2.1", "3.5～9.5", "") or "")
     assert check("2.1", "3.5-9.5", "L") is None
-    assert "却标了偏高" in (check("5.0", "3.5-9.5", "H") or "")
-    assert "没有标 ↑" in (check("6.2", "<5.0") or "")
+    assert "但标注为偏高" in (check("5.0", "3.5-9.5", "H") or "")
+    assert "未标注 ↑" in (check("6.2", "<5.0") or "")
     assert check("阴性", "阴性") is None
     assert check("<0.1", "0-1") is None
     assert check("8", "见备注") is None
@@ -146,7 +146,7 @@ def test_progress_moves_while_the_model_writes():
     stages: list[tuple[str, int]] = []
     tell = writing(lambda stage, percent: stages.append((stage, percent)), "第 1 页", 20, 95)
     tell(500, 1000)
-    assert stages and "模型已写 50%" in render(stages[0][0]) and stages[0][1] == 58
+    assert stages and "模型已输出 50%" in render(stages[0][0]) and stages[0][1] == 58
     tell(5000, 1000)  # Not reported twice within one second.
     assert len(stages) == 1
 

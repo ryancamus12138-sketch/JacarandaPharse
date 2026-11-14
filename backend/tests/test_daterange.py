@@ -50,8 +50,8 @@ def test_parse_ranges(text, day_first, start, end):
 
 def test_parse_problems():
     unsure = parse_date_range("01/07/2014 - 02/07/2014")
-    assert unsure.range is not None and "分不清" in (unsure.problem or "")
-    assert parse_date_range("7月1日至31日").problem == "原文里没有年份"
+    assert unsure.range is not None and "无法区分" in (unsure.problem or "")
+    assert parse_date_range("7月1日至31日").problem == "原文中没有年份"
     assert parse_date_range("hello").range is None
     backwards = parse_date_range("2014-07-31 ~ 2014-07-01")
     assert backwards.problem == "结束日期早于开始日期"
@@ -78,7 +78,7 @@ def test_formulas_use_start_end_days():
     )
     with raises(FormulaError, r"period\.start"):
         parse_formula("period + 1", scope)
-    with raises(FormulaError, "只能取"):
+    with raises(FormulaError, "只能使用"):
         parse_formula("period.month", scope)
 
 

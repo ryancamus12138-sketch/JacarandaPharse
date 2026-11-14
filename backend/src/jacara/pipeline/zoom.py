@@ -69,9 +69,9 @@ class Zoom:
         if not text:
             return None
         where = (
-            stored("局部放大到 {dpi} DPI 再识别", dpi=self.dpi)
+            stored("局部放大至 {dpi} DPI 后识别", dpi=self.dpi)
             if self.is_pdf
-            else stored("用原图局部再识别")
+            else stored("使用原图局部重新识别")
         )
         x0, y0, x1, y1 = box
         return Candidate(

@@ -92,8 +92,8 @@ export function SaveAsTemplate({
 
   const chosen = rows.filter((r) => r.include)
   const problem =
-    (!title.trim() ? t('请给模板起个名字') : null) ??
-    (chosen.length === 0 ? t('至少选一个字段') : null) ??
+    (!title.trim() ? t('请输入模板名称') : null) ??
+    (chosen.length === 0 ? t('请至少选择一个字段') : null) ??
     fieldsProblem(chosen, '')
 
   const save = useMutation({
@@ -109,7 +109,7 @@ export function SaveAsTemplate({
     onSuccess: ({ template }) => {
       void queryClient.invalidateQueries({ queryKey: ['templates'] })
       void queryClient.invalidateQueries({ queryKey: ['document', doc.id] })
-      void message.success(t('已存成模板「{{title}}」，这份文档已换成按新模板的结果', { title: template.title }))
+      void message.success(t('已保存为模板「{{title}}」，此文档已更新为新模板的结果', { title: template.title }))
       onClose()
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
@@ -120,7 +120,7 @@ export function SaveAsTemplate({
       open={open}
       onClose={onClose}
       size={980}
-      title={t('存成模板')}
+      title={t('保存为模板')}
       extra={
         <Button
           type="primary"
@@ -135,11 +135,11 @@ export function SaveAsTemplate({
     >
       <Flex vertical gap={12}>
         <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
-          {t('选中的值原样搬过去（值、出处、你改过的都在），不重新抽取。单据上的原名会记成别名， 以后同类单据模型更容易认出来。规则、表格以后在"模板"页里加。')}
+          {t('所选的值将原样保留（包括值、出处及人工修改），不重新抽取。单据上的原名称将记为别名，便于模型识别同类单据。规则和表格可之后在“模板”页添加。')}
         </Typography.Paragraph>
         {problem && <Alert type="warning" showIcon title={problem} />}
         <Flex gap={8} wrap>
-          <Input addonBefore={t('模板名')} value={title} onChange={(e) => setTitle(e.target.value)} style={{ width: 300 }} />
+          <Input addonBefore={t('模板名称')} value={title} onChange={(e) => setTitle(e.target.value)} style={{ width: 300 }} />
           <AutoComplete
             value={category}
             options={CATEGORIES.map((c) => ({ value: c }))}
@@ -147,7 +147,7 @@ export function SaveAsTemplate({
             style={{ width: 140 }}
           />
           <Input
-            placeholder={t('说明（可以不写）')}
+            placeholder={t('说明（选填）')}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             style={{ flex: 1, minWidth: 200 }}
@@ -161,7 +161,7 @@ export function SaveAsTemplate({
           scroll={{ x: 900 }}
           columns={[
             {
-              title: t('要'),
+              title: t('选用'),
               width: 48,
               render: (_, r, i) => <Checkbox checked={r.include} onChange={(e) => update(i, { include: e.target.checked })} />,
             },
@@ -179,11 +179,11 @@ export function SaveAsTemplate({
                     </Typography.Text>
                   </Flex>
                 ) : (
-                  <Typography.Text type="secondary">{t('自己加的（空，审核时填）')}</Typography.Text>
+                  <Typography.Text type="secondary">{t('自定义字段（空值，审核时填写）')}</Typography.Text>
                 ),
             },
             {
-              title: t('中文名'),
+              title: t('名称'),
               width: 160,
               render: (_, r, i) => (
                 <Input value={r.label} disabled={!r.include} onChange={(e) => update(i, { label: e.target.value })} />
@@ -260,7 +260,7 @@ export function SaveAsTemplate({
             ])
           }
         >
-          {t('加一个自己的字段')}
+          {t('添加自定义字段')}
         </Button>
       </Flex>
     </Drawer>

@@ -15,7 +15,7 @@ export function ResetCodeModal({ code, onClose }: { code: ResetCode | null; onCl
       open={code !== null}
       onOk={onClose}
       onCancel={onClose}
-      okText={t('我已经告诉对方了')}
+      okText={t('已告知用户')}
       cancelButtonProps={{ style: { display: 'none' } }}
     >
       <Typography.Title
@@ -26,14 +26,14 @@ export function ResetCodeModal({ code, onClose }: { code: ResetCode | null; onCl
         {code?.code}
       </Typography.Title>
       <Typography.Paragraph>
-        {t('有效到')}{' '}<strong>{code ? formatTime(code.expires_at) : ''}</strong>{t('（15 分钟），只能用一次。')}
+        {t('有效期至')}{' '}<strong>{code ? formatTime(code.expires_at) : ''}</strong>{t('（15 分钟），仅可使用一次。')}
       </Typography.Paragraph>
       <Typography.Paragraph>
-        <strong>{t('这不是新密码，不能直接用来登录。')}</strong>
-        {t('对方要在登录页点"')}<strong>{t('用重设码设新密码')}</strong>{t('"，输入用户名和这个码，再自己设一个新密码。')}
+        <strong>{t('此码不是新密码，不能直接用于登录。')}</strong>
+        {t('用户需在登录页点击“')}<strong>{t('使用重设码设置新密码')}</strong>{t('”，输入用户名和此码，然后设置新密码。')}
       </Typography.Paragraph>
       <Typography.Paragraph type="secondary">
-        {t('请当面或打电话告诉 {{username}}，不要发到聊天群里。 这个码关掉后就看不到了；对方没用上的话，再生成一个就行（旧的会作废）。', { username: code?.username })}
+        {t('请当面或通过电话告知 {{username}}，请勿在群聊中发送。关闭此窗口后将无法再次查看；如用户未能使用，可重新生成（旧码将失效）。', { username: code?.username })}
       </Typography.Paragraph>
     </Modal>
   )

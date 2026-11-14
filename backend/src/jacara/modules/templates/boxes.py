@@ -89,9 +89,9 @@ def guess_type(text: str) -> str:
 
 
 POSITIONS = (
-    (N_("左上角"), N_("上方中间"), N_("右上角")),
-    (N_("左边中间"), N_("中间"), N_("右边中间")),
-    (N_("左下角"), N_("下方中间"), N_("右下角")),
+    (N_("左上角"), N_("上方中部"), N_("右上角")),
+    (N_("左侧中部"), N_("中间"), N_("右侧中部")),
+    (N_("左下角"), N_("下方中部"), N_("右下角")),
 )
 """Names of the cells of a 3 × 3 grid over the page, by row and column."""
 

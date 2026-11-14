@@ -41,21 +41,21 @@ def parse_ranges(text: str) -> list[Segment]:
         m = _RANGE.match(piece)
         if m is None:
             raise SplitError(
-                stored("页码写得不对：「{piece}」，例如 1-2, 3, 4-6", piece=piece.strip())
+                stored("页码格式错误：「{piece}」，正确格式如 1-2, 3, 4-6", piece=piece.strip())
             )
         start, end = int(m[1]), int(m[2] or m[1])
         expected = ranges[-1][1] + 1 if ranges else 1
         if start != expected or end < start:
             raise SplitError(
                 stored(
-                    "页码要从 1 开始、按顺序、不重叠：「{piece}」应该从第 {expected} 页开始",
+                    ("页码需从 1 开始、按顺序且不重叠：「{piece}」应从第 {expected} 页开始"),
                     piece=piece.strip(),
                     expected=expected,
                 )
             )
         ranges.append((start, end))
     if not ranges:
-        raise SplitError(stored("没有写页码"))
+        raise SplitError(stored("未填写页码"))
     return ranges
 
 

@@ -47,7 +47,7 @@ export function ExportButton({ ids, type, languages = defaultLanguages(), langua
     mutationFn: (mode: ExportMode) => exportDocuments(ids, mode, language),
     onSuccess: ({ blob, filename }) => {
       saveFile(blob, filename)
-      void message.success(t('已导出 {{filename}}（导出记录里可以重新下载）', { filename }))
+      void message.success(t('已导出 {{filename}}（可在导出记录中重新下载）', { filename }))
       void queryClient.invalidateQueries({ queryKey: ['exports'] })
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
@@ -55,10 +55,10 @@ export function ExportButton({ ids, type, languages = defaultLanguages(), langua
 
   const tooMany = ids.length > MAX_EXPORT
   const disabled = ids.length === 0 || tooMany
-  const title = tooMany ? t('一次最多导出 {{MAX_EXPORT}} 个', { MAX_EXPORT }) : undefined
+  const title = tooMany ? t('单次最多导出 {{MAX_EXPORT}} 份', { MAX_EXPORT }) : undefined
 
   const csv = { key: 'csv', label: t('导出为 CSV') }
-  const json = { key: 'json', label: t('导出为 JSON（给别的程序用）') }
+  const json = { key: 'json', label: t('导出为 JSON（供其他程序使用）') }
   // Column header language: remembered for later exports; selecting it does not export.
   const languageMenu: MenuProps['items'] =
     languages.length > 1
@@ -78,7 +78,7 @@ export function ExportButton({ ids, type, languages = defaultLanguages(), langua
   const onMenu = (key: string, other: () => void) => {
     if (key.startsWith('lang:')) {
       setLanguage(key.slice(5))
-      void message.info(t('导出的列名改用{{languageName}}', { languageName: languageName(key.slice(5)) }))
+      void message.info(t('导出列名已改为{{languageName}}', { languageName: languageName(key.slice(5)) }))
       return
     }
     other()
@@ -133,7 +133,7 @@ export function ExportButton({ ids, type, languages = defaultLanguages(), langua
         disabled={disabled}
         placement="bottomRight"
         menu={{
-          items: [{ key: 'summary', label: t('汇总到一个 Excel') }, csv, json, ...languageMenu],
+          items: [{ key: 'summary', label: t('汇总至一个 Excel') }, csv, json, ...languageMenu],
           onClick: ({ key }) =>
             onMenu(key, () => download.mutate(key === 'csv' || key === 'json' ? key : 'summary')),
         }}

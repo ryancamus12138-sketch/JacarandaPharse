@@ -29,7 +29,7 @@ export function useRows(documentId: string) {
         ? addRow(change.extractionId, change.table, change.after)
         : changeRow(change.extractionId, change.table, change.index, change.kind, change.reason),
     onSuccess: (_, change) => {
-      const done = { add: t('已加一行'), delete: t('已删除这一行'), restore: t('已恢复这一行') }
+      const done = { add: t('已添加一行'), delete: t('已删除此行'), restore: t('已恢复此行') }
       void message.success(done[change.kind])
       void queryClient.invalidateQueries({ queryKey: ['document', documentId] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })

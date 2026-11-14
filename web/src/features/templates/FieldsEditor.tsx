@@ -78,7 +78,7 @@ export function FieldsEditor({
     },
     {
       title: (
-        <Tooltip title={t('小写英文字母开头，只有小写字母、数字、下划线。存过之后不能改：旧文档、规则、导出都靠它对齐')}>
+        <Tooltip title={t('需以小写英文字母开头，只能包含小写字母、数字和下划线。保存后不可修改：已有文档、规则和导出均依赖其对齐')}>
           {t('字段 ID')}
         </Tooltip>
       ),
@@ -95,7 +95,7 @@ export function FieldsEditor({
     },
     {
       title: (
-        <Tooltip title={t('日期范围（2014-07-01 ~ 2014-07-31 这种）：模型照抄原文，系统拆成开始、结束；导出时可以选统一格式、原文或拆成两列')}>
+        <Tooltip title={t('日期范围（如 2014-07-01 ~ 2014-07-31）：模型照录原文，系统拆分为开始和结束日期；导出时可选择统一格式、原文或拆分为两列')}>
           {t('类型')}
         </Tooltip>
       ),
@@ -149,8 +149,8 @@ export function FieldsEditor({
     },
     {
       title: (
-        <Tooltip title={t('关掉 = 人工填（报销人、部门……）：不交给模型抽，审核时自己填')}>
-          {t('从单据抽')}
+        <Tooltip title={t('关闭即人工填写（如报销人、部门）：不由模型抽取，在审核时手动填写')}>
+          {t('从单据抽取')}
         </Tooltip>
       ),
       dataIndex: 'extract',
@@ -166,7 +166,7 @@ export function FieldsEditor({
     },
     {
       title: (
-        <Tooltip title={t('按别的字段算出来，不让模型去单据上找。点输入框右边的按钮选字段，例如 离店日期 − 入住日期、数量 × 单价、明细金额合计。只能是数字字段')}>
+        <Tooltip title={t('由其他字段计算得出，不由模型从单据中抽取。点击输入框右侧按钮选择字段，例如：离店日期 − 入住日期、数量 × 单价、明细金额合计。仅适用于数字字段')}>
           {t('公式')}
         </Tooltip>
       ),
@@ -181,14 +181,14 @@ export function FieldsEditor({
           tables={scope.tables}
           row={scope.row}
           self={f.name}
-          placeholder={t('不算')}
+          placeholder={t('不计算')}
           onChange={(compute) => update(i, { compute, ...(compute.trim() ? { type: 'number' as const } : {}) })}
         />
       ),
     },
     {
       title: (
-        <Tooltip title={t('发票号码、账单号这类：别的单据里有一样的值，就标黄提醒“可能重复报销”')}>
+        <Tooltip title={t('适用于发票号码、账单号等：其他单据中存在相同的值时标黄，提示“可能重复报销”')}>
           {t('不能重复')}
         </Tooltip>
       ),
@@ -204,7 +204,7 @@ export function FieldsEditor({
       ),
     },
     {
-      title: <Tooltip title={t('导出 Excel 时要不要这一列')}>{t('导出')}</Tooltip>,
+      title: <Tooltip title={t('导出 Excel 时是否包含此列')}>{t('导出')}</Tooltip>,
       dataIndex: 'export',
       width: 60,
       render: (_, f, i) => (
@@ -217,7 +217,7 @@ export function FieldsEditor({
       ),
     },
     {
-      title: <Tooltip title={t('证件号码这类敏感信息：打开后默认不导出')}>{t('敏感')}</Tooltip>,
+      title: <Tooltip title={t('证件号码等敏感信息：开启后默认不导出')}>{t('敏感')}</Tooltip>,
       dataIndex: 'sensitive',
       width: 60,
       render: (_, f, i) => (
@@ -230,7 +230,7 @@ export function FieldsEditor({
       ),
     },
     {
-      title: <Tooltip title={t('单据上的其他写法（Check-in、入住日期……），回车添加，会一起告诉模型')}>{t('别名')}</Tooltip>,
+      title: <Tooltip title={t('单据上的其他写法（如 Check-in、入住日期），按回车添加，并一并提供给模型')}>{t('别名')}</Tooltip>,
       dataIndex: 'aliases',
       width: 200,
       render: (_, f, i) => (
@@ -240,7 +240,7 @@ export function FieldsEditor({
           disabled={readOnly}
           open={false}
           suffixIcon={null}
-          placeholder={t('回车添加')}
+          placeholder={t('按回车添加')}
           onChange={(aliases: string[]) => update(i, { aliases })}
           style={{ width: '100%' }}
         />
@@ -248,7 +248,7 @@ export function FieldsEditor({
     },
     {
       title: (
-        <Tooltip title={t('只能填这几个值（如费用类别）：回车添加。抽到别的值会提醒；不写 = 不限')}>
+        <Tooltip title={t('允许的取值（如费用类别），按回车添加。抽取到其他值时提示；留空表示不限')}>
           {t('可选值')}
         </Tooltip>
       ),
@@ -287,7 +287,7 @@ export function FieldsEditor({
             value={f.description}
             disabled={readOnly}
             autoSize={{ minRows: 1, maxRows: 4 }}
-            placeholder={t('在单据哪里、长什么样、别和什么搞混')}
+            placeholder={t('在单据中的位置、格式特征，以及易混淆的内容')}
             onChange={(e) => update(i, { description: e.target.value })}
           />
         ),
@@ -317,7 +317,7 @@ export function FieldsEditor({
                   disabled={i === fields.length - 1}
                   onClick={() => move(i, 1)}
                 />
-                <Tooltip title={t('删掉「{{value}}」', { value: f.label || f.name })}>
+                <Tooltip title={t('删除「{{value}}」', { value: f.label || f.name })}>
                   <Button
                     size="small"
                     type="text"
@@ -349,7 +349,7 @@ export function FieldsEditor({
           onClick={() => onChange([...fields, blankField(fields)])}
           style={{ alignSelf: 'start' }}
         >
-          {t('加一个字段')}
+          {t('添加字段')}
         </Button>
       )}
     </Flex>

@@ -70,8 +70,8 @@ function choices(
 const AUTO: Record<string, string> = {
   get seq() { return t('序号') },
   get filename() { return t('文件名') },
-  get page() { return t('第几页') },
-  get row() { return t('明细第几行') },
+  get page() { return t('页码') },
+  get row() { return t('明细行号') },
   get uploaded_at() { return t('上传时间') },
   get processed_at() { return t('处理时间') },
   get reviewed_at() { return t('审核时间') },
@@ -103,17 +103,17 @@ export function StructureCard({
   const labels = labelsOf(shape)
   const editable = !readOnly && onChangeRef !== undefined
   return (
-    <Card size="small" title={t('Excel 结构（从 Excel 建的）')}>
+    <Card size="small" title={t('Excel 结构（从 Excel 创建）')}>
       <Flex vertical gap={12}>
         <Typography.Text type="secondary">
-          {t('导出时按原表「{{filename}}」填。每一列填什么可以在这里改，随模板一起保存；上面删掉的字段，导出时那一列留空。', { filename: template.workbook?.filename ?? '—' })}
+          {t('导出时按原表「{{filename}}」填写。可在此修改每列的填充内容，并随模板一同保存；上方已删除的字段，导出时对应列留空。', { filename: template.workbook?.filename ?? '—' })}
         </Typography.Text>
         {template.workbook?.sheets.map((s) => (
           <Flex key={s.name} vertical gap={4}>
             <Flex gap={8} align="center" wrap>
               <Typography.Text strong>{s.name}</Typography.Text>
               <Tag color={ROLE_TEXT[s.role].color}>{ROLE_TEXT[s.role].label}</Tag>
-              {s.same_as && <Typography.Text type="secondary">{t('和「{{same_as}}」一样', { same_as: s.same_as })}</Typography.Text>}
+              {s.same_as && <Typography.Text type="secondary">{t('与「{{same_as}}」相同', { same_as: s.same_as })}</Typography.Text>}
             </Flex>
             {s.columns.length > 0 && !s.same_as && !editable && (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -151,7 +151,7 @@ export function StructureCard({
           </Flex>
         ))}
         {(template.entities ?? []).length > 0 && (
-          <Descriptions size="small" column={1} title={t('对象（几份单据按编号合并）')}>
+          <Descriptions size="small" column={1} title={t('对象（多份单据按编号合并）')}>
             {template.entities?.map((e) => (
               <Descriptions.Item key={e.name} label={e.label}>
                 {t('编号：{{key}}；包括 {{fields}}', { key: labels[e.key] ?? e.key, fields: e.fields.map((f) => labels[f] ?? f).join(t('、')) })}
@@ -165,7 +165,7 @@ export function StructureCard({
               <Descriptions.Item key={r.name} label={r.label}>
                 {t('{{row_count}} 行，列：', { row_count: r.row_count })}{r.columns.join(t('、'))}
                 {r.match_field
-                  ? t('；拿「{{value}}」到「{{match_column}}」里对照', { value: labels[r.match_field] ?? r.match_field, match_column: r.match_column })
+                  ? t('；用「{{value}}」在「{{match_column}}」中对照', { value: labels[r.match_field] ?? r.match_field, match_column: r.match_column })
                   : t('；不对照')}
               </Descriptions.Item>
             ))}

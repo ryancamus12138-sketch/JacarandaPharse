@@ -45,13 +45,13 @@ type Point = [number, number]
 
 /** Box color by origin. Illegible boxes are grey and dashed. */
 const ORIGIN: Record<DetBox['origin'], { name: string; color: string }> = {
-  ocr: { get name() { return t('OCR 认的') }, color: '#1677ff' },
-  sample: { get name() { return t('审核时改对的') }, color: '#52c41a' },
-  missed: { get name() { return t('审核时框的漏认') }, color: '#fa8c16' },
-  manual: { get name() { return t('这里画的') }, color: '#722ed1' },
+  ocr: { get name() { return t('OCR 识别') }, color: '#1677ff' },
+  sample: { get name() { return t('审核时更正') }, color: '#52c41a' },
+  missed: { get name() { return t('审核时框选的漏识别') }, color: '#fa8c16' },
+  manual: { get name() { return t('手动绘制') }, color: '#722ed1' },
 }
 const HISTORY = 50
-const DONE = { get confirm() { return t('确认了这一页') }, get exclude() { return t('这一页不用了') }, get reopen() { return t('改回没确认') } } as const
+const DONE = { get confirm() { return t('已确认此页') }, get exclude() { return t('已排除此页') }, get reopen() { return t('已恢复为未确认') } } as const
 const HANDLE = 2.5
 /**
  * Corner handle radius: 1/600 of the longer image side times this factor (scaled with the image so it looks
@@ -105,7 +105,7 @@ export function DetEditorPage() {
         <Link to="/ocr-samples?tab=det">
           <ArrowLeftOutlined />{' '}{t('检测样本')}
         </Link>
-        <Alert type="error" showIcon title={t('这一页打不开')} description={errorText(detail.error)} />
+        <Alert type="error" showIcon title={t('无法打开此页')} description={errorText(detail.error)} />
       </Flex>
     )
   }
@@ -180,7 +180,7 @@ function DetEditor({ page, documentId, pageNo }: { page: DetPage; documentId: st
     onSuccess: (saved: DetPage, action) => {
       setDirty(false)
       void message.success(
-        action ? DONE[action] : t('保存了'),
+        action ? DONE[action] : t('已保存'),
       )
       void queryClient.invalidateQueries({ queryKey: ['det-pages'] })
       queryClient.setQueryData(['det-page', documentId, pageNo], saved)
@@ -290,7 +290,7 @@ function DetEditor({ page, documentId, pageNo }: { page: DetPage; documentId: st
     if (!next) return
     const go = () => navigate(`/ocr-samples/det/${next.document_id}/${next.page}`)
     if (dirty) {
-      modal.confirm({ title: t('这一页还没保存'), content: t('不保存就去下一页？'), okText: t('不保存，去下一页'), onOk: go })
+      modal.confirm({ title: t('此页尚未保存'), content: t('不保存并前往下一页？'), okText: t('不保存，前往下一页'), onOk: go })
     } else {
       go()
     }
@@ -312,9 +312,9 @@ function DetEditor({ page, documentId, pageNo }: { page: DetPage; documentId: st
             {t('{{filename}} 第 {{pageNo}} 页', { filename: page.filename, pageNo })}
           </Typography.Text>
           <Tag color={DET_STATUS[status].color}>{DET_STATUS[status].name}</Tag>
-          {dirty && <Tag color="red">{t('没保存')}</Tag>}
+          {dirty && <Tag color="red">{t('未保存')}</Tag>}
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t('{{length}} 个框', { length: boxes.length })}{revision ? t('，第 {{revision}} 次修改', { revision }) : t('（预标注，还没存）')}
+            {t('{{length}} 个框', { length: boxes.length })}{revision ? t('，第 {{revision}} 次修改', { revision }) : t('（预标注，未保存）')}
           </Typography.Text>
         </Space>
         <Space wrap>
@@ -326,9 +326,9 @@ function DetEditor({ page, documentId, pageNo }: { page: DetPage; documentId: st
           </Tooltip>
           {!locked && (
             <>
-              <Tooltip title={t('在图上拖一个矩形（快捷键 N）')}>
+              <Tooltip title={t('在图上拖动绘制矩形（快捷键 N）')}>
                 <Button icon={<BorderOutlined />} type={drawing ? 'primary' : 'default'} onClick={() => setDrawing((d) => !d)}>
-                  {t('画新框')}
+                  {t('绘制新框')}
                 </Button>
               </Tooltip>
               <Tooltip title={t('撤销（Ctrl/⌘ + Z）')}>
@@ -338,11 +338,11 @@ function DetEditor({ page, documentId, pageNo }: { page: DetPage; documentId: st
                 {t('保存')}
               </Button>
               <Button icon={<StopOutlined />} loading={save.isPending && save.variables === 'exclude'} onClick={() => save.mutate('exclude')}>
-                {t('不用这一页')}
+                {t('排除此页')}
               </Button>
-              <Tooltip title={t('框都调好了：确认后才会导出（PPOCRLabel 的确认）')}>
+              <Tooltip title={t('文本框调整完毕后确认，确认后方可导出（同 PPOCRLabel 的确认）')}>
                 <Button type="primary" icon={<CheckOutlined />} loading={save.isPending && save.variables === 'confirm'} onClick={() => save.mutate('confirm')}>
-                  {t('确认这一页')}
+                  {t('确认此页')}
                 </Button>
               </Tooltip>
             </>
@@ -353,7 +353,7 @@ function DetEditor({ page, documentId, pageNo }: { page: DetPage; documentId: st
             </Button>
           )}
           <Button icon={<RightOutlined />} disabled={!next} onClick={goNext}>
-            {t('下一页')}{todo.length ? t('（还有 {{value}}）', { value: todo.length - (todo.some((p) => p.document_id === documentId && p.page === pageNo) ? 1 : 0) }) : ''}
+            {t('下一页')}{todo.length ? t('（剩余 {{value}}）', { value: todo.length - (todo.some((p) => p.document_id === documentId && p.page === pageNo) ? 1 : 0) }) : ''}
           </Button>
         </Space>
       </Flex>
@@ -420,7 +420,7 @@ function DetEditor({ page, documentId, pageNo }: { page: DetPage; documentId: st
                         begin(e, { kind: 'move', index: i, start: toImage(e), original: b.points as Point[] })
                       }}
                     >
-                      <title>{b.ignore ? t('看不清（###）') : b.text}</title>
+                      <title>{b.ignore ? t('无法辨认（###）') : b.text}</title>
                     </polygon>
                   )
                 })}
@@ -469,7 +469,7 @@ function DetEditor({ page, documentId, pageNo }: { page: DetPage; documentId: st
                 }}
                 value={current.text}
                 disabled={locked || current.ignore}
-                placeholder={t('图上原样的文字（一个字都不改）')}
+                placeholder={t('与图像完全一致的文字（逐字照录）')}
                 onChange={(e) => update(selected!, { text: e.target.value })}
               />
               <Checkbox
@@ -477,17 +477,17 @@ function DetEditor({ page, documentId, pageNo }: { page: DetPage; documentId: st
                 disabled={locked}
                 onChange={(e) => update(selected!, { ignore: e.target.checked })}
               >
-                {t('看不清（导出成 ###，不参与训练）')}
+                {t('无法辨认（导出为 ###，不参与训练）')}
               </Checkbox>
               {!locked && (
                 <Button danger icon={<DeleteOutlined />} onClick={removeSelected}>
-                  {t('删掉这个框（Delete）')}
+                  {t('删除此框（Delete）')}
                 </Button>
               )}
             </Flex>
           ) : (
             <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-              {t('点一个框改字；拖框整体移动，拖红色圆点改形状。漏了的字点"画新框"（N）补上， 框错了的按 Delete 删掉。看不清的勾"看不清"。每一行字一个框，框贴着字。')}
+              {t('点击文本框可编辑文字；拖动文本框可整体移动，拖动红色圆点可调整形状。遗漏的文字通过“绘制新框”（N）补充，错误的框按 Delete 删除，无法辨认的勾选“无法辨认”。每行文字对应一个框，框应紧贴文字。')}
             </Typography.Text>
           )}
           <Flex gap={6} wrap>
@@ -499,7 +499,7 @@ function DetEditor({ page, documentId, pageNo }: { page: DetPage; documentId: st
           </Flex>
           <div style={{ flex: 1, overflow: 'auto', background: '#fff', borderRadius: 8 }}>
             {boxes.length === 0 ? (
-              <Empty description={t('这一页还没有框')} style={{ padding: 24 }} />
+              <Empty description={t('此页暂无文本框')} style={{ padding: 24 }} />
             ) : (
               <List
                 size="small"
@@ -515,7 +515,7 @@ function DetEditor({ page, documentId, pageNo }: { page: DetPage; documentId: st
                       ellipsis
                       style={{ maxWidth: 280, color: !b.ignore && !b.text.trim() ? '#f5222d' : undefined }}
                     >
-                      {i + 1}. {b.ignore ? t('看不清') : b.text || t('（还没填字）')}
+                      {i + 1}. {b.ignore ? t('无法辨认') : b.text || t('（未填写文字）')}
                     </Typography.Text>
                   </List.Item>
                 )}

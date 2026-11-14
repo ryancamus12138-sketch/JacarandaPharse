@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from jacara.core.i18n import N_, tr
 
-NOT_BUILT = N_("网页还没有打包。在项目里运行：cd web && npm install && npm run build，然后重启。")
+NOT_BUILT = N_("网页尚未构建。请在项目目录运行：cd web && npm install && npm run build，然后重启。")
 
 _IMMUTABLE = "public, max-age=31536000, immutable"
 """File names in assets/ carry a content hash (index-3f2a.js) that changes with the content, so
@@ -37,7 +37,7 @@ def mount_web(app: FastAPI, dist: Path) -> None:
     @app.get("/{path:path}", include_in_schema=False)
     def web(path: str) -> Response:
         if path == "api" or path.startswith("api/"):
-            raise HTTPException(status.HTTP_404_NOT_FOUND, tr("没有这个接口"))
+            raise HTTPException(status.HTTP_404_NOT_FOUND, tr("接口不存在"))
 
         index = root / "index.html"
         if not index.is_file():

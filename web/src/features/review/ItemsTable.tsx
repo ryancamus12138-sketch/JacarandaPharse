@@ -87,9 +87,9 @@ export function ItemsTable({
   /** Row menu shared by the ⋯ button and right-click. */
   const menuFor = (row: TableRow): MenuProps => ({
     items: row.deleted
-      ? [{ key: 'restore', icon: <UndoOutlined />, label: t('恢复这一行') }]
+      ? [{ key: 'restore', icon: <UndoOutlined />, label: t('恢复此行') }]
       : [
-          { key: 'confirm', icon: <CheckOutlined />, label: t('确认这一行') },
+          { key: 'confirm', icon: <CheckOutlined />, label: t('确认此行') },
           { type: 'divider' },
           { key: 'above', icon: <VerticalAlignTopOutlined />, label: t('在上方插入一行') },
           {
@@ -98,7 +98,7 @@ export function ItemsTable({
             label: t('在下方插入一行（⌘/Ctrl + Enter）'),
           },
           { type: 'divider' },
-          { key: 'delete', icon: <DeleteOutlined />, label: t('删除这一行'), danger: true },
+          { key: 'delete', icon: <DeleteOutlined />, label: t('删除此行'), danger: true },
         ],
     onClick: ({ key }) => {
       if (key === 'above') onAddRow(above(row))
@@ -124,7 +124,7 @@ export function ItemsTable({
       <Flex justify="space-between" align="center">
         <Typography.Text strong>
           {pending > 0
-            ? t('{{tableLabel}}（{{length}} 行，{{pending}} 格等你确认）', { tableLabel: tableLabel(table), length: live.length, pending })
+            ? t('{{tableLabel}}（{{length}} 行，{{pending}} 格待确认）', { tableLabel: tableLabel(table), length: live.length, pending })
             : t('{{tableLabel}}（{{length}} 行）', { tableLabel: tableLabel(table), length: live.length })}
         </Typography.Text>
         {canEdit && (
@@ -132,8 +132,8 @@ export function ItemsTable({
             {pending > 0 && (
               // Shown only while cells are flagged; hidden once everything is handled.
               <Popconfirm
-                title={t('确认这张表里 {{pending}} 格标黄的都是对的？', { pending })}
-                description={t('不用一格一格点。每格都会记一条确认记录。')}
+                title={t('确认此表中 {{pending}} 个标黄单元格均正确？', { pending })}
+                description={t('无需逐格确认。每个单元格都会记录一条确认记录。')}
                 okText={t('全部确认')}
                 cancelText={t('取消')}
                 onConfirm={() => onConfirm(pendingIds)}
@@ -149,7 +149,7 @@ export function ItemsTable({
               icon={<PlusOutlined />}
               onClick={() => onAddRow(null)}
             >
-              {t('加一行')}
+              {t('添加行')}
             </Button>
           </Flex>
         )}
@@ -293,7 +293,7 @@ export function ItemsTable({
           <Tag color="purple" style={{ marginInlineEnd: 4 }}>
             {t('人工')}
           </Tag>
-          {t('新加的行先是空的：选中一格，再在原图上点文字填入，或者直接输入。')}
+          {t('新增的行为空行：选中单元格后点击原图上的文字填入，或直接输入。')}
         </Typography.Text>
       )}
     </div>

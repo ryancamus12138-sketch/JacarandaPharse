@@ -340,8 +340,8 @@ def test_export_preview_and_zip(client, factory, document_id):
     assert preview["included"] == 2
     assert preview["categories"] == {"rec_error": 1, "correct": 1}
     assert {e["reason"]: e["count"] for e in preview["excluded"]} == {
-        "同一张图有两种写法": 2,
-        "撤回了": 1,
+        "同一图像存在两种转写": 2,
+        "已撤回": 1,
     }
     only = client.get("/api/v1/ocr-samples/export/preview", params={"category": "correct"})
     assert only.json()["included"] == 1
@@ -390,7 +390,7 @@ def test_export_preview_and_zip(client, factory, document_id):
     for row in rows:  # Every path resolves to an image that opens.
         Image.open(io.BytesIO(archive.read(row["image"]))).verify()
     readme = archive.read("README.md").decode("utf-8")
-    assert "同一张图有两种写法：2 条" in readme and "label_file_list" in readme
+    assert "同一图像存在两种转写：2 条" in readme and "label_file_list" in readme
     everything = b"".join(archive.read(n) for n in names)
     assert b"receipt.png" not in everything  # Real file names are not included.
     with session_scope(factory) as session:
@@ -405,7 +405,7 @@ def test_same_image_same_text_is_exported_once(client, document_id):
     pick(client, v["change"], CHANGE_LINE, "1.00")
     preview = client.get("/api/v1/ocr-samples/export/preview").json()
     assert preview["included"] == 1
-    assert preview["excluded"] == [{"reason": "同一张图重复，只留一份", "count": 1}]
+    assert preview["excluded"] == [{"reason": "同一图像重复，仅保留一份", "count": 1}]
 
 
 def test_nothing_to_export(client, document_id):
@@ -503,7 +503,7 @@ def test_backfill_collects_old_edits_as_pending(client, factory, document_id):
 
     result = client.post("/api/v1/ocr-samples/backfill").json()
     assert result["created"] == 2
-    assert any("手打" in s["reason"] for s in result["skipped"])
+    assert any("手动输入" in s["reason"] for s in result["skipped"])
     pending = samples(client, status="pending")["items"]
     assert {s["kind"] for s in pending} == {"line", "box"}
     assert all(s["origin"] == "backfill" for s in pending)
@@ -519,7 +519,7 @@ def test_backfill_collects_old_edits_as_pending(client, factory, document_id):
 
     # Unverified samples cannot be exported.
     preview = client.get("/api/v1/ocr-samples/export/preview").json()
-    assert any("还没复核" in e["reason"] for e in preview["excluded"])
+    assert any("尚未复核" in e["reason"] for e in preview["excluded"])
 
     # Verification: correct to the actual text on the image and approve.
     fixed = client.patch(
@@ -569,7 +569,7 @@ def test_confirmed_lines_are_collected_for_review(client, factory, document_id):
         texts = archive.read("corpus/real_text.txt").decode("utf-8").splitlines()
         readme = archive.read("README.md").decode("utf-8")
     assert "9.00" in texts
-    assert "至少 5000 行" in readme and "10:1 到 5:1" in readme
+    assert "至少 5000 行" in readme and "10:1 至 5:1" in readme
 
 
 def test_hard_characters_come_from_misread_samples():

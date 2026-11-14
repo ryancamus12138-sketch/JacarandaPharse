@@ -348,7 +348,7 @@ def test_reprocess_keeps_old_run_and_suggests(client, factory, storage, receipt_
     body = detail(client, document_id)
     assert body["current_run"] == 2 and body["viewing_run"] == 2
     assert [r["run"] for r in body["runs"]] == [2, 1]
-    assert body["runs"][0]["reason"] == "模板改了"
+    assert body["runs"][0]["reason"] == "模板已修改"
     assert values(body)["total"]["suggestion"] == {"action": "confirm", "value": "9.0", "run": 1}
     assert body["suggestions"] == 1
 
@@ -514,7 +514,7 @@ def test_used_template_is_hidden_not_removed(client, factory, storage, receipt_p
     assert body["extractions"][0]["template_title"] == "我的收据"
     assert values(body)["total"]["label"] == "合计"
     redo = client.post(f"/api/v1/documents/{document_id}/reprocess", json={"reason": "bad_result"})
-    assert redo.status_code == 422 and "已经删除" in redo.json()["detail"]
+    assert redo.status_code == 422 and "已删除" in redo.json()["detail"]
 
 
 def test_generic_starters_have_no_regional_rules():
@@ -569,7 +569,7 @@ def test_my_templates_rules_follow_fields_and_countries(client, mine):
     assert labelled["tags"] == ["2026-10 出差", "财务部"]
     assert labelled["countries"] == ["AU", "NZ"] and labelled["version"] == version
     bad = client.patch(f"/api/v1/templates/{mine}/labels", json={"countries": ["China"]})
-    assert bad.status_code == 422 and "两个字母" in bad.json()["detail"]
+    assert bad.status_code == 422 and "两位字母" in bad.json()["detail"]
 
     # Only name and tags changed: no new version.
     again = client.put(

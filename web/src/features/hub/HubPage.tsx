@@ -72,7 +72,7 @@ import { t } from '../../i18n'
 
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }
 const SPLITS: DatasetSplit[] = ['train', 'val', 'test', 'all']
-const DATASET_KINDS: Record<DatasetKind, string> = { get ocr_rec() { return t('识别（单行小图）') }, get ocr_det() { return t('检测（整页图和框）') } }
+const DATASET_KINDS: Record<DatasetKind, string> = { get ocr_rec() { return t('识别（单行图像）') }, get ocr_det() { return t('检测（整页图像及文本框）') } }
 const EVIDENCE_COLOR = { process: 'orange', thin: 'gold', trend: 'green' } as const
 
 function errorText(err: unknown): string {
@@ -229,7 +229,7 @@ function ImportModelDialog({
             value={name}
             onChange={setName}
             options={models.map((m) => ({ value: m.name, label: t('{{name}}（{{kind_label}}）', { name: m.name, kind_label: m.kind_label }) }))}
-            placeholder={t('模型名：字母、数字、._-，例如 receipt-rec')}
+            placeholder={t('模型名称：字母、数字及 ._-，例如 receipt-rec')}
             disabled={Boolean(target?.name)}
           />
           {mode === 'files' && (
@@ -244,47 +244,47 @@ function ImportModelDialog({
         </Flex>
         {lockedKind && (
           <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-            {t('{{trim}} 已经有版本了，这次会成为它的下一个版本，种类跟着它（{{value}}）。', { trim: name.trim(), value: kinds[lockedKind] })}
+            {t('{{trim}} 已有版本，本次导入将作为其下一个版本，并沿用其种类（{{value}}）。', { trim: name.trim(), value: kinds[lockedKind] })}
           </Typography.Text>
         )}
         {mode === 'files' ? (
           <>
-            {picker(suffix, weights, setWeights, t('把权重文件（{{suffix}}）拖到这里，或点一下选择', { suffix }))}
+            {picker(suffix, weights, setWeights, t('拖入权重文件（{{suffix}}），或点击选择', { suffix }))}
             {effectiveKind === 'ocr_rec' &&
-              picker('.txt', dictFile, setDictFile, t('识别字典（.txt，一行一个字）：模型自带字符表时不用传'))}
+              picker('.txt', dictFile, setDictFile, t('识别字典（.txt，每行一个字符）：模型已内置字符表时无需提供'))}
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t('只收 ONNX 和 GGUF。PaddleOCR 训练出来的 Paddle 模型，先在外面用 PaddleOCR 官方的')}
-              <Typography.Text code>paddlex --paddle2onnx</Typography.Text>{t('转成 ONNX。')}
+              {t('支持 ONNX 和 GGUF 格式。PaddleOCR 训练得到的 Paddle 推理模型需先使用官方工具')}
+              <Typography.Text code>paddlex --paddle2onnx</Typography.Text>{t('转换为 ONNX。')}
             </Typography.Text>
           </>
         ) : (
-          picker('.zip', archive, setArchive, t('把模型库导出的 zip 拖到这里（里面有模型卡 README.md）'))
+          picker('.zip', archive, setArchive, t('拖入模型库导出的 zip 文件（包含模型卡 README.md）'))
         )}
         <Flex gap={8} wrap>
           <Input
             style={{ flex: 1, minWidth: 200 }}
             value={baseModel}
             onChange={(e) => setBaseModel(e.target.value)}
-            placeholder={t('从哪个模型微调来的（可不填），例如 PP-OCRv6_rec_small')}
+            placeholder={t('基础模型（选填），例如 PP-OCRv6_rec_small')}
           />
           <Input
             style={{ width: 160 }}
             value={license}
             onChange={(e) => setLicense(e.target.value)}
-            placeholder={t('许可，例如 apache-2.0')}
+            placeholder={t('许可证，例如 apache-2.0')}
           />
         </Flex>
         <Select
           mode="tags"
           value={datasets}
           onChange={setDatasets}
-          placeholder={t('训练用了哪些数据集（可不填）')}
+          placeholder={t('训练数据集（选填）')}
           options={datasetNames.map((d) => ({ value: d, label: d }))}
         />
         <Input.TextArea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder={t('说明：怎么训练的、改了什么、要注意什么（写进模型卡）')}
+          placeholder={t('说明：训练方法、改动内容及注意事项（写入模型卡）')}
           autoSize={{ minRows: 2, maxRows: 6 }}
           maxLength={5000}
         />
@@ -334,13 +334,13 @@ function CardDialog({
       confirmLoading={save.isPending}
     >
       <Flex vertical gap={10}>
-        <Input value={baseModel} onChange={(e) => setBaseModel(e.target.value)} placeholder={t('基础模型：从哪个模型微调来的')} />
-        <Input value={license} onChange={(e) => setLicense(e.target.value)} placeholder={t('许可，例如 apache-2.0')} />
+        <Input value={baseModel} onChange={(e) => setBaseModel(e.target.value)} placeholder={t('基础模型（微调起点）')} />
+        <Input value={license} onChange={(e) => setLicense(e.target.value)} placeholder={t('许可证，例如 apache-2.0')} />
         <Select
           mode="tags"
           value={datasets}
           onChange={setDatasets}
-          placeholder={t('训练用的数据集')}
+          placeholder={t('训练数据集')}
           options={datasetNames.map((d) => ({ value: d, label: d }))}
         />
         <Input.TextArea
@@ -357,10 +357,10 @@ function CardDialog({
 function checksText(checks: Record<string, unknown>): string {
   const parts: string[] = []
   if (checks.format === 'gguf') parts.push(`GGUF v${String(checks.gguf_version)}`)
-  if (checks.format === 'onnx') parts.push(t('ONNX，onnxruntime 能加载'))
+  if (checks.format === 'onnx') parts.push(t('ONNX，可由 onnxruntime 加载'))
   if (typeof checks.characters === 'number') {
-    const from = checks.dict_source === 'model' ? t('模型自带') : t('字典文件')
-    parts.push(t('字符表 {{characters}} 个字（{{from}}）', { characters: checks.characters, from }))
+    const from = checks.dict_source === 'model' ? t('模型内置') : t('字典文件')
+    parts.push(t('字符表 {{characters}} 个字符（{{from}}）', { characters: checks.characters, from }))
   }
   if (typeof checks.classes === 'number') parts.push(t('输出 {{classes}} 类', { classes: checks.classes }))
   if (typeof checks.dict_note === 'string') parts.push(checks.dict_note)
@@ -400,7 +400,7 @@ function ModelsTab({ canManage, datasetNames }: { canManage: boolean; datasetNam
           <Typography.Text strong>v{v.version}</Typography.Text>
           {v.in_use && (
             <Tag color="green" icon={<CheckCircleOutlined />}>
-              {t('在用')}
+              {t('使用中')}
             </Tag>
           )}
         </Space>
@@ -470,15 +470,15 @@ function ModelsTab({ canManage, datasetNames }: { canManage: boolean; datasetNam
             width: 130,
             render: (_: unknown, v: ModelVersion) => (
               <Space size={4} wrap>
-                <Tooltip title={t('打包成 zip（权重 + 模型卡），拿到另一台电脑上导入')}>
+                <Tooltip title={t('导出为 zip（权重及模型卡），用于在其他计算机上导入')}>
                   <Button size="small" icon={<DownloadOutlined />} onClick={() => download.mutate({ name: model.name, version: v.version })} />
                 </Tooltip>
-                <Tooltip title={t('改模型卡')}>
+                <Tooltip title={t('编辑模型卡')}>
                   <Button size="small" icon={<EditOutlined />} onClick={() => setEditing({ model, version: v })} />
                 </Tooltip>
                 <Popconfirm
-                  title={t('删掉 {{name}} v{{version}}？', { name: model.name, version: v.version })}
-                  description={t('文件会从 models/hub 里删掉，不能恢复。')}
+                  title={t('删除 {{name}} v{{version}}？', { name: model.name, version: v.version })}
+                  description={t('文件将从 models/hub 中删除，且无法恢复。')}
                   okText={t('删除')}
                   okButtonProps={{ danger: true }}
                   disabled={v.in_use}
@@ -497,8 +497,8 @@ function ModelsTab({ canManage, datasetNames }: { canManage: boolean; datasetNam
     <Flex vertical gap={12}>
       <Flex justify="space-between" align="center" gap={8} wrap>
         <Typography.Text type="secondary">
-          {t('模型文件在本机的 models/hub/ 里，每个版本一个文件夹、一张模型卡。要用哪个版本，去')}{' '}
-          <Link to="/settings/models">{t('设置 → 模型')}</Link>{' '}{t('里选（模型库里的版本都在下拉里）。')}
+          {t('模型文件存放在本机 models/hub/ 目录，每个版本对应一个子目录和一张模型卡。启用版本请在')}{' '}
+          <Link to="/settings/models">{t('设置 → 模型')}</Link>{' '}{t('中选择（模型库中的全部版本均列在下拉列表中）。')}
         </Typography.Text>
         {canManage && (
           <Button type="primary" icon={<CloudUploadOutlined />} onClick={() => setImporting({})}>
@@ -510,14 +510,14 @@ function ModelsTab({ canManage, datasetNames }: { canManage: boolean; datasetNam
         <Alert
           type="info"
           showIcon
-          title={t('.env 里指定了：{{kinds}}。这几种在网页上换不了。', {
+          title={t('.env 中已指定：{{kinds}}。这些模型无法在网页中更换。', {
             kinds: data.env_locked.map((k) => data.kinds[k as ModelKind] ?? k).join(t('、')),
           })}
         />
       )}
-      {models.isError && <Alert type="error" showIcon title={t('模型库读不出来')} description={errorText(models.error)} />}
+      {models.isError && <Alert type="error" showIcon title={t('无法读取模型库')} description={errorText(models.error)} />}
       {data && data.models.length === 0 && (
-        <Empty description={t('模型库是空的。训练好的 OCR 模型（ONNX）、大模型（GGUF）都可以导入进来。')} />
+        <Empty description={t('模型库为空。支持导入 OCR 文字检测、文字识别和表格结构模型（ONNX），以及大模型和视觉模型（GGUF）。')} />
       )}
       {data?.models.map((model) => (
         <Card
@@ -570,8 +570,8 @@ function ImportDatasetDialog({ open, onClose }: { open: boolean; onClose: () => 
       const skipped = Object.values(d.problems).reduce((a, b) => a + b, 0)
       void message.success(
         skipped
-          ? t('已存进数据集库：{{name}} v{{version}}，跳过了 {{skipped}} 行', { name: d.name, version: d.version, skipped })
-          : t('已存进数据集库：{{name}} v{{version}}', { name: d.name, version: d.version }),
+          ? t('已保存到数据集库：{{name}} v{{version}}，跳过 {{skipped}} 行', { name: d.name, version: d.version, skipped })
+          : t('已保存到数据集库：{{name}} v{{version}}', { name: d.name, version: d.version }),
       )
       void queryClient.invalidateQueries({ queryKey: ['hub-datasets'] })
       onClose()
@@ -607,7 +607,7 @@ function ImportDatasetDialog({ open, onClose }: { open: boolean; onClose: () => 
           onChange={(e) => setKind(e.target.value as DatasetKind)}
           options={(Object.keys(DATASET_KINDS) as DatasetKind[]).map((k) => ({ value: k, label: DATASET_KINDS[k] }))}
         />
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('名字，例如 收据识别。同名再传一次版本号加 1')} maxLength={64} />
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('名称，例如“收据识别”；再次上传同名数据集时版本号加 1')} maxLength={64} />
         <Upload.Dragger
           accept=".zip"
           multiple={false}
@@ -625,18 +625,18 @@ function ImportDatasetDialog({ open, onClose }: { open: boolean; onClose: () => 
               {t('{{name}}（{{formatBytes}}）', { name: file.name, formatBytes: formatBytes(file.size) })}
             </Typography.Text>
           ) : (
-            <Typography.Text>{t('把 zip 拖到这里（最大 1 GB）')}</Typography.Text>
+            <Typography.Text>{t('拖入 zip 文件（最大 1 GB）')}</Typography.Text>
           )}
         </Upload.Dragger>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {kind === 'ocr_rec'
-            ? t('认 PaddleOCR / PaddleX 的识别标注：rec_gt_train.txt、rec_gt_val.txt、rec_gt_test.txt，train.txt、val.txt，或 PPOCRLabel 导出的 rec_gt.txt。每行：图片路径、Tab、文字。')
-            : t('认 PaddleOCR / PaddleX 的检测标注：det_gt_train.txt、det_gt_val.txt、det_gt_test.txt，train.txt、val.txt，或 PPOCRLabel 的 Label.txt。每行：图片路径、Tab、框的 JSON。')}
+            ? t('支持 PaddleOCR / PaddleX 识别标注格式：rec_gt_train.txt、rec_gt_val.txt、rec_gt_test.txt、train.txt、val.txt，或 PPOCRLabel 导出的 rec_gt.txt。每行格式：图片路径、Tab、文字。')
+            : t('支持 PaddleOCR / PaddleX 检测标注格式：det_gt_train.txt、det_gt_val.txt、det_gt_test.txt、train.txt、val.txt，或 PPOCRLabel 的 Label.txt。每行格式：图片路径、Tab、文本框 JSON。')}
         </Typography.Text>
         <Input.TextArea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder={t('数据集卡：从哪来、怎么标的、要注意什么')}
+          placeholder={t('数据集卡：数据来源、标注方法及注意事项')}
           autoSize={{ minRows: 2, maxRows: 6 }}
           maxLength={5000}
         />
@@ -702,7 +702,7 @@ function DatasetsTab({
       ),
     },
     {
-      title: t('各边'),
+      title: t('划分'),
       key: 'counts',
       render: (_, d) => (
         <Flex vertical gap={0}>
@@ -748,7 +748,7 @@ function DatasetsTab({
           {canChange && (
             <Popconfirm
               title={t('删除 {{name}} v{{version}}？', { name: d.name, version: d.version })}
-              description={t('用它做的评测也会一起删掉。')}
+              description={t('基于此数据集的评测记录将一并删除。')}
               okText={t('删除')}
               okButtonProps={{ danger: true }}
               onConfirm={() => remove.mutate(d.id)}
@@ -764,7 +764,7 @@ function DatasetsTab({
     <Flex vertical gap={12}>
       <Flex justify="space-between" align="center" gap={8} wrap>
         <Typography.Text type="secondary">
-          {t('数据集是你的业务数据（单据上的图和字），存在本机的对象存储里，备份里有它。OCR 样本页、检测样本页的导出可以直接存进来。')}
+          {t('数据集由业务单据的图像及其标注组成，存储在本机对象存储中，并包含在系统备份内。「OCR 样本」中识别样本和检测样本的导出可直接保存为数据集。')}
         </Typography.Text>
         {canChange && (
           <Button type="primary" icon={<CloudUploadOutlined />} onClick={() => setImporting(true)}>
@@ -780,7 +780,7 @@ function DatasetsTab({
         dataSource={datasets}
         scroll={{ x: 900 }}
         pagination={false}
-        locale={{ emptyText: <Empty description={t('还没有数据集')} /> }}
+        locale={{ emptyText: <Empty description={t('暂无数据集')} /> }}
       />
       {importing && <ImportDatasetDialog open onClose={() => setImporting(false)} />}
     </Flex>
@@ -822,14 +822,14 @@ function EvalDialog({
   const effectiveSplit = split && splits.includes(split) ? split : splits.includes('val') ? 'val' : splits[0]
   const slot: ModelKind = chosen?.kind === 'ocr_det' ? 'ocr_det' : 'ocr_rec'
   const options = [
-    { value: 'current', label: t('现在用的') },
-    { value: 'builtin', label: t('RapidOCR 自带的') },
+    { value: 'current', label: t('当前使用') },
+    { value: 'builtin', label: t('RapidOCR 内置模型') },
     ...models
       .filter((m) => m.kind === slot)
       .flatMap((m) =>
         m.versions.map((v) => ({
           value: refValue({ source: 'hub', name: m.name, version: v.version }),
-          label: `${m.name} v${v.version}` + (v.in_use ? t('（在用）') : ''),
+          label: `${m.name} v${v.version}` + (v.in_use ? t('（使用中）') : ''),
         })),
       ),
   ]
@@ -838,7 +838,7 @@ function EvalDialog({
   const submit = useMutation({
     mutationFn: () => createEval({ dataset_id: datasetId!, split: effectiveSplit!, a: parseRef(a), b: parseRef(b!) }),
     onSuccess: () => {
-      void message.success(t('已放进后台队列，跑完会在下面显示'))
+      void message.success(t('已加入后台队列，完成后结果将显示在下方'))
       void queryClient.invalidateQueries({ queryKey: ['hub-evals'] })
       onClose()
       onStarted()
@@ -847,7 +847,7 @@ function EvalDialog({
   })
   return (
     <Modal
-      title={t('比较两个 OCR 模型')}
+      title={t('对比两个 OCR 模型')}
       open
       onCancel={onClose}
       onOk={() => submit.mutate()}
@@ -877,13 +877,13 @@ function EvalDialog({
         </Flex>
         <Flex gap={8} align="center">
           <Typography.Text style={{ width: 24 }}>B</Typography.Text>
-          <Select style={{ flex: 1 }} value={b} onChange={setB} options={options} placeholder={t('要试的模型')} />
+          <Select style={{ flex: 1 }} value={b} onChange={setB} options={options} placeholder={t('待评测模型')} />
         </Flex>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {slot === 'ocr_rec'
-            ? t('识别：每张小图只跑识别，比整行一模一样的比例（Exact Match）和 1 − 平均归一化编辑距离（Char Match），指标照 RapidOCR 作者的 TextRecMetric。')
-            : t('检测：每张整页图只跑检测，IoU > 0.5 算配上，按 PaddleOCR 的 DetectionIoUEvaluator 算 Precision、Recall、H-mean。')}
-          {t('反复看验证集来挑模型，验证集会慢慢"被调过"；正式验收用锁定测试集。')}
+            ? t('识别：对每张单行图像仅执行识别，统计整行完全一致的比例（Exact Match）及 1 − 平均归一化编辑距离（Char Match），指标定义参照 RapidOCR 作者的 TextRecMetric。')
+            : t('检测：对每张整页图像仅执行检测，IoU > 0.5 视为匹配，按 PaddleOCR 的 DetectionIoUEvaluator 计算 Precision、Recall 和 H-mean。')}
+          {t('反复依据验证集选择模型，会使结果逐渐过拟合验证集；正式验收请使用锁定测试集。')}
         </Typography.Text>
       </Flex>
     </Modal>
@@ -894,22 +894,22 @@ function EvalDetail({ run }: { run: EvalRun }) {
   const { t } = useTranslation()
   const s = run.summary
   if (!s) {
-    return run.error ? <Alert type="error" showIcon title={t('评测出错了')} description={run.error} /> : null
+    return run.error ? <Alert type="error" showIcon title={t('评测失败')} description={run.error} /> : null
   }
   const [a, b] = run.arms
   const rows =
     s.task === 'rec'
       ? [
-          [t('Exact Match（整行一模一样）'), pct(s.a.exact_match), pct(s.b.exact_match)],
+          [t('Exact Match（整行完全一致）'), pct(s.a.exact_match), pct(s.b.exact_match)],
           [t('Char Match（1 − 平均归一化编辑距离）'), pct(s.a.char_match), pct(s.b.char_match)],
-          [t('只差空格、大小写、全角半角'), s.a.format_only, s.b.format_only],
-          [t('什么也没认出来'), s.a.empty, s.b.empty],
+          [t('仅空格、大小写或全角/半角不同'), s.a.format_only, s.b.format_only],
+          [t('未识别出文字'), s.a.empty, s.b.empty],
         ]
       : [
           ['Precision', pct(s.a.precision), pct(s.b.precision)],
           ['Recall', pct(s.a.recall), pct(s.b.recall)],
           ['H-mean', pct(s.a.hmean), pct(s.b.hmean)],
-          [t('检测框 / 配上的'), `${s.a.det_boxes} / ${s.a.matched}`, `${s.b.det_boxes} / ${s.b.matched}`],
+          [t('检测框数 / 匹配数'), `${s.a.det_boxes} / ${s.a.matched}`, `${s.b.det_boxes} / ${s.b.matched}`],
         ]
   return (
     <Flex vertical gap={12} style={{ padding: '4px 8px' }}>
@@ -930,18 +930,18 @@ function EvalDetail({ run }: { run: EvalRun }) {
         items={[
           {
             key: 'changed',
-            label: s.task === 'rec' ? t('B 修好 / 弄坏') : t('B 新配上 / 丢了'),
+            label: s.task === 'rec' ? t('B 修正 / 引入错误') : t('B 新增匹配 / 丢失匹配'),
             children: t('{{fixed}} / {{broken}}（精确 McNemar p = {{mcnemar_p}}）', { fixed: s.fixed, broken: s.broken, mcnemar_p: s.mcnemar_p }),
           },
           ...(s.task === 'rec'
             ? [
                 {
                   key: 'ci',
-                  label: t('Exact Match 差（B − A）95% 区间'),
+                  label: t('Exact Match 差值（B − A）95% 置信区间'),
                   children: s.bootstrap_ci
                     ? `${pct(s.bootstrap_ci[0])} ～ ${pct(s.bootstrap_ci[1])}` + // i18n-ignore: range separator
-                      (s.grouped ? t('（按业务单据分组 bootstrap）') : t('（按业务单据分组 bootstrap；没有组号，每张图自成一组，区间偏窄）'))
-                    : t('不到 2 组，不做'),
+                      (s.grouped ? t('（按业务单据分组 bootstrap）') : t('（按业务单据分组 bootstrap；无分组信息时每张图像单独成组，区间偏窄）'))
+                    : t('不足 2 组，不计算'),
                 },
               ]
             : []),
@@ -955,7 +955,7 @@ function EvalDetail({ run }: { run: EvalRun }) {
                 {(['det', 'rec', 'dict'] as const)
                   .filter((k) => arm[k])
                   .map((k) => t('{{value}}（{{slice}}）', { value: arm[k], slice: (arm.sha256[k] ?? '').slice(0, 12) }))
-                  .join(t('；')) || t('RapidOCR 自带的')}
+                  .join(t('；')) || t('RapidOCR 内置模型')}
               </Typography.Text>
             ),
           })),
@@ -981,9 +981,9 @@ function EvalsTab({ canChange, onNew }: { canChange: boolean; onNew: () => void 
   const statusTag = (r: EvalRun) =>
     ({
       queued: <Tag>{t('排队中')}</Tag>,
-      running: <Tag color="processing">{t('在跑 {{progress}}', { progress: r.progress })}</Tag>,
+      running: <Tag color="processing">{t('运行中 {{progress}}', { progress: r.progress })}</Tag>,
       done: <Tag color="success">{t('完成')}</Tag>,
-      failed: <Tag color="error">{t('出错')}</Tag>,
+      failed: <Tag color="error">{t('失败')}</Tag>,
     })[r.status]
   const columns: TableProps<EvalRun>['columns'] = [
     { title: t('时间'), key: 'time', width: 150, render: (_, r) => formatTime(r.created_at) },
@@ -1015,7 +1015,7 @@ function EvalsTab({ canChange, onNew }: { canChange: boolean; onNew: () => void 
               {s.task === 'rec' ? 'Exact Match' : 'H-mean'} {pct(x)} → <Typography.Text strong>{pct(y)}</Typography.Text>
             </Typography.Text>
             <Tag color={EVIDENCE_COLOR[s.evidence]}>
-              {{ process: t('只能检查流程'), thin: t('证据偏少'), trend: t('可以看趋势') }[s.evidence]}
+              {{ process: t('仅可验证流程'), thin: t('证据不足'), trend: t('可参考趋势') }[s.evidence]}
             </Tag>
           </Space>
         )
@@ -1027,7 +1027,7 @@ function EvalsTab({ canChange, onNew }: { canChange: boolean; onNew: () => void 
       width: 60,
       render: (_, r) =>
         r.status === 'done' && (
-          <Tooltip title={t('下载逐条结果（jsonl，里面有单据上的文字，只放在本机）')}>
+          <Tooltip title={t('下载逐条结果（jsonl，包含单据文字，仅保存在本机）')}>
             <Button size="small" icon={<DownloadOutlined />} onClick={() => download.mutate(r.id)} />
           </Tooltip>
         ),
@@ -1037,13 +1037,13 @@ function EvalsTab({ canChange, onNew }: { canChange: boolean; onNew: () => void 
     <Flex vertical gap={12}>
       <Flex justify="space-between" align="center" gap={8} wrap>
         <Typography.Text type="secondary">
-          {t('在数据集的某一边上比较两个模型（只读，不会换模型）。B 明显更好、证据也够了，再去模型库点"用这个版本"。')}
+          {t('在数据集的指定划分（train / val / test）上对比两个模型的识别结果。评测为只读操作，不会更改正在使用的模型；确认 B 显著优于 A 且样本量充足后，再到「设置 → 模型」中启用。')}
         </Typography.Text>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => void runs.refetch()} />
           {canChange && (
             <Button type="primary" icon={<ExperimentOutlined />} onClick={onNew}>
-              {t('新的评测')}
+              {t('新建评测')}
             </Button>
           )}
         </Space>
@@ -1059,7 +1059,7 @@ function EvalsTab({ canChange, onNew }: { canChange: boolean; onNew: () => void 
           expandedRowRender: (r) => <EvalDetail run={r} />,
           rowExpandable: (r) => r.status === 'done' || r.status === 'failed',
         }}
-        locale={{ emptyText: <Empty description={t('还没有评测')} /> }}
+        locale={{ emptyText: <Empty description={t('暂无评测记录')} /> }}
       />
     </Flex>
   )
@@ -1082,7 +1082,7 @@ export function HubPage() {
           {t('模型和数据集')}
         </Typography.Title>
         <Typography.Text type="secondary">
-          {t('训练在系统外做（PaddleOCR）；这里放进来、比一比、选上用。全部离线，不从网上下载。')}
+          {t('管理本地模型与数据集：导入在系统外训练的模型（如 PaddleOCR 导出的 ONNX），在数据集上对比评测，并选择启用的版本。全部操作在本机完成，不访问网络。')}
         </Typography.Text>
       </Flex>
       <Tabs

@@ -518,10 +518,10 @@ export type ReprocessReason =
   | 'other'
 
 export const REPROCESS_REASONS: Record<ReprocessReason, string> = {
-  get template_changed() { return t('模板改了') },
-  get wrong_template() { return t('选错了模板') },
-  get bad_result() { return t('结果不好，再跑一次') },
-  get model_changed() { return t('换了模型或 OCR') },
+  get template_changed() { return t('模板已修改') },
+  get wrong_template() { return t('模板选择错误') },
+  get bad_result() { return t('结果不理想，重新运行') },
+  get model_changed() { return t('已更换模型或 OCR') },
   get batch() { return t('批量重新处理') },
   get other() { return t('其他') },
 }
@@ -732,6 +732,8 @@ export interface ExcelAnalysis {
   starter: string
   starter_title: string
   auto_columns: Record<string, string>
+  /** Standard template workbooks: notes on columns and rows that were not recognized and not imported. */
+  ignored?: string[]
 }
 
 /** Save a template (every save creates a new version). */

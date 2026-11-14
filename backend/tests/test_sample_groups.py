@@ -144,7 +144,7 @@ def test_first_sample_assigns_a_group_and_a_stored_split(client, factory, make):
         team = session.get_one(Document, doc).team_id
         stored = groups.assignment(session, team, group)
         assert stored is not None and stored.split in ("train", "val")
-        assert render(stored.reason) == "第一次进数据集时按哈希分"
+        assert render(stored.reason) == "首次进入数据集时按哈希分配"
 
 
 # ---- What counts as the same document ----
@@ -274,9 +274,12 @@ def test_duplicate_found_after_export_is_quarantined_and_recorded(client, factor
         [record] = session.query(OcrSampleExport).all()
         assert len(record.affected) == 2  # Both groups are in this export; one record each.
         for problem in record.affected:
-            assert problem["group"].startswith("g_") and "一份训练、一份验证" in problem["reason"]
+            assert (
+                problem["group"].startswith("g_")
+                and "同时出现在训练集和验证集中" in problem["reason"]
+            )
     excluded = {e["reason"]: e["count"] for e in preview(client)["excluded"]}
-    assert excluded == {"所在的组被隔离了（合并或拆开时发现已经导出过）": 2}
+    assert excluded == {"所在分组已被隔离（合并或拆分时发现已导出）": 2}
     [shown] = client.get("/api/v1/ocr-samples/exports").json()
     assert shown["affected"] and shown["counts"]["train"]["groups"] == 1
 
@@ -356,7 +359,7 @@ def test_train_and_validation_never_share_a_group(client, factory, make):
     assert shown["evidence"]["level"] in ("process", "none")
     readme = archive.read("README.md").decode()
     assert "训练集：" in readme
-    assert "只能检查流程" in readme or "没有验证集" in readme
+    assert "仅可验证流程" in readme or "无验证集" in readme
 
 
 def test_locked_test_set_is_exported_separately_and_not_a_lesson_source(client, factory, make):

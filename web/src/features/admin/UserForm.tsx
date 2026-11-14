@@ -41,27 +41,27 @@ export function UserForm({ open, permissions, saving, onCancel, onSubmit }: Prop
           label={t('用户名（登录用）')}
           rules={[
             { required: true, message: t('请输入用户名') },
-            { pattern: /^[A-Za-z0-9_.-]{2,64}$/, message: t('2–64 个字符，只能用英文字母、数字和 _ . -') },
+            { pattern: /^[A-Za-z0-9_.-]{2,64}$/, message: t('2–64 个字符，只能包含英文字母、数字和 _ . -') },
           ]}
         >
-          <Input autoComplete="off" placeholder={t('比如 xiaoli')} />
+          <Input autoComplete="off" placeholder={t('例如 xiaoli')} />
         </Form.Item>
-        <Form.Item name="display_name" label={t('显示名字')}>
-          <Input autoComplete="off" placeholder={t('比如 小李（可以不填）')} maxLength={100} />
+        <Form.Item name="display_name" label={t('显示名称')}>
+          <Input autoComplete="off" placeholder={t('例如“小李”（选填）')} maxLength={100} />
         </Form.Item>
         <Form.Item
           name="password"
           label={t('初始密码')}
           rules={[{ required: true, min: 8, message: t('至少 8 个字符') }]}
-          extra={t('告诉对方这个密码，让他登录后找你改（或者以后在这里重设）')}
+          extra={t('将此密码告知对方，对方登录后可自行修改（也可之后在此重设）')}
         >
           <Input.Password autoComplete="new-password" />
         </Form.Item>
         <Form.Item name="role" label={t('角色')}>
           <Radio.Group
             options={[
-              { value: 'member', label: t('使用者（按下面勾选开通权限）') },
-              { value: 'admin', label: t('管理员（全部权限，能管理用户）') },
+              { value: 'member', label: t('使用者（按下方勾选开通权限）') },
+              { value: 'admin', label: t('管理员（全部权限，可管理用户）') },
             ]}
           />
         </Form.Item>
@@ -69,7 +69,7 @@ export function UserForm({ open, permissions, saving, onCancel, onSubmit }: Prop
           <Form.Item
             name="permissions"
             label={t('开通的权限')}
-            extra={t('不勾也能看文档、下载原图、导出 Excel')}
+            extra={t('未勾选时仍可查看文档、下载原图和导出 Excel')}
           >
             <Checkbox.Group options={permissions.map((p) => ({ value: p.name, label: p.label }))} />
           </Form.Item>

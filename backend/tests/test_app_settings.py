@@ -70,10 +70,10 @@ def test_env_wins_and_cannot_be_changed(client, monkeypatch):
 
 def test_bad_values_are_refused(client, tmp_path):
     for values, words in (
-        ({"jacara_vision": "sometimes"}, "值不对"),
+        ({"jacara_vision": "sometimes"}, "值无效"),
         ({"jacara_ocr_max_side": 99999}, "1000～8000"),
         ({"jacara_watch_dir": "relative/path"}, "完整路径"),
-        ({"postgres_password": "x"}, "不能改"),
+        ({"postgres_password": "x"}, "无法修改"),
     ):
         response = client.put("/api/v1/settings", json={"values": values})
         assert response.status_code == 400 and words in response.json()["detail"], values
@@ -109,6 +109,6 @@ def test_members_see_but_cannot_change_and_get_no_details(client, monkeypatch):
         )
         info = client.get("/api/v1/system").json()
         assert info["model"]["server"] == "" and info["watch_dir"] is None
-        assert all(s["detail"] in ("正常", "连不上，请找管理员") for s in info["services"])
+        assert all(s["detail"] in ("正常", "无法连接，请联系管理员") for s in info["services"])
     finally:
         client.app.dependency_overrides.pop(deps.get_owner)

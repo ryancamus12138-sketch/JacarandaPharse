@@ -49,7 +49,7 @@ export function AuditLogPage() {
     return user ? user.display_name || user.username : me?.mode === 'personal' ? t('你') : t('（未知）')
   }
 
-  const userLabel = (id: string | null) => (id ? userName(id) : t('（不存在的用户名）'))
+  const userLabel = (id: string | null) => (id ? userName(id) : t('（用户名不存在）'))
 
   // Export CSV: all entries matching the current filters, rendered as on the page (the export itself is also
   // logged).
@@ -58,7 +58,7 @@ export function AuditLogPage() {
     onSuccess: ({ items, total }) => {
       const cell = (text: string) => `"${text.replaceAll('"', '""')}"`
       const rows = [
-        [t('时间'), t('谁'), t('操作'), t('详情'), t('对象类型'), t('对象'), t('原始内容')],
+        [t('时间'), t('操作人'), t('操作'), t('详情'), t('对象类型'), t('对象'), t('原始内容')],
         ...items.map((log) => [
           formatTime(log.created_at),
           userLabel(log.user_id),
@@ -72,7 +72,7 @@ export function AuditLogPage() {
       const csv = '\ufeff' + rows.map((r) => r.map((c) => cell(String(c))).join(',')).join('\r\n')
       const day = new Date().toISOString().slice(0, 10)
       saveFile(new Blob([csv], { type: 'text/csv;charset=utf-8' }), t('审计日志-{{day}}.csv', { day }))
-      if (total > items.length) void message.warning(t('一共 {{total}} 条，只导出了最新的 {{length}} 条，请缩小范围', { total, length: items.length }))
+      if (total > items.length) void message.warning(t('共 {{total}} 条，仅导出了最新的 {{length}} 条，请缩小筛选范围', { total, length: items.length }))
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
@@ -80,11 +80,11 @@ export function AuditLogPage() {
   const columns: TableProps<AuditLog>['columns'] = [
     { title: t('时间'), dataIndex: 'created_at', width: 170, render: formatTime },
     {
-      title: t('谁'),
+      title: t('操作人'),
       dataIndex: 'user_id',
       width: 120,
       render: (id: string | null) =>
-        id ? userName(id) : <Typography.Text type="secondary">{t('（不存在的用户名）')}</Typography.Text>,
+        id ? userName(id) : <Typography.Text type="secondary">{t('（用户名不存在）')}</Typography.Text>,
     },
     {
       title: t('操作'),
@@ -116,7 +116,7 @@ export function AuditLogPage() {
       }
     >
       <Typography.Paragraph type="secondary">
-        {t('登录、上传、审核、导出、用户管理、改密码都会记在这里。记录只能看，不能改也不能删；导出也会记一条。')}
+        {t('记录登录、上传、审核、导出、用户管理及密码修改等操作。记录只读，不可修改或删除；导出操作本身也会记录。')}
       </Typography.Paragraph>
       <Flex gap={8} wrap style={{ marginBottom: 16 }}>
         <Select
@@ -143,7 +143,7 @@ export function AuditLogPage() {
         <Flex gap={4} align="center">
           <Input
             type="date"
-            aria-label={t('从哪天')}
+            aria-label={t('开始日期')}
             value={filters.date_from ?? ''}
             onChange={(e) => setFilters({ date_from: e.target.value || undefined })}
             style={{ width: 150 }}
@@ -151,7 +151,7 @@ export function AuditLogPage() {
           <Typography.Text type="secondary">{t('至')}</Typography.Text>
           <Input
             type="date"
-            aria-label={t('到哪天')}
+            aria-label={t('结束日期')}
             value={filters.date_to ?? ''}
             onChange={(e) => setFilters({ date_to: e.target.value || undefined })}
             style={{ width: 150 }}

@@ -149,7 +149,7 @@ def test_items_not_adding_up_flags_only_the_amounts():
     [issue] = RuleValidator().validate(fields).issues
     assert issue.rule == "items_sum" and issue.severity == "warning"
     assert issue.fields == ("items.1.amount", "items.2.amount")  # The total is not flagged.
-    assert "12.50" in render(issue.message) and "总额是 20.00" in render(issue.message)
+    assert "12.50" in render(issue.message) and "总额为 20.00" in render(issue.message)
 
 
 def test_items_compare_with_subtotal_when_there_is_one():
@@ -233,7 +233,7 @@ def test_excel_has_an_items_sheet(receipt_page, tmp_path):
     items = book["商品明细"]
     assert [c.value for c in items[1]] == [
         "文件",
-        "第几行",
+        "行号",
         "name",
         "quantity",
         "unit_price",

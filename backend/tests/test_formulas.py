@@ -55,14 +55,14 @@ def test_divide_by_zero():
     ("text", "message"),
     [
         ("hotel + 1", "文字字段"),
-        ("check_in + 1", "日期只能和日期相减"),
-        ("check_in", "要是数字"),
+        ("check_in + 1", "日期只能与日期相减"),
+        ("check_in", "须为数字"),
         ("nights * 2", "没有叫 nights 的字段"),
-        ("__import__('os')", "没有 __import__() 这个函数"),
+        ("__import__('os')", "不支持函数 __import__()"),
         ("total.real", "sum("),
         ("sum(items.name)", "不是数字"),
-        ("total if total else 0", "只能用"),
-        ("1 +", "写得不对"),
+        ("total if total else 0", "只能使用"),
+        ("1 +", "公式有误"),
     ],
 )
 def test_bad_formulas_say_why(text, message):
@@ -74,7 +74,7 @@ def test_formulas_in_a_loop_are_refused():
     a = parse_formula("total + 1", Scope({"total": "number", "a": "number"}, {}))
     b = parse_formula("a + 1", Scope({"total": "number", "a": "number"}, {}))
     # total uses a and a uses total.
-    with raises(FormulaError, "互相引用"):
+    with raises(FormulaError, "循环引用"):
         order({"a": a, "total": b})
 
 
@@ -90,7 +90,7 @@ def test_template_checks_formulas():
     with raises(TemplateError, "「晚数」的公式：没有叫 check_out 的字段"):
         parse_template(raw, "t")
     raw["fields"][1] |= {"type": "string", "compute": "1"}
-    with raises(TemplateError, "type 要是 number"):
+    with raises(TemplateError, "type 需为 number"):
         parse_template(raw, "t")
 
 
@@ -99,7 +99,7 @@ def test_hotel_nights_are_computed_not_asked():
     assert "nights" not in {s.name for s in hotel.specs}
     [done] = compute(hotel, {"check_in": "2017-12-31", "check_out": "2018-01-01"})
     assert (done.name, done.value) == ("nights", 1)
-    assert render(done.note) == "按公式算：离店日期 − 入住日期 = 1"
+    assert render(done.note) == "按公式计算：离店日期 − 入住日期 = 1"
 
 
 # ---------- Processing and review ----------
@@ -213,7 +213,7 @@ def test_custom_rules_check_values():
     messages = {i.rule: i for i in result.issues}
     assert (
         render(messages["custom_1"].message)
-        == "明细的金额合计 是 9，总额 是 10，不满足 明细的金额合计 = 总额"
+        == "明细的金额合计 为 9，总额 为 10，不满足 明细的金额合计 = 总额"
     )
     assert render(messages["custom_2"].title) == "离店日期 > 入住日期"
     assert messages["custom_2"].severity == "warning"
@@ -224,9 +224,9 @@ def test_custom_rules_check_values():
 def test_bad_custom_rule_says_which():
     with raises(TemplateError, "自定义规则「坏的」：没有叫 nights 的字段"):
         custom_template({"title": "坏的", "check": "nights == 1"})
-    with raises(TemplateError, "比较用"):
+    with raises(TemplateError, "比较符"):
         custom_template({"check": "total + 1"})
-    with raises(TemplateError, "都是日期"):
+    with raises(TemplateError, "同为日期"):
         custom_template({"check": "check_in == total"})
 
 
@@ -253,7 +253,7 @@ def test_custom_rules_round_trip_through_editor(client):
             "custom_rules": [{"check": "totl"}],
         },
     )
-    assert bad.status_code == 422 and "比较用" in bad.json()["detail"]
+    assert bad.status_code == 422 and "比较符" in bad.json()["detail"]
 
 
 def test_rules_say_their_region(client):

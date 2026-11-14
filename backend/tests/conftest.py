@@ -163,12 +163,12 @@ class FakeQueue:
 
     def enqueue_document(self, document_id: uuid.UUID) -> None:
         if self.down:
-            raise QueueError("任务队列（Valkey）连不上")
+            raise QueueError("无法连接任务队列（Valkey）")
         self.sent.append(document_id)
 
     def enqueue_eval(self, run_id: uuid.UUID) -> None:
         if self.down:
-            raise QueueError("任务队列（Valkey）连不上")
+            raise QueueError("无法连接任务队列（Valkey）")
         self.evals.append(run_id)
 
 

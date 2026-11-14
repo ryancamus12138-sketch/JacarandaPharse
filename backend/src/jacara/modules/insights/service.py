@@ -75,9 +75,9 @@ def _stage_fields(a: ErrorAttribution, sensitive: bool) -> dict[str, Any]:
         "stage": a.final_stage,
         "stage_name": tr(STAGES.get(a.final_stage, a.final_stage)),
         "stage_reason": (
-            tr("人改判：{override_note}", override_note=a.override_note)
+            tr("人工改判：{override_note}", override_note=a.override_note)
             if a.override_stage and a.override_note
-            else tr("人改判")
+            else tr("人工改判")
             if a.override_stage
             else tr(REASONS.get(a.reason_code, a.reason_code))
         ),
@@ -326,10 +326,10 @@ class InsightsService:
         replaced by automatic attribution."""
         found = self.session.get(ErrorAttribution, attribution_id)
         if found is None or found.team_id != self.owner.team_id:
-            raise InsightsError("not_found", tr("找不到这条归因"))
+            raise InsightsError("not_found", tr("归因记录不存在"))
         require(self.owner, "document:review", found.team_id)
         if data.stage is not None and data.stage not in STAGES:
-            raise InsightsError("invalid", tr("阶段只能是：{stages}", stages=join_items(STAGES)))
+            raise InsightsError("invalid", tr("阶段只能为：{stages}", stages=join_items(STAGES)))
         before = found.override_stage
         found.override_stage = data.stage
         found.override_note = data.note.strip() if data.stage else ""
@@ -368,8 +368,8 @@ class InsightsService:
         documents = self._documents(template, None)
         out = io.BytesIO()
         manifest: list[str] = [
-            tr("# 成对测评清单：jacara eval pairs --manifest 这个文件"),
-            tr('# 标准答案是审核完成后的当前值；照片和 PDF 成对的，自己加上 photo = "..."'),
+            tr("# 成对测评清单：jacara eval pairs --manifest <本文件>"),
+            tr('# 标准答案为审核完成后的当前值；照片与 PDF 成对的，请自行添加 photo = "..."'),
             "",
         ]
         templates: dict[str, dict[str, Any]] = {}
@@ -445,9 +445,9 @@ class InsightsService:
                 "README.txt",
                 tr(
                     README,
-                    summary=tr("共 {count} 张单据，含敏感字段。", count=count)
+                    summary=tr("共 {count} 张单据，包含敏感字段。", count=count)
                     if sensitive
-                    else tr("共 {count} 张单据，不含敏感字段。", count=count),
+                    else tr("共 {count} 张单据，不包含敏感字段。", count=count),
                 ),
             )
         record(
@@ -465,20 +465,17 @@ class InsightsService:
         return tr("审核数据-{stamp}.zip", stamp=stamp), out.getvalue()
 
 
-README = N_("""审核过的单据导出（JacarandaParse）
-
-{summary}
-
-- files/：原文件。
-- train.jsonl：一行一张单据：OCR 文字（ocr_text）、模型的回答（model_answer）、
-  人审核后的值（truth）、人改了哪些（corrections，含错误类型）、用的模型和提示词版本。
-  可以拿来评测，也可以整理成微调数据。
-- pairs.toml：成对测评清单，放进 data/eval/ 后运行
-  uv run jacara eval pairs --manifest data/eval/这个文件夹/pairs.toml
-  我的模板的定义在 templates/ 里。只占一页的单据才列进去。
-
-这些是你自己的业务数据，请按你们的数据管理规定保存，不要放进代码仓库。
-""")
+README = N_(
+    "已审核单据导出（JacarandaParse）\n\n{summary}\n\n- files/："
+    "原文件。\n- train.jsonl：每行一张单据，包含 OCR 文字（ocr_te"
+    "xt）、模型输出（model_answer）、\n  人工审核后的值（truth）"
+    "、人工修改内容（corrections，含错误类型）及所用模型和提示词"
+    "版本。\n  可用于评测，也可整理为微调数据。\n- pairs.toml：成"
+    "对测评清单，放入 data/eval/ 后运行\n  uv run jacara eval pai"
+    "rs --manifest data/eval/<本文件夹>/pairs.toml\n  我的模板的"
+    "定义位于 templates/。仅包含单页单据。\n\n以上为业务数据，请"
+    "按所在单位的数据管理规定保存，请勿提交到代码仓库。\n"
+)
 
 
 def _key(extraction: Extraction) -> str:

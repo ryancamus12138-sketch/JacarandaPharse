@@ -70,11 +70,11 @@ export function ExcelImportPage() {
     return (
       <Result
         status="warning"
-        title={t('打不开这个 Excel')}
+        title={t('无法打开此 Excel 文件')}
         subTitle={text}
         extra={
           <Link to="/templates">
-            <Button>{t('回模板列表')}</Button>
+            <Button>{t('返回模板列表')}</Button>
           </Link>
         }
       />
@@ -123,7 +123,7 @@ function Preview({ analysis, uploadId }: { analysis: ExcelAnalysis; uploadId: st
       buildFromExcel(uploadId, { title, category, description, starter: analysis.starter, sheets }),
     onSuccess: (tpl) => {
       void queryClient.invalidateQueries({ queryKey: ['templates'] })
-      void message.success(t('已建好模板「{{title}}」。导出时会按「{{filename}}」的样子填', { title: tpl.title, filename: analysis.filename }))
+      void message.success(t('已创建模板「{{title}}」。导出时将按「{{filename}}」的版式填写', { title: tpl.title, filename: analysis.filename }))
       void navigate(`/templates/${tpl.id}`)
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
@@ -137,7 +137,7 @@ function Preview({ analysis, uploadId }: { analysis: ExcelAnalysis; uploadId: st
             <Link to="/templates">
               <Button icon={<ArrowLeftOutlined />}>{t('模板')}</Button>
             </Link>
-            <Typography.Text strong>{t('从 Excel 建模板：{{filename}}', { filename: analysis.filename })}</Typography.Text>
+            <Typography.Text strong>{t('从 Excel 创建模板：{{filename}}', { filename: analysis.filename })}</Typography.Text>
           </Flex>
         }
         extra={
@@ -149,27 +149,27 @@ function Preview({ analysis, uploadId }: { analysis: ExcelAnalysis; uploadId: st
               loading={build.isPending}
               onClick={() => build.mutate()}
             >
-              {t('建模板')}
+              {t('创建模板')}
             </Button>
           </Tooltip>
         }
       >
         <Flex vertical gap={12}>
           <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
-            {t('系统先猜了每张 sheet 是什么、每一列从哪来，你看一眼，不对的改掉。建好之后，导出时数据按这里定的 填回这个 Excel：单据表一份单据一行，明细表一项一行，对象表同一个编号合并成一行，参照表、选项、说明不动。')}
+            {t('系统已推测每张 sheet 的类型及每列的数据来源，请核对并修正。创建后，导出时数据将按此处设置回填至该 Excel：单据表每份单据一行，明细表每项一行，对象表按编号合并为一行，参照表、选项和说明保持不变。')}
           </Typography.Paragraph>
           {analysis.starter_title && (
             <Alert
               type="info"
               showIcon
-              title={t('表头和起步模板「{{starter_title}}」对上了不少', { starter_title: analysis.starter_title })}
-              description={t('对上的列已经用了它的字段 ID、类型和给模型的说明；它的规则里字段都有的，也会一起带过来。')}
+              title={t('表头与起步模板「{{starter_title}}」大量匹配', { starter_title: analysis.starter_title })}
+              description={t('匹配的列已采用其字段 ID、类型和给模型的说明；所需字段齐全的规则也将一并导入。')}
             />
           )}
           {problem && <Alert type="warning" showIcon title={problem} />}
           <Flex gap={8} wrap>
             <Input
-              addonBefore={t('模板名')}
+              addonBefore={t('模板名称')}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               style={{ width: 320 }}
@@ -181,7 +181,7 @@ function Preview({ analysis, uploadId }: { analysis: ExcelAnalysis; uploadId: st
               style={{ width: 140 }}
             />
             <Input
-              placeholder={t('说明（可以不写）')}
+              placeholder={t('说明（选填）')}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               style={{ flex: 1, minWidth: 220 }}
@@ -210,34 +210,34 @@ function Preview({ analysis, uploadId }: { analysis: ExcelAnalysis; uploadId: st
  * matching. Returns the first problem.
  */
 function findProblem(title: string, sheets: ExcelSheet[]): string | null {
-  if (!title.trim()) return t('请给模板起个名字')
+  if (!title.trim()) return t('请输入模板名称')
   const active = sheets.filter((s) => ['document', 'items', 'entity'].includes(s.role) && !s.same_as)
   const hasField = active.some((s) =>
     s.columns.some((c) => makesField(c.source) && (s.role !== 'items' || c.source === 'doc')),
   )
   if (!hasField) {
-    return t('至少要有一张单据表或对象表（或者在明细表里标一列"单据上的字段"）')
+    return t('至少需要一张单据表或对象表（或在明细表中将一列设为“单据级字段”）')
   }
   for (const s of active) {
     const local = new Set<string>()
     for (const c of s.columns.filter((c) => makesField(c.source))) {
-      if (!FIELD_ID.test(c.field)) return t('「{{name}}」的「{{header}}」字段 ID 不对：小写英文字母开头，只能有小写字母、数字、下划线', { name: s.name, header: c.header })
-      if (!c.label.trim()) return t('「{{name}}」的「{{header}}」没有中文名', { name: s.name, header: c.header })
+      if (!FIELD_ID.test(c.field)) return t('「{{name}}」的「{{header}}」字段 ID 无效：需以小写英文字母开头，且只能包含小写字母、数字和下划线', { name: s.name, header: c.header })
+      if (!c.label.trim()) return t('「{{name}}」的「{{header}}」未填写名称', { name: s.name, header: c.header })
       if (s.role === 'items' && c.source !== 'doc') {
-        if (local.has(c.field)) return t('「{{name}}」里列 ID {{field}} 重复了', { name: s.name, field: c.field })
+        if (local.has(c.field)) return t('「{{name}}」中列 ID {{field}} 重复', { name: s.name, field: c.field })
         local.add(c.field)
       }
     }
     if (s.role === 'entity' && !s.columns.some((c) => c.header === s.key_header && makesField(c.source))) {
-      return t('对象表「{{name}}」要选一列当编号', { name: s.name })
+      return t('对象表「{{name}}」需选择一列作为编号', { name: s.name })
     }
     for (const c of s.columns) {
-      if (c.source === 'auto' && !c.auto) return t('「{{name}}」的「{{header}}」要选自动填什么', { name: s.name, header: c.header })
-      if (c.source === 'lookup' && !c.lookup) return t('「{{name}}」的「{{header}}」要选从参照表的哪一列对照', { name: s.name, header: c.header })
+      if (c.source === 'auto' && !c.auto) return t('「{{name}}」的「{{header}}」需选择自动填充内容', { name: s.name, header: c.header })
+      if (c.source === 'lookup' && !c.lookup) return t('「{{name}}」的「{{header}}」需选择参照表中的对照列', { name: s.name, header: c.header })
     }
   }
   for (const s of sheets.filter((s) => s.role === 'reference')) {
-    if (s.match_field && !s.key_header) return t('参照表「{{name}}」要选拿哪一列对照', { name: s.name })
+    if (s.match_field && !s.key_header) return t('参照表「{{name}}」需选择对照列', { name: s.name })
   }
   return null
 }
@@ -296,10 +296,10 @@ function SheetCard({
         <Flex vertical gap={4}>
           {why}
           <Typography.Text>
-            {t('和「{{same_as}}」表头一样（像按月分的），按它来。导出时原来的几张都不动，复制一张新的填进去。', { same_as: sheet.same_as })}
+            {t('表头与「{{same_as}}」相同（如按月分表），沿用其设置。导出时原有 sheet 保持不变，复制一张新 sheet 填写。', { same_as: sheet.same_as })}
           </Typography.Text>
           <Button size="small" style={{ alignSelf: 'start' }} onClick={() => onSheet({ same_as: '' })}>
-            {t('不一样，单独设置')}
+            {t('不同，单独设置')}
           </Button>
         </Flex>
       </Card>
@@ -312,10 +312,10 @@ function SheetCard({
         <Flex vertical gap={8}>
           {why}
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t('列：{{columns}}。整张表存进模板，以后要更新就重新从 Excel 建。', { columns: sheet.columns.map((c) => c.header).join(t('、')) })}
+            {t('列：{{columns}}。整张表将保存在模板中；如需更新，请重新从 Excel 创建。', { columns: sheet.columns.map((c) => c.header).join(t('、')) })}
           </Typography.Text>
           <Flex gap={8} align="center" wrap>
-            <Typography.Text>{t('拿单据上的')}</Typography.Text>
+            <Typography.Text>{t('用单据中的')}</Typography.Text>
             <Select
               allowClear
               placeholder={t('不对照')}
@@ -324,16 +324,16 @@ function SheetCard({
               onChange={(v: string | undefined) => onSheet({ match_field: v ?? '' })}
               options={matchOptions}
             />
-            <Typography.Text>{t('到这张表的')}</Typography.Text>
+            <Typography.Text>{t('在本表的')}</Typography.Text>
             <Select
               style={{ minWidth: 140 }}
               value={sheet.key_header || undefined}
-              placeholder={t('哪一列')}
+              placeholder={t('对照列')}
               disabled={!sheet.match_field}
               onChange={(v: string) => onSheet({ key_header: v })}
               options={sheet.columns.map((c) => ({ value: c.header, label: c.header }))}
             />
-            <Typography.Text>{t('里找；找不到会提醒')}</Typography.Text>
+            <Typography.Text>{t('中查找；未找到时提示')}</Typography.Text>
           </Flex>
         </Flex>
       </Card>
@@ -358,13 +358,13 @@ function SheetCard({
         <Flex vertical>
           <Typography.Text>{h}</Typography.Text>
           <Typography.Text type="secondary" ellipsis style={{ fontSize: 12, maxWidth: 140 }}>
-            {c.samples.slice(0, 2).join(t('、')) || t('（没有示例）')}
+            {c.samples.slice(0, 2).join(t('、')) || t('（无示例）')}
           </Typography.Text>
         </Flex>
       ),
     },
     {
-      title: t('从哪来'),
+      title: t('数据来源'),
       dataIndex: 'source',
       width: 210,
       render: (source: ColumnSource, c, k) => (
@@ -378,7 +378,7 @@ function SheetCard({
           {source === 'auto' && (
             <Select
               value={c.auto || undefined}
-              placeholder={t('自动填什么')}
+              placeholder={t('自动填充')}
               onChange={(v: string) => onColumn(k, { auto: v })}
               options={Object.entries(autoColumns).map(([value, label]) => ({ value, label }))}
               style={{ width: '100%' }}
@@ -387,7 +387,7 @@ function SheetCard({
           {source === 'lookup' && (
             <Select
               value={c.lookup || undefined}
-              placeholder={lookupOptions.length ? t('参照表的哪一列') : t('先把一张 sheet 设成参照表')}
+              placeholder={lookupOptions.length ? t('参照表对照列') : t('请先将一张 sheet 设为参照表')}
               onChange={(v: string) => onColumn(k, { lookup: v })}
               options={lookupOptions}
               style={{ width: '100%' }}
@@ -407,7 +407,7 @@ function SheetCard({
     },
     {
       title: (
-        <Tooltip title={t('小写英文字母开头。几张 sheet 里同一个字段 ID 就是同一个字段（只抽一次）')}>
+        <Tooltip title={t('需以小写英文字母开头。多张 sheet 中相同的字段 ID 视为同一字段（仅抽取一次）')}>
           {t('字段 ID')}
         </Tooltip>
       ),
@@ -476,10 +476,10 @@ function SheetCard({
         {why}
         {sheet.role === 'entity' && (
           <Space wrap>
-            <Typography.Text>{t('编号列（编号相同就是同一个）：')}</Typography.Text>
+            <Typography.Text>{t('编号列（编号相同视为同一对象）：')}</Typography.Text>
             <Select
               value={sheet.key_header || undefined}
-              placeholder={t('选一列')}
+              placeholder={t('选择列')}
               status={sheet.key_header ? undefined : 'error'}
               onChange={(v: string) => onSheet({ key_header: v })}
               options={keyChoices}
@@ -489,7 +489,7 @@ function SheetCard({
         )}
         {sheet.role === 'items' && (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t('明细表里"单据上的字段（每行重复）"的列，就是连到单据的列（单号、病人编号……），导出时每一行都填上。')}
+            {t('明细表中设为“单据级字段（每行重复）”的列即关联单据的列（如单号、病人编号），导出时每行均会填写。')}
           </Typography.Text>
         )}
         <Table<ExcelColumn>

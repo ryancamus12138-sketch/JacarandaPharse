@@ -137,7 +137,7 @@ def test_progress_is_reported_while_processing(factory, storage, uploaded, recei
 
     pipeline = Pipeline(ocr=Watching(receipt_page), extractor=LlmExtractor(FakeBackend()))
     assert process_document(uploaded, storage=storage, pipeline=pipeline, factory=factory) == "done"
-    assert seen == [("识别文字", 5)]
+    assert seen == [("文字识别", 5)]
     with session_scope(factory) as session:
         d = session.get_one(Document, uploaded)
         assert (d.stage, d.progress) == (None, None)  # Cleared when finished.
@@ -150,7 +150,7 @@ def test_pipeline_reports_each_page(receipt_page, tmp_path):
     path = tmp_path / "r.jpg"
     path.write_bytes(b"x")
     pipeline.run(path, progress=lambda stage, percent: steps.append((render(stage), percent)))
-    assert steps == [("识别文字", 5), ("分析第 1 页的版面", 15), ("抽取第 1 页", 20)]
+    assert steps == [("文字识别", 5), ("分析第 1 页的版面", 15), ("抽取第 1 页", 20)]
 
 
 # ---- Export history ----
@@ -194,7 +194,7 @@ def test_export_still_works_when_storage_fails(client, docs, storage, monkeypatc
     assert not item["available"]
     response = client.get(f"/api/v1/exports/{item['id']}/file")
     assert response.status_code == 404
-    assert "没能保存" in response.json()["detail"]
+    assert "未能保存" in response.json()["detail"]
 
 
 def test_unknown_export(client):

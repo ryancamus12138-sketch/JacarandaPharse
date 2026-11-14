@@ -25,7 +25,7 @@ def create_exporter(name: str) -> Exporter:
     if factory is None:
         raise ValueError(
             stored(
-                "未知的导出格式：{name}，可用的有：{available}",
+                "未知的导出格式：{name}，可用格式：{available}",
                 name=name,
                 available=join_items(available_exporters()),
             )

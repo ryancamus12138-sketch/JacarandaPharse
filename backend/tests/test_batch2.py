@@ -61,7 +61,7 @@ def test_page_markers_and_split_modes():
     assert segments(pages, "1") == [(1, 1), (2, 2), (3, 3)]
     assert segments(pages, "1-2, 3") == [(1, 2), (3, 3)]
     assert normalize_split(" 1 - 2，3 ") == "1-2, 3"
-    with raises(SplitError, "应该从第 3 页开始"):
+    with raises(SplitError, "应从第 3 页开始"):
         normalize_split("1-2, 4")
 
 
@@ -170,7 +170,7 @@ def test_same_invoice_number_is_flagged(client, factory, storage, monkeypatch):
     [extraction] = detail(client, ids[1])["extractions"]
     issues = [i for i in extraction["current_checks"]["issues"] if i["rule"] == "duplicate"]
     assert len(issues) == 1 and issues[0]["severity"] == "warning"
-    assert "账单号「F-100」和《r.jpg》第 1–2 页" in issues[0]["message"]
+    assert "账单号「F-100」与《r.jpg》第 1–2 页" in issues[0]["message"]
     folio = next(v for v in extraction["values"] if v["name"] == "folio_no")
     assert folio["check_state"] == "warn"
 

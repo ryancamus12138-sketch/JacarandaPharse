@@ -18,17 +18,17 @@ const COLORS: Record<Revision['action'], string> = {
 function describe(r: Revision): string {
   switch (r.action) {
     case 'confirm':
-      return t(' 确认值是对的')
+      return t(' 确认值正确')
     case 'delete':
-      return t(' 删除了这一行')
+      return t(' 删除了此行')
     case 'restore':
-      return t(' 恢复了这一行')
+      return t(' 恢复了此行')
     case 'compute':
-      return ' ' + t('改了参与计算的值，按公式重算 → {{value}}', { value: r.new_value ?? t('（算不出来）') })
+      return ' ' + t('参与计算的值已修改，按公式重新计算 → {{value}}', { value: r.new_value ?? t('（无法计算）') })
     default:
       return r.evidence
         ? ' ' + t('从原文选取「{{text}}」→ {{value}}', { text: r.evidence.row_text, value: r.new_value ?? t('（空）') })
-        : ' ' + t('改成 {{value}}', { value: r.new_value ?? t('（原文没有）') })
+        : ' ' + t('修改为 {{value}}', { value: r.new_value ?? t('（原文缺失）') })
   }
 }
 
@@ -67,8 +67,8 @@ export function RevisionHistory({ valueId }: { valueId: string }) {
               history.data.value.origin === 'manual'
                 ? t('审核时人工增加')
                 : history.data.value.origin === 'computed'
-                  ? t('按公式算出：{{value}}', { value: original ?? t('（算不出来）') })
-                  : t('模型抽出：{{value}}', { value: original ?? t('（原文没有）') }),
+                  ? t('按公式计算：{{value}}', { value: original ?? t('（无法计算）') })
+                  : t('模型抽出：{{value}}', { value: original ?? t('（原文缺失）') }),
           },
           ...history.data.revisions.map((r) => ({
             key: r.id,

@@ -70,7 +70,7 @@ def cross_check(type_: str, value: object, text: str, day_first: bool | None = N
             return Check(
                 "unknown",
                 stored(
-                    "{shown}系统读不出数字，模型读成 {value}，请看一眼",
+                    "{shown}系统无法读取数字，模型识别为 {value}，请核对",
                     shown=shown,
                     value=_shown(value),
                 ),
@@ -82,14 +82,14 @@ def cross_check(type_: str, value: object, text: str, day_first: bool | None = N
             return Check(
                 "mismatch",
                 stored(
-                    "{shown}没有小数点，模型读成 {value}，多半是小数点没认出来，请核对原图",
+                    ("{shown}无小数点，模型识别为 {value}，可能是小数点未被识别，请核对原图"),
                     shown=shown,
                     value=_shown(value),
                 ),
             )
         return Check(
             "mismatch",
-            stored("{shown}和模型给的 {value} 对不上，请核对", shown=shown, value=_shown(value)),
+            stored("{shown}与模型输出的 {value} 不符，请核对", shown=shown, value=_shown(value)),
         )
     if type_ == "date":
         try:
@@ -97,26 +97,28 @@ def cross_check(type_: str, value: object, text: str, day_first: bool | None = N
         except ValueError:
             return Check(
                 "unknown",
-                stored("{shown}，模型给的 {value} 不是日期，请核对", shown=shown, value=value),
+                stored("{shown}，模型输出的 {value} 不是日期，请核对", shown=shown, value=value),
             )
         readings = date_readings(text, day_first)
         if not readings:
             return Check(
                 "unknown",
                 stored(
-                    "{shown}系统读不出日期，模型读成 {wanted}，请看一眼", shown=shown, wanted=wanted
+                    "{shown}系统无法读取日期，模型识别为 {wanted}，请核对",
+                    shown=shown,
+                    wanted=wanted,
                 ),
             )
         if wanted not in readings:
             return Check(
                 "mismatch",
-                stored("{shown}和模型给的 {wanted} 对不上，请核对", shown=shown, wanted=wanted),
+                stored("{shown}与模型输出的 {wanted} 不符，请核对", shown=shown, wanted=wanted),
             )
         if len(readings) > 1:
             return Check(
                 "unsure",
                 stored(
-                    "{shown}分不清哪个是日、哪个是月（模板没选国家），模型读成 {wanted}，请确认",
+                    ("{shown}无法区分日与月（模板未选择国家），模型识别为 {wanted}，请确认"),
                     shown=shown,
                     wanted=wanted,
                 ),
@@ -129,14 +131,16 @@ def cross_check(type_: str, value: object, text: str, day_first: bool | None = N
             return Check(
                 "unknown",
                 stored(
-                    "{shown}，模型给的 {value} 读不出开始和结束，请核对", shown=shown, value=value
+                    "{shown}，无法从模型输出的 {value} 读取开始和结束日期，请核对",
+                    shown=shown,
+                    value=value,
                 ),
             )
         if page.range is None:
             return Check(
                 "unknown",
                 stored(
-                    "{shown}系统读不出开始和结束，模型读成 {value}，请看一眼",
+                    "{shown}系统无法读取开始和结束日期，模型识别为 {value}，请核对",
                     shown=shown,
                     value=model.text(),
                 ),
@@ -146,20 +150,22 @@ def cross_check(type_: str, value: object, text: str, day_first: bool | None = N
                 return Check(
                     "unsure",
                     stored(
-                        "{shown}分不清日月，模型读成 {value}，请确认",
+                        "{shown}无法区分日与月，模型识别为 {value}，请确认",
                         shown=shown,
                         value=model.text(),
                     ),
                 )
             return Check(
                 "mismatch",
-                stored("{shown}和模型给的 {value} 对不上，请核对", shown=shown, value=model.text()),
+                stored("{shown}与模型输出的 {value} 不符，请核对", shown=shown, value=model.text()),
             )
         if page.problem == AMBIGUOUS_PROBLEM:
             return Check(
                 "unsure",
                 stored(
-                    "{shown}分不清日月，模型读成 {value}，请确认", shown=shown, value=model.text()
+                    "{shown}无法区分日与月，模型识别为 {value}，请确认",
+                    shown=shown,
+                    value=model.text(),
                 ),
             )
         return Check("ok")

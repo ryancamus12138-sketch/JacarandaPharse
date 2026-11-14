@@ -25,7 +25,7 @@ export function DataSettings() {
             <Descriptions.Item label={t('抽取的字段')}>{t('{{fields}} 个', { fields: d.data.fields })}</Descriptions.Item>
             <Descriptions.Item label={t('人工审核记录')}>{t('{{revisions}} 条', { revisions: d.data.revisions })}</Descriptions.Item>
             <Descriptions.Item label={t('导出')}>
-              {t('{{exports}} 次，存了 {{formatBytes}}', { exports: d.data.exports, formatBytes: formatBytes(d.data.export_bytes) })}
+              {t('{{exports}} 次，占用 {{formatBytes}}', { exports: d.data.exports, formatBytes: formatBytes(d.data.export_bytes) })}
             </Descriptions.Item>
           </Descriptions>
         )}
@@ -33,9 +33,9 @@ export function DataSettings() {
       <Card title={t('备份和恢复')} size="small">
         <Flex vertical gap={8}>
           <Typography.Text>
-            {t('备份会把数据库每张表和对象存储里每个文件（原文件、OCR 样本、数据集……）打进一个包，放在项目的 backups/ 文件夹。 模型文件（models/）和本机的设置（data/settings.json）不在里面，自己另外拷。')}
+            {t('备份将数据库全部表及对象存储中的全部文件（原文件、OCR 样本、数据集等）打包，保存在项目的 backups/ 目录。模型文件（models/）和本机设置（data/settings.json）不包含在内，请另行复制。')}
           </Typography.Text>
-          <Typography.Text>{t('1. 先停下：')}</Typography.Text>
+          <Typography.Text>{t('1. 停止服务：')}</Typography.Text>
           <Typography.Text code copyable>
             uv run jacara stop
           </Typography.Text>
@@ -43,12 +43,12 @@ export function DataSettings() {
           <Typography.Text code copyable>
             uv run jacara backup
           </Typography.Text>
-          <Typography.Text>{t('3. 恢复（只能恢复到空的环境里，恢复完会逐样核对）：')}</Typography.Text>
+          <Typography.Text>{t('3. 恢复（仅可恢复到空环境，恢复后逐项校验）：')}</Typography.Text>
           <Typography.Text code copyable>
             {t('uv run jacara restore backups/备份包.tar')}
           </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-            {t('备份包里是你的业务数据，不要放进代码仓库、不要传到公开的地方。')}
+            {t('备份包包含业务数据，请勿提交到代码仓库或上传至公开位置。')}
           </Typography.Text>
         </Flex>
       </Card>

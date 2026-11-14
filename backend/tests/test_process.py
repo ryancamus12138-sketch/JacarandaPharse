@@ -159,7 +159,7 @@ class Sent:
         if self.down:
             from jacara.core.queue import QueueError
 
-            raise QueueError("任务队列（Valkey）连不上")
+            raise QueueError("无法连接任务队列（Valkey）")
         self.items.append((document_id, attempt))
 
 
@@ -189,7 +189,7 @@ def test_two_stations_give_the_same_result(factory, storage, uploaded, receipt_p
     with session_scope(factory) as session:
         document = session.get_one(Document, uploaded)
         assert document.status == "processing"  # OCR done; waiting for the model.
-        assert render(document.stage) == "文字已认好，排队等模型"
+        assert render(document.stage) == "文字识别完成，排队等待模型"
     assert f"pipeline/{uploaded}/{attempt}.json" in storage.files
 
     ocr.page = None  # The model stage does not run OCR again: it uses the OCR stage output.

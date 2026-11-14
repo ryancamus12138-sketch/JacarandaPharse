@@ -45,14 +45,14 @@ def weak_ocr(page: OcrPage) -> str | None:
     if page.engine == "pdf-text":
         return None
     if len(page.lines) < FEW_LINES:
-        return stored("只认出 {n} 块文字", n=len(page.lines))
+        return stored("仅识别出 {n} 块文字", n=len(page.lines))
     scores = [line.confidence for line in page.lines]
     mean = sum(scores) / len(scores)
     low = sum(1 for c in scores if c < LOW_LINE) / len(scores)
     if mean < LOW_MEAN:
-        return stored("OCR 平均置信度只有 {mean:.2f}", mean=mean)
+        return stored("OCR 平均置信度仅为 {mean:.2f}", mean=mean)
     if low > LOW_SHARE:
-        return stored("{low:.0%} 的文字块 OCR 没认清", low=low)
+        return stored("{low:.0%} 的文字块 OCR 识别置信度低", low=low)
     return None
 
 
@@ -61,13 +61,11 @@ def vision_reason(pages: Sequence[OcrPage], mode: VisionMode) -> str | None:
     if mode == "off":
         return None
     if mode == "always":
-        return stored("设置成每张都看原图")
+        return stored("已设置为每张都读取原图")
     for number, page in enumerate(pages, start=1):
         weak = weak_ocr(page)
         if weak is not None:
-            where = (
-                stored("第 {number} 页", number=number) if len(pages) > 1 else stored("这张单据")
-            )
+            where = stored("第 {number} 页", number=number) if len(pages) > 1 else stored("此单据")
             return stored("{where}是照片或扫描件，{weak}", where=where, weak=weak)
     return None
 

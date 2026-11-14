@@ -57,7 +57,7 @@ function ChipRow({
           onClick={() => setOpen(!open)}
           style={{ paddingInline: 4 }}
         >
-          {open ? t('收起') : t('展开其余 {{length}} 个', { length: hidden.length })}
+          {open ? t('收起') : t('展开其余 {{length}} 项', { length: hidden.length })}
         </Button>
       )}
     </Flex>
@@ -113,7 +113,7 @@ export function TemplateFilters({
         <Input
           allowClear
           prefix={<SearchOutlined />}
-          placeholder={t('按名字、说明找')}
+          placeholder={t('按名称、说明搜索')}
           value={value.q}
           onChange={(e) => set({ q: e.target.value })}
           style={{ width: 240 }}
@@ -133,10 +133,10 @@ export function TemplateFilters({
             value={value.sort}
             onChange={(sort) => set({ sort })}
             options={[
-              { value: 'updated', label: t('最近修改的在前') },
-              { value: 'used_recent', label: t('最近用过的在前') },
-              { value: 'used_most', label: t('用得最多的在前') },
-              { value: 'name', label: t('按名字') },
+              { value: 'updated', label: t('按修改时间排序') },
+              { value: 'used_recent', label: t('按使用时间排序') },
+              { value: 'used_most', label: t('按使用次数排序') },
+              { value: 'name', label: t('按名称排序') },
             ]}
             style={{ width: 160 }}
           />

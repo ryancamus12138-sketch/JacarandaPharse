@@ -83,7 +83,7 @@ class CeleryQueue:
                 EXTRACT_DOCUMENT, args=[str(document_id), attempt], queue=EXTRACT_QUEUE, retry=False
             )
         except Exception as err:
-            raise QueueError(tr("任务队列（Valkey）连不上")) from err
+            raise QueueError(tr("无法连接任务队列（Valkey）")) from err
 
     def enqueue_document(self, document_id: uuid.UUID) -> None:
         try:
@@ -91,10 +91,10 @@ class CeleryQueue:
             self.app.send_task(PROCESS_DOCUMENT, args=[str(document_id)], retry=False)
         # kombu raises many connection error types; wrap them all in QueueError.
         except Exception as err:
-            raise QueueError(tr("任务队列（Valkey）连不上")) from err
+            raise QueueError(tr("无法连接任务队列（Valkey）")) from err
 
     def enqueue_eval(self, run_id: uuid.UUID) -> None:
         try:
             self.app.send_task(EVAL_OCR, args=[str(run_id)], queue=QUEUE, retry=False)
         except Exception as err:
-            raise QueueError(tr("任务队列（Valkey）连不上")) from err
+            raise QueueError(tr("无法连接任务队列（Valkey）")) from err

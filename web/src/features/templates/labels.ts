@@ -68,7 +68,7 @@ export function countryOptions() {
   )
   const option = (c: string) => ({ value: c, label: t('{{countryName}}（{{c}}）', { countryName: countryName(c), c }) })
   return [
-    { label: t('不分国家'), title: 'general', options: [{ value: GENERAL, label: t('通用（不分国家）') }] },
+    { label: t('通用'), title: 'general', options: [{ value: GENERAL, label: t('通用（适用于所有国家）') }] },
     { label: t('常用'), title: 'common', options: COMMON.map(option) },
     { label: t('全部国家和地区'), title: 'all', options: rest.map(option) },
   ]

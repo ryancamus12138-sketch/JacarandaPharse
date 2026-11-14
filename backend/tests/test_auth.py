@@ -97,7 +97,7 @@ def test_bad_login_same_message(client, factory, make_user, username, password):
     make_user("alice")
     response = login(client, username, password)
     assert response.status_code == 401
-    assert response.json()["detail"] == "用户名或密码不对"  # Does not reveal which one was wrong.
+    assert response.json()["detail"] == "用户名或密码错误"  # Does not reveal which one was wrong.
     assert actions(factory)[-1] == "auth:login_failed"  # Failures are recorded too.
 
 
@@ -143,7 +143,7 @@ def test_member_can_read_and_export_by_default(client, as_user):
     assert client.get("/api/v1/documents", headers=headers).status_code == 200
     response = upload(client, headers)
     assert response.status_code == 403
-    assert response.json()["detail"] == "没有权限：上传文件（请找管理员开通）"
+    assert response.json()["detail"] == "没有权限：上传文件（请联系管理员开通）"
 
 
 def test_member_with_permission_can_upload(client, as_user):
@@ -151,7 +151,7 @@ def test_member_with_permission_can_upload(client, as_user):
     assert upload(client, headers).status_code == 201
     response = client.get("/api/v1/users", headers=headers)
     assert response.status_code == 403
-    assert "只有管理员能做" in response.json()["detail"]
+    assert "仅管理员可执行" in response.json()["detail"]
 
 
 def test_me_lists_what_i_can_do(client, as_user):
@@ -280,9 +280,9 @@ def test_change_own_password(client, factory, make_user):
     laptop = {"Authorization": f"Bearer {login(client, 'bob').json()['token']}"}
 
     wrong = change_password(client, laptop, "not-my-password", "new-password")
-    assert (wrong.status_code, wrong.json()["detail"]) == (422, "原密码不对")
+    assert (wrong.status_code, wrong.json()["detail"]) == (422, "原密码错误")
     same = change_password(client, laptop, PASSWORD, PASSWORD)
-    assert (same.status_code, same.json()["detail"]) == (422, "新密码不能和原来的一样")
+    assert (same.status_code, same.json()["detail"]) == (422, "新密码不能与原密码相同")
     assert change_password(client, laptop, PASSWORD, "short").status_code == 422
 
     assert change_password(client, laptop, PASSWORD, "new-password").status_code == 204

@@ -80,11 +80,11 @@ def _raw(**changes):
 @pytest.mark.parametrize(
     ("changes", "message"),
     [
-        ({"name": "other"}, "name 应该是 demo"),
+        ({"name": "other"}, "name 应为 demo"),
         ({"version": 0}, "version"),
         ({"version": "1"}, "version"),
-        ({"fields": []}, "至少要有一个字段"),
-        ({"fields": [{"name": "total", "type": "money"}]}, "type 只能是"),
+        ({"fields": []}, "至少需要一个字段"),
+        ({"fields": [{"name": "total", "type": "money"}]}, "type 只能为"),
         ({"fields": [{"name": "总额", "type": "number"}]}, "英文字母"),
         ({"fields": [{"name": "a", "type": "string"}, {"name": "a", "type": "string"}]}, "重复"),
         ({"rules": ["no_such_rule"]}, "no_such_rule"),
@@ -93,7 +93,7 @@ def _raw(**changes):
             "第 1 张表",
         ),
         ({"tables": [{"name": "total", "columns": [{"name": "a", "type": "string"}]}]}, "重名"),
-        ({"tables": [{"name": "items", "columns": []}]}, "至少要有一列"),
+        ({"tables": [{"name": "items", "columns": []}]}, "至少需要一列"),
         ({"tables": [{"name": "items", "columns": [{"name": "a", "type": "x"}]}]}, "表 items"),
         ({"tables": [{"name": "items", "columns": [{"name": "row", "type": "number"}]}]}, "row"),
     ],

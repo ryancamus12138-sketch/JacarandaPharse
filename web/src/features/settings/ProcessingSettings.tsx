@@ -14,7 +14,7 @@ function errorText(err: unknown): string {
 
 const SOURCE = {
   env: { get text() { return t('由 .env 指定') }, color: 'gold' },
-  page: { get text() { return t('改过') }, color: 'blue' },
+  page: { get text() { return t('已修改') }, color: 'blue' },
   default: { get text() { return t('默认') }, color: 'default' },
 } as const
 
@@ -67,7 +67,7 @@ function SettingRow({
         style={{ width: 360 }}
         value={draft}
         disabled={locked}
-        placeholder={item.kind === 'path' ? t('/Users/你的用户名/Documents/待处理单据') : t('空着')}
+        placeholder={item.kind === 'path' ? t('/Users/你的用户名/Documents/待处理单据') : t('留空')}
         onChange={(e) => setDraft(e.target.value)}
         onPressEnter={() => onChange(draft.trim() || null)}
         onBlur={() => {
@@ -81,7 +81,7 @@ function SettingRow({
       <Flex vertical gap={2} style={{ flex: 1, minWidth: 260 }}>
         <Flex gap={8} align="center" wrap>
           <Typography.Text strong>{item.label}</Typography.Text>
-          <Tooltip title={item.source === 'env' ? t('在 .env 里改 {{env}}，重启后生效', { env: item.env }) : t('.env 里的名字：{{env}}', { env: item.env })}>
+          <Tooltip title={item.source === 'env' ? t('在 .env 中修改 {{env}}，重启后生效', { env: item.env }) : t('.env 中的变量名：{{env}}', { env: item.env })}>
             <Tag color={SOURCE[item.source].color}>{SOURCE[item.source].text}</Tag>
           </Tooltip>
         </Flex>
@@ -92,7 +92,7 @@ function SettingRow({
       <Flex gap={8} align="center">
         {control}
         {item.source === 'page' && !disabled && (
-          <Tooltip title={t('改回默认')}>
+          <Tooltip title={t('恢复默认')}>
             <Button size="small" type="text" icon={<UndoOutlined />} onClick={() => onChange(null)} />
           </Tooltip>
         )}
@@ -115,7 +115,7 @@ export function ProcessingSettings() {
     mutationFn: updateSettings,
     onSuccess: (data) => {
       queryClient.setQueryData(['app-settings'], data)
-      void message.success(t('保存了。后台要 jacara stop、jacara start 才用新的设置'))
+      void message.success(t('已保存。需执行 jacara stop 和 jacara start 后，后台才会使用新设置'))
     },
     onError: (err) => void message.error(errorText(err)),
   })
@@ -128,16 +128,16 @@ export function ProcessingSettings() {
   const groups = [...new Set((data?.items ?? []).map((i) => i.group))]
   return (
     <Flex vertical gap={16}>
-      {settings.isError && <Alert type="error" showIcon title={t('设置读不出来')} description={errorText(settings.error)} />}
+      {settings.isError && <Alert type="error" showIcon title={t('无法读取设置')} description={errorText(settings.error)} />}
       {data?.restart_needed && (
         <Alert
           type="warning"
           showIcon
-          title={t('改过的设置还没生效')}
-          description={t('后台启动时才读设置：在终端里运行 uv run jacara stop，再 uv run jacara start。')}
+          title={t('修改的设置尚未生效')}
+          description={t('后台仅在启动时读取设置：请在终端中运行 uv run jacara stop，再运行 uv run jacara start。')}
         />
       )}
-      {data && !data.can_change && <Alert type="info" showIcon title={t('只有管理员能改这些设置')} />}
+      {data && !data.can_change && <Alert type="info" showIcon title={t('仅管理员可修改这些设置')} />}
       {groups.map((group) => (
         <Card key={group} title={group} size="small">
           {data!.items
@@ -156,7 +156,7 @@ export function ProcessingSettings() {
               <Flex vertical gap={2} style={{ flex: 1, minWidth: 260 }}>
                 <Typography.Text strong>{t('审核时自动收集 OCR 纠错样本')}</Typography.Text>
                 <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                  {t('审核页点原文时先核对"图中原文"，保存审核的同时存成训练 OCR 的样本。和"OCR 样本"页顶上的开关是同一个。')}
+                  {t('在审核页点击原文时先核对“图中原文”，保存审核时一并保存为 OCR 训练样本。与“OCR 样本”页顶部的开关为同一设置。')}
                 </Typography.Text>
               </Flex>
               <Switch

@@ -149,7 +149,7 @@ def ensure_split(session: Session, team_id: uuid.UUID, group_id: uuid.UUID) -> S
             version=version,
             group_id=group_id,
             split=hashed_split(split_seed(session, team_id), version, group_id),
-            reason=stored("第一次进数据集时按哈希分"),
+            reason=stored("首次进入数据集时按哈希分配"),
         )
         session.add(found)
         session.flush()
@@ -290,19 +290,25 @@ def merge(
     affected = 0
     splits = {split_a.split, split_b.split}
     if "quarantined" in splits:
-        split_a.split, split_a.reason = "quarantined", stored("合并的两组里有一组本来就被隔离")
+        split_a.split, split_a.reason = "quarantined", stored("合并的两个分组中有一个已被隔离")
     elif len(splits) == 1:
         pass
     elif not touched:
         if "test_locked" in splits:
-            split_a.split, split_a.reason = "test_locked", stored("合并：有一组是锁定测试集")
+            split_a.split, split_a.reason = (
+                "test_locked",
+                stored("合并：其中一个分组属于锁定测试集"),
+            )
         else:
             split_a.reason = stored(
-                "合并：按保留那一组（{split}）", split=nested(SPLIT_NAMES[split_a.split])
+                "合并：沿用保留分组的划分（{split}）", split=nested(SPLIT_NAMES[split_a.split])
             )
     else:
         reason = stored(
-            "确认是同一张单据时，两组已经导出过、分在不同边（{first}、{second}）：可能一份训练、一份验证",
+            (
+                "确认为同一张单据时，两个分组均已导出且位于不同划分（{first}"
+                "、{second}）：可能同时出现在训练集和验证集中"
+            ),
             first=nested(SPLIT_NAMES[split_a.split]),
             second=nested(SPLIT_NAMES[split_b.split]),
         )
@@ -318,19 +324,19 @@ def detach(session: Session, team_id: uuid.UUID, member_id: uuid.UUID) -> MergeR
     was exported, both are quarantined."""
     member = session.get(DocGroupMember, member_id)
     if member is None or member.team_id != team_id:
-        raise GroupError("not_found", tr("找不到这张单据"))
+        raise GroupError("not_found", tr("单据不存在"))
     old = member.group_id
     rest = session.scalars(
         select(DocGroupMember).where(DocGroupMember.group_id == old, DocGroupMember.id != member.id)
     ).all()
     if not rest:
-        raise GroupError("invalid", tr("这一组只有这一张单据，不用拆"))
+        raise GroupError("invalid", tr("此分组仅含这一张单据，无需拆分"))
     member.group_id = uuid.uuid4()
     session.flush()
     new_split = ensure_split(session, team_id, member.group_id)
     affected = 0
     if exports_with(session, team_id, [old]):
-        reason = stored("拆开配错的单据时，原来的组已经导出过：拆出来的这张可能在另一边也出现过")
+        reason = stored("拆分配对错误的单据时，原分组已导出：拆出的单据可能已出现在另一划分中")
         new_split.split, new_split.reason = "quarantined", reason
         old_split = ensure_split(session, team_id, old)
         old_split.split, old_split.reason = "quarantined", reason
@@ -347,30 +353,32 @@ def set_split(
         Groups exported into training can no longer become validation or test; only groups never
     exported can be locked as test (it must stay independent and clean)."""
     if split not in SPLITS:
-        raise GroupError("invalid", tr("没有这种划分：{split}", split=split))
+        raise GroupError("invalid", tr("划分不存在：{split}", split=split))
     if not session.scalar(
         select(DocGroupMember.id).where(
             DocGroupMember.group_id == group_id, DocGroupMember.team_id == team_id
         )
     ):
-        raise GroupError("not_found", tr("找不到这一组"))
+        raise GroupError("not_found", tr("分组不存在"))
     found = ensure_split(session, team_id, group_id)
     if split == found.split:
         return found
     used = exported_as(session, team_id, group_id)
     if split in ("val", "test_locked") and "train" in used:
-        raise GroupError("invalid", tr("这一组已经导出进训练集，不能再当验证集或测试集"))
+        raise GroupError("invalid", tr("此分组已导出到训练集，不能再用作验证集或测试集"))
     if split == "test_locked" and used - {"test_locked"}:
-        raise GroupError("invalid", tr("锁定测试集只能用从没导出过的组（测试集要独立、没人看过）"))
+        raise GroupError(
+            "invalid", tr("锁定测试集只能使用从未导出的分组（测试集需保持独立且未被查看）")
+        )
     if found.split == "val" and split == "train" and "val" in used:
         _mark_affected(
             session,
             team_id,
             [group_id],
-            stored("这一组从验证集改到训练集：之前用它算的验证成绩以后不再独立"),
+            stored("此分组从验证集改为训练集：此前基于其计算的验证结果不再独立"),
         )
     found.split = split
-    found.reason = stored("管理员手动改的")
+    found.reason = stored("管理员手动修改")
     session.flush()
     return found
 

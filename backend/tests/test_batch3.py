@@ -171,7 +171,7 @@ def test_model_looks_at_the_picture_when_ocr_is_weak(client, factory, storage, m
     assert extraction["prompt_version"].endswith("+vision")
     folio = next(v for v in extraction["values"] if v["name"] == "folio_no")
     assert folio["status"] == "seen" and folio["current_value"] == "F-100"
-    assert folio["needs_review"] and "看原图读的" in folio["note"]
+    assert folio["needs_review"] and "读取自原图" in folio["note"]
 
     # Model server without a vision projector: no images sent.
     backend = ChoosingBackend(HOTEL, choice=1, vision=False)
@@ -432,4 +432,4 @@ def test_new_format_is_kept_and_flagged_not_dropped():
     result = ExtractionResult((field,), "{}", "m", "b", "v", 0)
     [paid] = BlockAligner().align(page, result, structure)
     assert paid.status == "fuzzy" and paid.needs_review and paid.field.value == "2014-08-03"
-    assert "读不出日期" in paid.note
+    assert "无法读取日期" in paid.note

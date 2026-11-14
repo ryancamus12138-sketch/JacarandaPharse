@@ -67,7 +67,7 @@ export function ProfilePage() {
     mutationFn: removeAvatar,
     onSuccess: async (next) => {
       await changed(next)
-      void message.success(t('头像已去掉'))
+      void message.success(t('头像已移除'))
     },
     onError: (err) => void message.error(errorText(err)),
   })
@@ -98,7 +98,7 @@ export function ProfilePage() {
                 }}
               >
                 <Button size="small" icon={<UploadOutlined />} loading={upload.isPending}>
-                  {t('换头像')}
+                  {t('更换头像')}
                 </Button>
               </Upload>
               {p.avatar_at && (
@@ -108,7 +108,7 @@ export function ProfilePage() {
                   loading={remove.isPending}
                   onClick={() => remove.mutate()}
                 >
-                  {t('去掉')}
+                  {t('移除')}
                 </Button>
               )}
             </Space>
@@ -121,8 +121,8 @@ export function ProfilePage() {
               label={t('昵称')}
               extra={
                 team
-                  ? t('别人在备注、修改记录里看到的名字。不填就显示用户名 {{value}}', { value: p.username ?? '' })
-                  : t('个人模式下右上角显示的名字。不填就显示"本机用户"')
+                  ? t('在备注和修改记录中向他人显示的名称；未填写时显示用户名 {{value}}', { value: p.username ?? '' })
+                  : t('个人模式下右上角显示的名称；未填写时显示“本机用户”')
               }
             >
               <Input
@@ -163,25 +163,25 @@ export function ProfilePage() {
                 {p.role === 'admin' ? t('管理员') : t('使用者')}
               </Tag>
             </Descriptions.Item>
-            <Descriptions.Item label={t('能做的事')}>
+            <Descriptions.Item label={t('权限')}>
               {p.role === 'admin' ? (
-                t('全部（包括管理用户、看审计日志）')
+                t('全部（包括用户管理和查看审计日志）')
               ) : (
                 <Space size={[4, 4]} wrap>
-                  <Tag>{t('看、下载、导出')}</Tag>
+                  <Tag>{t('查看、下载、导出')}</Tag>
                   {p.permissions.map((name) => (
                     <Tag key={name}>{name}</Tag>
                   ))}
                 </Space>
               )}
             </Descriptions.Item>
-            <Descriptions.Item label={t('账号建于')}>
+            <Descriptions.Item label={t('账号创建时间')}>
               {p.member_since ? new Date(p.member_since).toLocaleDateString() : '—'}
             </Descriptions.Item>
           </Descriptions>
         ) : (
           <Typography.Text type="secondary">
-            {t('个人模式：这台电脑上不用登录，也没有用户名和密码。要多人使用，请让管理员切到团队模式。')}
+            {t('个人模式：在本机使用无需登录，也没有用户名和密码。如需多人使用，请由管理员切换至团队模式。')}
           </Typography.Text>
         )}
       </Card>

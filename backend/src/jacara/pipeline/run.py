@@ -130,7 +130,7 @@ class Pipeline:
                     result = self.extractor.extract(
                         page, tpl.specs, tpl.table_specs, structure, images=images
                     )
-                    result = replace(result, vision=vision or stored("看了原图"))
+                    result = replace(result, vision=vision or stored("读取了原图"))
                 else:
                     result = self.extractor.extract(page, tpl.specs, tpl.table_specs, structure)
             finally:
@@ -312,7 +312,7 @@ class Pipeline:
         report = progress or (lambda _stage, _percent: None)
         name = name or path.name
         if pages is None:
-            report(stored("识别文字"), 5)
+            report(stored("文字识别"), 5)
             pages = self.read(path, pdf_read)
         looks = vision or self.vision
         images = page_images(path) if self.needs_images(looks) else [None] * len(pages)
@@ -322,7 +322,7 @@ class Pipeline:
             split,
             cast(Judge, judge) if callable(judge) else None,
             lambda k: report(
-                stored("判断第 {k} / {n} 页是不是新的一张单据", k=k, n=len(pages)),
+                stored("判断第 {k} / {n} 页是否为新单据", k=k, n=len(pages)),
                 10 + 5 * k // len(pages),
             ),
         )
@@ -345,7 +345,7 @@ class Pipeline:
                     a,
                     template,
                     before_extract=lambda which=which, n=n: report(
-                        stored("选模板、抽取{which}", which=which)
+                        stored("选择模板并抽取{which}", which=which)
                         if isinstance(template, AutoChoice)
                         else stored("抽取{which}", which=which),
                         20 + 75 * (n - 1) // len(parts),
@@ -404,9 +404,11 @@ def writing(report: Progress, which: str, low: int, high: int) -> Callable[[int,
         share = min(WRITE_SHARE, written / expected) if expected else WRITE_SHARE
         speed = written / max(now - started, 0.1)
         left = max(0, round((expected - written) / speed)) if speed and written < expected else 0
-        hint = stored("，大约还要 {left} 秒", left=left) if left else stored("，快写完了")
+        hint = stored("，预计剩余 {left} 秒", left=left) if left else stored("，即将完成")
         report(
-            stored("抽取{which}：模型已写 {share:.0%}{hint}", which=which, share=share, hint=hint),
+            stored(
+                "抽取{which}：模型已输出 {share:.0%}{hint}", which=which, share=share, hint=hint
+            ),
             low + round((high - low) * share),
         )
 

@@ -52,8 +52,8 @@ export function TranscriptionPanel({ ocrText, label, busy, onUse, onCancel }: Pr
           </Flex>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {changed
-              ? t('OCR 读的是「{{ocrText}}」。保存后存成一条「认错字」样本。', { ocrText })
-              : t('和图上一样就直接回车；有认错的字，按图上原样改（空格、大小写、标点、前导零都照抄）。')}
+              ? t('OCR 识别结果为「{{ocrText}}」。保存后将记录为一条「识别错误」样本。', { ocrText })
+              : t('与图像一致时直接按回车；存在识别错误时，请按图像内容逐字修改（空格、大小写、标点和前导零均需照录）。')}
           </Typography.Text>
         </Flex>
       }

@@ -357,7 +357,7 @@ def test_region_outside_the_page_is_rejected(client, uploaded):
         f"/api/v1/documents/{uploaded}/pages/1/ocr-region", json={"box": [900, 900, 950, 950]}
     )
     assert response.status_code == 422
-    assert "框太小" in response.json()["detail"]
+    assert "过小" in response.json()["detail"]
 
 
 def test_region_needs_four_numbers(client, uploaded):
@@ -492,7 +492,7 @@ def test_reprocess_many_with_chosen_settings(client, factory, queue, document_id
     with session_scope(factory) as session:
         document = session.get_one(Document, document_id)
         assert (document.discover, document.split, document.vision) == (True, "pages", "off")
-        assert render(document.run_reason) == "选错了模板"
+        assert render(document.run_reason) == "模板选择错误"
     other = {"ids": [str(document_id)], "reason": "other"}
     assert client.post("/api/v1/documents/reprocess", json=other).status_code == 422
     ranges = {"ids": [str(document_id)], "split": "1-2"}

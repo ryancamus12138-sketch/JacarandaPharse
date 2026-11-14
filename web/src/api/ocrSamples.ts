@@ -166,18 +166,18 @@ export interface ExportRecord {
 
 /** Display name and color of each category. */
 export const CATEGORIES: Record<SampleCategory, { name: string; color: string; hint: string }> = {
-  rec_error: { get name() { return t('认错字') }, color: 'red', get hint() { return t('点的是一块原文，图中原文和 OCR 读的不一样') } },
-  correct: { get name() { return t('认对的行') }, color: 'green', get hint() { return t('点的是一块原文，OCR 本来就读对了。训练时和错例一起用') } },
-  missed: { get name() { return t('漏认') }, color: 'orange', get hint() { return t('框选的，框里原来没有 OCR 文字块') } },
-  unclear: { get name() { return t('原因未确定') }, color: 'default', get hint() { return t('框选的，框里有 OCR 文字块，说不清是哪一步错的') } },
+  rec_error: { get name() { return t('识别错误') }, color: 'red', get hint() { return t('点选单块原文，图中原文与 OCR 结果不一致') } },
+  correct: { get name() { return t('识别正确的行') }, color: 'green', get hint() { return t('点选单块原文，OCR 识别正确。训练时与错例一同使用') } },
+  missed: { get name() { return t('漏识别') }, color: 'orange', get hint() { return t('框选区域，区域内原本没有 OCR 文字块') } },
+  unclear: { get name() { return t('原因未确定') }, color: 'default', get hint() { return t('框选区域，区域内有 OCR 文字块，无法确定出错环节') } },
 }
 
 export const TAGS: Record<string, string> = {
-  get substitution() { return t('字认错') },
-  get missing() { return t('漏字') },
+  get substitution() { return t('字符识别错误') },
+  get missing() { return t('缺字') },
   get extra() { return t('多字') },
-  get format() { return t('空格、大小写、全角半角') },
-  get empty() { return t('整行没认出') },
+  get format() { return t('空格、大小写、全角/半角') },
+  get empty() { return t('整行未识别') },
 }
 
 function query(filters: SampleFilters, extra: Record<string, string> = {}): string {
@@ -313,10 +313,10 @@ export function saveSamplesAsDataset(
 export type DetStatus = 'none' | 'draft' | 'confirmed' | 'excluded'
 
 export const DET_STATUS: Record<DetStatus, { name: string; color: string }> = {
-  none: { get name() { return t('还没做') }, color: 'default' },
-  draft: { get name() { return t('没确认') }, color: 'orange' },
-  confirmed: { get name() { return t('确认了') }, color: 'green' },
-  excluded: { get name() { return t('不用') }, color: 'default' },
+  none: { get name() { return t('未标注') }, color: 'default' },
+  draft: { get name() { return t('未确认') }, color: 'orange' },
+  confirmed: { get name() { return t('已确认') }, color: 'green' },
+  excluded: { get name() { return t('已排除') }, color: 'default' },
 }
 
 export interface DetBox {

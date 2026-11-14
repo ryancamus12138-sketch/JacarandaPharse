@@ -26,7 +26,7 @@ export function NewPasswordFields() {
             validator: (_, value) =>
               value === getFieldValue('password')
                 ? Promise.resolve()
-                : Promise.reject(new Error(t('两次输入的不一样'))),
+                : Promise.reject(new Error(t('两次输入的密码不一致'))),
           }),
         ]}
       >

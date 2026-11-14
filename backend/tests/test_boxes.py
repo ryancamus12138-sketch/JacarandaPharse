@@ -96,7 +96,7 @@ def test_position_id_and_hint():
     assert field_id("Invoice No", used, 1) == "invoice_no"
     assert field_id("Invoice No", used, 2) == "invoice_no_2"
     assert field_id("发票号码", used, 3) == "field_3"
-    assert hint("右上角", "Invoice No", "右边") == "在单据右上角，「Invoice No」右边"
+    assert hint("右上角", "Invoice No", "右侧") == "在单据右上角，「Invoice No」右侧"
 
 
 @pytest.fixture
@@ -121,7 +121,7 @@ def test_describe_region_uses_stored_ocr(client, document_id):
     found = response.json()
     assert found["text"] == "10.00" and found["type"] == "number"
     # "Cash → 10.00" paired by layout analysis.
-    assert found["label"] == "Cash" and found["side"] == "右边"
+    assert found["label"] == "Cash" and found["side"] == "右侧"
     assert found["description"].startswith("在单据")
     assert detail["id"] == str(document_id)
 
@@ -138,7 +138,7 @@ def test_create_template_from_boxes(client, document_id):
                     "label": "总额",
                     "type": "number",
                     "required": True,
-                    "description": "在单据右下角，「Total」右边",
+                    "description": "在单据右下角，「Total」右侧",
                     "aliases": ["Total"],
                     "page": 1,
                     "box": [1, 2, 3, 4],

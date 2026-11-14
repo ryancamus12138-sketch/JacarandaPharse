@@ -74,7 +74,7 @@ class BlockAligner:
         day_first: bool | None = None,
     ) -> AlignedField:
         if field.value is None:
-            return AlignedField(field, "empty", None, False, stored("模型说原文里没有这个字段"))
+            return AlignedField(field, "empty", None, False, stored("模型判断原文中没有此字段"))
 
         if field.text and field.type != "string":
             # The model copied the source text: search for it as written first, then check whether
@@ -97,11 +97,11 @@ class BlockAligner:
                 return found
             where = (
                 stored(
-                    "模型说值在 {cited}，那几块里没有这个值；在别处找到了",
+                    ("模型指出值位于 {cited}，但这些文字块中没有该值；已在其他位置找到"),
                     cited=_cited(field.blocks),
                 )
                 if field.blocks
-                else stored("模型没说值在哪几块；按文字在原文里找到了")
+                else stored("模型未指出值所在的文字块；已按文字在原文中找到")
             )
             note = join_notes(where, found.note)
             return replace(found, needs_review=True, note=note)
@@ -110,14 +110,16 @@ class BlockAligner:
             return self._seen(field, s)
         note = (
             stored(
-                "模型给了「{shown}」，但它说的文字块 {cited} 里没有、原文里找不到，"
-                "按规则没有填（核对原文后可以采用）",
+                (
+                    "模型输出「{shown}」，但其指出的文字块 {cited} 中没有、原文中"
+                    "也未找到，按规则未填写（核对原文后可采用）"
+                ),
                 shown=_shown(field),
                 cited=_cited(field.blocks),
             )
             if field.blocks
             else stored(
-                "模型给了「{shown}」，但原文里找不到，按规则没有填（核对原文后可以采用）",
+                ("模型输出「{shown}」，但原文中未找到，按规则未填写（核对原文后可采用）"),
                 shown=_shown(field),
             )
         )
@@ -141,19 +143,20 @@ class BlockAligner:
             if field.blocks:
                 notes.append(
                     stored(
-                        "模型说值在 {cited}，那几块里没有；在别处找到了", cited=_cited(field.blocks)
+                        "模型指出值位于 {cited}，但这些文字块中没有；已在其他位置找到",
+                        cited=_cited(field.blocks),
                     )
                 )
         if evidence.similarity < 1.0:
             notes.append(
                 stored(
-                    "原文里只有相似的文字（相似度 {similarity:.2f}）",
+                    "原文中仅有相似文字（相似度 {similarity:.2f}）",
                     similarity=evidence.similarity,
                 )
             )
         if evidence.confidence < self.min_confidence:
             notes.append(
-                stored("原文这里 OCR 置信度只有 {confidence:.2f}", confidence=evidence.confidence)
+                stored("原文此处 OCR 置信度仅为 {confidence:.2f}", confidence=evidence.confidence)
             )
         check = cross_check(field.type, field.value, text, day_first)
         if check.verdict != "ok":
@@ -177,13 +180,13 @@ class BlockAligner:
                 int(words[0].attrs["row"]), " / ".join(w.text for w in words), tuple(lines), 0.0
             )
             note = stored(
-                "看原图读的：OCR 认成「{ocr}」，模型在图上看到的是「{shown}」，请核对原图",
+                ("读取自原图：OCR 识别为「{ocr}」，模型从图像中读取为「{shown}」，请核对原图"),
                 ocr=ocr,
                 shown=_shown(field),
             )
             return AlignedField(field, "seen", evidence, True, note)
         note = stored(
-            "看原图读的：OCR 文字里没有「{shown}」（可能是手写、印章或没认出来），请核对原图",
+            ("读取自原图：OCR 文字中没有「{shown}」（可能为手写、印章或未识别），请核对原图"),
             shown=_shown(field),
         )
         return AlignedField(field, "seen", None, True, note)
@@ -247,13 +250,13 @@ class BlockAligner:
         if evidence.similarity < 1.0:
             notes.append(
                 stored(
-                    "原文里只有相似的文字（相似度 {similarity:.2f}）",
+                    "原文中仅有相似文字（相似度 {similarity:.2f}）",
                     similarity=evidence.similarity,
                 )
             )
         if evidence.confidence < self.min_confidence:
             notes.append(
-                stored("原文这里 OCR 置信度只有 {confidence:.2f}", confidence=evidence.confidence)
+                stored("原文此处 OCR 置信度仅为 {confidence:.2f}", confidence=evidence.confidence)
             )
         if field.type == "number" and isinstance(field.value, float):
             sign = _sign_mismatch(field.value, evidence)

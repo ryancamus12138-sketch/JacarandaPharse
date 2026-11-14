@@ -223,13 +223,13 @@ class ModelAdminService:
                 if value not in allowed:
                     raise ModelError(
                         tr(
-                            "{slot}只能选 models/ 里已有的文件，没有 {file}",
+                            "{slot}只能选择 models/ 中已有的文件，未找到 {file}",
                             slot=tr(SLOTS[key]),
                             file=value,
                         )
                     )
             elif key == "model":
-                raise ModelError(tr("大模型不能不用"))
+                raise ModelError(tr("必须选择大模型"))
             choices[key] = value
             changed[key] = value
         target = PROJECT_ROOT / CHOICES_FILE

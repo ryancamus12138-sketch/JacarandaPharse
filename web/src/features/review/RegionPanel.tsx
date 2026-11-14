@@ -112,11 +112,11 @@ export function RegionPanel({
         <Flex vertical gap={8} style={{ marginTop: 4 }}>
           <Flex gap={8} align="center" wrap>
             <Typography.Text style={{ flex: 1, minWidth: 160 }}>
-              {t('框里的文字：')}
+              {t('框内文字：')}
               {inside.length > 0 ? (
                 t('「{{join}}」', { join: inside.map((l) => l.text).join(' ') })
               ) : (
-                <Typography.Text type="secondary">{t('（没有认出的文字）')}</Typography.Text>
+                <Typography.Text type="secondary">{t('（未识别出文字）')}</Typography.Text>
               )}
             </Typography.Text>
             <Button
@@ -126,7 +126,7 @@ export function RegionPanel({
               loading={busy && text === null}
               onClick={() => onUseLines(inside.map((l) => l.index))}
             >
-              {t('用框里的文字')}
+              {t('使用框内文字')}
             </Button>
             <Button
               size="small"
@@ -134,7 +134,7 @@ export function RegionPanel({
               loading={read.isPending}
               onClick={() => read.mutate()}
             >
-              {t('重新识别这块')}
+              {t('重新识别此区域')}
             </Button>
             {vision.data?.sees_images && (
               <Button
@@ -143,7 +143,7 @@ export function RegionPanel({
                 loading={look.isPending}
                 onClick={() => look.mutate()}
               >
-                {t('让模型看这块')}
+                {t('由模型读取此区域')}
               </Button>
             )}
             <Button size="small" onClick={onCancel}>
@@ -157,17 +157,17 @@ export function RegionPanel({
           )}
           {byModel && seen !== null && (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t('模型在图上看到：「{{seen}}」。手写、盖住的字模型也可能看错，填之前对一下原图。', { seen: seen || t('（没看出字）') })}
+              {t('模型从图像中读取到：「{{seen}}」。手写或被遮挡的文字模型也可能读错，填入前请核对原图。', { seen: seen || t('（未读取到文字）') })}
             </Typography.Text>
           )}
           {text !== null && (
             <Flex gap={8} align="center">
-              <Typography.Text>{byModel ? t('模型读的：') : t('重新识别：')}</Typography.Text>
+              <Typography.Text>{byModel ? t('模型读取：') : t('重新识别：')}</Typography.Text>
               <Input
                 size="small"
                 autoFocus
                 value={text}
-                placeholder={t('没认出文字，可以直接输入')}
+                placeholder={t('未识别出文字，可直接输入')}
                 onChange={(e) => setText(e.target.value)}
                 onPressEnter={use}
                 style={{ flex: 1 }}
@@ -185,8 +185,8 @@ export function RegionPanel({
           )}
           {text !== null && collecting && own === null && (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t('图中原文')}{byModel && seen ? t('用模型在图上看到的「{{seen}}」', { seen }) : t('和上面填入的一样')}
-              {t('，会和框里的图一起存成 OCR 样本。框里还有别的字（比如标签）？')}
+              {t('图中原文')}{byModel && seen ? t('使用模型从图像中读取的「{{seen}}」', { seen }) : t('与上方填入的内容相同')}
+              {t('，将与框内图像一并保存为 OCR 样本。框内还包含其他文字（如标签）？')}
               <Button type="link" size="small" onClick={() => setOwn(transcription ?? text)}>
                 {t('单独填写图中原文')}
               </Button>
@@ -198,7 +198,7 @@ export function RegionPanel({
               <Input
                 size="small"
                 value={own}
-                placeholder={t('框里所有的字，按图上原样')}
+                placeholder={t('框内全部文字，与图像保持一致')}
                 onChange={(e) => setOwn(e.target.value)}
                 onPressEnter={use}
                 style={{ flex: 1, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}

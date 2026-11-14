@@ -350,12 +350,10 @@ def look_at(
         data = json.loads(result.text)
     except json.JSONDecodeError as err:
         raise ExtractionError(
-            stored("模型的回答不是合格的 JSON：{answer}", answer=result.text[:200])
+            stored("模型输出不是有效的 JSON：{answer}", answer=result.text[:200])
         ) from err
     if not isinstance(data, dict):
-        raise ExtractionError(
-            stored("模型的回答不是 JSON 对象：{answer}", answer=result.text[:200])
-        )
+        raise ExtractionError(stored("模型输出不是 JSON 对象：{answer}", answer=result.text[:200]))
     text = " ".join(str(data.get("text") or "").split())
     value = data.get("value")
     if isinstance(value, float) and value == int(value) and kind != "number":
@@ -447,11 +445,11 @@ class LlmExtractor:
             data = json.loads(result.text)
         except json.JSONDecodeError as err:
             raise ExtractionError(
-                stored("模型的回答不是合格的 JSON：{answer}", answer=result.text[:200])
+                stored("模型输出不是有效的 JSON：{answer}", answer=result.text[:200])
             ) from err
         if not isinstance(data, dict):
             raise ExtractionError(
-                stored("模型的回答不是 JSON 对象：{answer}", answer=result.text[:200])
+                stored("模型输出不是 JSON 对象：{answer}", answer=result.text[:200])
             )
         data = cast(dict[str, Any], data)
 
@@ -462,7 +460,7 @@ class LlmExtractor:
             if not isinstance(rows, list):
                 raise ExtractionError(
                     stored(
-                        "模型的回答里 {name} 不是列表：{answer}",
+                        "模型输出中的 {name} 不是列表：{answer}",
                         name=t.name,
                         answer=result.text[:200],
                     )
@@ -470,11 +468,11 @@ class LlmExtractor:
             items: list[list[ExtractedField]] = []
             for row in cast(list[Any], rows):
                 if not isinstance(row, dict):
-                    raise ExtractionError(stored("模型的回答里 {name} 有一行不是对象", name=t.name))
+                    raise ExtractionError(stored("模型输出中的 {name} 有一行不是对象", name=t.name))
                 row = cast(dict[str, Any], row)
                 if not all(c.name in row for c in t.columns):
                     raise ExtractionError(
-                        stored("模型的回答里 {name} 有一行缺了列：{row}", name=t.name, row=row)
+                        stored("模型输出中的 {name} 有一行缺少列：{row}", name=t.name, row=row)
                     )
                 cells = [
                     _field(c, _cell(row, c.name), c.name, result.text, structure) for c in t.columns
@@ -522,12 +520,12 @@ def _discover(self: LlmExtractor, page: OcrPage, structure: PageStructure) -> Ex
         data = json.loads(result.text)
     except json.JSONDecodeError as err:
         raise ExtractionError(
-            stored("模型的回答不是合格的 JSON：{answer}", answer=result.text[:200])
+            stored("模型输出不是有效的 JSON：{answer}", answer=result.text[:200])
         ) from err
     pairs = data.get("pairs") if isinstance(data, dict) else None
     if not isinstance(pairs, list):
         raise ExtractionError(
-            stored("模型的回答里没有 pairs 列表：{answer}", answer=result.text[:200])
+            stored("模型输出中没有 pairs 列表：{answer}", answer=result.text[:200])
         )
     fields: list[ExtractedField] = []
     seen: set[tuple[str, str]] = set()
@@ -647,7 +645,7 @@ def _field(
     name."""
     if not isinstance(item, dict) or "value" not in item:
         raise ExtractionError(
-            stored("模型的回答缺少字段 {name}：{answer}", name=name, answer=raw[:200])
+            stored("模型输出缺少字段 {name}：{answer}", name=name, answer=raw[:200])
         )
     item = cast(dict[str, Any], item)
     value = item["value"]

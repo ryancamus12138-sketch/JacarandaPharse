@@ -19,11 +19,11 @@ export const NO_FILTERS: Filters = { q: '', domains: [], tags: [], sort: 'update
 /** Source, derived from the source field (starter:xxx, copy:xxx, sample:xxx, excel, import, blank). */
 export const SOURCE_TEXT: Record<string, string> = {
   get starter() { return t('从起步模板库') },
-  get copy() { return t('复制的') },
-  get excel() { return t('从 Excel 建') },
-  get sample() { return t('用样例建') },
-  get import() { return t('导入的') },
-  get blank() { return t('空白新建') },
+  get copy() { return t('复制') },
+  get excel() { return t('从 Excel 创建') },
+  get sample() { return t('从样例创建') },
+  get import() { return t('导入') },
+  get blank() { return t('新建空白') },
 }
 
 export function sourceKind(source: string | undefined): string {

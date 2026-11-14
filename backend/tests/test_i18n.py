@@ -68,8 +68,8 @@ def test_source_language_returns_message_id() -> None:
 def test_stored_messages_render_and_keep_plain_text() -> None:
     value = stored("抽取第 {page} / {pages} 页", page=2, pages=3)
     assert render(value) == "抽取第 2 / 3 页"
-    nested = stored("{inner}（第 {n} 次）", inner=stored("识别文字"), n=1)
-    assert render(nested) == "识别文字（第 1 次）"
+    nested = stored("{inner}（第 {n} 次）", inner=stored("文字识别"), n=1)
+    assert render(nested) == "文字识别（第 1 次）"
     assert render("用户自己写的原因") == "用户自己写的原因"
     assert render(None) is None
     assert render('{"msg": broken') == '{"msg": broken'
@@ -82,18 +82,18 @@ def test_joined_messages_stay_flat() -> None:
     assert render(value) == "、".join(items)
     with use_language("en"):
         assert render(value) == ", ".join(items)
-    notes = join_notes(stored("识别文字"), "", stored("保存结果"))
-    assert render(notes) == "识别文字；保存结果"
+    notes = join_notes(stored("文字识别"), "", stored("保存结果"))
+    assert render(notes) == "文字识别；保存结果"
     with use_language("en"):
         assert render(notes) == "Recognizing text; Saving results"
     assert join_notes() == "" and join_items([]) == ""
 
 
 def test_tr_renders_stored_parameters() -> None:
-    error = stored("框太小了，请框住要识别的文字")
+    error = stored("框选区域过小，请框选需要识别的文字")
     with use_language("en"):
         assert tr("{name}：{message}", name="a.pdf", message=error) == (
-            "a.pdf: The region is too small; draw it around the text to recognize"
+            "a.pdf: The box is too small; select the text to recognize"
         )
     assert tr("") == ""
 

@@ -200,13 +200,13 @@ class DocumentService:
         if content_type not in ALLOWED_TYPES:
             raise DocumentError(
                 "unsupported",
-                tr("不支持的文件类型：{content_type}，支持图片和 PDF", content_type=content_type),
+                tr("不支持的文件类型：{content_type}。支持图片和 PDF", content_type=content_type),
             )
         limit = get_settings().max_upload_mb
         if len(data) > limit * 1024 * 1024:
             raise DocumentError("too_large", tr("文件超过 {limit} MB", limit=limit))
         if not data:
-            raise DocumentError("empty", tr("文件是空的"))
+            raise DocumentError("empty", tr("文件为空"))
 
         document_id = uuid.uuid4()
         safe_name = PurePath(filename).name or f"upload{ALLOWED_TYPES[content_type]}"
@@ -254,10 +254,10 @@ class DocumentService:
         document = self._find(document_id)
         require(self.owner, "document:process", document.team_id)
         if document.storage_key is None:
-            raise DocumentError("no_file", tr("这个文档没有保存原始文件（命令行导入的），无法处理"))
+            raise DocumentError("no_file", tr("此文档未保存原始文件（通过命令行导入），无法处理"))
         if document.status not in RETRYABLE:
             raise DocumentError(
-                "conflict", tr("文档状态是 {status}，不能重新处理", status=document.status)
+                "conflict", tr("文档状态为 {status}，无法重新处理", status=document.status)
             )
         document.status = "uploaded"
         document.error = None
@@ -276,14 +276,14 @@ class DocumentService:
         document = self._find(document_id)
         require(self.owner, "document:process", document.team_id)
         if document.storage_key is None:
-            raise DocumentError("no_file", tr("这个文档没有保存原始文件（命令行导入的），无法处理"))
+            raise DocumentError("no_file", tr("此文档未保存原始文件（通过命令行导入），无法处理"))
         if document.status not in REPROCESSABLE:
             raise DocumentError(
-                "conflict", tr("文档状态是 {status}，现在不能重新处理", status=document.status)
+                "conflict", tr("文档状态为 {status}，当前无法重新处理", status=document.status)
             )
         note = data.note.strip()
         if data.reason == "other" and not note:
-            raise DocumentError("invalid", tr('原因选了"其他"，请写一句说明'))
+            raise DocumentError("invalid", tr("原因为“其他”时，请填写说明"))
         templates = TemplateService(self.owner, self.session)
         try:
             if data.template is not None:
@@ -342,7 +342,7 @@ class DocumentService:
         require(self.owner, "document:review", document.team_id)
         if document.status not in ("done", "reviewed"):
             raise DocumentError(
-                "conflict", tr("文档状态是 {status}，不在审核", status=document.status)
+                "conflict", tr("文档状态为 {status}，不处于审核阶段", status=document.status)
             )
         document.review_seconds = (document.review_seconds or 0) + seconds
 
@@ -354,7 +354,7 @@ class DocumentService:
         document already set to queued is in the same state as an upload whose queue was
         unreachable and can be retried from the list."""
         if data.reason == "other" and not data.note.strip():
-            raise DocumentError("invalid", tr('原因选了"其他"，请写一句说明'))
+            raise DocumentError("invalid", tr("原因为“其他”时，请填写说明"))
         ids = data.ids
         choice = ReprocessIn(
             template=data.template,
@@ -397,7 +397,7 @@ class DocumentService:
         require(self.owner, "document:review", document.team_id)
         if document.status not in ("done", "reviewed"):
             raise DocumentError(
-                "conflict", tr("文档状态是 {status}，处理完成后才能审核", status=document.status)
+                "conflict", tr("文档状态为 {status}，处理完成后方可审核", status=document.status)
             )
         fields = FieldService(self.session, self.owner)
         confirmed = edited = 0
@@ -455,7 +455,9 @@ class DocumentService:
         deleted = 0
         for document in documents:
             if document.status == "processing":
-                skipped.append(tr("{filename}：正在处理，等处理完再删", filename=document.filename))
+                skipped.append(
+                    tr("{filename}：正在处理，请在处理完成后删除", filename=document.filename)
+                )
                 continue
             record(
                 self.session,
@@ -565,7 +567,7 @@ class DocumentService:
             chosen = [e for e in document.all_extractions if e.run == viewing]
             if not chosen:
                 raise DocumentError(
-                    "not_found", tr("这个文档没有第 {viewing} 轮的结果", viewing=viewing)
+                    "not_found", tr("此文档没有第 {viewing} 轮的结果", viewing=viewing)
                 )
         detail = DocumentDetail.model_validate(document).model_copy(
             update={"extractions": [ExtractionOut.model_validate(e) for e in chosen]}
@@ -598,10 +600,10 @@ class DocumentService:
         require(self.owner, "document:read", document.team_id)
         extraction = next((e for e in document.all_extractions if e.id == extraction_id), None)
         if extraction is None:
-            raise DocumentError("not_found", tr("找不到这次抽取"))
+            raise DocumentError("not_found", tr("抽取结果不存在"))
         data = extraction.model_input
         if not data:
-            raise DocumentError("not_found", tr("这次抽取没有记下发给模型的文字（更新之前处理的）"))
+            raise DocumentError("not_found", tr("此次抽取未记录发送给模型的文字（在更新前处理）"))
         return SentText(
             blocks=[int(n) for n in data.get("blocks", [])],
             text=str(data.get("text", "")),
@@ -615,7 +617,7 @@ class DocumentService:
         require(self.owner, "document:read", document.team_id)
         extraction = covering(document.extractions, page)
         if extraction is None:
-            raise DocumentError("not_found", tr("第 {page} 页没有抽取结果", page=page))
+            raise DocumentError("not_found", tr("第 {page} 页无抽取结果", page=page))
         ocr = ocr_page_json(extraction.ocr, page, extraction.page)
         lines = (ocr or {}).get("lines", [])
         return PageOcr(
@@ -633,7 +635,7 @@ class DocumentService:
         wanted = run or document.current_run
         extraction = covering((e for e in document.all_extractions if e.run == wanted), page)
         if extraction is None:
-            raise DocumentError("not_found", tr("第 {page} 页没有抽取结果", page=page))
+            raise DocumentError("not_found", tr("第 {page} 页无抽取结果", page=page))
         return structure_view(extraction.structure, page, extraction.page)
 
     def review(self, document_id: uuid.UUID) -> DocumentOut:
@@ -644,11 +646,11 @@ class DocumentService:
         if document.status != "done":
             raise DocumentError(
                 "conflict",
-                tr("文档状态是 {status}，处理完成（done）后才能完成审核", status=document.status),
+                tr("文档状态为 {status}，处理完成（done）后方可完成审核", status=document.status),
             )
         pending = sum(v.pending_review for e in document.extractions for v in e.values)
         if pending:
-            raise DocumentError("conflict", tr("还有 {pending} 个字段等待确认", pending=pending))
+            raise DocumentError("conflict", tr("尚有 {pending} 个字段待确认", pending=pending))
         document.status = "reviewed"
         document.reviewed_at = datetime.now(UTC)
         _clear_skip(document)
@@ -661,7 +663,7 @@ class DocumentService:
         document = self._find(document_id)
         require(self.owner, "document:review", document.team_id)
         if document.status != "done":
-            raise DocumentError("conflict", tr("只有处理完、还没完成审核的文档可以跳过"))
+            raise DocumentError("conflict", tr("仅处理完成且未完成审核的文档可跳过"))
         document.skipped_at = datetime.now(UTC)
         document.skip_reason = data.reason.strip() or None
         document.skipped_by = self.owner.user_id
@@ -816,20 +818,20 @@ class DocumentService:
         if not ids:
             raise DocumentError("invalid", tr("请至少选择一个文档"))
         if len(ids) > MAX_EXPORT:
-            raise DocumentError("invalid", tr("一次最多导出 {limit} 个文档", limit=MAX_EXPORT))
+            raise DocumentError("invalid", tr("单次最多导出 {limit} 个文档", limit=MAX_EXPORT))
 
         found = {d.id: d for d in self.repo.get_many(ids, self.owner.team_id)}
         missing = [str(i) for i in ids if i not in found]
         if missing:
             raise DocumentError(
-                "not_found", tr("找不到文档：{documents}", documents=", ".join(missing))
+                "not_found", tr("文档不存在：{documents}", documents=", ".join(missing))
             )
         documents = [found[i] for i in ids]
         not_ready = [d.filename for d in documents if d.status not in EXPORTABLE]
         if not_ready:
             raise DocumentError(
                 "conflict",
-                tr("这些文档还没处理完，不能导出：{documents}", documents=", ".join(not_ready)),
+                tr("以下文档尚未处理完成，无法导出：{documents}", documents=", ".join(not_ready)),
             )
         return documents
 
@@ -856,7 +858,7 @@ class DocumentService:
         document = self._find(document_id)
         require(self.owner, "document:download", document.team_id)
         if document.storage_key is None:
-            raise DocumentError("no_file", tr("这个文档没有保存原始文件（命令行导入的）"))
+            raise DocumentError("no_file", tr("此文档未保存原始文件（通过命令行导入）"))
         try:
             return document, self.storage.get(document.storage_key)
         except StorageError as err:
@@ -869,19 +871,19 @@ class DocumentService:
         try:
             return page_png(data, document.content_type == "application/pdf", page)
         except Exception as err:
-            raise DocumentError("unreadable", tr("这个文件打不开，可能已损坏")) from err
+            raise DocumentError("unreadable", tr("无法打开此文件，文件可能已损坏")) from err
 
     def _page_file(self, document_id: uuid.UUID, page: int) -> tuple[Document, bytes]:
         """Check permission and page number, and retrieve the original file (not yet rendered)."""
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
         if document.storage_key is None:
-            raise DocumentError("no_file", tr("这个文档没有保存原始文件（命令行导入的）"))
+            raise DocumentError("no_file", tr("此文档未保存原始文件（通过命令行导入）"))
         if not 1 <= page <= document.page_count:
             raise DocumentError(
                 "not_found",
                 tr(
-                    "这个文档只有 {page_count} 页，没有第 {page} 页",
+                    "此文档仅有 {page_count} 页，不存在第 {page} 页",
                     page_count=document.page_count,
                     page=page,
                 ),
@@ -963,7 +965,7 @@ class DocumentService:
         except ValueError as err:
             raise DocumentError("invalid", str(err)) from err
         except Exception as err:
-            raise DocumentError("unreadable", tr("这个文件打不开，可能已损坏")) from err
+            raise DocumentError("unreadable", tr("无法打开此文件，文件可能已损坏")) from err
         out = io.BytesIO()
         crop.save(out, format="PNG")
         return out.getvalue()
@@ -974,7 +976,7 @@ class DocumentService:
         document = self._find(document_id)
         require(self.owner, "document:review", document.team_id)
         if self.ocr is None:
-            raise DocumentError("unavailable", tr("OCR 引擎没有准备好"))
+            raise DocumentError("unavailable", tr("OCR 引擎未就绪"))
         image = self.page_image(document_id, page)
         try:
             text, confidence = read_region(image, box, self.ocr)
@@ -992,7 +994,10 @@ class DocumentService:
         if self.model is None or not callable(check) or not check():
             raise DocumentError(
                 "unavailable",
-                tr("模型现在不能看图：把视觉模型 mmproj-F16.gguf 放进 models/，重新 jacara start"),
+                tr(
+                    "模型当前无法读图：请将视觉模型 mmproj-F16.gguf 放入 models/"
+                    "，并重新执行 jacara start"
+                ),
             )
         image = self.page_image(document_id, page)
         try:
@@ -1023,18 +1028,18 @@ class DocumentService:
     def _find(self, document_id: uuid.UUID) -> Document:
         document = self.repo.get(document_id, self.owner.team_id)
         if document is None:
-            raise DocumentError("not_found", tr("找不到这个文档"))
+            raise DocumentError("not_found", tr("文档不存在"))
         return document
 
 
 SIDES = {
-    "inline": N_("后面"),
-    "colon": N_("右边"),
-    "label_left": N_("右边"),
-    "row_label": N_("这一行右边"),
-    "colon_below": N_("下面"),
-    "header_above": N_("下面"),
-    "two_column_table": N_("右边"),
+    "inline": N_("后方"),
+    "colon": N_("右侧"),
+    "label_left": N_("右侧"),
+    "row_label": N_("同一行右侧"),
+    "colon_below": N_("下方"),
+    "header_above": N_("下方"),
+    "two_column_table": N_("右侧"),
 }
 """Layout pairing rule → side of the label on which the value lies (used for position hints in
 region-based template building)."""
@@ -1316,7 +1321,7 @@ def _count_pages(content_type: str, data: bytes) -> int:
         with pdfplumber.open(io.BytesIO(data)) as pdf:
             return len(pdf.pages)
     except Exception as err:
-        raise DocumentError("unreadable", tr("PDF 文件打不开，可能已损坏")) from err
+        raise DocumentError("unreadable", tr("无法打开 PDF 文件，文件可能已损坏")) from err
 
 
 def _layout_template(documents: list[Document]) -> Template | None:

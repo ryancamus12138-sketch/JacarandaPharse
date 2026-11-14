@@ -81,9 +81,9 @@ def test_names_round_trip_through_definition():
     ("names", "message"),
     [
         ({"english": "Total"}, "语言代码"),
-        ({"en": 3}, "应该是文字"),
-        ({"en": "x" * 201}, "太长"),
-        (["en"], "要写成"),
+        ({"en": 3}, "应为文字"),
+        ({"en": "x" * 201}, "过长"),
+        (["en"], "需写作"),
     ],
 )
 def test_bad_names_say_why(names, message):

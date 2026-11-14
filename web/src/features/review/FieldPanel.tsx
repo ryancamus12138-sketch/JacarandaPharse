@@ -48,10 +48,10 @@ interface Props {
 }
 
 const LEVEL_SUMMARY: [Level, string, string][] = [
-  ['red', 'red', msg('先看')],
-  ['yellow', 'gold', msg('看一眼')],
-  ['green', 'green', msg('没问题')],
-  ['grey', 'default', msg('原文没有')],
+  ['red', 'red', msg('优先核对')],
+  ['yellow', 'gold', msg('需核对')],
+  ['green', 'green', msg('无异常')],
+  ['grey', 'default', msg('原文缺失')],
 ]
 
 /**
@@ -102,7 +102,7 @@ export function FieldPanel({
       <Flex justify="space-between" align="center" gap={8} wrap>
         <Typography.Text type="secondary">
           {t('{{length}} 个字段', { length: plain.length })}
-          {plainPending > 0 ? t('，{{plainPending}} 个等你确认', { plainPending }) : t('，都不用确认')}
+          {plainPending > 0 ? t('，{{plainPending}} 个待确认', { plainPending }) : t('，无需确认')}
         </Typography.Text>
         {/* Changing the sort keeps the details open: this click does not count as a click on empty space. */}
         <Segmented<SortMode>
@@ -202,13 +202,13 @@ function StatusTags({ value: v, full = false }: { value: FieldValue; full?: bool
   return (
     <>
       {v.origin === 'computed' && (
-        <Tooltip title={t('不是从单据上找的，是按模板的公式由别的字段算出来的；那些字段改了会跟着重算')}>
-          <Tag color="cyan">{t('按公式算')}</Tag>
+        <Tooltip title={t('此值并非从单据中抽取，而是按模板公式由其他字段计算得出；相关字段修改后将自动重新计算')}>
+          <Tag color="cyan">{t('公式计算')}</Tag>
         </Tooltip>
       )}
       {v.status === 'seen' && !v.reviewed && (
-        <Tooltip title={t('OCR 认错了或没认出来（手写、印章、模糊），这个值是模型看着原图读的，请对着原图核对')}>
-          <Tag color="orange">{t('看原图读的')}</Tag>
+        <Tooltip title={t('OCR 识别错误或未识别（手写、印章、模糊等），此值由模型直接读取原图得出，请对照原图核对')}>
+          <Tag color="orange">{t('读取自原图')}</Tag>
         </Tooltip>
       )}
       {evidence}
@@ -218,12 +218,12 @@ function StatusTags({ value: v, full = false }: { value: FieldValue; full?: bool
         <Tooltip
           title={
             v.suggestion.action === 'confirm'
-              ? t('第 {{run}} 轮人确认过同样的值', { run: v.suggestion.run })
-              : t('第 {{run}} 轮模型抽出同样的值，被人改成了「{{value}}」', { run: v.suggestion.run, value: v.suggestion.value ?? t('（空）') })
+              ? t('第 {{run}} 轮已人工确认相同的值', { run: v.suggestion.run })
+              : t('第 {{run}} 轮模型抽取出相同的值，经人工修改为「{{value}}」', { run: v.suggestion.run, value: v.suggestion.value ?? t('（空）') })
           }
         >
           <Tag color="purple">
-            {v.suggestion.action === 'confirm' ? t('上次确认过') : t('上次改成 {{value}}', { value: v.suggestion.value ?? t('空') })}
+            {v.suggestion.action === 'confirm' ? t('上一轮已确认') : t('上一轮修改为 {{value}}', { value: v.suggestion.value ?? t('空') })}
           </Tag>
         </Tooltip>
       )}
@@ -276,10 +276,10 @@ function ShownValue({ value: v }: { value: FieldValue }) {
           {v.origin === 'manual'
             ? t('（待填写）')
             : v.origin === 'computed'
-              ? t('（算不出来）')
+              ? t('（无法计算）')
             : v.rejected_value
-              ? t('（没有填：模型给的「{{rejected_value}}」原文里对不上）', { rejected_value: v.rejected_value })
-              : t('（原文没有）')}
+              ? t('（未填写：模型输出的「{{rejected_value}}」与原文不符）', { rejected_value: v.rejected_value })
+              : t('（原文缺失）')}
         </Typography.Text>
       )}
     </Typography.Text>
@@ -289,7 +289,7 @@ function ShownValue({ value: v }: { value: FieldValue }) {
 function ClearButton({ onClear }: { onClear: () => void }) {
   const { t } = useTranslation()
   return (
-    <Tooltip title={t('清空：原文里没有这个值（Delete 键）')}>
+    <Tooltip title={t('清空：原文中没有此值（Delete 键）')}>
       <Button
         size="small"
         type="text"
@@ -357,7 +357,7 @@ function FieldRow({
         >
           {label}
           {comments > 0 && (
-            <Tooltip title={t('{{comments}} 条备注没解决，点上面的"备注"看', { comments })}>
+            <Tooltip title={t('{{comments}} 条备注未解决，点击上方“备注”查看', { comments })}>
               <MessageOutlined style={{ marginInlineStart: 4, color: '#7c5cbf' }} aria-label={t('有备注')} />
             </Tooltip>
           )}
@@ -425,7 +425,7 @@ export function FieldDetail({
         <ShownValue value={v} />
         <Flex gap={4} justify="end" style={{ flexShrink: 0 }}>
           {canEdit && !v.deleted && v.current_value !== null && <ClearButton onClear={onClear} />}
-          <Tooltip title={t('收起（Esc，或在空白处点一下）')}>
+          <Tooltip title={t('收起（Esc 或点击空白处）')}>
             <Button size="small" type="text" icon={<CloseOutlined />} onClick={onClose} />
           </Tooltip>
         </Flex>
@@ -455,12 +455,12 @@ export function FieldDetail({
       )}
       {edited && (
         <Typography.Paragraph type="secondary" style={indent}>
-          {t('模型原值：')}{v.value ?? t('（原文没有）')}
+          {t('模型原值：')}{v.value ?? t('（原文缺失）')}
         </Typography.Paragraph>
       )}
       {canEdit && !v.deleted && (
         <Button size="small" icon={<ScanOutlined />} onClick={onAdjustBox} style={{ marginTop: 4 }}>
-          {ev ? t('调整框 / 重新识别') : t('在原图上框出来')}
+          {ev ? t('调整框 / 重新识别') : t('在原图上框选')}
         </Button>
       )}
       <Candidates

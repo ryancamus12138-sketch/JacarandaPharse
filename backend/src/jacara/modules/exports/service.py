@@ -98,14 +98,14 @@ class ExportService:
         values."""
         export = self.repo.get(export_id, self.owner.team_id)
         if export is None:
-            raise ExportError("not_found", tr("找不到这条导出记录"))
+            raise ExportError("not_found", tr("导出记录不存在"))
         require(self.owner, "document:export", export.team_id)
         if export.storage_key is None:
-            raise ExportError("no_file", tr("这次导出的文件当时没能保存，不能重新下载"))
+            raise ExportError("no_file", tr("此次导出的文件当时未能保存，无法重新下载"))
         try:
             data = self.storage.get(export.storage_key)
         except StorageError as err:
-            raise ExportError("storage", tr("对象存储里取不到这个文件")) from err
+            raise ExportError("storage", tr("无法从对象存储读取此文件")) from err
         # Downloading again is also data leaving the system; record it.
         record(self.session, self.owner, "export:download", "export", export.id)
         return export, data

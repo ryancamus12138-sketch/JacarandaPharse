@@ -71,7 +71,7 @@ def test_api_still_works_and_unknown_api_is_404_json(web):
     for path in ("/api/v1/nothing", "/api/v2/health", "/api"):
         response = web.get(path)
         assert response.status_code == 404
-        assert response.json() == {"detail": "没有这个接口"}
+        assert response.json() == {"detail": "接口不存在"}
 
 
 def test_cannot_read_files_outside_dist(web):

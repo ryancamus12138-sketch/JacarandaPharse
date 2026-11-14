@@ -133,7 +133,7 @@ def describe(template: Template) -> str:
 def classify(text: str, auto: AutoChoice, chooser: Chooser | None) -> Classification:
     """Select a template for one document. text is the beginning of the document text."""
     if not auto.candidates:
-        return Classification(None, stored("还没有自己的模板，抽出了所有键值对"), "none")
+        return Classification(None, stored("尚无模板，已抽取所有键值对"), "none")
     scored = sorted(
         ((c, keyword_score(text, c.template)) for c in auto.candidates),
         key=lambda pair: -pair[1],
@@ -145,7 +145,7 @@ def classify(text: str, auto: AutoChoice, chooser: Chooser | None) -> Classifica
             index, reason = answer
             picked = shortlist[index - 1][0] if index > 0 else None
             reason = reason.strip() or (
-                stored("模型认为都不合适") if picked is None else stored("模型选的")
+                stored("模型判断均不适用") if picked is None else stored("由模型选择")
             )
             return Classification(picked, reason, "model", shortlist)
     best, score = shortlist[0]
@@ -153,10 +153,10 @@ def classify(text: str, auto: AutoChoice, chooser: Chooser | None) -> Classifica
         hits = round(min(score, 1.0) * len(_all_fields(best.template)))
         return Classification(
             best,
-            stored("按关键字选的：单据上对上了约 {hits} 个字段名", hits=hits),
+            stored("按关键字选择：单据上约有 {hits} 个字段名匹配", hits=hits),
             "keywords",
             shortlist,
         )
     return Classification(
-        None, stored("按关键字找不到合适的模板，抽出了所有键值对"), "keywords", shortlist
+        None, stored("按关键字未找到合适的模板，已抽取所有键值对"), "keywords", shortlist
     )

@@ -121,15 +121,15 @@ export function DashboardPage() {
             note={
               c
                 ? c.skipped
-                  ? t('{{pending_fields}} 个字段等你确认，先跳过 {{skipped}} 份', { pending_fields: c.pending_fields, skipped: c.skipped })
-                  : t('{{pending_fields}} 个字段等你确认', { pending_fields: c.pending_fields })
+                  ? t('{{pending_fields}} 个字段待确认，已跳过 {{skipped}} 份', { pending_fields: c.pending_fields, skipped: c.skipped })
+                  : t('{{pending_fields}} 个字段待确认', { pending_fields: c.pending_fields })
                 : null
             }
           />
         </Col>
         <Col xs={12} md={8} xl={4}>
           <StatCard
-            title={t('排队和处理中')}
+            title={t('排队及处理中')}
             value={c ? c.queued + c.processing : '–'}
             suffix={t('份')}
             icon={<ClockCircleOutlined />}
@@ -155,33 +155,33 @@ export function DashboardPage() {
             icon={<CheckCircleOutlined />}
             color="#52c41a"
             to="/documents?status=reviewed"
-            note={c ? t('一共 {{total}} 份', { total: c.total }) : null}
+            note={c ? t('共 {{total}} 份', { total: c.total }) : null}
           />
         </Col>
         <Col xs={12} md={8} xl={4}>
           <StatCard
             title={t('今天')}
             value={c?.processed_today ?? '–'}
-            suffix={t('份处理完')}
+            suffix={t('份已处理')}
             icon={<CheckCircleOutlined />}
             color="#7b5cc4"
-            note={c ? t('审核完 {{reviewed_today}} 份', { reviewed_today: c.reviewed_today }) : null}
+            note={c ? t('已审核 {{reviewed_today}} 份', { reviewed_today: c.reviewed_today }) : null}
           />
         </Col>
         <Col xs={12} md={8} xl={4}>
           <StatCard
-            title={t('每页用时')}
+            title={t('每页耗时')}
             value={c?.average_page_seconds ?? '–'}
             suffix={c?.average_page_seconds != null ? t('秒') : undefined}
             icon={<FieldTimeOutlined />}
             color="#7b5cc4"
             note={
               c?.stage_seconds ? (
-                <Tooltip title={t('每份单据平均：OCR 认字、认好以后排队等模型、模型抽取和核对。两个工位同时干活，批量导入时认字和模型的时间是重叠的')}>
-                  {t('每份：认字 {{read}} 秒 · 模型 {{extract}} 秒', { read: c.stage_seconds.read ?? '–', extract: c.stage_seconds.extract ?? '–' })}
+                <Tooltip title={t('每份单据平均耗时：OCR 识别、识别后排队等待模型、模型抽取及核对。OCR 与模型两个阶段并行运行，批量导入时二者耗时相互重叠')}>
+                  {t('每份：OCR {{read}} 秒 · 模型 {{extract}} 秒', { read: c.stage_seconds.read ?? '–', extract: c.stage_seconds.extract ?? '–' })}
                 </Tooltip>
               ) : (
-                t('最近 7 天的平均')
+                t('最近 7 天平均值')
               )
             }
           />
@@ -191,7 +191,7 @@ export function DashboardPage() {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={14}>
           <Card
-            title={t('需要先处理')}
+            title={t('待处理事项')}
             extra={
               first && (
                 <Button
@@ -206,7 +206,7 @@ export function DashboardPage() {
             loading={dashboard.isPending}
           >
             {data && data.failed.length === 0 && data.to_review.length === 0 ? (
-              <Empty description={t('没有要处理的，都审核完了')} />
+              <Empty description={t('没有待处理事项，全部审核完毕')} />
             ) : (
               <List<DocumentSummary>
                 dataSource={[...(data?.failed ?? []), ...(data?.to_review ?? [])]}
@@ -215,7 +215,7 @@ export function DashboardPage() {
                     actions={[
                       d.status === 'failed' ? (
                         <Link key="go" to="/documents?status=failed">
-                          {t('去重试')}
+                          {t('重试')}
                         </Link>
                       ) : (
                         <Link key="go" to={`/documents/${d.id}`}>
@@ -253,7 +253,7 @@ export function DashboardPage() {
         <Col xs={24} lg={10}>
           <Card title={t('处理队列')} loading={dashboard.isPending}>
             {data && data.queue.length === 0 ? (
-              <Empty description={t('没有排队的文件')} />
+              <Empty description={t('队列中没有文件')} />
             ) : (
               <List<DocumentSummary>
                 dataSource={data?.queue ?? []}
@@ -273,7 +273,7 @@ export function DashboardPage() {
                         </>
                       ) : (
                         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                          {t('上传于 {{formatTime}}，等前面的处理完', { formatTime: formatTime(d.created_at) })}
+                          {t('上传于 {{formatTime}}，等待前序文件处理完成', { formatTime: formatTime(d.created_at) })}
                         </Typography.Text>
                       )}
                     </Flex>

@@ -135,21 +135,21 @@ export function BoxTemplatePage() {
         document_id: documentId,
         title: title.trim(),
         category,
-        description: t('在样例「{{value}}」上框选建的模板', { value: doc.data?.filename ?? '' }),
+        description: t('基于样例「{{value}}」框选创建的模板', { value: doc.data?.filename ?? '' }),
         fields: fields.map(({ key: _k, sample: _s, busy: _b, ...f }) => f),
       }),
     onSuccess: (template: Template) => {
       void queryClient.invalidateQueries({ queryKey: ['templates'] })
       modal.confirm({
-        title: t('已存成模板「{{title}}」', { title: template.title }),
-        content: t('要不要用新模板重新处理这份样例，看看模型按新模板抽得对不对？'),
+        title: t('已保存为模板「{{title}}」', { title: template.title }),
+        content: t('是否使用新模板重新处理此样例，以验证模型按新模板的抽取结果？'),
         okText: t('用新模板重新处理'),
-        cancelText: t('去编辑模板'),
+        cancelText: t('编辑模板'),
         onOk: async () => {
           await reprocessDocument(documentId, {
             template: template.id ?? undefined,
             reason: 'template_changed',
-            note: t('框选建模板后用新模板处理样例'),
+            note: t('框选创建模板后使用新模板处理样例'),
           })
           void queryClient.invalidateQueries({ queryKey: ['document', documentId] })
           navigate(`/documents/${documentId}`)
@@ -161,8 +161,8 @@ export function BoxTemplatePage() {
   })
 
   const problem =
-    (!title.trim() ? t('给模板起个名字') : null) ??
-    (fields.length === 0 ? t('先在原图上框出至少一个值') : null) ??
+    (!title.trim() ? t('请输入模板名称') : null) ??
+    (fields.length === 0 ? t('请先在原图上框选至少一个值') : null) ??
     fieldsProblem(fields, '')
 
   const columns: TableProps<Boxed>['columns'] = [
@@ -172,17 +172,17 @@ export function BoxTemplatePage() {
       render: (_, f) => <span style={{ display: 'inline-block', width: 10, height: 10, background: COLORS[(f.key - 1) % COLORS.length] }} />,
     },
     {
-      title: <Tooltip title={t('审核页、导出的 Excel 里显示的名字，中英文都行')}>{t('名称')}</Tooltip>,
+      title: <Tooltip title={t('在审核页和导出的 Excel 中显示的名称，可使用中文或英文')}>{t('名称')}</Tooltip>,
       width: 200,
       render: (_, f) => (
         <Space.Compact size="small" style={{ width: '100%' }}>
           <Input
             value={f.label}
             status={!f.busy && !f.label ? 'warning' : undefined}
-            placeholder={f.busy ? '' : t('没找到标签')}
+            placeholder={f.busy ? '' : t('未找到标签')}
             onChange={(e) => update(f.key, { label: e.target.value })}
           />
-          <Tooltip title={t('在原图上点一下标签文字，用它当名称')}>
+          <Tooltip title={t('点击原图上的标签文字，将其作为名称')}>
             <Button
               type={picking === f.key ? 'primary' : 'default'}
               icon={<AimOutlined />}
@@ -194,7 +194,7 @@ export function BoxTemplatePage() {
       ),
     },
     {
-      title: <Tooltip title={t('程序里用的代号：小写英文字母开头，只能有字母、数字、下划线')}>{t('字段 ID')}</Tooltip>,
+      title: <Tooltip title={t('程序内部使用的标识：需以小写英文字母开头，只能包含字母、数字和下划线')}>{t('字段 ID')}</Tooltip>,
       width: 150,
       render: (_, f) => <Input size="small" value={f.name} onChange={(e) => update(f.key, { name: e.target.value })} />,
     },
@@ -211,20 +211,20 @@ export function BoxTemplatePage() {
       render: (_, f) => <Checkbox checked={f.required} onChange={(e) => update(f.key, { required: e.target.checked })} />,
     },
     {
-      title: t('样例里的值'),
-      render: (_, f) => (f.busy ? <Spin size="small" /> : <Typography.Text type="secondary" ellipsis style={{ maxWidth: 160 }}>{f.sample || t('（没认出字）')}</Typography.Text>),
+      title: t('样例中的值'),
+      render: (_, f) => (f.busy ? <Spin size="small" /> : <Typography.Text type="secondary" ellipsis style={{ maxWidth: 160 }}>{f.sample || t('（未识别出文字）')}</Typography.Text>),
     },
     {
       title: '',
       width: 40,
       render: (_, f) => (
-        <Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label={t('删掉')} onClick={() => setFields((fs) => fs.filter((x) => x.key !== f.key))} />
+        <Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label={t('删除')} onClick={() => setFields((fs) => fs.filter((x) => x.key !== f.key))} />
       ),
     },
   ]
 
   if (doc.isPending) return <Spin />
-  if (doc.isError) return <Alert type="error" showIcon title={t('打不开这份单据')} />
+  if (doc.isError) return <Alert type="error" showIcon title={t('无法打开此单据')} />
 
   return (
     <Flex vertical gap={16}>
@@ -240,12 +240,12 @@ export function BoxTemplatePage() {
       <Alert
         type="info"
         showIcon
-        title={t('用一张样例单据，告诉系统这类单据要抽哪些值')}
+        title={t('通过一张样例单据，指定此类单据需要抽取的值')}
         description={
           <ol style={{ margin: 0, paddingInlineStart: 20 }}>
-            <li>{t('原图上虚线框住的是系统读到的值，点一下就加进模板，名称自动用它的标签；右边也列出了全部，可以一个个加。')}</li>
-            <li>{t('没有虚线框的值，按住鼠标自己拖一个框（框值，不框标签）。没找到标签的，名称会空着：填一个，或点名称旁边的瞄准，再点原图上的标签文字。')}</li>
-            <li>{t('要的值都框完，在右边上面给模板起个名字，点“存成模板”。以后这类单据用这个模板，模型就按这些字段抽。')}</li>
+            <li>{t('原图上的虚线框为系统读取到的值，点击即可添加到模板，名称自动取其标签；右侧同时列出全部值，可逐个添加。')}</li>
+            <li>{t('没有虚线框的值，可按住鼠标拖动框选（框选值，而非标签）。未找到标签时名称为空：可直接填写，或点击名称旁的定位按钮后再点击原图上的标签文字。')}</li>
+            <li>{t('框选完所需的值后，在右上方填写模板名称并点击“保存为模板”。此后同类单据使用该模板时，模型将按这些字段抽取。')}</li>
           </ol>
         }
       />
@@ -302,7 +302,7 @@ export function BoxTemplatePage() {
                   .map((p, i) => {
                     const [x0, y0, x1, y1] = p.value_box
                     return (
-                      <Tooltip key={`pair-${i}`} title={t('{{key}}：{{value}}（点一下加进模板）', { key: p.key, value: p.value })}>
+                      <Tooltip key={`pair-${i}`} title={t('{{key}}：{{value}}（点击添加到模板）', { key: p.key, value: p.value })}>
                         <div
                           onPointerDown={(e) => e.stopPropagation()}
                           onClick={() => void addBox(p.value_box, p.key)}
@@ -351,12 +351,12 @@ export function BoxTemplatePage() {
             <Spin />
           )}
         </Card>
-        <Card size="small" style={{ flex: '1 1 520px', minWidth: 360 }} title={t('框好的字段')}>
+        <Card size="small" style={{ flex: '1 1 520px', minWidth: 360 }} title={t('已框选字段')}>
           <Flex vertical gap={12}>
             <Flex gap={8} wrap>
               <Input
                 style={{ flex: 1, minWidth: 200 }}
-                placeholder={t('模板名称，例如 某某供应商送货单')}
+                placeholder={t('模板名称，例如“某供应商送货单”')}
                 status={fields.length > 0 && !title.trim() ? 'warning' : undefined}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -366,7 +366,7 @@ export function BoxTemplatePage() {
             {pairs.length > 0 && (
               <Flex vertical gap={4} style={{ maxHeight: 220, overflow: 'auto' }}>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('读到的键值对（第 {{page}} 页）：', { page })}
+                  {t('识别到的键值对（第 {{page}} 页）：', { page })}
                 </Typography.Text>
                 {pairs.map((p, i) => {
                   const added = fields.some((f) => f.page === page && sameBox(f.box, p.value_box))
@@ -389,27 +389,27 @@ export function BoxTemplatePage() {
               </Flex>
             )}
             {picking !== null && (
-              <Alert type="info" showIcon title={t('在左边原图上点一下标签文字')} action={<Button size="small" onClick={() => setPicking(null)}>{t('取消')}</Button>} />
+              <Alert type="info" showIcon title={t('点击左侧原图上的标签文字')} action={<Button size="small" onClick={() => setPicking(null)}>{t('取消')}</Button>} />
             )}
             {fields.length === 0 ? (
-              <Empty description={t('还没有字段。点原图上的虚线框，或者自己拖一个框。')} />
+              <Empty description={t('暂无字段。点击原图上的虚线框，或拖动框选。')} />
             ) : (
               <Table rowKey="key" size="small" pagination={false} scroll={{ x: 760 }} columns={columns} dataSource={fields} expandable={{
                 expandedRowRender: (f) => (
                   <Flex vertical gap={6}>
                     <Input size="small" addonBefore={t('说明')} value={f.description} onChange={(e) => update(f.key, { description: e.target.value })} />
-                    <Input size="small" addonBefore={t('别名')} placeholder={t('单据上的其他写法，用逗号分开')} value={f.aliases.join(t('，'))} onChange={(e) => update(f.key, { aliases: e.target.value.split(/[,，]/).map((a) => a.trim()).filter(Boolean) })} />
+                    <Input size="small" addonBefore={t('别名')} placeholder={t('单据上的其他写法，以逗号分隔')} value={f.aliases.join(t('，'))} onChange={(e) => update(f.key, { aliases: e.target.value.split(/[,，]/).map((a) => a.trim()).filter(Boolean) })} />
                   </Flex>
                 ),
               }} />
             )}
             {problem && fields.length > 0 && <Typography.Text type="warning">{problem}</Typography.Text>}
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t('说明会告诉模型这个值在单据哪里，别名是单据上标签的写法；展开一行可以改。表格（商品明细）请保存后在模板编辑页里加。')}
+              {t('说明用于告知模型该值在单据中的位置，别名为单据上标签的写法；展开一行即可编辑。表格（商品明细）请在保存后于模板编辑页添加。')}
             </Typography.Text>
             <Flex justify="flex-end">
               <Button type="primary" icon={<SaveOutlined />} disabled={!!problem || fields.some((f) => f.busy)} loading={save.isPending} onClick={() => save.mutate()}>
-                {t('存成模板')}
+                {t('保存为模板')}
               </Button>
             </Flex>
           </Flex>

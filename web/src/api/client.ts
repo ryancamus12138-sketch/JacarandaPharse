@@ -63,7 +63,7 @@ async function send(path: string, init: ApiInit): Promise<Response> {
     })
   } catch {
     // The request was never sent: the backend is not running or the network is down.
-    throw new ApiError(0, t('连不上后端。请确认终端里 uv run jacara api 正在运行'))
+    throw new ApiError(0, t('无法连接后端。请确认终端中 uv run jacara api 正在运行'))
   }
 
   if (response.status === 401 && token) {
@@ -127,7 +127,7 @@ function filenameFrom(header: string | null): string | null {
 
 async function errorMessage(response: Response): Promise<string> {
   if (response.status === 502 || response.status === 504) {
-    return t('连不上后端。请确认终端里 uv run jacara api 正在运行')
+    return t('无法连接后端。请确认终端中 uv run jacara api 正在运行')
   }
   try {
     const body = (await response.json()) as { detail?: unknown }
@@ -137,7 +137,7 @@ async function errorMessage(response: Response): Promise<string> {
     if (Array.isArray(body.detail)) {
       // 422: FastAPI validation errors come as a list; use the first entry.
       const first = body.detail[0] as { msg?: string } | undefined
-      return first?.msg ?? t('提交的内容格式不对')
+      return first?.msg ?? t('提交内容的格式不正确')
     }
   } catch {
     // Not JSON: fall back to the generic message below.

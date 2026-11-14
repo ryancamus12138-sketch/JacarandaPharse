@@ -74,20 +74,20 @@ class FieldService:
         document = value.extraction.document
         if document.status not in REVIEWABLE:
             raise FieldError(
-                "not_ready", tr("文档状态是 {status}，处理完成后才能审核", status=document.status)
+                "not_ready", tr("文档状态为 {status}，处理完成后方可审核", status=document.status)
             )
         _check_current(value.extraction)
         if value.deleted:
-            raise FieldError("invalid", tr("这一行已经删除了，要改的话先恢复这一行"))
+            raise FieldError("invalid", tr("此行已删除，如需修改请先恢复"))
 
         evidence: dict[str, Any] | None = None
         if change.source_lines is not None and change.source_box is not None:
-            raise FieldError("invalid", tr("从原文选取和框选只能用一种"))
+            raise FieldError("invalid", tr("从原文选取与框选只能二选一"))
         if change.transcription is not None and (
             change.action != "edit"
             or (change.source_box is None and len(change.source_lines or []) != 1)
         ):
-            raise FieldError("invalid", tr("图中原文要对应原图上的一块原文或一个框"))
+            raise FieldError("invalid", tr("图中原文需对应原图上的一块原文或一个框选区域"))
         sample_line: dict[str, Any] | None = None
         page = self._page(value.extraction, change.page)
         if change.action == "edit" and change.source_box is not None:
@@ -95,7 +95,7 @@ class FieldService:
             # is the selected region.
             new_value = normalize(value.type, change.value)
             if new_value is None:
-                raise FieldError("invalid", tr("框里没有要填的值，请框住要识别的文字"))
+                raise FieldError("invalid", tr("框选区域内没有可填写的值，请框选需要识别的文字"))
             x0, y0, x1, y1 = change.source_box
             evidence = {
                 "page": page,
@@ -130,10 +130,10 @@ class FieldService:
             new_value = normalize(value.type, change.value)
             reason = change.reason.strip()
             if not reason:
-                raise FieldError("invalid", tr("修改时请写明原因，以后查记录时能看懂"))
+                raise FieldError("invalid", tr("修改时请填写原因，以便日后查阅记录"))
             if new_value == value.current_value:
                 raise FieldError(
-                    "invalid", tr("新值和当前值一样。如果值是对的，请用 confirm（确认）")
+                    "invalid", tr("新值与当前值相同。如值正确，请使用 confirm（确认）")
                 )
         else:
             new_value, reason = value.current_value, change.reason.strip()
@@ -180,7 +180,7 @@ class FieldService:
             if value.extraction.document.status not in REVIEWABLE:
                 status = value.extraction.document.status
                 raise FieldError(
-                    "not_ready", tr("文档状态是 {status}，处理完成后才能审核", status=status)
+                    "not_ready", tr("文档状态为 {status}，处理完成后方可审核", status=status)
                 )
             _check_current(value.extraction)
         reason = reason.strip() or stored("批量确认")
@@ -215,7 +215,7 @@ class FieldService:
         rows = _rows(extraction, table)
         if row.after not in (None, 0) and row.after not in rows:
             raise FieldError(
-                "not_found", tr("表格 {table} 里没有第 {after} 行", table=table, after=row.after)
+                "not_found", tr("表格 {table} 中不存在第 {after} 行", table=table, after=row.after)
             )
 
         # Number of the new row: larger than all existing rows, so it never collides.
@@ -235,7 +235,7 @@ class FieldService:
                 row_no=None,
                 status="empty",
                 needs_review=False,
-                note=stored("审核时人工增加的行") if column not in computed else stored("按公式算"),
+                note=stored("审核时人工增加的行") if column not in computed else stored("公式计算"),
                 evidence=None,
                 user_id=self.owner.user_id,
                 team_id=extraction.team_id,
@@ -283,21 +283,21 @@ class FieldService:
         cells = _rows(extraction, table).get(index)
         if not cells:
             raise FieldError(
-                "not_found", tr("表格 {table} 里没有第 {index} 行", table=table, index=index)
+                "not_found", tr("表格 {table} 中不存在第 {index} 行", table=table, index=index)
             )
         reason = change.reason.strip()
         if not reason:
             raise FieldError(
                 "invalid",
-                tr("删除一行时请写明原因，以后查记录时能看懂")
+                tr("删除行时请填写原因，以便日后查阅记录")
                 if action == "delete"
-                else tr("恢复一行时请写明原因，以后查记录时能看懂"),
+                else tr("恢复行时请填写原因，以便日后查阅记录"),
             )
         deleted = all(v.deleted for v in cells)
         if action == "delete" and deleted:
-            raise FieldError("invalid", tr("这一行已经删除了"))
+            raise FieldError("invalid", tr("此行已删除"))
         if action == "restore" and not deleted:
-            raise FieldError("invalid", tr("这一行没有被删除"))
+            raise FieldError("invalid", tr("此行未被删除"))
         for value in cells:
             self._add(value, action, value.current_value, reason, None)
         record(
@@ -339,7 +339,7 @@ class FieldService:
         except IntegrityError as err:
             # Two people reviewing the same field concurrently produce the same seq; the database
             # accepts only one.
-            raise FieldError("conflict", tr("这个字段刚被别人审核过，请刷新后再试")) from err
+            raise FieldError("conflict", tr("此字段刚被他人审核，请刷新后重试")) from err
         return revision
 
     def apply(self, value: ExtractedValue, action: str, new_value: str | None, reason: str) -> None:
@@ -395,14 +395,14 @@ class FieldService:
         status = extraction.document.status
         if status not in REVIEWABLE:
             raise FieldError(
-                "not_ready", tr("文档状态是 {status}，处理完成后才能审核", status=status)
+                "not_ready", tr("文档状态为 {status}，处理完成后方可审核", status=status)
             )
         _check_current(extraction)
 
     def _extraction(self, extraction_id: uuid.UUID) -> Extraction:
         extraction = self.repo.get_extraction(extraction_id, self.owner.team_id)
         if extraction is None:
-            raise FieldError("not_found", tr("找不到这一页的抽取结果"))
+            raise FieldError("not_found", tr("此页的抽取结果不存在"))
         return extraction
 
     def _page(self, extraction: Extraction, page: int | None) -> int:
@@ -422,18 +422,18 @@ class FieldService:
         lines: list[dict[str, Any]] = (ocr or {}).get("lines", [])
         if not lines:
             raise FieldError(
-                "invalid", tr("这一页没有保存 OCR 结果（新功能上线前处理的），不能从原文选取")
+                "invalid", tr("此页未保存 OCR 结果（在新功能上线前处理），无法从原文选取")
             )
         if not indexes:
-            raise FieldError("invalid", tr("请至少选一块文字"))
+            raise FieldError("invalid", tr("请至少选择一块文字"))
         if any(not 0 <= i < len(lines) for i in indexes):
-            raise FieldError("invalid", tr("选的文字块不存在，请刷新后再试"))
+            raise FieldError("invalid", tr("所选文字块不存在，请刷新后重试"))
         return [lines[i] for i in dict.fromkeys(indexes)]
 
     def _find(self, value_id: uuid.UUID) -> ExtractedValue:
         value = self.repo.get(value_id, self.owner.team_id)
         if value is None:
-            raise FieldError("not_found", tr("找不到这个字段"))
+            raise FieldError("not_found", tr("字段不存在"))
         return value
 
 
@@ -444,7 +444,7 @@ def _check_current(extraction: Extraction) -> None:
         raise FieldError(
             "invalid",
             tr(
-                "这是第 {run} 轮的旧结果，只能查看；现在用的是第 {current} 轮",
+                "此为第 {run} 轮的历史结果，仅供查看；当前为第 {current} 轮",
                 run=extraction.run,
                 current=current,
             ),
@@ -475,7 +475,7 @@ def normalize(type_: str, raw: str | None) -> str | None:
             if day is None:
                 raise FieldError(
                     "invalid",
-                    tr("{text} 读不出日期，请写成 2018-12-25 这样的格式", text=repr(text)),
+                    tr("无法从 {text} 读取日期，请使用 2018-12-25 格式", text=repr(text)),
                 ) from None
             return day.isoformat()
     return text
@@ -486,12 +486,14 @@ def value_from_text(type_: str, text: str) -> str | None:
     if type_ == "number":
         number = parse_number(text)
         if number is None:
-            raise FieldError("invalid", tr("选的文字「{text}」里没有数字", text=text))
+            raise FieldError("invalid", tr("所选文字「{text}」中没有数字", text=text))
         return str(number)
     if type_ == "date":
         day = parse_date(text)
         if day is None:
-            raise FieldError("invalid", tr("选的文字「{text}」读不出日期，请手动填写", text=text))
+            raise FieldError(
+                "invalid", tr("无法从所选文字「{text}」读取日期，请手动填写", text=text)
+            )
         return day.isoformat()
     return " ".join(text.split()) or None
 
@@ -530,7 +532,7 @@ def _columns(extraction: Extraction, table: str) -> list[tuple[str, str]]:
         if cell and cell[0] == table:
             columns.setdefault(cell[2], value.type)
     if not columns:
-        raise FieldError("not_found", tr("这一页没有叫 {table} 的表格", table=table))
+        raise FieldError("not_found", tr("此页没有名为 {table} 的表格", table=table))
     return list(columns.items())
 
 

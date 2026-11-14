@@ -150,7 +150,7 @@ def parse_entities(raw: Any, fields: set[str], where: str) -> tuple[TemplateEnti
         if not isinstance(name, str) or not _ID.match(name):
             raise ExtrasError(
                 stored(
-                    "{where}：第 {i} 个对象的 name 只能用小写英文字母、数字和下划线",
+                    ("{where}：第 {i} 个对象的 name 只能包含小写英文字母、数字和下划线"),
                     where=where,
                     i=i,
                 )
@@ -160,7 +160,7 @@ def parse_entities(raw: Any, fields: set[str], where: str) -> tuple[TemplateEnti
         if key not in fields:
             raise ExtrasError(
                 stored(
-                    "{where}：对象 {name} 的编号字段 {key} 不在模板的字段里",
+                    "{where}：对象 {name} 的编号字段 {key} 不是模板中的字段",
                     where=where,
                     name=name,
                     key=key,
@@ -170,14 +170,14 @@ def parse_entities(raw: Any, fields: set[str], where: str) -> tuple[TemplateEnti
         if missing:
             raise ExtrasError(
                 stored(
-                    "{where}：对象 {name} 的字段 {fields} 不在模板的字段里",
+                    "{where}：对象 {name} 的字段 {fields} 不是模板中的字段",
                     where=where,
                     name=name,
                     fields=join_items(missing),
                 )
             )
         if any(e.name == name for e in entities):
-            raise ExtrasError(stored("{where}：对象 {name} 重复了", where=where, name=name))
+            raise ExtrasError(stored("{where}：对象 {name} 重复", where=where, name=name))
         entities.append(
             TemplateEntity(
                 name=name,
@@ -198,7 +198,7 @@ def parse_references(raw: Any, fields: set[str], where: str) -> tuple[TemplateRe
         if not isinstance(name, str) or not _ID.match(name):
             raise ExtrasError(
                 stored(
-                    "{where}：第 {i} 份参照表的 name 只能用小写英文字母、数字和下划线",
+                    ("{where}：第 {i} 份参照表的 name 只能包含小写英文字母、数字和下划线"),
                     where=where,
                     i=i,
                 )
@@ -206,7 +206,7 @@ def parse_references(raw: Any, fields: set[str], where: str) -> tuple[TemplateRe
         columns = tuple(str(c) for c in item.get("columns") or [])
         if not columns or len(set(columns)) != len(columns):
             raise ExtrasError(
-                stored("{where}：参照表 {name} 的列名不能为空、不能重复", where=where, name=name)
+                stored("{where}：参照表 {name} 的列名不能为空或重复", where=where, name=name)
             )
         rows = tuple(tuple("" if v is None else str(v) for v in r) for r in item.get("rows") or [])
         if len(rows) > MAX_REFERENCE_ROWS:
@@ -223,7 +223,7 @@ def parse_references(raw: Any, fields: set[str], where: str) -> tuple[TemplateRe
         if match_field and match_field not in fields:
             raise ExtrasError(
                 stored(
-                    "{where}：参照表 {name} 要对照的字段 {match_field} 不在模板里",
+                    "{where}：参照表 {name} 的对照字段 {match_field} 不在模板中",
                     where=where,
                     name=name,
                     match_field=match_field,
@@ -232,7 +232,7 @@ def parse_references(raw: Any, fields: set[str], where: str) -> tuple[TemplateRe
         if match_column and match_column not in columns:
             raise ExtrasError(
                 stored(
-                    "{where}：参照表 {name} 没有叫 {match_column} 的列",
+                    "{where}：参照表 {name} 中不存在名为 {match_column} 的列",
                     where=where,
                     name=name,
                     match_column=match_column,
@@ -240,10 +240,12 @@ def parse_references(raw: Any, fields: set[str], where: str) -> tuple[TemplateRe
             )
         if bool(match_field) != bool(match_column):
             raise ExtrasError(
-                stored("{where}：参照表 {name} 的对照字段和对照列要一起写", where=where, name=name)
+                stored(
+                    "{where}：参照表 {name} 的对照字段与对照列需同时填写", where=where, name=name
+                )
             )
         if any(r.name == name for r in references):
-            raise ExtrasError(stored("{where}：参照表 {name} 重复了", where=where, name=name))
+            raise ExtrasError(stored("{where}：参照表 {name} 重复", where=where, name=name))
         references.append(
             TemplateReference(
                 name=name,
@@ -275,7 +277,7 @@ def parse_workbook(
         if role not in get_args(SheetRole):
             raise ExtrasError(
                 stored(
-                    "{where}：sheet「{name}」的角色 {role} 不认识",
+                    "{where}：sheet「{name}」的角色 {role} 无效",
                     where=where,
                     name=name,
                     role=role,
@@ -284,7 +286,7 @@ def parse_workbook(
         header_row = item.get("header_row")
         if not isinstance(header_row, int) or header_row < 1:
             raise ExtrasError(
-                stored("{where}：sheet「{name}」的表头行要是正整数", where=where, name=name)
+                stored("{where}：sheet「{name}」的表头行需为正整数", where=where, name=name)
             )
         columns: list[WorkbookColumn] = []
         for c in item.get("columns") or []:
@@ -292,7 +294,7 @@ def parse_workbook(
             if ref and not _known_ref(ref, refs, references):
                 raise ExtrasError(
                     stored(
-                        "{where}：sheet「{name}」的列「{header}」要填的 {ref} 不认识",
+                        "{where}：sheet「{name}」中列「{header}」的填充内容 {ref} 无效",
                         where=where,
                         name=name,
                         header=c.get("header"),
@@ -304,7 +306,7 @@ def parse_workbook(
             )
         if any(c.index < 1 for c in columns):
             raise ExtrasError(
-                stored("{where}：sheet「{name}」有列的位置不对", where=where, name=name)
+                stored("{where}：sheet「{name}」存在位置无效的列", where=where, name=name)
             )
         sheet = WorkbookSheet(
             name=name,
@@ -319,7 +321,7 @@ def parse_workbook(
         if role == "items" and sheet.table not in tables:
             raise ExtrasError(
                 stored(
-                    "{where}：明细表「{name}」对应的表格 {table} 不在模板里",
+                    "{where}：明细表「{name}」对应的表格 {table} 不在模板中",
                     where=where,
                     name=name,
                     table=sheet.table,
@@ -328,7 +330,7 @@ def parse_workbook(
         if role == "entity" and sheet.entity not in entities:
             raise ExtrasError(
                 stored(
-                    "{where}：对象表「{name}」对应的对象 {entity} 不在模板里",
+                    "{where}：对象表「{name}」对应的对象 {entity} 不在模板中",
                     where=where,
                     name=name,
                     entity=sheet.entity,
@@ -337,7 +339,7 @@ def parse_workbook(
         if role == "reference" and sheet.reference not in references:
             raise ExtrasError(
                 stored(
-                    "{where}：参照表「{name}」对应的名单 {reference} 不在模板里",
+                    "{where}：参照表「{name}」对应的清单 {reference} 不在模板中",
                     where=where,
                     name=name,
                     reference=sheet.reference,

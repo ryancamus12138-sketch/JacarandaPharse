@@ -90,7 +90,7 @@ export function ExportsPage() {
           </Button>
         ) : (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t('文件没保存')}
+            {t('文件未保存')}
           </Typography.Text>
         ),
     },
@@ -99,7 +99,7 @@ export function ExportsPage() {
   return (
     <Card title={t('导出记录')}>
       <Typography.Paragraph type="secondary">
-        {t('每次导出的文件都存了一份。重新下载拿到的是当时的内容；文档后来又改过的话，回文档列表重新导出。')}
+        {t('每次导出的文件均已存档。重新下载获取的是导出时的内容；如文档之后有修改，请在文档列表中重新导出。')}
       </Typography.Paragraph>
       {exports.error && (
         <Alert
@@ -122,7 +122,7 @@ export function ExportsPage() {
           showTotal: (total) => t('共 {{total}} 次', { total }),
           onChange: setPage,
         }}
-        locale={{ emptyText: t('还没有导出过。在文档列表勾选文档，点"导出"') }}
+        locale={{ emptyText: t('暂无导出记录。可在文档列表中勾选文档后点击“导出”') }}
       />
     </Card>
   )

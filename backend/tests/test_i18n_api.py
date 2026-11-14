@@ -18,7 +18,7 @@ STORED_MARKERS = ('{"msg":', '{"join":')
 
 def test_errors_follow_accept_language(client):
     missing = f"/api/v1/documents/{uuid.uuid4()}"
-    assert client.get(missing).json()["detail"] == "找不到这个文档"
+    assert client.get(missing).json()["detail"] == "文档不存在"
     english = client.get(missing, headers=ENGLISH)
     assert english.status_code == 404
     assert english.json()["detail"] == "Document not found"
@@ -38,7 +38,7 @@ def test_processing_results_are_rendered_for_each_reader(client, factory, storag
         v["name"]: v["note"] for e in chinese["extractions"] for v in e["values"] if v["note"]
     }
     assert notes["store_name"] == "The model says this field is absent from the source text"
-    assert original["store_name"] == "模型说原文里没有这个字段"
+    assert original["store_name"] == "模型判断原文中没有此字段"
 
 
 def test_standard_workbook_is_written_in_the_reader_language_and_read_in_any(client):
@@ -49,7 +49,7 @@ def test_standard_workbook_is_written_in_the_reader_language_and_read_in_any(cli
     assert {"Template", "Fields", "Tables", "Rules", "Entities", "Reference tables"} <= set(
         book.sheetnames
     )
-    assert [c.value for c in book["Fields"][1]][:3] == ["Display name", "Field ID", "Type"]
+    assert [c.value for c in book["Fields"][1]][:3] == ["Name", "Field ID", "Type"]
 
     # A workbook exported from the English interface is imported from the Chinese one.
     analysis = upload_excel(client, exported.content, "lab.xlsx")

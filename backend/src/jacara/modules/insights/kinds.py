@@ -33,17 +33,17 @@ Kind = Literal[
 ]
 
 KIND_NAMES: dict[str, str] = {
-    "missing": N_("模型漏了"),
-    "extra": N_("原文没有却给了"),
+    "missing": N_("模型遗漏"),
+    "extra": N_("原文中不存在但有输出"),
     "decimal": N_("小数点"),
     "sign": N_("正负号"),
-    "number": N_("数字认错"),
+    "number": N_("数字识别错误"),
     "day_month": N_("日月颠倒"),
-    "year": N_("年份不对"),
-    "date": N_("日期认错"),
+    "year": N_("年份错误"),
+    "date": N_("日期识别错误"),
     "format": N_("空格、标点、大小写"),
-    "chars": N_("个别字认错"),
-    "rewrite": N_("整个不一样"),
+    "chars": N_("个别字符错误"),
+    "rewrite": N_("完全不同"),
 }
 
 

@@ -43,7 +43,7 @@ export function RunSwitcher({
       options={runs.map((r) => ({
         value: r.run,
         label: [
-          t('第 {{run}} 轮', { run: r.run }) + (r.current ? t('（现在用的）') : ''),
+          t('第 {{run}} 轮', { run: r.run }) + (r.current ? t('（当前）') : ''),
           r.template_title,
           formatTime(r.created_at),
           ...(r.reason ? [r.reason] : []),
@@ -105,7 +105,7 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
       }),
     onSuccess: () => {
       setOpen(false)
-      void message.success(t('已放进队列重新处理。处理完会换成新结果，旧结果还能在"第几轮"里查看'))
+      void message.success(t('已加入队列重新处理。处理完成后将显示新结果，旧结果仍可在轮次中查看'))
       void queryClient.invalidateQueries({ queryKey: ['document', doc.id] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
@@ -115,7 +115,7 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
 
   return (
     <>
-      <Tooltip title={busy ? t('正在处理，等处理完再说') : t('换模板或用模板的新版本再抽一次')}>
+      <Tooltip title={busy ? t('正在处理，请等待处理完成') : t('更换模板或使用模板的新版本重新抽取')}>
         <Button icon={<RedoOutlined />} disabled={busy} onClick={() => setOpen(true)}>
           {t('重新处理')}
         </Button>
@@ -144,17 +144,17 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
           onFinish={(v) => reprocess.mutate(v)}
           preserve={false}
         >
-          <Form.Item name="template" label={t('用哪个模板')}>
+          <Form.Item name="template" label={t('使用模板')}>
             <Select
               loading={templates.isPending}
               options={[
                 {
-                  label: t('不换'),
+                  label: t('不更换'),
                   title: 'same',
                   options: [
                     {
                       value: SAME,
-                      label: doc.auto ? t('再自动判断一次') : t('现在这个模板的最新版'),
+                      label: doc.auto ? t('重新自动选择') : t('当前模板的最新版本'),
                     },
                   ],
                 },
@@ -165,8 +165,8 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
           {doc.page_count > 1 && (
             <Form.Item
               name="split"
-              label={t('这个文件里有几张单据')}
-              extra={t('分错了（两张发票当成一张，或者一张两页的账单拆成两张）就在这里改。')}
+              label={t('此文件中的单据数')}
+              extra={t('如拆分有误（如两张发票被识别为一张，或一张两页的账单被拆为两张），可在此修改。')}
             >
               <Select options={SPLITS} />
             </Form.Item>
@@ -175,20 +175,20 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
             <Form.Item
               name="ranges"
               label={t('页码（共 {{page_count}} 页）', { page_count: doc.page_count })}
-              extra={t('每张单据占哪几页，用逗号分开，例如 1-2, 3, 4-6。没写到的页按自动判断接在后面。')}
-              rules={[{ required: true, message: t('写一下每张单据占哪几页') }]}
+              extra={t('每张单据所占页码，以逗号分隔，例如 1-2, 3, 4-6。未列出的页按自动判断追加。')}
+              rules={[{ required: true, message: t('请填写每张单据所占的页码') }]}
             >
               <Input placeholder="1-2, 3, 4-6" />
             </Form.Item>
           )}
           <Form.Item
             name="vision"
-            label={t('对照原图读')}
+            label={t('对照原图读取')}
             extra={
               sees
-                ? t('模型平时只看 OCR 认出的文字。对照原图（整页的照片）读，手写、印章、模糊、被笔迹盖住的字更准，但慢一些。“系统决定”：照片不清楚时才对照。')
+                ? t('模型默认仅读取 OCR 识别的文字。对照原图（整页图像）读取时，手写、印章、模糊或被笔迹遮挡的文字更准确，但速度较慢。“系统决定”：仅在照片不清晰时对照原图。')
                 : vision.isSuccess
-                  ? t('还没有视觉模型，模型只能看文字。把 mmproj-F16.gguf 放进 models/，重新 jacara start 后可以选（见系统信息）。')
+                  ? t('尚未配置视觉模型，模型仅能读取文字。将 mmproj-F16.gguf 放入 models/ 并重新执行 jacara start 后即可选择（详见系统信息）。')
                   : undefined
             }
           >
@@ -201,13 +201,13 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
           {isPdf && (
             <Form.Item
               name="pdfRead"
-              label={t('PDF 怎么读')}
-              extra={t('画成图识别：和照片走同一条路，PDF 自带的文字只拿来核对（有的 PDF 自带的文字是错的，比如把“示”存成部首“⽰”、把 0 存成 8）。只读自带的文字：快，只适合确定干净的电子版。')}
+              label={t('PDF 读取方式')}
+              extra={t('渲染为图像识别：与照片流程相同，PDF 文本层仅用于核对（部分 PDF 文本层存在错误，如将“示”存为部首“⽰”、将 0 存为 8）。仅读取文本层：速度快，仅适用于确认无误的电子版。')}
             >
               <Radio.Group optionType="button" options={PDF_READ_CHOICES} />
             </Form.Item>
           )}
-          <Form.Item name="reason" label={t('为什么')} rules={[{ required: true }]}>
+          <Form.Item name="reason" label={t('原因')} rules={[{ required: true }]}>
             <Radio.Group
               options={Object.entries(REPROCESS_REASONS).map(([value, label]) => ({ value, label }))}
             />
@@ -215,13 +215,13 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
           <Form.Item
             name="note"
             label={t('说明')}
-            rules={[{ required: reason === 'other', message: t('原因选了"其他"，请写一句说明') }]}
+            rules={[{ required: reason === 'other', message: t('原因为“其他”时，请填写说明') }]}
           >
-            <Input.TextArea autoSize={{ minRows: 2 }} maxLength={500} placeholder={t('会记在处理历史和审计日志里')} />
+            <Input.TextArea autoSize={{ minRows: 2 }} maxLength={500} placeholder={t('将记录在处理历史和审计日志中')} />
           </Form.Item>
           <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>
-            {t('旧的结果和审核记录都会留着；新一轮出来后，上次人审核过、这次值和位置都一样的字段， 可以用"采纳上次的确认"一次沿用。')}
-            {doc.status === 'reviewed' && t(' 这份已经审核完了，重新处理后要重新审核。')}
+            {t('原有结果和审核记录均会保留；新一轮完成后，上一轮经人工审核、且本轮值与位置均一致的字段，可通过“沿用上一轮审核”一次性沿用。')}
+            {doc.status === 'reviewed' && t(' 此文档已完成审核，重新处理后需要重新审核。')}
           </div>
         </Form>
       </Modal>

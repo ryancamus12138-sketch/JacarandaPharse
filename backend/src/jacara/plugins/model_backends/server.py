@@ -48,7 +48,7 @@ def server_command(
     exe = shutil.which("llama-server")
     if exe is None:
         raise FileNotFoundError(
-            stored("找不到 llama-server。Mac 上请先运行：brew install llama.cpp")
+            stored("未找到 llama-server。在 Mac 上请先运行：brew install llama.cpp")
         )
     return [
         exe,

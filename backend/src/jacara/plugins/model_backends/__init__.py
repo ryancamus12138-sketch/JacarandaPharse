@@ -35,7 +35,7 @@ def create_model_backend(config: ModelConfig | None = None) -> ModelBackend:
     if factory is None:
         raise ValueError(
             stored(
-                "未知的模型后端：{backend}，可用的有：{available}",
+                "未知的模型后端：{backend}，可用后端：{available}",
                 backend=config.backend,
                 available=join_items(available_backends()),
             )

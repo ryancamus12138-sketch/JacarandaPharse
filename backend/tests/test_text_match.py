@@ -94,7 +94,7 @@ def test_wrong_row_is_found_but_needs_review(receipt_page):
     result = align(receipt_page, ExtractedField("cash", "number", 10.0, 1))
     assert result["cash"].status == "matched"
     assert result["cash"].needs_review
-    assert "实际在第" in result["cash"].note
+    assert "实际位于第" in result["cash"].note
 
 
 def test_address_across_rows(receipt_page):

@@ -93,7 +93,7 @@ def import_files(
     if kind not in registry.KINDS:
         raise HubError(
             "invalid",
-            tr("不认识的种类：{kind}，可选：{kinds}", kind=kind, kinds=join_items(registry.KINDS)),
+            tr("未知种类：{kind}，可选值：{kinds}", kind=kind, kinds=join_items(registry.KINDS)),
         )
     weights_name = registry.safe_filename(weights.name, registry.FORMATS[kind])
     dict_name = registry.safe_filename(dictionary.name, ".txt") if dictionary else None
@@ -175,10 +175,10 @@ class HubService:
 
     def _upload_dir(self, upload_id: str) -> Path:
         if not UPLOAD_ID.fullmatch(upload_id):
-            raise HubError("not_found", tr("没有这次上传"))
+            raise HubError("not_found", tr("上传不存在"))
         path = registry.hub_root() / registry.INCOMING / upload_id
         if not path.is_dir():
-            raise HubError("not_found", tr("没有这次上传（可能已经完成、取消或过期了）"))
+            raise HubError("not_found", tr("上传不存在（可能已完成、取消或过期）"))
         return path
 
     def start_upload(self) -> UploadOut:
@@ -201,7 +201,7 @@ class HubService:
         work = self._upload_dir(upload_id)
         suffix = Path(filename).suffix.lower()
         if suffix not in (".gguf", ".onnx", ".txt", ".zip"):
-            raise HubError("invalid", tr("只收 .gguf、.onnx、识别字典 .txt，或模型库导出的 .zip"))
+            raise HubError("invalid", tr("仅支持 .gguf、.onnx、识别字典 .txt，或模型库导出的 .zip"))
         name = registry.safe_filename(filename, suffix)
         if length:
             registry.check_space(length)
@@ -219,7 +219,7 @@ class HubService:
             raise
         if size == 0:
             target.unlink(missing_ok=True)
-            raise HubError("invalid", tr("文件是空的"))
+            raise HubError("invalid", tr("文件为空"))
         return UploadedFile(name=name, size=size, sha256=digest.hexdigest())
 
     def cancel_upload(self, upload_id: str) -> None:
@@ -239,7 +239,7 @@ class HubService:
         if data.archive:
             archive = work / registry.safe_filename(data.archive, ".zip")
             if not archive.is_file():
-                raise HubError("invalid", tr("还没传 {archive}", archive=data.archive))
+                raise HubError("invalid", tr("尚未上传 {archive}", archive=data.archive))
             weights, dictionary, card, body = registry.unpack(archive, work)
             archive.unlink()
             kind = str(card.pop("kind", ""))
@@ -248,19 +248,19 @@ class HubService:
             description = description or body
         else:
             if data.kind is None or data.weights is None:
-                raise HubError("invalid", tr("要选种类和权重文件"))
+                raise HubError("invalid", tr("请选择种类和权重文件"))
             kind, weights, dictionary = data.kind, data.weights, data.dict_file
             for name in (weights, dictionary):
                 if name is not None and not (work / name).is_file():
-                    raise HubError("invalid", tr("还没传 {name}", name=name))
+                    raise HubError("invalid", tr("尚未上传 {name}", name=name))
             suffix = registry.FORMATS[kind]
             if not weights.lower().endswith(suffix):
                 raise HubError(
                     "invalid",
-                    tr("{kind}要 {suffix} 文件", kind=tr(registry.KINDS[kind]), suffix=suffix),
+                    tr("{kind}需要 {suffix} 文件", kind=tr(registry.KINDS[kind]), suffix=suffix),
                 )
             if dictionary is not None and not dictionary.lower().endswith(".txt"):
-                raise HubError("invalid", tr("字典要 .txt 文件"))
+                raise HubError("invalid", tr("字典需为 .txt 文件"))
         extra = {p.name for p in work.iterdir()} - {weights, dictionary}
         for name in extra:  # Files uploaded but not used.
             (work / name).unlink(missing_ok=True)
@@ -308,7 +308,7 @@ class HubService:
         ):
             raise HubError(
                 "invalid",
-                tr("{kind}由 .env 指定，网页上换不了", kind=tr(registry.KINDS[version.kind])),
+                tr("{kind}由 .env 指定，无法在网页中更换", kind=tr(registry.KINDS[version.kind])),
             )
         choice: dict[str, str] = {version.kind: registry.relative(version.weights)}
         if version.kind == "ocr_rec":
@@ -325,7 +325,7 @@ class HubService:
         require(self.owner, "system:manage")
         version = registry.get_version(name, number)
         if self._is_used(version):
-            raise HubError("invalid", tr("这个版本正在用，先换成别的再删"))
+            raise HubError("invalid", tr("此版本正在使用，请先切换到其他版本再删除"))
         registry.remove(version)
         record(
             self.session,
@@ -377,7 +377,7 @@ class HubService:
     def _get_dataset(self, dataset_id: uuid.UUID) -> Dataset:
         found = self.session.get(Dataset, dataset_id)
         if found is None or found.team_id != self.owner.team_id:
-            raise HubError("not_found", tr("没有这个数据集"))
+            raise HubError("not_found", tr("数据集不存在"))
         return found
 
     def import_dataset(self, name: str, kind: str, description: str, data: bytes) -> DatasetOut:
@@ -400,7 +400,7 @@ class HubService:
         database). The caller checks permissions."""
         name = " ".join(name.split())
         if not name or len(name) > 64 or "/" in name:
-            raise HubError("invalid", tr("名字要 1～64 个字，不能有 /"))
+            raise HubError("invalid", tr("名称需为 1～64 个字符，且不能包含 /"))
         if self.storage is None:
             raise HubError("storage", tr("对象存储暂时不可用，请稍后再试"))
         parsed = dataset_files.parse(data, kind)
@@ -462,7 +462,7 @@ class HubService:
         try:
             data = self.storage.get(dataset.storage_key)
         except StorageError as err:
-            raise HubError("storage", tr("对象存储里取不到这个数据集")) from err
+            raise HubError("storage", tr("无法从对象存储读取此数据集")) from err
         record(self.session, self.owner, "hub:dataset_download", "dataset", dataset.id)
         return f"{dataset.name}-v{dataset.version}.zip", data
 
@@ -475,7 +475,7 @@ class HubService:
             select(OcrEvalRun).where(OcrEvalRun.dataset_id == dataset.id)
         ).all()
         if any(r.status in ("queued", "running") for r in runs):
-            raise HubError("invalid", tr("这个数据集有评测正在跑，等它跑完再删"))
+            raise HubError("invalid", tr("此数据集有正在运行的评测，请在评测结束后删除"))
         keys = [dataset.storage_key, *(r.lines_key for r in runs if r.lines_key)]
         for run in runs:
             self.session.delete(run)
@@ -503,7 +503,7 @@ class HubService:
         require(self.owner, "value:review")
         dataset = self._get_dataset(data.dataset_id)
         if not (dataset.counts or {}).get(data.split):
-            raise HubError("invalid", tr("这个数据集没有 {split} 这一边", split=data.split))
+            raise HubError("invalid", tr("此数据集没有 {split} 划分", split=data.split))
         task = "rec" if dataset.kind == "ocr_rec" else "det"
         arms = [
             resolve_arm(self.settings, "A", data.a, task),
@@ -512,7 +512,7 @@ class HubService:
         if {k: arms[0][k] for k in ("det", "rec", "dict")} == {
             k: arms[1][k] for k in ("det", "rec", "dict")
         }:
-            raise HubError("invalid", tr("两边是同一个模型，没什么可比的"))
+            raise HubError("invalid", tr("两侧为同一模型，无需对比"))
         if self.queue is None:
             raise HubError("queue", tr("任务队列暂时不可用，请稍后再试"))
         run = OcrEvalRun(
@@ -542,10 +542,10 @@ class HubService:
             self.queue.enqueue_eval(run.id)
         except QueueError as err:
             run.status = "failed"
-            run.error = stored("任务队列（Valkey）连不上，没有开始")
+            run.error = stored("无法连接任务队列（Valkey），评测未开始")
             self.session.commit()
             raise HubError(
-                "queue", tr("任务队列（Valkey）连不上，请确认 jacara start 在运行")
+                "queue", tr("无法连接任务队列（Valkey），请确认 jacara start 正在运行")
             ) from err
         return self._eval_out(run, dataset)
 
@@ -580,7 +580,7 @@ class HubService:
     def _get_run(self, run_id: uuid.UUID) -> OcrEvalRun:
         run = self.session.get(OcrEvalRun, run_id)
         if run is None or run.team_id != self.owner.team_id:
-            raise HubError("not_found", tr("没有这次评测"))
+            raise HubError("not_found", tr("评测不存在"))
         return run
 
     def eval_run(self, run_id: uuid.UUID) -> EvalOut:
@@ -591,11 +591,11 @@ class HubService:
         require(self.owner, "document:export")
         run = self._get_run(run_id)
         if not run.lines_key or self.storage is None:
-            raise HubError("not_found", tr("这次评测还没有逐条结果"))
+            raise HubError("not_found", tr("此次评测尚无逐条结果"))
         try:
             data = self.storage.get(run.lines_key)
         except StorageError as err:
-            raise HubError("storage", tr("对象存储里取不到逐条结果")) from err
+            raise HubError("storage", tr("无法从对象存储读取逐条结果")) from err
         return tr("OCR评测-{run}.jsonl", run=run.id.hex[:8]), data
 
 
@@ -607,18 +607,18 @@ def resolve_arm(settings: Settings, name: str, ref: ModelRef, task: str) -> dict
         own = settings.ocr_models()
         det = own.get("det")
         rec, dictionary = own.get("rec"), own.get("dict")
-        label = tr("现在用的")
+        label = tr("当前使用")
     elif ref.source == "builtin":
-        label = tr("RapidOCR 自带的")
+        label = tr("RapidOCR 内置模型")
     else:
         if ref.name is None or ref.version is None:
-            raise HubError("invalid", tr("要选模型库里的模型和版本"))
+            raise HubError("invalid", tr("请选择模型库中的模型和版本"))
         version = registry.get_version(ref.name, ref.version)
         if version.kind != slot:
             raise HubError(
                 "invalid",
                 tr(
-                    "{name} 是{kind}，这个数据集要比{wanted}",
+                    "{name} 是{kind}，此数据集需对比{wanted}",
                     name=ref.name,
                     kind=tr(registry.KINDS[version.kind]),
                     wanted=tr(registry.KINDS[slot]),

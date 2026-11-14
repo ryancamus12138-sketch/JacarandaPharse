@@ -228,18 +228,18 @@ export function PageViewer({
       <Flex justify="space-between" align="center" wrap gap={8}>
         <Typography.Text type="secondary" style={{ flex: '1 1 200px', minWidth: 0 }}>
           {drawOn
-            ? t('拖出新框，或拖动、拉伸橙色框')
+            ? t('拖动绘制新框，或移动、缩放橙色框')
             : showOcr
-            ? t('点文字块填入右边选中的字段；按住 Shift 或 ⌘/Ctrl 多选')
-            : t('{{length}} 个值找到了出处', { length: withBox.length })}
+            ? t('点击文字块填入右侧选中的字段；按住 Shift 或 ⌘/Ctrl 可多选')
+            : t('{{length}} 个值已找到出处', { length: withBox.length })}
         </Typography.Text>
         <Flex gap={4} align="center" wrap>
           {extra}
           <Tooltip
             title={
               ocr && !ocr.available
-                ? t('这一页处理时还没保存 OCR 结果，重新上传后才能用')
-                : t('显示 OCR 认出的每块文字（也可以按住 Alt / Option）。先在右边选中字段，再点文字填入；按住 Shift 或 ⌘/Ctrl 可以多选')
+                ? t('此页处理时未保存 OCR 结果，需重新上传后方可使用')
+                : t('显示 OCR 识别的各文字块（也可按住 Alt / Option）。先在右侧选中字段，再点击文字填入；按住 Shift 或 ⌘/Ctrl 可多选')
             }
           >
             <Button
@@ -256,8 +256,8 @@ export function PageViewer({
             <Tooltip
               title={
                 structure && !structure.available
-                  ? t('这一页是更新前处理的，没有版面结构；重新处理后才有')
-                  : t('看系统认出了什么：版面区域（虚线）、表格的格子（紫色）、标题（橙色）→ 值（绿色）')
+                  ? t('此页在更新前处理，无版面结构；重新处理后可用')
+                  : t('显示系统识别的结构：版面区域（虚线）、表格单元格（紫色）、标题（橙色）→ 值（绿色）')
               }
             >
               <Button
@@ -272,7 +272,7 @@ export function PageViewer({
             </Tooltip>
           )}
           {canDraw && (
-            <Tooltip title={t('在原图上拖出一个框，或者拖动、拉伸选中字段的框；然后用框里的文字，或者重新识别这块')}>
+            <Tooltip title={t('在原图上拖动绘制框，或移动、缩放所选字段的框；然后使用框内文字或重新识别该区域')}>
               <Button
                 size="small"
                 icon={<SelectOutlined />}
@@ -296,7 +296,7 @@ export function PageViewer({
             size="small"
             onClick={() => setZoom(1)}
             style={{ width: 64 }}
-            title={t('点一下回到 100%（宽度占满）')}
+            title={t('点击恢复为 100%（适应宽度）')}
           >
             {Math.round(zoom * 100)}%
           </Button>

@@ -50,7 +50,7 @@ class ModelOut(BaseModel):
     versions: list[VersionOut]
 
 
-RESTART_HINT = N_("换了以后要 jacara stop、jacara start 才生效")
+RESTART_HINT = N_("更换后需执行 jacara stop 和 jacara start 才会生效")
 """Shown on the models page: model changes take effect after a restart."""
 
 

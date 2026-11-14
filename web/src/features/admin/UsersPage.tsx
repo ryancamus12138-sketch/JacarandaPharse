@@ -26,7 +26,7 @@ import { UserForm } from './UserForm'
 import { useTranslation } from 'react-i18next'
 import { msg } from '../../i18n'
 
-const SELF_LOCKED = msg('不能改自己的角色或停用自己，免得没人能管理')
+const SELF_LOCKED = msg('不能修改自己的角色或停用自己，以免无人可管理系统')
 
 /**
  * User management (administrators only): create users, grant permissions with checkboxes, change roles,
@@ -78,8 +78,8 @@ export function UsersPage() {
     return (
       <Result
         status="info"
-        title={t('个人模式不用账号')}
-        subTitle={t('几个人一起用时，把 .env 里的 JACARA_MODE 改成 team，重启后端，用 jacara user add 建第一个管理员。')}
+        title={t('个人模式无需账号')}
+        subTitle={t('多人使用时，请将 .env 中的 JACARA_MODE 改为 team，重启后端，并使用 jacara user add 创建第一个管理员。')}
       />
     )
   }
@@ -139,7 +139,7 @@ export function UsersPage() {
       dataIndex: 'is_active',
       width: 80,
       render: (active: boolean, u) => (
-        <Tooltip title={u.id === me.user?.id ? t(SELF_LOCKED) : active ? t('停用后不能登录') : undefined}>
+        <Tooltip title={u.id === me.user?.id ? t(SELF_LOCKED) : active ? t('停用后无法登录') : undefined}>
           <Switch
             checked={active}
             size="small"
@@ -155,7 +155,7 @@ export function UsersPage() {
       key: 'actions',
       width: 100,
       render: (_, u) => (
-        <Tooltip title={t('对方忘了密码时用：生成一次性重设码，对方自己设新密码')}>
+        <Tooltip title={t('用户忘记密码时使用：生成一次性重设码，由用户自行设置新密码')}>
           <Button
             size="small"
             icon={<KeyOutlined />}
@@ -180,7 +180,7 @@ export function UsersPage() {
       }
     >
       <Typography.Paragraph type="secondary">
-        {t('使用者默认能看文档、下载原图、导出 Excel；其他权限在这里勾选开通，改了马上生效。 用户不能删除，只能停用（修改记录和审计日志里还要知道"是谁"）。')}
+        {t('使用者默认可查看文档、下载原图和导出 Excel；其他权限在此勾选开通，修改即时生效。用户不可删除，只能停用（修改记录和审计日志需要保留操作人信息）。')}
       </Typography.Paragraph>
       {users.error && (
         <Alert type="error" showIcon title={users.error.message} style={{ marginBottom: 16 }} />

@@ -65,7 +65,7 @@ function UnitSide({ unit }: { unit: Unit }) {
       </Typography.Text>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         {unit.page === unit.last_page ? t('第 {{page}} 页', { page: unit.page }) : t('第 {{page}}–{{last_page}} 页', { page: unit.page, last_page: unit.last_page })} · {unit.template}
-        {unit.samples > 0 ? t(' · {{samples}} 条样本', { samples: unit.samples }) : t(' · 还没有样本')}
+        {unit.samples > 0 ? t(' · {{samples}} 条样本', { samples: unit.samples }) : t(' · 暂无样本')}
       </Typography.Text>
       <Descriptions
         size="small"
@@ -97,7 +97,7 @@ function PairView({
       </Flex>
       <Flex gap={8} justify="flex-end">
         <Button onClick={() => onDecide('different')} disabled={busy}>
-          {t('不是同一张')}
+          {t('不是同一张单据')}
         </Button>
         <Button type="primary" icon={<LinkOutlined />} loading={busy} onClick={() => onDecide('same')}>
           {t('是同一张单据')}
@@ -126,14 +126,14 @@ function UnitPicker({ value, onChange }: { value: Unit | null; onChange: (unit: 
       showSearch
       allowClear
       style={{ width: '100%' }}
-      placeholder={t('输入文件名找单据')}
+      placeholder={t('输入文件名搜索单据')}
       filterOption={false}
       onSearch={setQ}
       loading={found.isFetching}
       value={value ? `${value.document_id}:${value.page}` : undefined}
       onChange={(key) => onChange(options.find((o) => o.value === key)?.unit ?? null)}
       options={options}
-      notFoundContent={q ? t('没有找到') : t('输入文件名')}
+      notFoundContent={q ? t('未找到') : t('输入文件名')}
     />
   )
 }
@@ -178,7 +178,7 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
     mutationFn: ({ group, split }: { group: string; split: Split }) => setGroupSplit(group, split),
     onSuccess: () => {
       refresh()
-      void message.success(t('已改'))
+      void message.success(t('已修改'))
     },
     onError: (err) => void message.error(errorText(err)),
   })
@@ -196,7 +196,7 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
       ),
     },
     {
-      title: t('分在'),
+      title: t('所属划分'),
       key: 'split',
       width: 200,
       render: (_, g) => (
@@ -237,12 +237,12 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
               </Typography.Text>
               {canReview && g.members.length > 1 && (
                 <Popconfirm
-                  title={t('把这张从组里拆出来？')}
-                  description={t('配错了才拆。这一组导出过的话，拆开后两边都会被隔离。')}
+                  title={t('将此单据从分组中拆出？')}
+                  description={t('仅在配对错误时拆分。如此分组已导出过，拆分后两侧均将被隔离。')}
                   onConfirm={() => detach.mutate(m.id)}
                 >
                   <Button size="small" type="link" icon={<DisconnectOutlined />}>
-                    {t('拆开')}
+                    {t('拆分')}
                   </Button>
                 </Popconfirm>
               )}
@@ -253,12 +253,12 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
     },
     { title: t('样本'), dataIndex: 'samples', width: 70, align: 'right' },
     {
-      title: t('导出过'),
+      title: t('已导出'),
       dataIndex: 'exported_as',
       width: 160,
       render: (parts: string[]) =>
         parts.length === 0 ? (
-          <Typography.Text type="secondary">{t('没有')}</Typography.Text>
+          <Typography.Text type="secondary">{t('无')}</Typography.Text>
         ) : (
           <Flex gap={4} wrap>
             {parts.map((p) => (
@@ -275,16 +275,16 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
         type="info"
         showIcon
         icon={<ApartmentOutlined />}
-        title={t('同一张单据的样本永远在同一边')}
-        description={t('一张业务单据（文件里的一张单据：重新处理的几轮、每一页都算它）是一组。字节一样的文件自动同组；同一张单据的 PDF 和照片要人看原图确认后合并。第一次有样本时按哈希分边（约 80% 训练、20% 验证），之后不变。合并或拆开时如果已经导出过、可能一份训练一份验证，这一组会被隔离、不再导出，受影响的导出记录会记一笔。')}
+        title={t('同一张单据的样本始终位于同一划分')}
+        description={t('每张业务单据（文件中的一张单据，包括其各轮重新处理和各页）为一组。字节完全相同的文件自动归入同组；同一单据的 PDF 与照片需人工核对原图后合并。首次产生样本时按哈希分配划分（约 80% 训练、20% 验证），此后保持不变。合并或拆分时，若该组已导出且可能同时出现在训练集和验证集中，该组将被隔离并不再导出，受影响的导出记录会被标注。')}
       />
       {(pairs.data?.length ?? 0) > 0 && (
         <Card
           size="small"
-          title={t('可能是同一张单据（{{length}}）', { length: pairs.data?.length })}
+          title={t('疑似同一张单据（{{length}}）', { length: pairs.data?.length })}
           extra={
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t('单据类型、单号、日期、金额、币种、发单方对得上；看原图确认')}
+              {t('单据类型、单号、日期、金额、币种和开具方均一致；请核对原图确认')}
             </Typography.Text>
           }
         >
@@ -329,11 +329,11 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
           dataSource={data?.items ?? []}
           pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: true }}
           scroll={{ x: 900 }}
-          locale={{ emptyText: <Empty description={t('还没有样本，也就还没有分组')} /> }}
+          locale={{ emptyText: <Empty description={t('暂无样本，因此暂无分组')} /> }}
         />
       </Card>
       <Modal
-        title={t('手动配对：这两张是同一张单据')}
+        title={t('手动配对：确认两者为同一张单据')}
         open={manual}
         onCancel={() => setManual(false)}
         width={880}
@@ -358,7 +358,7 @@ export function GroupsTab({ canChange, canReview }: { canChange: boolean; canRev
             />
           ) : (
             <Typography.Text type="secondary">
-              {t('两边各选一张单据（同一张单据的 PDF 和照片、重新扫描的……），并排看原图确认。')}
+              {t('在两侧各选择一张单据（如同一单据的 PDF 与照片、重新扫描件），并排核对原图后确认。')}
             </Typography.Text>
           )}
         </Flex>

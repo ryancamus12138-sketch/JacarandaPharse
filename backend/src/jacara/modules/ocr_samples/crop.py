@@ -20,19 +20,19 @@ from PIL import Image
 from jacara.core.i18n import N_, stored
 
 CATEGORIES: dict[str, str] = {
-    "rec_error": N_("认错字"),
-    "correct": N_("认对的行"),
-    "missed": N_("漏认（人工补框）"),
+    "rec_error": N_("识别错误"),
+    "correct": N_("识别正确的行"),
+    "missed": N_("漏识别（人工补框）"),
     "unclear": N_("原因未确定"),
 }
 """Category → display name."""
 
 TAGS: dict[str, str] = {
-    "substitution": N_("字认错"),
-    "missing": N_("漏字"),
+    "substitution": N_("字符识别错误"),
+    "missing": N_("缺字"),
     "extra": N_("多字"),
-    "format": N_("空格、大小写、全角半角"),
-    "empty": N_("整行没认出"),
+    "format": N_("空格、大小写、全角/半角"),
+    "empty": N_("整行未识别"),
 }
 """Error label → display name."""
 
@@ -49,11 +49,11 @@ def crop_polygon(png: bytes, polygon: Sequence[Sequence[float]]) -> Image.Image:
     image = np.array(Image.open(io.BytesIO(png)).convert("RGB"))
     points = np.array([[float(x), float(y)] for x, y in polygon], dtype=np.float32)
     if points.shape != (4, 2):
-        raise ValueError(stored("要四个角"))
+        raise ValueError(stored("需要四个角点"))
     width = int(max(np.linalg.norm(points[0] - points[1]), np.linalg.norm(points[2] - points[3])))
     height = int(max(np.linalg.norm(points[0] - points[3]), np.linalg.norm(points[1] - points[2])))
     if width < 2 or height < 2:
-        raise ValueError(stored("框太小了"))
+        raise ValueError(stored("框过小"))
     target = np.array([[0, 0], [width, 0], [width, height], [0, height]], dtype=np.float32)
     matrix = cv2.getPerspectiveTransform(points, target)
     crop = cv2.warpPerspective(

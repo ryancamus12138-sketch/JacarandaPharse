@@ -19,7 +19,7 @@ export function ChangePassword({ open, onClose }: { open: boolean; onClose: () =
   const save = useMutation({
     mutationFn: (v: ChangePasswordForm) => changePassword(v.old, v.password),
     onSuccess: () => {
-      void message.success(t('密码已修改。别的电脑、浏览器上的登录都已退出'))
+      void message.success(t('密码已修改。其他计算机和浏览器上的登录均已退出'))
       onClose()
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
@@ -36,7 +36,7 @@ export function ChangePassword({ open, onClose }: { open: boolean; onClose: () =
       destroyOnHidden
     >
       <Typography.Paragraph type="secondary">
-        {t('改完以后，你在别的电脑、浏览器上的登录都会退出；这里不会。')}
+        {t('修改后，你在其他计算机和浏览器上的登录将全部退出，当前登录不受影响。')}
       </Typography.Paragraph>
       <Form<ChangePasswordForm>
         form={form}

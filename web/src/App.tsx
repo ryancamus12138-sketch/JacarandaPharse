@@ -153,10 +153,10 @@ export default function App() {
               element={
                 <Result
                   status="404"
-                  title={t('找不到这个页面')}
+                  title={t('页面不存在')}
                   extra={
                     <Link to="/">
-                      <Button type="primary">{t('回首页')}</Button>
+                      <Button type="primary">{t('返回首页')}</Button>
                     </Link>
                   }
                 />

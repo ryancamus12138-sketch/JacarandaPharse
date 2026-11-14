@@ -246,10 +246,10 @@ class DocumentDetail(DocumentOut):
 
 
 REPROCESS_REASONS: dict[str, str] = {
-    "template_changed": N_("模板改了"),
-    "wrong_template": N_("选错了模板"),
-    "bad_result": N_("结果不好，再跑一次"),
-    "model_changed": N_("换了模型或 OCR"),
+    "template_changed": N_("模板已修改"),
+    "wrong_template": N_("模板选择错误"),
+    "bad_result": N_("结果不理想，重新运行"),
+    "model_changed": N_("已更换模型或 OCR"),
     "batch": N_("批量重新处理"),
     "other": N_("其他"),
 }

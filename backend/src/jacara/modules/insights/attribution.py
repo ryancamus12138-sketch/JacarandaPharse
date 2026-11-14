@@ -41,31 +41,33 @@ from jacara.templates import Template
 ATTRIBUTOR_VERSION = "attr-v1"
 
 STAGES = {
-    "ocr_misread": N_("OCR 认错了字"),
-    "ocr_uncovered": N_("OCR 没认出这块"),
-    "extraction": N_("模型取错或漏取"),
-    "matching": N_("标准化或出处匹配"),
+    "ocr_misread": N_("OCR 识别错误"),
+    "ocr_uncovered": N_("OCR 漏识别"),
+    "extraction": N_("模型抽取错误或遗漏"),
+    "matching": N_("标准化或出处匹配问题"),
     "template": N_("模板或规则"),
-    "mixed": N_("几处都有问题"),
-    "unknown": N_("证据不够"),
+    "mixed": N_("多个环节有问题"),
+    "unknown": N_("证据不足"),
 }
 
 REASONS = {
-    "rejected_but_right": N_("模型给的值是对的，但出处核对没找到，被丢掉了"),
-    "format_only": N_("模型给的值意思一样，只是写法不同"),
-    "sample_rec_error": N_("人在原图上转写的和 OCR 读的不一样（OCR 样本）"),
-    "sample_missed": N_("人框的地方 OCR 没有认出文字（OCR 样本）"),
-    "picked_text_differs": N_("人点的那块原文，OCR 读出来不是人填的值"),
-    "drawn_box_text_differs": N_("人框住的那块，OCR 当时读出来不是人填的值"),
-    "drawn_box_no_text": N_("人框的地方 OCR 当时一个字都没有"),
-    "missed_in_text": N_("人填的值在发给模型的文字里，模型没取"),
-    "wrong_in_text": N_("人填的值在发给模型的文字里，模型取了别的"),
-    "day_first_rule": N_("模板定的日月顺序和这张单据不一样，日期读反了"),
-    "day_month_swapped": N_("模型把日期的日和月读反了，原文里有对的写法"),
-    "several": N_("几处都有证据，见下面"),
-    "short_value": N_("值太短（一位数、一个字），在文字里找到也可能是碰巧，不下结论"),
-    "not_in_text": N_("人填的值不在 OCR 文字里，也没有样本或框，分不清是 OCR 漏了还是人算出来的"),
-    "no_evidence": N_("没有能下结论的证据"),
+    "rejected_but_right": N_("模型输出的值正确，但出处核对未找到，已被丢弃"),
+    "format_only": N_("模型输出的值含义相同，仅写法不同"),
+    "sample_rec_error": N_("人工转写与 OCR 识别结果不一致（OCR 样本）"),
+    "sample_missed": N_("人工框选区域 OCR 未识别出文字（OCR 样本）"),
+    "picked_text_differs": N_("人工点选的原文，OCR 识别结果与人工填写的值不一致"),
+    "drawn_box_text_differs": N_("人工框选的区域，OCR 当时的识别结果与人工填写的值不一致"),
+    "drawn_box_no_text": N_("人工框选的区域，OCR 当时未识别出任何文字"),
+    "missed_in_text": N_("人工填写的值包含在发送给模型的文字中，但模型未抽取"),
+    "wrong_in_text": N_("人工填写的值包含在发送给模型的文字中，但模型抽取了其他值"),
+    "day_first_rule": N_("模板设定的日月顺序与此单据不一致，导致日期颠倒"),
+    "day_month_swapped": N_("模型将日期的日与月颠倒，原文中存在正确写法"),
+    "several": N_("多个环节均有证据，详见下方"),
+    "short_value": N_("值过短（一位数或单个字符），在文字中找到也可能是巧合，不下结论"),
+    "not_in_text": N_(
+        "人工填写的值不在 OCR 文字中，且无样本或框选，无法区分是 OCR 遗漏还是人工计算所得"
+    ),
+    "no_evidence": N_("没有足以下结论的证据"),
 }
 
 

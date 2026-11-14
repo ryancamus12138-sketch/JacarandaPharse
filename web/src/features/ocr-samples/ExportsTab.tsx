@@ -21,7 +21,7 @@ export function ExportsTab() {
       render: (t: string) => formatTime(t),
     },
     {
-      title: t('导出的'),
+      title: t('导出内容'),
       dataIndex: 'kind',
       width: 140,
       render: (kind: ExportRecord['kind']) =>
@@ -46,15 +46,15 @@ export function ExportsTab() {
       ),
     },
     {
-      title: t('导出以后发现的问题'),
+      title: t('导出后发现的问题'),
       key: 'affected',
       width: 220,
       render: (_, r) =>
         r.affected.length === 0 ? (
-          <Typography.Text type="secondary">{t('没有')}</Typography.Text>
+          <Typography.Text type="secondary">{t('无')}</Typography.Text>
         ) : (
           <Popover
-            title={t('这次导出受影响的组')}
+            title={t('本次导出中受影响的分组')}
             content={
               <Flex vertical gap={8} style={{ maxWidth: 420 }}>
                 {r.affected.map((a) => (
@@ -80,7 +80,7 @@ export function ExportsTab() {
   return (
     <Flex vertical gap={12}>
       <Typography.Text type="secondary">
-        {t('每次导出都记下导了哪些样本、哪一版标签、分在哪边。之后如果发现同一张单据的 PDF 和照片分在了两边（或配错拆开）， 会在受影响的导出上记一笔：用那次导出训练的模型，不能再用另一边的样本当独立的验证。')}
+        {t('每次导出均记录所含样本、标签版本及所属划分。若之后发现同一单据的 PDF 与照片位于不同划分（或因配对错误被拆分），将在受影响的导出上标注：使用该导出训练的模型，不能再以另一划分中的这些样本作为独立验证。')}
       </Typography.Text>
       {exports.isError && (
         <Alert
@@ -96,7 +96,7 @@ export function ExportsTab() {
         columns={columns}
         dataSource={exports.data ?? []}
         pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: true }}
-        locale={{ emptyText: <Empty description={t('还没有导出过')} /> }}
+        locale={{ emptyText: <Empty description={t('暂无导出记录')} /> }}
       />
     </Flex>
   )

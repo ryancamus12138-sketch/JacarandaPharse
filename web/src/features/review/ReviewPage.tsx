@@ -194,10 +194,10 @@ function ReviewWorkspace({ id }: { id: string }) {
       // After completing a review, open the next document; stay here if there is none.
       const next = neighbors.data?.next ?? neighbors.data?.previous
       if (next) {
-        void message.success(t('已完成审核，打开下一份（还有 {{value}} 份）', { value: neighbors.data?.remaining ?? 0 }))
+        void message.success(t('已完成审核，已打开下一份（剩余 {{value}} 份）', { value: neighbors.data?.remaining ?? 0 }))
         goTo(next)
       } else {
-        void message.success(t('已完成审核。待审核的都审完了'))
+        void message.success(t('已完成审核。所有待审核文档均已处理'))
       }
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
@@ -207,7 +207,7 @@ function ReviewWorkspace({ id }: { id: string }) {
     mutationFn: () => deleteDocuments([id]),
     onSuccess: ({ deleted, skipped }) => {
       if (deleted === 0) {
-        void message.warning(skipped[0] ?? t('没有删除'))
+        void message.warning(skipped[0] ?? t('未删除'))
         return
       }
       void message.success(t('已删除'))
@@ -246,7 +246,7 @@ function ReviewWorkspace({ id }: { id: string }) {
   const adopt = useMutation({
     mutationFn: () => adoptPrevious(id),
     onSuccess: ({ confirmed, edited }) => {
-      void message.success(t('沿用了上一轮的审核：确认 {{confirmed}} 个，改正 {{edited}} 个', { confirmed, edited }))
+      void message.success(t('已沿用上一轮审核：确认 {{confirmed}} 个，更正 {{edited}} 个', { confirmed, edited }))
       void queryClient.invalidateQueries({ queryKey: ['document', id] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
@@ -331,11 +331,11 @@ function ReviewWorkspace({ id }: { id: string }) {
 
   function pickLine(index: number, multi: boolean) {
     if (!selected) {
-      void message.info(t('先在右边选中要填的字段，再点原图上的文字'))
+      void message.info(t('请先在右侧选择要填写的字段，再点击原图中的文字'))
       return
     }
     if (selected.deleted) {
-      void message.info(t('这一行已经删除了，要改的话先恢复这一行'))
+      void message.info(t('此行已删除，如需修改请先恢复'))
       return
     }
     if (multi) {
@@ -363,8 +363,8 @@ function ReviewWorkspace({ id }: { id: string }) {
   function askClear(v: FieldValue, label: string) {
     setReasonRequest({
       title: t('清空「{{label}}」', { label }),
-      description: t('原文里没有这个值。原值会保留在修改历史里。'),
-      placeholder: t('比如：收据上没有单号'),
+      description: t('原文中没有此值。原值将保留在修改历史中。'),
+      placeholder: t('例如：收据上没有单号'),
       okText: t('清空'),
       danger: true,
       onOk: (reason) =>
@@ -501,7 +501,7 @@ function ReviewWorkspace({ id }: { id: string }) {
   if (document.error) {
     const message =
       document.error instanceof ApiError ? document.error.message : String(document.error)
-    return <Result status="warning" title={t('打不开这个文档')} subTitle={message} extra={back} />
+    return <Result status="warning" title={t('无法打开此文档')} subTitle={message} extra={back} />
   }
 
   const doc = document.data
@@ -509,8 +509,8 @@ function ReviewWorkspace({ id }: { id: string }) {
     return (
       <Result
         status="info"
-        title={t('还没有结果')}
-        subTitle={t('文档处理完（待审核）之后才能在这里看。')}
+        title={t('暂无结果')}
+        subTitle={t('文档处理完成（待审核）后方可在此查看。')}
         extra={back}
       />
     )
@@ -544,9 +544,9 @@ function ReviewWorkspace({ id }: { id: string }) {
 
   // Why "Complete review" is unavailable right now.
   const finishBlocked = !can('document:review')
-    ? t('你没有"完成审核"的权限，请找管理员开通')
+    ? t('你没有“完成审核”权限，请联系管理员开通')
     : pendingTotal > 0
-      ? t('还有 {{pendingTotal}} 个字段等待确认', { pendingTotal })
+      ? t('尚有 {{pendingTotal}} 个字段待确认', { pendingTotal })
       : null
 
   const discover = doc.extractions.some((e) => e.template === 'discover')
@@ -561,26 +561,26 @@ function ReviewWorkspace({ id }: { id: string }) {
       />
       {canEdit && (doc.suggestions ?? 0) > 0 && (
         <Popconfirm
-          title={t('沿用上一轮的 {{suggestions}} 个审核？', { suggestions: doc.suggestions })}
-          description={t('上次人审核过、这次值和位置都对得上的字段：一样的直接确认，上次改过的改成上次的值。')}
+          title={t('沿用上一轮的 {{suggestions}} 项审核结果？', { suggestions: doc.suggestions })}
+          description={t('适用于上一轮经人工审核、且本轮值与位置均一致的字段：值相同的直接确认，上一轮修改过的改为修改后的值。')}
           okText={t('沿用')}
           cancelText={t('取消')}
           onConfirm={() => adopt.mutate()}
         >
           <Button icon={<HistoryOutlined />} loading={adopt.isPending}>
-            {t('采纳上次的确认（{{suggestions}}）', { suggestions: doc.suggestions })}
+            {t('沿用上一轮审核（{{suggestions}}）', { suggestions: doc.suggestions })}
           </Button>
         </Popconfirm>
       )}
       {discover && canEdit && can('template:manage') && (
         <Button type="primary" ghost icon={<AppstoreAddOutlined />} onClick={() => setSavingTemplate(true)}>
-          {t('存成模板')}
+          {t('保存为模板')}
         </Button>
       )}
       {!viewingOld && can('template:manage') && (
-        <Tooltip title={t('在这份单据的原图上框出要的值，建一个新模板')}>
+        <Tooltip title={t('在本单据原图上框选所需的值，创建新模板')}>
           <Button icon={<AppstoreAddOutlined />} onClick={() => navigate(`/templates/from-boxes/${doc.id}`)}>
-            {t('框选建模板')}
+            {t('框选创建模板')}
           </Button>
         </Tooltip>
       )}
@@ -609,15 +609,15 @@ function ReviewWorkspace({ id }: { id: string }) {
       {/* Always shown; greyed out when nothing is flagged, with a hover explanation. */}
       {canEdit && (
         <Popconfirm
-          title={t('这张单据 {{length}} 个标黄的都是对的？', { length: pagePending.length })}
-          description={t('不用一个一个点。每个都会记一条确认记录，可以在修改历史里看到。')}
+          title={t('确认本单据 {{length}} 个标黄字段均正确？', { length: pagePending.length })}
+          description={t('无需逐个确认。每个字段都会记录一条确认记录，可在修改历史中查看。')}
           okText={t('全部确认')}
           cancelText={t('取消')}
           disabled={pagePending.length === 0}
           onConfirm={() => confirmMany.mutate(pagePending)}
         >
           <Tooltip
-            title={pagePending.length === 0 ? t('这张单据没有标黄（等你确认）的了') : undefined}
+            title={pagePending.length === 0 ? t('本单据已没有待确认的标黄字段') : undefined}
           >
             <Button
               icon={<CheckOutlined />}
@@ -635,8 +635,8 @@ function ReviewWorkspace({ id }: { id: string }) {
        */}
       {canEdit && (
         <Popconfirm
-          title={t('确认这张单据 {{length}} 个原文一致、规则通过的字段？', { length: pageVerified.length })}
-          description={t('它们和原文完全一致、规则也没问题，确认后审核记录里会留下“人看过”。')}
+          title={t('确认本单据中 {{length}} 个与原文一致且规则检查通过的字段？', { length: pageVerified.length })}
+          description={t('这些字段与原文完全一致且规则检查通过，确认后审核记录中将标记为人工已核对。')}
           okText={t('确认')}
           cancelText={t('取消')}
           disabled={pageVerified.length === 0}
@@ -644,7 +644,7 @@ function ReviewWorkspace({ id }: { id: string }) {
         >
           <Tooltip
             title={
-              pageVerified.length === 0 ? t('这张单据原文一致、规则通过的都确认过了') : undefined
+              pageVerified.length === 0 ? t('本单据中与原文一致且规则通过的字段均已确认') : undefined
             }
           >
             <Button
@@ -652,7 +652,7 @@ function ReviewWorkspace({ id }: { id: string }) {
               loading={confirmMany.isPending}
               disabled={pageVerified.length === 0}
             >
-              {t('确认没问题的（{{length}}）', { length: pageVerified.length })}
+              {t('确认无问题字段（{{length}}）', { length: pageVerified.length })}
             </Button>
           </Tooltip>
         </Popconfirm>
@@ -661,7 +661,7 @@ function ReviewWorkspace({ id }: { id: string }) {
       {can('document:delete') && doc.status !== 'processing' && (
         <Popconfirm
           title={t('删除「{{filename}}」？', { filename: doc.filename })}
-          description={t('原始文件、处理结果、审核记录、备注都会删掉，不能恢复。删完打开下一份。')}
+          description={t('原始文件、处理结果、审核记录和备注将全部删除，且无法恢复。删除后将打开下一份。')}
           okText={t('删除')}
           okButtonProps={{ danger: true }}
           cancelText={t('取消')}
@@ -681,7 +681,7 @@ function ReviewWorkspace({ id }: { id: string }) {
       title={
         <Flex align="center" gap={12} wrap>
           <Space.Compact>
-            <Tooltip title={t('上一份待审核的')}>
+            <Tooltip title={t('上一份待审核文档')}>
               <Button
                 icon={<LeftOutlined />}
                 aria-label={t('上一份')}
@@ -692,8 +692,8 @@ function ReviewWorkspace({ id }: { id: string }) {
             <Tooltip
               title={
                 neighbors.data
-                  ? t('下一份待审核的（除了这份还有 {{remaining}} 份）', { remaining: neighbors.data.remaining })
-                  : t('下一份待审核的')
+                  ? t('下一份待审核文档（除本份外剩余 {{remaining}} 份）', { remaining: neighbors.data.remaining })
+                  : t('下一份待审核文档')
               }
             >
               <Button
@@ -720,11 +720,11 @@ function ReviewWorkspace({ id }: { id: string }) {
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          title={doc.status === 'failed' ? t('重新处理失败了，下面是上一轮的结果') : t('正在重新处理')}
+          title={doc.status === 'failed' ? t('重新处理失败，以下为上一轮结果') : t('正在重新处理')}
           description={
             doc.status === 'failed'
               ? doc.error
-              : t('{{stage}}{{progress}}。下面是上一轮的结果，只能查看；处理完会自动换成新结果。', {
+              : t('{{stage}}{{progress}}。以下为上一轮结果，仅供查看；处理完成后将自动更新为新结果。', {
                   stage: doc.stage ?? t('排队中'),
                   progress: doc.progress !== null ? t('（{{progress}}%）', { progress: doc.progress }) : '',
                 })
@@ -736,10 +736,10 @@ function ReviewWorkspace({ id }: { id: string }) {
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          title={t('这是第 {{viewing_run}} 轮的旧结果，只能查看', { viewing_run: doc.viewing_run })}
+          title={t('此为第 {{viewing_run}} 轮的历史结果，仅供查看', { viewing_run: doc.viewing_run })}
           action={
             <Button size="small" onClick={() => setRun(undefined)}>
-              {t('回到现在的结果')}
+              {t('返回当前结果')}
             </Button>
           }
         />
@@ -748,8 +748,8 @@ function ReviewWorkspace({ id }: { id: string }) {
         <Tip
           id="review-discover"
           style={{ marginBottom: 12 }}
-          title={t('这份没有用模板，抽出了单据上所有的键值对')}
-          description={t('看一下哪些是要的、值对不对，然后点"存成模板"：选字段、起中文名，以后同类单据直接用这个模板。')}
+          title={t('本文档未使用模板，已抽取单据上的所有键值对')}
+          description={t('核对所需字段及其值，然后点击“保存为模板”：选择字段并命名，同类单据此后可直接使用该模板。')}
         />
       )}
       {currentExtraction?.source_notes?.map((note) => (
@@ -780,7 +780,7 @@ function ReviewWorkspace({ id }: { id: string }) {
               type={selected.type}
               collecting={collecting}
               onUseText={(text, byModel, transcription) =>
-                applyBox(drawn, text, byModel ? t('模型看原图读的，人核对过') : '', transcription)
+                applyBox(drawn, text, byModel ? t('由模型读取原图，已经人工核对') : '', transcription)
               }
               onCancel={() => {
                 setDraft(null)
@@ -793,7 +793,7 @@ function ReviewWorkspace({ id }: { id: string }) {
               type="info"
               showIcon
               style={{ marginBottom: 8 }}
-              title={t('框好了。先在右边选中要填的字段')}
+              title={t('已框选。请先在右侧选择要填写的字段')}
             />
           )}
           {checking !== null && selected && (
@@ -893,7 +893,7 @@ function ReviewWorkspace({ id }: { id: string }) {
                   />
                 </Tooltip>
                 {canEdit && (
-                <Tooltip title={t('选中的字段值是对的（Enter）')}>
+                <Tooltip title={t('所选字段值正确（Enter）')}>
                   <Button
                     size="small"
                     type={selected?.pending_review ? 'primary' : 'default'}
@@ -942,7 +942,7 @@ function ReviewWorkspace({ id }: { id: string }) {
                   setDraft(box)
                   setDrawn(box)
                   if (!box) {
-                    void message.info(t('在左边原图上拖出一个框'))
+                    void message.info(t('在左侧原图上拖动框选区域'))
                   }
                 }}
               />
@@ -984,8 +984,8 @@ function ReviewWorkspace({ id }: { id: string }) {
                 setReasonRequest({
                   title: t('删除第 {{display}} 行', { display: row.display }),
                   description:
-                    t('这一行变成灰色、划掉，不算进商品合计，导出时也没有。可以随时恢复。'),
-                  placeholder: t('比如：这是会员号，不是商品'),
+                    t('此行将显示为灰色删除线，不计入明细合计，也不会导出；可随时恢复。'),
+                  placeholder: t('例如：此为会员号，不是商品'),
                   okText: t('删除'),
                   danger: true,
                   onOk: (reason) =>
@@ -1003,9 +1003,9 @@ function ReviewWorkspace({ id }: { id: string }) {
               }
               onRestoreRow={(table, row) =>
                 setReasonRequest({
-                  title: t('恢复这一行'),
-                  description: t('恢复成删除之前的值。'),
-                  placeholder: t('比如：删错了'),
+                  title: t('恢复此行'),
+                  description: t('恢复为删除前的值。'),
+                  placeholder: t('例如：误删'),
                   okText: t('恢复'),
                   onOk: (reason) =>
                     rows.mutate({
@@ -1019,7 +1019,7 @@ function ReviewWorkspace({ id }: { id: string }) {
               }
             />
           ) : (
-            <Empty description={t('这一页没有抽取结果')} />
+            <Empty description={t('此页无抽取结果')} />
           )}
           </div>
         </Flex>

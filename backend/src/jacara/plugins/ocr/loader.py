@@ -94,7 +94,7 @@ def load_pages(path: Path, ocr: OcrEngine, pdf_read: PdfRead = "image") -> list[
         return [ocr.recognize(path)]
     if suffix == ".pdf":
         return _load_pdf(path, ocr) if pdf_read == "text" else _image_pages(path, ocr)
-    raise UnsupportedFileError(stored("不支持的文件类型：{suffix}，支持图片和 PDF", suffix=suffix))
+    raise UnsupportedFileError(stored("不支持的文件类型：{suffix}。支持图片和 PDF", suffix=suffix))
 
 
 PDFIUM_LOCK = threading.RLock()
@@ -135,13 +135,15 @@ def _image_pages(path: Path, ocr: OcrEngine) -> list[OcrPage]:
                 scanned = ocr.recognize(image_path)
             models = {
                 **scanned.models,
-                "source": stored("PDF 每页画成图后 OCR，文字层只做核对"),
+                "source": stored("PDF 每页渲染为图像后执行 OCR，文本层仅用于核对"),
                 "text_layer": f"pdfium {pdfium.PDFIUM_INFO.version}" if layer else stored("没有"),
             }
             if hidden:
                 models["note"] = stored(
-                    "这一页的文字层里有 {hidden} 个看不见的字（多半是别的软件留下的旧 OCR），"
-                    "没有用",
+                    (
+                        "此页文本层中有 {hidden} 个不可见字符（通常为其他软件遗留的旧"
+                        " OCR 结果），未使用"
+                    ),
                     hidden=hidden,
                 )
             pages.append(replace(scanned, models=models, text_layer=layer, forms=forms))
@@ -167,7 +169,7 @@ def _load_pdf(path: Path, ocr: OcrEngine) -> list[OcrPage]:
                 # OCR instead.
                 scanned = _render_and_ocr(path, number, ocr)
                 note = stored(
-                    "PDF 文字层是乱码（{ratio:.0%} 的字认不出来），这一页改用 OCR", ratio=ratio
+                    "PDF 文本层为乱码（{ratio:.0%} 的字符无法识别），此页改用 OCR", ratio=ratio
                 )
                 pages.append(replace(scanned, models={**scanned.models, "note": note}))
             else:
@@ -200,7 +202,7 @@ def _text_layer(page: Page) -> OcrPage | None:
         height=round(page.height * PDF_SCALE),
         lines=tuple(lines),
         engine="pdf-text",
-        models={"engine": f"pdfplumber {version('pdfplumber')}", "source": stored("PDF 文字层")},
+        models={"engine": f"pdfplumber {version('pdfplumber')}", "source": stored("PDF 文本层")},
         duration_ms=round((time.perf_counter() - start) * 1000),
     )
 

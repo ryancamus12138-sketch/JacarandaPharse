@@ -57,7 +57,7 @@ function FieldTable({ fields, shown }: { fields: TemplateField[]; shown: Shown }
           {f.required && <Tag color="red" bordered={false}>{t('必填')}</Tag>}
           {f.unique && <Tag color="purple" bordered={false}>{t('不能重复')}</Tag>}
           {f.sensitive && <Tag color="orange" bordered={false}>{t('敏感')}</Tag>}
-          {f.extract === false && <Tag bordered={false}>{t('人工填')}</Tag>}
+          {f.extract === false && <Tag bordered={false}>{t('人工填写')}</Tag>}
           {f.export === false && <Tag bordered={false}>{t('不导出')}</Tag>}
         </Flex>
       ),
@@ -89,7 +89,7 @@ function FieldTable({ fields, shown }: { fields: TemplateField[]; shown: Shown }
 
 function TablesPane({ tables, shown }: { tables: TemplateTable[]; shown: Shown }) {
   const { t } = useTranslation()
-  if (tables.length === 0) return <Empty description={t('这个模板没有表格')} />
+  if (tables.length === 0) return <Empty description={t('此模板没有表格')} />
   return (
     <Flex vertical gap={16}>
       {tables.map((tbl) => (
@@ -173,7 +173,7 @@ export function TemplatePreview({
               <Typography.Text type="secondary">{t('名称语言')}</Typography.Text>
               <Select
                 size="small"
-                aria-label={t('预览的名称语言')}
+                aria-label={t('预览名称语言')}
                 value={shown}
                 onChange={setLanguage}
                 options={languageOptions(languages)}
@@ -208,7 +208,7 @@ export function TemplatePreview({
               label: t('规则（{{value}}）', { value: template.rules.length + custom.length }),
               children:
                 template.rules.length + custom.length === 0 ? (
-                  <Empty description={t('没有选规则')} />
+                  <Empty description={t('未选择规则')} />
                 ) : (
                   <List
                     size="small"
@@ -224,7 +224,7 @@ export function TemplatePreview({
                             {r.severity === 'error' ? t('错误') : t('警告')}
                           </Tag>
                           {r.country && <Tag color="geekblue" bordered={false}>{countryName(r.country)}</Tag>}
-                          {r.custom && <Tag bordered={false}>{t('自己写的')}</Tag>}
+                          {r.custom && <Tag bordered={false}>{t('自定义')}</Tag>}
                         </Flex>
                       </List.Item>
                     )}
@@ -239,7 +239,7 @@ export function TemplatePreview({
                     children: (
                       <Flex vertical gap={8}>
                         {template.kind === 'mine' && (
-                          <Typography.Text type="secondary">{t('这份模板是从起步模板复制的，下面是起步模板的依据。')}</Typography.Text>
+                          <Typography.Text type="secondary">{t('此模板复制自起步模板，以下为起步模板的依据。')}</Typography.Text>
                         )}
                         {notes.map((n, i) => (
                           <Typography.Paragraph key={i} style={{ margin: 0 }}>
@@ -255,7 +255,7 @@ export function TemplatePreview({
         />
         {shown !== primary && (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t('名称和说明显示为{{languageName}}；没写这种语言的显示主语言（{{primaryName}}）的。', {
+            {t('名称和说明以{{languageName}}显示；未填写该语言时显示主语言（{{primaryName}}）内容。', {
               languageName: languageName(shown),
               primaryName: languageName(primary),
             })}

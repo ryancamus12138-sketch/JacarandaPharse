@@ -91,14 +91,14 @@ def test_onnx_rec_and_det_are_told_apart(tmp_path):
     info = registry.check_onnx(rec, "ocr_rec", None)
     # Embedded character list: class count = characters + 2 (RapidOCR adds blank and space).
     assert info["dict_source"] == "model" and info["classes"] == info["characters"] + 2
-    with raises(HubError, "像是检测模型"):
+    with raises(HubError, "应为检测模型"):
         registry.check_onnx(det, "ocr_rec", None)
-    with raises(HubError, "像是识别模型"):
+    with raises(HubError, "应为识别模型"):
         registry.check_onnx(rec, "ocr_det", None)
     assert registry.check_onnx(det, "ocr_det", None)["format"] == "onnx"
     bad = tmp_path / "x.onnx"
     bad.write_bytes(b"not a model")
-    with raises(HubError, "onnxruntime 打不开"):
+    with raises(HubError, "onnxruntime 无法打开"):
         registry.check_onnx(bad, "ocr_det", None)
 
 
@@ -146,7 +146,7 @@ def test_upload_check_version_use_and_delete(client, factory, root):
     assert [v["in_use"] for v in versions] == [False, True]
 
     refused = client.delete("/api/v1/hub/models/qwen/versions/1")
-    assert refused.status_code == 400 and "正在用" in refused.json()["detail"]
+    assert refused.status_code == 400 and "正在使用" in refused.json()["detail"]
     assert client.delete("/api/v1/hub/models/qwen/versions/2").status_code == 204
     with session_scope(factory) as session:
         actions = [log.action for log in session.query(AuditLog).order_by(AuditLog.created_at)]
@@ -205,9 +205,9 @@ def test_command_line_import(root, tmp_path):
     assert source.exists()  # Copied; the original file is untouched.
     keys = tmp_path / "from-usb" / "keys.txt"
     keys.write_text("a\nb\n")
-    with raises(HubError, "只有识别模型要字典"):
+    with raises(HubError, "仅识别模型需要字典"):
         import_files("usb-model", "model", source, keys, {})
-    with raises(HubError, "新版本要是同一种"):
+    with raises(HubError, "新版本需为同一种类"):
         import_files("usb-model", "mmproj", source, None, {})
 
 
@@ -250,8 +250,8 @@ def test_rec_dataset_is_parsed_with_splits_groups_and_problems():
     assert parsed.counts == {"train": 2, "val": 2, "test": 0, "all": 0}
     assert parsed.groups == {"val": 2}
     assert {render(k): n for k, n in parsed.problems.items()} == {
-        "图片在 zip 里找不到": 1,
-        "不是用 Tab 分开的": 1,
+        "zip 中缺少该图片": 1,
+        "未使用 Tab 分隔": 1,
     }
     assert [i.text for i in parsed.split("val")] == ["25/12/2018", "CASH"]
 
@@ -270,7 +270,7 @@ def test_ppocrlabel_folder_paths_are_found():
 def test_unsafe_zips_are_refused():
     with raises(HubError, "不安全的路径"):
         dataset_files.parse(rec_zip({"../evil.txt": b"x"}), "ocr_rec")
-    with raises(HubError, "没找到标注文件"):
+    with raises(HubError, "未找到标注文件"):
         dataset_files.parse(rec_zip(), "ocr_det")
     with raises(HubError, "不是 zip"):
         dataset_files.parse(b"hello", "ocr_rec")
@@ -367,7 +367,7 @@ def test_eval_run_compares_two_models(client, factory, storage, queue, root, mon
             "b": {"source": "builtin"},
         },
     )
-    assert response.status_code == 400 and "同一个模型" in response.json()["detail"]
+    assert response.status_code == 400 and "同一模型" in response.json()["detail"]
 
     rec = root / "models" / "ocr" / "my_rec.onnx"
     rec.parent.mkdir(parents=True)
@@ -476,5 +476,5 @@ def test_command_line_eval_on_a_local_zip(tmp_path, root, monkeypatch, capsys):
     assert code == 0, capsys.readouterr().out
     out = next((tmp_path / "out").iterdir())
     summary = json.loads((out / "summary.json").read_text("utf-8"))
-    assert summary["a"]["lines"] == 4 and summary["arms"][1]["label"] == "RapidOCR 自带的"
+    assert summary["a"]["lines"] == 4 and summary["arms"][1]["label"] == "RapidOCR 内置模型"
     assert "Exact Match" in (out / "summary.md").read_text("utf-8")

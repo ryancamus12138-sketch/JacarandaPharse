@@ -48,7 +48,7 @@ GRANTABLE: dict[Action, str] = {
 ADMIN_ONLY: dict[Action, str] = {
     "user:manage": N_("管理用户"),
     "audit:read": N_("查看审计日志"),
-    "system:manage": N_("换模型"),
+    "system:manage": N_("更换模型"),
 }
 """Administrator-only; cannot be granted to members."""
 
@@ -70,8 +70,8 @@ def require(owner: Owner, action: Action, team_id: uuid.UUID | None = None) -> N
     if get_settings().jacara_mode == "personal":
         return
     if team_id is not None and team_id != owner.team_id:
-        raise PermissionDenied(tr("这是别的团队的数据"))
+        raise PermissionDenied(tr("此数据属于其他团队"))
     if action not in allowed(owner):
         name = tr(GRANTABLE.get(action) or ADMIN_ONLY.get(action) or action)
-        hint = tr("只有管理员能做") if action in ADMIN_ONLY else tr("请找管理员开通")
+        hint = tr("仅管理员可执行") if action in ADMIN_ONLY else tr("请联系管理员开通")
         raise PermissionDenied(tr("没有权限：{name}（{hint}）", name=name, hint=hint))

@@ -50,7 +50,7 @@ export function LoginPage() {
         <Typography.Title level={3} style={{ marginTop: 0 }}>
           JacarandaParse
         </Typography.Title>
-        <Typography.Paragraph type="secondary">{t('用你的账号登录')}</Typography.Paragraph>
+        <Typography.Paragraph type="secondary">{t('使用你的账号登录')}</Typography.Paragraph>
         {error && <Alert type="error" showIcon title={error} style={{ marginBottom: 16 }} />}
         <Form<LoginForm> layout="vertical" onFinish={(values) => void submit(values)}>
           <Form.Item
@@ -72,8 +72,8 @@ export function LoginPage() {
           </Button>
         </Form>
         <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
-          {t('忘了密码？请管理员给你一个重设码，然后在这里')}
-          <Link to="/reset-password">{t('用重设码设新密码')}</Link>{t('（重设码不能直接当密码登录）')}
+          {t('忘记密码？请向管理员获取重设码，然后在此')}
+          <Link to="/reset-password">{t('使用重设码设置新密码')}</Link>{t('（重设码不能直接作为密码登录）')}
         </Typography.Paragraph>
       </Card>
     </Flex>

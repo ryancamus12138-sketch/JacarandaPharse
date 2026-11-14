@@ -161,8 +161,8 @@ export function DocumentListPage() {
   const remove = useMutation({
     mutationFn: deleteDocuments,
     onSuccess: ({ deleted, skipped }, ids) => {
-      void message.success(t('删除了 {{deleted}} 份', { deleted }))
-      for (const reason of skipped) void message.warning(t('没删：{{reason}}', { reason }))
+      void message.success(t('已删除 {{deleted}} 份', { deleted }))
+      for (const reason of skipped) void message.warning(t('未删除：{{reason}}', { reason }))
       setSelected((s) => s.filter((id) => !ids.includes(id)))
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
@@ -189,12 +189,12 @@ export function DocumentListPage() {
       (id) => documents.data?.items.find((d) => d.id === id)?.filename ?? pickedRows[id]?.filename ?? id,
     )
     modal.confirm({
-      title: t('有 {{length}} 份正在处理，不能重新处理', { length: names.length }),
+      title: t('{{length}} 份文档正在处理，无法重新处理', { length: names.length }),
       content: t('{{names}}{{more}}。请取消勾选后再试。', {
         names: names.slice(0, 5).join(t('、')),
         more: names.length > 5 ? t(' 等 {{length}} 份', { length: names.length }) : '',
       }),
-      okText: t('取消勾选这些'),
+      okText: t('取消选择这些文档'),
       cancelText: t('返回'),
       onOk: () => setSelected((s) => s.filter((id) => !busyPicked.includes(id))),
     })
@@ -217,7 +217,7 @@ export function DocumentListPage() {
             )}
           </Typography.Text>
           {d.skipped_at && (
-            <Tooltip title={d.skip_reason ? t('跳过原因：{{skip_reason}}', { skip_reason: d.skip_reason }) : t('审核时先跳过了')}>
+            <Tooltip title={d.skip_reason ? t('跳过原因：{{skip_reason}}', { skip_reason: d.skip_reason }) : t('审核时已跳过')}>
               <Tag color="orange" style={{ marginInlineEnd: 0 }}>
                 {t('已跳过')}
               </Tag>
@@ -225,19 +225,19 @@ export function DocumentListPage() {
           )}
           {(d.same_file ?? []).length > 0 && (
             <Tooltip
-              title={t('内容完全一样的文件以前传过：{{files}}', {
+              title={t('此前已上传过内容完全相同的文件：{{files}}', {
                 files: (d.same_file ?? [])
                   .map((o) => t('{{filename}}（{{formatTime}}）', { filename: o.filename, formatTime: formatTime(o.created_at) }))
                   .join(t('、')),
               })}
             >
               <Tag color="red" style={{ marginInlineEnd: 0 }}>
-                {t('重复的文件')}
+                {t('重复文件')}
               </Tag>
             </Tooltip>
           )}
           {d.folder && (
-            <Tooltip title={t('批量导入时所在的文件夹，点一下只看这个文件夹')}>
+            <Tooltip title={t('批量导入时所在的文件夹，点击可仅显示此文件夹')}>
               <Tag
                 icon={<FolderOutlined />}
                 style={{ marginInlineEnd: 0, cursor: 'pointer' }}
@@ -248,7 +248,7 @@ export function DocumentListPage() {
             </Tooltip>
           )}
           {(d.open_comments ?? 0) > 0 && (
-            <Tooltip title={t('{{open_comments}} 条备注没解决', { open_comments: d.open_comments })}>
+            <Tooltip title={t('{{open_comments}} 条备注未解决', { open_comments: d.open_comments })}>
               <Tag icon={<MessageOutlined />} style={{ marginInlineEnd: 0 }}>
                 {d.open_comments}
               </Tag>
@@ -310,7 +310,7 @@ export function DocumentListPage() {
           {canDelete && d.status !== 'processing' && (
             <Popconfirm
               title={t('删除「{{filename}}」？', { filename: d.filename })}
-              description={t('原始文件、处理结果、审核记录、备注都会删掉，不能恢复。')}
+              description={t('原始文件、处理结果、审核记录和备注将全部删除，且无法恢复。')}
               okText={t('删除')}
               okButtonProps={{ danger: true }}
               cancelText={t('取消')}
@@ -346,14 +346,14 @@ export function DocumentListPage() {
           {canDelete && (
             <Popconfirm
               title={t('删除选中的 {{length}} 份？', { length: selected.length })}
-              description={t('原始文件、处理结果、审核记录、备注都会删掉，不能恢复。正在处理的会跳过。')}
+              description={t('原始文件、处理结果、审核记录和备注将全部删除，且无法恢复。正在处理的文档将跳过。')}
               okText={t('删除')}
               okButtonProps={{ danger: true }}
               cancelText={t('取消')}
               disabled={selected.length === 0}
               onConfirm={() => remove.mutate(selected)}
             >
-              <Tooltip title={selected.length === 0 ? t('先在左边勾选要删除的') : undefined}>
+              <Tooltip title={selected.length === 0 ? t('请先在左侧勾选要删除的文档') : undefined}>
                 <Button
                   danger
                   icon={<DeleteOutlined />}
@@ -432,7 +432,7 @@ export function DocumentListPage() {
             allowClear
             showSearch={{ optionFilterProp: 'label' }}
             placeholder={t('所有字段')}
-            aria-label={t('在哪个字段里找')}
+            aria-label={t('搜索字段')}
             value={filters.field}
             onChange={(field) => setFilters({ field })}
             options={fieldOptions}
@@ -442,7 +442,7 @@ export function DocumentListPage() {
           <Input.Search
             allowClear
             placeholder={t('字段内容，如发票号码、商家')}
-            aria-label={t('按字段内容找')}
+            aria-label={t('按字段内容搜索')}
             value={valueSearch}
             onChange={(e) => setValueSearch(e.target.value)}
             onSearch={(v) => setFilters({ value_q: v.trim() || undefined })}
@@ -467,13 +467,13 @@ export function DocumentListPage() {
           />
         )}
         <Select<string>
-          aria-label={t('跳过的文档')}
+          aria-label={t('已跳过的文档')}
           value={filters.skipped === undefined ? 'all' : filters.skipped ? 'only' : 'hide'}
           onChange={(v) => setFilters({ skipped: v === 'all' ? undefined : v === 'only' })}
           options={[
-            { value: 'all', label: t('跳过的也显示') },
-            { value: 'only', label: t('只看跳过的') },
-            { value: 'hide', label: t('不看跳过的') },
+            { value: 'all', label: t('包含已跳过') },
+            { value: 'only', label: t('仅显示已跳过') },
+            { value: 'hide', label: t('不显示已跳过') },
           ]}
           style={{ width: 130 }}
         />
@@ -481,7 +481,7 @@ export function DocumentListPage() {
           checked={filters.pending}
           onChange={(e) => setFilters({ pending: e.target.checked })}
         >
-          {t('只看有待确认字段的')}
+          {t('仅显示有待确认字段的文档')}
         </Checkbox>
         {filtered && (
           <Button
@@ -538,15 +538,15 @@ export function DocumentListPage() {
           current: page,
           pageSize: PAGE_SIZE,
           total: documents.data?.total ?? 0,
-          showTotal: (total) => t('共 {{total}} 个', { total }),
+          showTotal: (total) => t('共 {{total}} 份', { total }),
           onChange: setPage,
         }}
         locale={{
           emptyText: filtered
             ? t('没有符合条件的文档')
             : can('document:create')
-              ? t('还没有文档，先上传一个')
-              : t('还没有文档'),
+              ? t('暂无文档，请先上传')
+              : t('暂无文档'),
         }}
       />
     </Card>

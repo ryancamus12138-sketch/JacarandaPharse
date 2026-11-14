@@ -26,7 +26,7 @@ export function ResetPasswordPage() {
   const reset = useMutation({
     mutationFn: (v: ResetForm) => resetWithCode(v.username, v.code, v.password),
     onSuccess: () => {
-      void message.success(t('新密码已设好，请用新密码登录'))
+      void message.success(t('新密码已设置，请使用新密码登录'))
       void navigate('/login', { replace: true })
     },
   })
@@ -41,7 +41,7 @@ export function ResetPasswordPage() {
           {t('忘记密码')}
         </Typography.Title>
         <Typography.Paragraph type="secondary">
-          {t('请管理员在"用户管理"里给你生成一个')}<strong>{t('重设码')}</strong>{t('（15 分钟有效，只能用一次），然后在这里自己设新密码。管理员不会知道你的新密码。')}
+          {t('请管理员在“用户管理”中为你生成')}<strong>{t('重设码')}</strong>{t('（15 分钟内有效，仅可使用一次），然后在此设置新密码。管理员无法获知你的新密码。')}
         </Typography.Paragraph>
         {reset.error && (
           <Alert
@@ -62,17 +62,17 @@ export function ResetPasswordPage() {
           <Form.Item
             name="code"
             label={t('重设码')}
-            rules={[{ required: true, message: t('请输入管理员给你的重设码') }]}
+            rules={[{ required: true, message: t('请输入管理员提供的重设码') }]}
           >
             <Input
               prefix={<LockOutlined />}
-              placeholder={t('比如 K7QM-3XWD（不分大小写）')}
+              placeholder={t('例如 K7QM-3XWD（不区分大小写）')}
               autoComplete="one-time-code"
             />
           </Form.Item>
           <NewPasswordFields />
           <Button type="primary" htmlType="submit" block loading={reset.isPending}>
-            {t('设新密码')}
+            {t('设置新密码')}
           </Button>
         </Form>
         <Typography.Paragraph style={{ marginTop: 16, marginBottom: 0 }}>

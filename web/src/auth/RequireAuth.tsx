@@ -24,7 +24,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     return (
       <Result
         status="error"
-        title={t('打不开')}
+        title={t('无法打开')}
         subTitle={error.message}
         extra={<Button onClick={() => void refresh()}>{t('重试')}</Button>}
       />
@@ -50,7 +50,7 @@ export function RequirePermission({
   const { t } = useTranslation()
   const { can } = useAuth()
   if (!can(permission)) {
-    return <Result status="403" title={t('没有权限')} subTitle={t('这个页面只有管理员能看。')} />
+    return <Result status="403" title={t('没有权限')} subTitle={t('此页面仅管理员可访问。')} />
   }
   return children
 }

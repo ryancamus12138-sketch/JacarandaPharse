@@ -74,7 +74,7 @@ def test_correction_stats(client, reviewed):
     assert kinds == {"decimal": 1, "chars": 1}
     change = next(f for f in stats["by_field"] if f["field"] == "change")
     assert change["edited"] == 1 and change["rate"] == 1.0
-    assert {c["kind_name"] for c in stats["recent"]} == {"小数点", "个别字认错"}
+    assert {c["kind_name"] for c in stats["recent"]} == {"小数点", "个别字符错误"}
     assert stats["templates"][0]["documents"] == 1
 
 

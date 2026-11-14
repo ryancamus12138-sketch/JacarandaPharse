@@ -76,7 +76,7 @@ def _result(name: str, formula: Formula, outcome: Outcome, labels: Mapping[str, 
         return Computed(
             name,
             outcome.value,
-            stored("按公式算：{readable} = {value:g}", readable=readable, value=outcome.value),
+            stored("按公式计算：{readable} = {value:g}", readable=readable, value=outcome.value),
             readable,
         )
     if outcome.missing is not None:
@@ -88,13 +88,13 @@ def _result(name: str, formula: Formula, outcome: Outcome, labels: Mapping[str, 
                 table=labels.get(table, table),
                 column=labels.get(outcome.missing, column),
             )
-        reason = stored("「{missing}」没有值", missing=missing)
+        reason = stored("「{missing}」无值", missing=missing)
     else:
-        reason = outcome.problem or stored("算不出来")
+        reason = outcome.problem or stored("无法计算")
     return Computed(
         name,
         None,
-        stored("按公式算（{readable}），但{reason}，算不出来", readable=readable, reason=reason),
+        stored("按公式（{readable}）计算，但{reason}，无法计算", readable=readable, reason=reason),
         readable,
     )
 

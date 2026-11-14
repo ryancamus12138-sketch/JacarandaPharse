@@ -14,7 +14,7 @@ export const TYPE_OPTIONS: { value: FieldType; label: string }[] = [
 export const RANGE_EXPORTS: { value: RangeExport; label: string }[] = [
   { value: 'normalized', get label() { return t('统一格式') } },
   { value: 'original', get label() { return t('原文') } },
-  { value: 'columns', get label() { return t('拆成两列') } },
+  { value: 'columns', get label() { return t('拆分为两列') } },
 ]
 
 /** Template types (used to group templates at upload). Others can be typed. */
@@ -50,9 +50,9 @@ export function blankField(existing: TemplateField[]): TemplateField {
 export function fieldsProblem(fields: TemplateField[], where: string): string | null {
   const seen = new Set<string>()
   for (const f of fields) {
-    if (!f.label.trim()) return t('{{where}}有字段没写中文名', { where })
-    if (!FIELD_ID.test(f.name)) return t('{{where}}的字段 ID「{{name}}」只能用小写英文字母、数字和下划线', { where, name: f.name })
-    if (seen.has(f.name)) return t('{{where}}的字段 ID「{{name}}」重复了', { where, name: f.name })
+    if (!f.label.trim()) return t('{{where}}存在未填写名称的字段', { where })
+    if (!FIELD_ID.test(f.name)) return t('{{where}}的字段 ID「{{name}}」只能包含小写英文字母、数字和下划线', { where, name: f.name })
+    if (seen.has(f.name)) return t('{{where}}的字段 ID「{{name}}」重复', { where, name: f.name })
     seen.add(f.name)
   }
   return null

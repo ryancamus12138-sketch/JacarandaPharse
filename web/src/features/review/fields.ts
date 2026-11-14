@@ -116,14 +116,14 @@ export function boxColor(value: FieldValue): string {
 
 export const EVIDENCE_TEXT: Record<EvidenceState, string> = {
   get verified() { return t('原文一致') },
-  get pending() { return t('出处有疑点') },
-  get missing() { return t('原文里找不到') },
-  get empty() { return t('原文没有') },
+  get pending() { return t('出处存疑') },
+  get missing() { return t('原文中未找到') },
+  get empty() { return t('原文缺失') },
 }
 
 export const CHECK_TEXT: Record<CheckState, string> = {
   get ok() { return t('规则通过') },
-  get warn() { return t('规则有疑问') },
+  get warn() { return t('规则存疑') },
   get fail() { return t('规则不通过') },
 }
 

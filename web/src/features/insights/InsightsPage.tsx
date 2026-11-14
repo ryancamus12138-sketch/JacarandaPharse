@@ -69,13 +69,13 @@ function DatasetButton({ template }: { template?: string }) {
   const content = (
     <Flex vertical gap={8} style={{ maxWidth: 340 }}>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {t('审核完成的单据打包成 zip：人审核后的值当标准答案，连同模型原来的回答、改了哪些、OCR 文字（train.jsonl）， 以及能直接用 jacara eval pairs 跑的测评清单（pairs.toml）。这是你的业务数据，不要放进代码仓库。')}
+        {t('将已完成审核的单据打包为 zip：以人工审核后的值作为标准答案，并附模型原始输出、修改内容及 OCR 文字（train.jsonl），以及可直接用于 jacara eval pairs 的测评清单（pairs.toml）。导出内容属于业务数据，请勿提交到代码仓库。')}
       </Typography.Text>
       <Checkbox checked={files} onChange={(e) => setFiles(e.target.checked)}>
-        {t('带上原文件')}
+        {t('包含原文件')}
       </Checkbox>
       <Checkbox checked={sensitive} onChange={(e) => setSensitive(e.target.checked)}>
-        {t('连敏感字段一起导出（姓名、病历号、电话……）')}
+        {t('包含敏感字段（姓名、病历号、电话等）')}
       </Checkbox>
       <Button type="primary" icon={<DownloadOutlined />} loading={download.isPending} onClick={() => download.mutate()}>
         {t('下载 zip')}
@@ -110,7 +110,7 @@ export function InsightsPage() {
     { title: t('模板'), dataIndex: 'template_title' },
     { title: t('单据'), dataIndex: 'documents', width: 80, align: 'right' },
     { title: t('字段'), dataIndex: 'fields', width: 80, align: 'right' },
-    { title: t('人改了'), dataIndex: 'edited', width: 80, align: 'right' },
+    { title: t('人工修改'), dataIndex: 'edited', width: 80, align: 'right' },
     {
       title: t('修改率'),
       dataIndex: 'rate',
@@ -118,7 +118,7 @@ export function InsightsPage() {
       render: (r: number) => <Progress percent={Math.round(r * 100)} size="small" status={r > 0.1 ? 'exception' : 'normal'} />,
     },
     {
-      title: <Tooltip title={t('人改了，但抽取时没有标黄：系统没发现的错')}>{t('错了没标黄')}</Tooltip>,
+      title: <Tooltip title={t('经人工修改但抽取时未标黄：系统未检出的错误')}>{t('错误未标黄')}</Tooltip>,
       dataIndex: 'silent',
       width: 110,
       align: 'right',
@@ -129,16 +129,16 @@ export function InsightsPage() {
   const fieldColumns: TableProps<FieldStat>['columns'] = [
     { title: t('字段'), dataIndex: 'label', render: (l: string, f) => <span>{l}<Typography.Text type="secondary" style={{ fontSize: 12 }}> · {f.template_title}</Typography.Text></span> },
     { title: t('次数'), dataIndex: 'total', width: 70, align: 'right' },
-    { title: t('人改了'), dataIndex: 'edited', width: 80, align: 'right' },
+    { title: t('人工修改'), dataIndex: 'edited', width: 80, align: 'right' },
     { title: t('修改率'), dataIndex: 'rate', width: 90, align: 'right', render: pct },
     {
-      title: t('错了没标黄'),
+      title: t('错误未标黄'),
       dataIndex: 'silent',
       width: 100,
       align: 'right',
       render: (n: number) => (n ? <Typography.Text type="danger">{n}</Typography.Text> : 0),
     },
-    { title: t('改的是哪种错'), dataIndex: 'kinds', render: (k: KindCount[]) => <Kinds kinds={k} /> },
+    { title: t('错误类型'), dataIndex: 'kinds', render: (k: KindCount[]) => <Kinds kinds={k} /> },
   ]
 
   const recentColumns: TableProps<Correction>['columns'] = [
@@ -151,24 +151,24 @@ export function InsightsPage() {
     },
     { title: t('字段'), dataIndex: 'label', width: 160, ellipsis: true },
     {
-      title: t('模型给的 → 人改成'),
+      title: t('模型输出 → 人工修改'),
       render: (_, c) => (
         <span style={{ overflowWrap: 'anywhere' }}>
           <Typography.Text delete type="secondary">{c.before ?? t('（空）')}</Typography.Text> → <Typography.Text strong>{c.after ?? t('（空）')}</Typography.Text>
         </span>
       ),
     },
-    { title: t('哪种错'), dataIndex: 'kind_name', width: 130, render: (n: string) => <Tag>{n}</Tag> },
+    { title: t('错误类型'), dataIndex: 'kind_name', width: 130, render: (n: string) => <Tag>{n}</Tag> },
     {
-      title: t('错在哪一步'),
+      title: t('出错环节'),
       width: 170,
       render: (_, c) => <StageCell c={c} canEdit={can('document:review')} />,
     },
     {
-      title: t('标黄了'),
+      title: t('已标黄'),
       dataIndex: 'flagged',
       width: 80,
-      render: (f: boolean) => (f ? <Tag color="gold">{t('是')}</Tag> : <Tag color="red">{t('没有')}</Tag>),
+      render: (f: boolean) => (f ? <Tag color="gold">{t('是')}</Tag> : <Tag color="red">{t('否')}</Tag>),
     },
   ]
 
@@ -191,17 +191,17 @@ export function InsightsPage() {
           {can('document:export') && <DatasetButton template={template} />}
         </Flex>
       </Flex>
-      {stats.isError && <Alert type="error" showIcon title={t('统计读不出来')} description={String(stats.error)} />}
+      {stats.isError && <Alert type="error" showIcon title={t('无法读取统计数据')} description={String(stats.error)} />}
       {data && data.documents === 0 ? (
         <Card>
-          <Empty description={t('还没有审核完成的单据。审核完成后，这里会统计人改了哪些字段、改的是哪种错。')} />
+          <Empty description={t('暂无已完成审核的单据。审核完成后，此处按字段统计人工修改的次数及错误类型。')} />
         </Card>
       ) : (
         data && (
           <>
             <Row gutter={[16, 16]}>
               <Col flex="1 1 180px">
-                <Card><Statistic title={t('审核完成的单据')} value={data.documents} /></Card>
+                <Card><Statistic title={t('已完成审核的单据')} value={data.documents} /></Card>
               </Col>
               <Col flex="1 1 180px">
                 <Card><Statistic title={t('字段')} value={data.fields} suffix={<Typography.Text type="secondary" style={{ fontSize: 14 }}>{t('确认 {{confirmed}}', { confirmed: data.confirmed })}</Typography.Text>} /></Card>
@@ -213,9 +213,9 @@ export function InsightsPage() {
               </Col>
               <Col flex="1 1 180px">
                 <Card>
-                  <Tooltip title={t('人改了，但抽取时没有标黄：系统没发现的错。越少越好')}>
+                  <Tooltip title={t('经人工修改但抽取时未标黄：系统未检出的错误，越少越好')}>
                     <Statistic
-                      title={t('错了没标黄')}
+                      title={t('错误未标黄')}
                       value={data.silent}
                       valueStyle={data.silent ? { color: '#cf1322' } : undefined}
                     />
@@ -227,8 +227,8 @@ export function InsightsPage() {
                   <Tooltip
                     title={
                       data.timed_documents
-                        ? t('{{timed_documents}} 份记了用时。只算审核页开着、人在操作的时间，页面在后台或一分钟没动不算', { timed_documents: data.timed_documents })
-                        : t('这次更新以后审核的单据才有用时')
+                        ? t('{{timed_documents}} 份记录了用时。仅统计审核页处于前台且有操作的时间；页面在后台或一分钟无操作时不计入', { timed_documents: data.timed_documents })
+                        : t('仅本次更新后审核的单据记录用时')
                     }
                   >
                     <Statistic title={t('平均审核用时')} value={reviewTime(data.review_seconds)} />
@@ -241,8 +241,8 @@ export function InsightsPage() {
             </Card>
             <Card
               title={
-                <Tooltip title={t('按证据判断：OCR 样本、这一轮发给模型的文字、审核时点的原文或框。证据不够的不下结论。下面最近的修改里可以点开看理由、改判')}>
-                  <span>{t('错在哪一步')}</span>
+                <Tooltip title={t('依据证据判断：OCR 样本、本轮发送给模型的文字、审核时点击的原文或框选区域。证据不足时不下结论。可在下方“最近的修改”中展开查看理由或改判')}>
+                  <span>{t('出错环节')}</span>
                 </Tooltip>
               }
               size="small"
@@ -252,7 +252,7 @@ export function InsightsPage() {
             <Card title={t('按模板')} size="small">
               <Table rowKey="template" size="small" pagination={false} columns={templateColumns} dataSource={data.templates} />
             </Card>
-            <Card title={t('按字段（改得最多的在前面）')} size="small">
+            <Card title={t('按字段（按修改次数降序）')} size="small">
               <Table
                 rowKey={(f) => `${f.template}:${f.field}`}
                 size="small"

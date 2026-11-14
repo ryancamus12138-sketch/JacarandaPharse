@@ -50,17 +50,17 @@ DATE_FORMAT = "yyyy-mm-dd"
 _STATUS_NAMES = {
     "matched": N_("有出处"),
     "fuzzy": N_("相似"),
-    "not_found": N_("找不到出处"),
-    "empty": N_("原文没有"),
-    "rejected": N_("原文里对不上，没有填"),
-    "computed": N_("按公式算"),
-    "seen": N_("看原图读的"),
+    "not_found": N_("未找到出处"),
+    "empty": N_("原文缺失"),
+    "rejected": N_("与原文不符，未填写"),
+    "computed": N_("公式计算"),
+    "seen": N_("读取自原图"),
 }
 
 _ACTION_NAMES = {
     "edit": N_("人工修改"),
     "confirm": N_("人工确认"),
-    "restore": N_("恢复这一行"),
+    "restore": N_("恢复此行"),
     "compute": N_("按公式重算"),
 }
 
@@ -146,7 +146,7 @@ def _range_note(field: AlignedField, report: DocumentReport) -> str:
     split = (
         tr("开始 {start}，结束 {end}", start=found.start or "？", end=found.end or "？")
         if found
-        else tr("拆不开")
+        else tr("无法拆分")
     )
     problem = tr("（{problem}）", problem=tr(parsed.problem)) if parsed.problem else ""
     quote = field.field.text or " ".join(str(raw).split())
@@ -189,9 +189,9 @@ def _review_note(field: AlignedField, review: Review) -> str:
         text = tr("人工修改：原值 {old} → {new}", old=old, new=new)
     elif review.action == "compute":
         new = tr("（空）") if review.value is None else review.value
-        text = tr("参与计算的值改了，按公式重算 → {new}", new=new)
+        text = tr("参与计算的值已修改，按公式重新计算 → {new}", new=new)
     elif review.action == "restore":
-        text = tr("恢复了删掉的行")
+        text = tr("恢复了已删除的行")
     else:
         text = tr("人工确认：值无误")
     if review.reason:
@@ -392,7 +392,7 @@ class ExcelExporter:
             dict.fromkeys(c for _, rows in per_report for cells in rows.values() for c in cells)
         )
         headers = [_label(reports, f"{table}.{c}", c) for c in columns]
-        _setup(sheet, [tr("文件"), tr("第几行"), *headers], [18, 8] + [16] * len(columns))
+        _setup(sheet, [tr("文件"), tr("行号"), *headers], [18, 8] + [16] * len(columns))
         # The first column is usually the item name, so it is wider.
         sheet.column_dimensions["C"].width = 36
         for report, rows in per_report:
@@ -494,7 +494,7 @@ class ExcelExporter:
             tr("模型"),
             tr("模型后端"),
             tr("提示词版本"),
-            tr("抽取用时（毫秒）"),
+            tr("抽取耗时（毫秒）"),
         ]
         _setup(sheet, headers, [18, 20, 20, 24, 14, 12, 16])
         for report in reports:

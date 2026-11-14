@@ -107,7 +107,7 @@ export function LabelFields({
           mode="tags"
           value={domains}
           disabled={disabled}
-          placeholder={t('选或者输入后回车，如 发票、交通')}
+          placeholder={t('选择或输入后按回车，如“发票”“交通”')}
           options={vocabulary.domains.map((d) => ({ value: d, label: d }))}
           onChange={(next: string[]) => onChange({ domains: next })}
           style={{ width: '100%' }}
@@ -128,7 +128,7 @@ export function LabelFields({
           mode="tags"
           value={tags}
           disabled={disabled}
-          placeholder={t('自己起名字，回车添加，如 2026-10 出差')}
+          placeholder={t('自定义名称，按回车添加，如“2026-10 出差”')}
           options={vocabulary.tags.map((tag) => ({ value: tag, label: tag }))}
           onChange={(next: string[]) => onChange({ tags: next })}
           style={{ width: '100%' }}

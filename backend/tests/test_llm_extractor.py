@@ -72,7 +72,7 @@ def test_prompt_contains_numbered_rows(receipt_page):
 
 
 def test_invalid_json_raises(receipt_page):
-    with raises(ExtractionError, "不是合格的 JSON"):
+    with raises(ExtractionError, "不是有效的 JSON"):
         LlmExtractor(FakeBackend("好的，总额是 9 元")).extract(receipt_page, RECEIPT_FIELDS)
 
 

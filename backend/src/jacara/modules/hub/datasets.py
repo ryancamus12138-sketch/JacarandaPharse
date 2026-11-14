@@ -120,7 +120,7 @@ def safe_members(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
     compression ratio and member count."""
     infos = [i for i in archive.infolist() if not i.is_dir()]
     if len(infos) > MAX_MEMBERS:
-        raise HubError("invalid", stored("zip 里文件太多（超过 {limit} 个）", limit=MAX_MEMBERS))
+        raise HubError("invalid", stored("zip 中文件过多（超过 {limit} 个）", limit=MAX_MEMBERS))
     total = 0
     members: dict[str, zipfile.ZipInfo] = {}
     for info in infos:
@@ -128,19 +128,19 @@ def safe_members(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
         parts = name.split("/")
         if name.startswith("/") or ".." in parts or ":" in parts[0]:
             raise HubError(
-                "invalid", stored("zip 里有不安全的路径：{filename}", filename=info.filename)
+                "invalid", stored("zip 中存在不安全的路径：{filename}", filename=info.filename)
             )
         total += info.file_size
         if info.compress_size and info.file_size / info.compress_size > MAX_RATIO:
             raise HubError(
                 "invalid",
-                stored("zip 里 {filename} 的压缩比异常，可能是 zip 炸弹", filename=info.filename),
+                stored("zip 中 {filename} 的压缩比异常，可能为 zip 炸弹", filename=info.filename),
             )
         if name.startswith("__MACOSX/") or posixpath.basename(name).startswith("._"):
             continue  # Metadata added by the macOS archiver.
         members[name] = info
     if total > MAX_UNPACKED:
-        raise HubError("invalid", stored("zip 解压后太大（超过 4 GB）"))
+        raise HubError("invalid", stored("zip 解压后过大（超过 4 GB）"))
     return members
 
 
@@ -217,7 +217,7 @@ def parse(
     """Read a dataset archive. Malformed lines are skipped and counted; raises if no valid entry
     remains."""
     if kind not in SPLIT_FILES:
-        raise HubError("invalid", stored("不认识的数据集种类：{kind}", kind=kind))
+        raise HubError("invalid", stored("未知的数据集种类：{kind}", kind=kind))
     source = io.BytesIO(data) if isinstance(data, bytes) else data
     try:
         archive = zipfile.ZipFile(source)
@@ -228,7 +228,7 @@ def parse(
         labels = _label_files(kind, members)
         if not labels:
             names = join_items(n for names in SPLIT_FILES[kind].values() for n in names)
-            raise HubError("invalid", stored("zip 里没找到标注文件（{names}）", names=names))
+            raise HubError("invalid", stored("zip 中未找到标注文件（{names}）", names=names))
         groups = _groups(members, archive)
         parsed = Parsed(kind, [], [{"file": m, "split": s} for m, s in labels])
         seen: set[tuple[str, str]] = set()
@@ -240,27 +240,27 @@ def parse(
                     continue
                 path, tab, rest = line.partition("\t")
                 if not tab:
-                    parsed.problems[stored("不是用 Tab 分开的")] += 1
+                    parsed.problems[stored("未使用 Tab 分隔")] += 1
                     continue
                 image = _resolve(label, path, members)
                 if image is None:
-                    parsed.problems[stored("图片在 zip 里找不到")] += 1
+                    parsed.problems[stored("zip 中缺少该图片")] += 1
                     continue
                 if (split, image) in seen:
-                    parsed.problems[stored("同一张图在同一边出现了两次（只留第一次）")] += 1
+                    parsed.problems[stored("同一图像在同一划分中出现两次（仅保留首次）")] += 1
                     continue
                 if verify_images and not checked.setdefault(image, _opens(archive, image)):
-                    parsed.problems[stored("图片打不开")] += 1
+                    parsed.problems[stored("无法打开图片")] += 1
                     continue
                 if kind == "ocr_rec":
                     if not rest or "\t" in rest:
-                        parsed.problems[stored("文字是空的或带 Tab")] += 1
+                        parsed.problems[stored("文字为空或包含 Tab")] += 1
                         continue
                     item = Item(split, image, text=rest, group=groups.get(image))
                 else:
                     boxes = _boxes(rest)
                     if boxes is None:
-                        parsed.problems[stored("框的格式不对")] += 1
+                        parsed.problems[stored("文本框格式错误")] += 1
                         continue
                     item = Item(split, image, boxes=boxes, group=groups.get(image))
                 seen.add((split, image))
@@ -271,9 +271,7 @@ def parse(
         )
         raise HubError(
             "invalid",
-            stored("一条能用的都没有：{reasons}", reasons=reasons)
-            if reasons
-            else stored("没有内容"),
+            stored("没有可用的数据：{reasons}", reasons=reasons) if reasons else stored("没有内容"),
         )
     return parsed
 

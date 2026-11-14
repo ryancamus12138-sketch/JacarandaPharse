@@ -47,7 +47,7 @@ function DetExportDialog({ open, onClose }: { open: boolean; onClose: () => void
   const store = useMutation({
     mutationFn: () => saveDetPagesAsDataset(kind, { name: name.trim(), description: t('检测样本导出') }),
     onSuccess: (d) => {
-      void message.success(t('已存进数据集库：{{name}} v{{version}}', { name: d.name, version: d.version }))
+      void message.success(t('已保存到数据集库：{{name}} v{{version}}', { name: d.name, version: d.version }))
       done()
     },
     onError: (err) => void message.error(errorText(err)),
@@ -71,7 +71,7 @@ function DetExportDialog({ open, onClose }: { open: boolean; onClose: () => void
           loading={store.isPending}
           onClick={() => store.mutate()}
         >
-          {t('存进数据集库')}
+          {t('保存到数据集库')}
         </Button>,
         <Button
           key="zip"
@@ -99,7 +99,7 @@ function DetExportDialog({ open, onClose }: { open: boolean; onClose: () => void
         {data && (
           <>
             <Typography.Text>
-              {t('确认过的 {{included}} 页、{{boxes}} 个框会导出（划分版本 {{split_version}}）：', { included: data.included, boxes: data.boxes, split_version: data.split_version })}
+              {t('将导出已确认的 {{included}} 页、{{boxes}} 个文本框（划分版本 {{split_version}}）：', { included: data.included, boxes: data.boxes, split_version: data.split_version })}
               {Object.entries(data.splits)
                 .map(([k, v]) => t('{{value}} {{groups}} 组 {{rows}} 页', { value: names[k as keyof typeof names], groups: v.groups, rows: v.rows }))
                 .join(t('，'))}
@@ -112,9 +112,9 @@ function DetExportDialog({ open, onClose }: { open: boolean; onClose: () => void
           </>
         )}
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {t('ZIP 里是 images/（整页图）和 det_gt_train.txt、det_gt_val.txt（每行：图片路径、Tab、框的 JSON）， PaddleOCR 检测训练直接读。按业务单据分边，同一张单据的页全在同一边。')}
+          {t('ZIP 包含 images/（整页图像）及 det_gt_train.txt、det_gt_val.txt（每行格式：图片路径、Tab、文本框 JSON），可直接用于 PaddleOCR 检测训练。按业务单据划分，同一单据的所有页位于同一划分。')}
         </Typography.Text>
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('存进数据集库时的名字，例如 收据检测')} maxLength={64} />
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('保存到数据集库时的名称，例如“收据检测”')} maxLength={64} />
       </Flex>
     </Modal>
   )
@@ -149,7 +149,7 @@ export function DetPagesTab({ canExport }: { canExport: boolean }) {
       width: 110,
       render: (_, p) => <Tag color={DET_STATUS[p.status].color}>{DET_STATUS[p.status].name}</Tag>,
     },
-    { title: t('框'), dataIndex: 'boxes', width: 80, align: 'right' },
+    { title: t('文本框'), dataIndex: 'boxes', width: 80, align: 'right' },
     {
       title: t('确认时间'),
       key: 'confirmed',
@@ -162,7 +162,7 @@ export function DetPagesTab({ canExport }: { canExport: boolean }) {
       width: 110,
       render: (_, p) => (
         <Button size="small" icon={<EditOutlined />} onClick={() => navigate(`/ocr-samples/det/${p.document_id}/${p.page}`)}>
-          {p.status === 'none' ? t('开始调框') : t('打开')}
+          {p.status === 'none' ? t('开始标注') : t('打开')}
         </Button>
       ),
     },
@@ -170,10 +170,10 @@ export function DetPagesTab({ canExport }: { canExport: boolean }) {
   return (
     <Flex vertical gap={12}>
       <Typography.Text type="secondary">
-        {t('给文字检测模型用的训练数据：整页图和每一行字的框。照 PaddleOCR 的 PPOCRLabel 的做法，先用 OCR 的结果预标注 （审核时改对的原文、框选的漏认也带上），人逐页调整、确认，只有确认过的导出。只有审核完成的单据、OCR 认的页； 页上有敏感字段的不做（整页图会把它带出去）。')}
+        {t('文字检测模型的训练数据：整页图像及每行文字的文本框。参照 PaddleOCR PPOCRLabel 的流程，先以 OCR 结果预标注（包含审核时更正的原文和框选的漏识别），再由人工逐页调整并确认，仅导出已确认的页。仅包含已完成审核的单据中由 OCR 识别的页；含敏感字段的页不纳入（整页图像会包含敏感信息）。')}
       </Typography.Text>
       {(counts.sensitive ?? 0) > 0 && (
-        <Alert type="info" showIcon title={t('{{sensitive}} 页上有敏感字段，没有列出来。', { sensitive: counts.sensitive })} />
+        <Alert type="info" showIcon title={t('{{sensitive}} 页含敏感字段，未列出。', { sensitive: counts.sensitive })} />
       )}
       <Flex justify="space-between" align="center" gap={8} wrap>
         <Segmented
@@ -196,7 +196,7 @@ export function DetPagesTab({ canExport }: { canExport: boolean }) {
           </Button>
         )}
       </Flex>
-      {list.isError && <Alert type="error" showIcon title={t('读不出来')} description={errorText(list.error)} />}
+      {list.isError && <Alert type="error" showIcon title={t('无法读取')} description={errorText(list.error)} />}
       <Table
         rowKey={(p) => `${p.document_id}:${p.page}`}
         size="middle"
@@ -211,7 +211,7 @@ export function DetPagesTab({ canExport }: { canExport: boolean }) {
           showTotal: (n) => t('共 {{n}} 页', { n }),
           onChange: setPageNo,
         }}
-        locale={{ emptyText: <Empty description={t('还没有审核完成的单据')} /> }}
+        locale={{ emptyText: <Empty description={t('暂无已完成审核的单据')} /> }}
       />
       <DetExportDialog open={exporting} onClose={() => setExporting(false)} />
     </Flex>

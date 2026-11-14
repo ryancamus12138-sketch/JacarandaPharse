@@ -229,6 +229,10 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
   改完按 ADR 0065 跑 `pybabel extract` / `update`，在 `backend/src/jacara/locale/en/LC_MESSAGES/messages.po` 填英文，
   再 `pybabel compile`（`.po`、`.mo` 都提交），`backend/tests/test_i18n.py` 会检查有没有漏。
   模板内容（字段名、模板名）、命令行输出、提示词、认中文的正则不走这套翻译。
+- 界面文字（网页和后端返回的提示、报错）按 ADR 0067 的文案规范写：书面语、先结论后处理方法、统一叫法、
+  标签和单句提示不加句号；发布后再改 `stored()` / `N_()` 的措辞，按 ADR 0067 把旧原文留在翻译目录里。
+- 标准模板工作簿（`workbook/standard.py`）改格式时：新列只追加在末尾并给默认值，改了表头把旧写法加进 `FORMER`，
+  删掉的列名加进 `RETIRED`，`FORMAT_VERSION` 加 1，并在 ADR 0067 的"格式版本记录"表里加一行。
 - 模板有主语言（ADR 0066）：`label`、`title`、`description` 是主语言的，别的语言放 `names`、`titles`、`descriptions`。
   起步模板 `.toml` 用中文写，每处 `description` 后面跟 `descriptions = { en = "..." }`，开头的依据注释对应 `[basis]` 的 `en`；
   改中文说明时英文一起改，`backend/tests/test_i18n_api.py` 会检查。

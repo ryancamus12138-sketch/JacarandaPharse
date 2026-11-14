@@ -41,7 +41,7 @@ def avatar_key(owner: Owner) -> str:
 def shrink_avatar(data: bytes) -> bytes:
     """Photo of any size → 256 × 256 PNG. Raises for non-images and unsupported formats."""
     if len(data) > AVATAR_MAX_BYTES:
-        raise AuthError("invalid", tr("头像图片太大了，请选 5 MB 以内的"))
+        raise AuthError("invalid", tr("头像图片过大，请选择 5 MB 以内的图片"))
     try:
         with Image.open(io.BytesIO(data)) as image:
             if image.format not in AVATAR_FORMATS:
@@ -50,7 +50,7 @@ def shrink_avatar(data: bytes) -> bytes:
             picture = ImageOps.exif_transpose(image)
             picture = ImageOps.fit(picture.convert("RGBA"), (AVATAR_SIZE, AVATAR_SIZE))
     except (UnidentifiedImageError, Image.DecompressionBombError, OSError) as err:
-        raise AuthError("invalid", tr("这个文件打不开，不是图片或者已经损坏")) from err
+        raise AuthError("invalid", tr("无法打开此文件：不是图片或文件已损坏")) from err
     out = io.BytesIO()
     picture.save(out, format="PNG")  # Save a new image without the original EXIF data.
     return out.getvalue()
@@ -95,7 +95,7 @@ class ProfileService:
     def avatar(self) -> bytes:
         profile = self.session.get(Profile, self.owner.user_id)
         if profile is None or profile.avatar_at is None:
-            raise AuthError("not_found", tr("还没有头像"))
+            raise AuthError("not_found", tr("尚未设置头像"))
         return self._storage().get(avatar_key(self.owner))
 
     # ---- Update ----
@@ -107,7 +107,7 @@ class ProfileService:
         else:
             user = self._user()
             if user is None:
-                raise AuthError("not_found", tr("找不到你的账号"))
+                raise AuthError("not_found", tr("未找到你的账号"))
             user.display_name = name
         record(self.session, self.owner, "profile:update", "user", self.owner.user_id)
         self.session.flush()

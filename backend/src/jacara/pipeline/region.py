@@ -37,7 +37,7 @@ def crop_region(png: bytes, box: list[float], padding: float = PADDING) -> Image
     x0, y0 = max(0, x0 - pad), max(0, y0 - pad)
     x1, y1 = min(image.width, x1 + pad), min(image.height, y1 + pad)
     if x1 - x0 < 4 or y1 - y0 < 4:
-        raise ValueError(stored("框太小了，请框住要识别的文字"))
+        raise ValueError(stored("框选区域过小，请框选需要识别的文字"))
     return image.crop((x0, y0, x1, y1)).convert("RGB")
 
 

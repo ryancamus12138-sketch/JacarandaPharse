@@ -229,7 +229,7 @@ def duplicate_issues(extraction: Extraction, template: Template) -> list[Issue]:
                     DUPLICATE,
                     tr("可能重复报销"),
                     tr(
-                        "{label}「{value}」和{places}一样，请确认是不是同一张单据传了两次",
+                        "{label}「{value}」与{places}相同，请确认是否为同一单据重复上传",
                         label=label,
                         value=wanted,
                         places=shown,
@@ -253,7 +253,7 @@ def _where(other: Extraction, mine: Extraction) -> str:
     name and upload date."""
     pages = page_range(other)
     if other.document_id == mine.document_id:
-        return tr("这个文件的{pages}", pages=pages)
+        return tr("本文件的{pages}", pages=pages)
     day = other.document.created_at.strftime("%Y-%m-%d")
     return tr(
         "《{filename}》{pages}（{day} 上传）",

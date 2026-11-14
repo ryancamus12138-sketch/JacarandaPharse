@@ -161,13 +161,13 @@ export const SPLIT_NAMES: Record<DatasetSplit, string> = {
   get train() { return t('训练集') },
   get val() { return t('验证集') },
   get test() { return t('锁定测试集') },
-  get all() { return t('不分边') },
+  get all() { return t('未划分') },
 }
 
 export const SOURCE_NAMES: Record<Dataset['source'], string> = {
   get samples() { return t('OCR 样本') },
   get det_pages() { return t('检测样本') },
-  get upload() { return t('上传的') },
+  get upload() { return t('上传') },
 }
 
 export function listModels(): Promise<HubModels> {
@@ -215,7 +215,7 @@ export function uploadModelFile(
         reject(new ApiError(xhr.status, detail))
       }
     }
-    xhr.onerror = () => reject(new ApiError(0, t('连不上后端，上传中断了')))
+    xhr.onerror = () => reject(new ApiError(0, t('无法连接后端，上传已中断')))
     xhr.send(file)
   })
 }

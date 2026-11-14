@@ -101,7 +101,7 @@ class TextMatchAligner:
 
     def _align_field(self, field: ExtractedField, rows: tuple[OcrRow, ...]) -> AlignedField:
         if field.value is None:
-            return AlignedField(field, "empty", None, False, stored("模型说原文里没有这个字段"))
+            return AlignedField(field, "empty", None, False, stored("模型判断原文中没有此字段"))
 
         # Lines named by the model: when the value wraps, from the first to the last line (row to
         # row_end).
@@ -131,14 +131,14 @@ class TextMatchAligner:
 
         if evidence is None:
             return AlignedField(
-                field, "not_found", None, True, stored("原文里找不到这个值，可能是模型编的或改写了")
+                field, "not_found", None, True, stored("原文中未找到此值，可能为模型臆造或改写")
             )
 
         notes: list[str] = []
         if evidence.similarity < 1.0:
             notes.append(
                 stored(
-                    "原文里只有相似的文字（相似度 {similarity:.2f}）",
+                    "原文中仅有相似文字（相似度 {similarity:.2f}）",
                     similarity=evidence.similarity,
                 )
             )
@@ -152,11 +152,11 @@ class TextMatchAligner:
                 else stored("第 {row} 行", row=field.row)
             )
             notes.append(
-                stored("模型说在{where}，实际在第 {row} 行", where=where, row=evidence.row)
+                stored("模型指出位于{where}，实际位于第 {row} 行", where=where, row=evidence.row)
             )
         if evidence.confidence < self.min_confidence:
             notes.append(
-                stored("原文这里 OCR 置信度只有 {confidence:.2f}", confidence=evidence.confidence)
+                stored("原文此处 OCR 置信度仅为 {confidence:.2f}", confidence=evidence.confidence)
             )
         if field.type == "number" and isinstance(field.value, float):
             sign = _sign_mismatch(field.value, evidence)
@@ -246,9 +246,9 @@ def _sign_mismatch(value: float, evidence: Evidence) -> str | None:
     text = " ".join(line.text for line in evidence.lines)
     negative = re.search(rf"(-\s*{number}|\(\s*{number}\s*\)|{number}\s*-)(?![\d])", text)
     if negative and value > 0:
-        return stored("原文是 {value}（负数，多半是折扣），值却是正的", value=negative[0].strip())
+        return stored("原文为 {value}（负数，通常为折扣），但值为正数", value=negative[0].strip())
     if not negative and value < 0 and re.search(rf"(?<![\d.]){number}(?![\d])", text):
-        return stored("原文是 {value:.2f}（正数），值却是负的", value=abs(value))
+        return stored("原文为 {value:.2f}（正数），但值为负数", value=abs(value))
     return None
 
 

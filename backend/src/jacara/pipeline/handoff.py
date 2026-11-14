@@ -65,7 +65,7 @@ def load_pages(data: bytes) -> list[OcrPage]:
     if content.get("version") != VERSION:
         raise ValueError(
             stored(
-                "交接文件的版本是 {found}，这里只认 {expected}",
+                "交接文件版本为 {found}，仅支持 {expected}",
                 found=content.get("version"),
                 expected=VERSION,
             )

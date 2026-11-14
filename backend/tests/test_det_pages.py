@@ -135,13 +135,13 @@ def test_save_confirm_and_revision_conflict(client, factory, document_id):
 def test_bad_boxes_are_refused(client, document_id):
     crossed = [{"points": [[0, 0], [50, 20], [50, 0], [0, 20]], "text": "X"}]
     response = client.put(url(document_id), json={"revision": 0, "boxes": crossed})
-    assert response.status_code == 422 and "四个角不对" in response.json()["detail"]
+    assert response.status_code == 422 and "角点无效" in response.json()["detail"]
     empty = [{"points": [[0, 0], [50, 0], [50, 20], [0, 20]], "text": " "}]
     response = client.put(url(document_id), json={"revision": 0, "boxes": empty})
     assert "没有文字" in response.json()["detail"]
     blurry = [{"points": [[0, 0], [50, 0], [50, 20], [0, 20]], "text": "", "ignore": True}]
     response = client.post(url(document_id, "confirm"), json={"revision": 0, "boxes": blurry})
-    assert "一个能用的框都没有" in response.json()["detail"]
+    assert "没有可用的文本框" in response.json()["detail"]
 
 
 def test_unreviewed_documents_are_not_offered(client, factory, document_id):

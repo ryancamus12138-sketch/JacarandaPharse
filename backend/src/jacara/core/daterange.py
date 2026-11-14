@@ -73,7 +73,7 @@ _BARE_END = re.compile(
 
 
 ORDER_PROBLEM = N_("结束日期早于开始日期")
-AMBIGUOUS_PROBLEM = N_("数字日期分不清哪个是日、哪个是月（模板没选国家），先按 日/月 读的")
+AMBIGUOUS_PROBLEM = N_("数字日期无法区分日与月（模板未选择国家），已按 日/月 顺序读取")
 
 
 @dataclass(frozen=True)
@@ -184,7 +184,7 @@ def parse_date_range(text: str, day_first: bool | None = None) -> Parsed:
     if unknown)."""
     source = " ".join(str(text or "").split())
     if not source:
-        return Parsed(None, N_("是空的"))
+        return Parsed(None, N_("为空"))
     pieces = _pieces(source, day_first)
     start = end = None
     for (m1, p1), (m2, p2) in pairwise(pieces):
@@ -202,9 +202,9 @@ def parse_date_range(text: str, day_first: bool | None = None) -> Parsed:
             try:
                 single = date(only.year or 0, only.month or 0, only.day)
             except ValueError:
-                return Parsed(None, N_("日期不对"))
-            return Parsed(DateRange(None, single), N_("只找到一个日期，当作结束日期"))
-        return Parsed(None, N_("认不出开始和结束日期"))
+                return Parsed(None, N_("日期无效"))
+            return Parsed(DateRange(None, single), N_("仅找到一个日期，已作为结束日期"))
+        return Parsed(None, N_("无法识别开始和结束日期"))
     return _combine(start, end)
 
 
@@ -226,18 +226,18 @@ def _combine(start: _Part, end: _Part) -> Parsed:
     if end.year is None:
         end.year = start.year
     if start.year is None or start.month is None or end.month is None:
-        return Parsed(None, N_("原文里没有年份") if start.year is None else N_("认不出月份"))
+        return Parsed(None, N_("原文中没有年份") if start.year is None else N_("无法识别月份"))
     try:
         first = date(start.year, start.month, start.day)
         last = date(end.year or start.year, end.month, end.day)
     except ValueError:
-        return Parsed(None, N_("日期不对（没有这一天）"))
+        return Parsed(None, N_("日期无效（该日不存在）"))
     if first > last and borrowed_year:
         try:
             # Dec 28 - Jan 3, 2015: the start is in the previous year.
             first = first.replace(year=first.year - 1)
         except ValueError:
-            return Parsed(None, N_("日期不对（没有这一天）"))
+            return Parsed(None, N_("日期无效（该日不存在）"))
     parsed = DateRange(first, last)
     if first > last:
         return Parsed(parsed, ORDER_PROBLEM)

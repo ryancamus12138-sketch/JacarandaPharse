@@ -213,7 +213,7 @@ def test_wrong_blocks_but_found_elsewhere_is_yellow():
     )
     guest = aligned["guest"]
     assert guest.status == "matched" and guest.needs_review
-    assert "那几块里没有这个值；在别处找到了" in guest.note
+    assert "这些文字块中没有该值；已在其他位置找到" in guest.note
 
 
 def test_value_not_in_the_document_is_rejected():
@@ -223,7 +223,7 @@ def test_value_not_in_the_document_is_rejected():
     )
     tax = aligned["tax"]
     assert tax.status == "rejected" and tax.evidence is None and tax.needs_review
-    assert "模型给了「123.45」" in render(tax.note) and "⟨1⟩" in render(tax.note)
+    assert "模型输出「123.45」" in render(tax.note) and "⟨1⟩" in render(tax.note)
     assert aligned["nothing"].status == "empty"
 
 

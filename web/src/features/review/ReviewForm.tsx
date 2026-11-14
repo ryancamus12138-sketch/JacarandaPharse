@@ -9,9 +9,9 @@ import { t } from '../../i18n'
 
 const PLACEHOLDER: Record<FieldValue['type'], string> = {
   string: '',
-  get number() { return t('数字，比如 1.00') },
-  get date() { return t('日期，比如 2018-12-25') },
-  get date_range() { return t('原文，或者 2014-07-01 ~ 2014-07-31') },
+  get number() { return t('数字，例如 1.00') },
+  get date() { return t('日期，例如 2018-12-25') },
+  get date_range() { return t('原文，或 2014-07-01 ~ 2014-07-31') },
 }
 
 interface ReviewFormValues {
@@ -30,9 +30,9 @@ interface Props {
 /** Reason filled in automatically for "use source value": states how the source text reads. */
 function adoptReason(v: FieldValue): string {
   if (v.type === 'number') {
-    return Number(v.source_value) < 0 ? t('采用原文值：原文是负数（折扣或退款）') : t('采用原文值：原文是正数')
+    return Number(v.source_value) < 0 ? t('采用原文值：原文为负数（折扣或退款）') : t('采用原文值：原文为正数')
   }
-  return t('采用原文值：按原文的写法')
+  return t('采用原文值：按原文写法')
 }
 
 /**
@@ -103,14 +103,14 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
                 form.setFieldsValue({
                   value: v.rejected_value ?? '',
                   missing: false,
-                  reason: t('核对原图后采用模型给的值'),
+                  reason: t('核对原图后采用模型输出值'),
                 })
               }
             >
-              {t('采用模型给的值')}
+              {t('采用模型输出值')}
             </Button>
             <span style={{ fontSize: 12, color: '#666', overflowWrap: 'anywhere' }}>
-              {t('模型给的：{{rejected_value}}', { rejected_value: v.rejected_value })}
+              {t('模型输出：{{rejected_value}}', { rejected_value: v.rejected_value })}
             </span>
           </Flex>
         ) : null}
@@ -155,25 +155,25 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
         )}
         <Form.Item
           name="value"
-          label={v.type === 'date_range' ? t('正确的值（原文写法也行，系统会重新拆开）') : t('正确的值')}
+          label={v.type === 'date_range' ? t('正确的值（可按原文写法填写，系统将重新拆分）') : t('正确的值')}
           rules={[{ required: !missing, whitespace: true, message: t('请输入正确的值') }]}
           style={{ marginBottom: 4 }}
         >
           <Input placeholder={PLACEHOLDER[v.type]} disabled={missing} autoComplete="off" />
         </Form.Item>
         <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>
-          {t('也可以按住 Alt（Option），在左边原图上点文字直接填入')}
+          {t('也可按住 Alt（Option）并点击左侧原图上的文字直接填入')}
         </div>
         <Form.Item name="missing" valuePropName="checked" style={{ marginBottom: 8 }}>
-          <Checkbox>{t('原文里没有这个字段')}</Checkbox>
+          <Checkbox>{t('原文中没有此字段')}</Checkbox>
         </Form.Item>
         <Form.Item
           name="reason"
           label={t('原因（修改时必填）')}
-          rules={[{ required: true, whitespace: true, message: t('修改时请写明原因') }]}
+          rules={[{ required: true, whitespace: true, message: t('修改时请填写原因') }]}
           style={{ marginBottom: 8 }}
         >
-          <Input placeholder={t('比如：OCR 把 1.00 读成了 100')} maxLength={500} autoComplete="off" />
+          <Input placeholder={t('例如：OCR 将 1.00 识别为 100')} maxLength={500} autoComplete="off" />
         </Form.Item>
         <Flex gap={8}>
           <Button
@@ -182,7 +182,7 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
             onClick={confirm}
             loading={busy && revise.variables?.change.action === 'confirm'}
           >
-            {t('值是对的')}
+            {t('值正确')}
           </Button>
           <Button
             htmlType="submit"

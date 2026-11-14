@@ -76,7 +76,7 @@ def clean_labels(values: object, where: str, what: str, limit: int = 20) -> tupl
     if values is None:
         return ()
     if not isinstance(values, (list, tuple)) or not all(isinstance(v, str) for v in values):
-        raise TemplateError(stored("{where}：{what}应该是文字列表", where=where, what=what))
+        raise TemplateError(stored("{where}：{what}应为文字列表", where=where, what=what))
     cleaned = tuple(dict.fromkeys(v.strip()[:20] for v in values if v.strip()))
     if len(cleaned) > limit:
         raise TemplateError(
@@ -92,7 +92,7 @@ def clean_countries(values: object, where: str) -> tuple[str, ...]:
     if wrong:
         raise TemplateError(
             stored(
-                "{where}：国家和地区要写两个字母的代码（如 CN、AU），不认识：{codes}",
+                ("{where}：国家和地区需使用两位字母代码（如 CN、AU），无法识别：{codes}"),
                 where=where,
                 codes=join_items(wrong),
             )
@@ -424,7 +424,7 @@ class Template:
             rules.append(
                 Rule(
                     f"range_{name}",
-                    stored("{label}拆得开", label=label),
+                    stored("{label}可拆分", label=label),
                     (name,),
                     readable,
                     "warning",
@@ -483,7 +483,7 @@ class Template:
             if verdict.passed is not False:
                 return None
             return stored(
-                "{left} 是 {left_value}，{right} 是 {right_value}，不满足 {condition}",
+                ("{left} 为 {left_value}，{right} 为 {right_value}，不满足 {condition}"),
                 left=left_text,
                 left_value=_show(verdict.left),
                 right=right_text,
@@ -708,14 +708,16 @@ def load_starter_in(name: str, language: str) -> Template:
     notes at the top of the file come from its [basis] table for languages other than Chinese."""
     if name not in STARTERS:
         raise TemplateError(
-            stored("没有叫 {name} 的起步模板，现有：{known}", name=name, known=join_items(STARTERS))
+            stored(
+                "不存在名为 {name} 的起步模板，现有：{known}", name=name, known=join_items(STARTERS)
+            )
         )
     path = files(__package__).joinpath("starters", f"{name}.toml")
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as err:
         raise TemplateError(
-            stored("起步模板 {name}.toml 格式不对：{err}", name=name, err=err)
+            stored("起步模板 {name}.toml 格式错误：{err}", name=name, err=err)
         ) from err
     text = path.read_text(encoding="utf-8")
     translated_basis = raw.pop("basis", {})
@@ -843,13 +845,15 @@ def load_template(name: str) -> Template:
     if not path.is_file():
         raise TemplateError(
             stored(
-                "没有叫 {name} 的模板，现有：{known}", name=name, known=join_items(template_names())
+                "不存在名为 {name} 的模板，现有：{known}",
+                name=name,
+                known=join_items(template_names()),
             )
         )
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as err:
-        raise TemplateError(stored("模板 {name}.toml 格式不对：{err}", name=name, err=err)) from err
+        raise TemplateError(stored("模板 {name}.toml 格式错误：{err}", name=name, err=err)) from err
     return parse_template(raw, name)
 
 
@@ -862,14 +866,14 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
         else stored("模板「{title}」", title=raw.get("title") or name)
     )
     if check_name and raw.get("name") != name:
-        raise TemplateError(stored("{where}：文件里的 name 应该是 {name}", where=where, name=name))
+        raise TemplateError(stored("{where}：文件中的 name 应为 {name}", where=where, name=name))
     version = raw.get("version")
     if not isinstance(version, int) or isinstance(version, bool) or version < 1:
-        raise TemplateError(stored("{where}：version 应该是大于 0 的整数", where=where))
+        raise TemplateError(stored("{where}：version 应为大于 0 的整数", where=where))
 
     fields = _fields(raw.get("fields", []), where)
     if not fields:
-        raise TemplateError(stored("{where}：至少要有一个字段", where=where))
+        raise TemplateError(stored("{where}：至少需要一个字段", where=where))
 
     tables: list[TemplateTable] = []
     for i, item in enumerate(raw.get("tables", []), start=1):
@@ -877,13 +881,15 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
         if not isinstance(table_name, str) or not _FIELD_NAME.match(table_name):
             raise TemplateError(
                 stored(
-                    "{where}：第 {i} 张表的 name 只能用小写英文字母、数字和下划线", where=where, i=i
+                    "{where}：第 {i} 张表的 name 只能包含小写英文字母、数字和下划线",
+                    where=where,
+                    i=i,
                 )
             )
         if any(f.name == table_name for f in fields) or any(t.name == table_name for t in tables):
             raise TemplateError(
                 stored(
-                    "{where}：表 {table_name} 和别的字段或表重名了",
+                    "{where}：表 {table_name} 与其他字段或表重名",
                     where=where,
                     table_name=table_name,
                 )
@@ -894,12 +900,12 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
         )
         if not columns:
             raise TemplateError(
-                stored("{where}：表 {table_name} 至少要有一列", where=where, table_name=table_name)
+                stored("{where}：表 {table_name} 至少需要一列", where=where, table_name=table_name)
             )
         if any(c.name == "row" for c in columns):
             raise TemplateError(
                 stored(
-                    "{where}：表 {table_name} 的列不能叫 row（留给行号用）",
+                    "{where}：表 {table_name} 的列不能命名为 row（保留用于行号）",
                     where=where,
                     table_name=table_name,
                 )
@@ -929,7 +935,7 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
         if rule_id not in RULES:
             raise TemplateError(
                 stored(
-                    "{where}：没有编号为 {rule_id} 的规则，现有：{known}",
+                    "{where}：不存在编号为 {rule_id} 的规则，现有：{known}",
                     where=where,
                     rule_id=rule_id,
                     known=join_items(RULES),
@@ -970,7 +976,7 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
             else infer_countries([str(r) for r in raw.get("rules", [])])
         )
     else:
-        raise TemplateError(stored("{where}：region 写得不对", where=where))
+        raise TemplateError(stored("{where}：region 格式错误", where=where))
     category = str(raw.get("category", ""))
     domains = clean_labels(raw.get("domains", [category]), where, stored("功能领域"), 10)
     template = Template(
@@ -988,7 +994,7 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
         references=references,
         workbook=workbook,
         custom_rules=_custom_rules(raw.get("custom_rules"), tables, where),
-        titles=_names(raw.get("titles"), where, stored("模板名")),
+        titles=_names(raw.get("titles"), where, stored("模板名称")),
         language=_language(raw.get("language"), where),
         descriptions=_names(raw.get("descriptions"), where, stored("模板"), description=True),
     )
@@ -1011,7 +1017,7 @@ def _language(value: object, where: str) -> str:
     if not isinstance(value, str) or not LANGUAGE.match(value):
         raise TemplateError(
             stored(
-                "{where}：主语言「{language}」不对，应该像 zh、en、ja、zh-Hant",
+                ("{where}：主语言「{language}」无效，格式应如 zh、en、ja、zh-Hant"),
                 where=where,
                 language=value,
             )
@@ -1028,7 +1034,7 @@ def _names(value: object, where: str, what: str, *, description: bool = False) -
     if not isinstance(value, dict):
         raise TemplateError(
             stored(
-                '{where}：{what}的别的语言名字要写成 {{ en = "...", ja = "..." }}',
+                ('{where}：{what}的其他语言名称需写作 {{ en = "...", ja = "..." }}'),
                 where=where,
                 what=what,
             )
@@ -1038,7 +1044,7 @@ def _names(value: object, where: str, what: str, *, description: bool = False) -
         if not isinstance(lang, str) or not LANGUAGE.match(lang):
             raise TemplateError(
                 stored(
-                    "{where}：{what}的语言代码「{lang}」不对，应该像 en、ja、zh-Hant",
+                    ("{where}：{what}的语言代码「{lang}」无效，格式应如 en、ja、zh-Hant"),
                     where=where,
                     what=what,
                     lang=lang,
@@ -1046,13 +1052,13 @@ def _names(value: object, where: str, what: str, *, description: bool = False) -
             )
         if not isinstance(text, str):
             raise TemplateError(
-                stored("{where}：{what}的 {lang} 名字应该是文字", where=where, what=what, lang=lang)
+                stored("{where}：{what}的 {lang} 名称应为文字", where=where, what=what, lang=lang)
             )
         text = text.strip()
         if description and len(text) > 2000:
             raise TemplateError(
                 stored(
-                    "{where}：{what}的 {lang} 说明太长了（最多 2000 个字）",
+                    "{where}：{what}的 {lang} 说明过长（最多 2000 个字符）",
                     where=where,
                     what=what,
                     lang=lang,
@@ -1061,7 +1067,7 @@ def _names(value: object, where: str, what: str, *, description: bool = False) -
         if not description and len(text) > 200:
             raise TemplateError(
                 stored(
-                    "{where}：{what}的 {lang} 名字太长了（最多 200 个字）",
+                    "{where}：{what}的 {lang} 名称过长（最多 200 个字符）",
                     where=where,
                     what=what,
                     lang=lang,
@@ -1076,19 +1082,19 @@ def _custom_rules(items: Any, tables: list[TemplateTable], where: str) -> tuple[
     if items is None:
         return ()
     if not isinstance(items, list):
-        raise TemplateError(stored("{where}：custom_rules 应该是一个列表", where=where))
+        raise TemplateError(stored("{where}：custom_rules 应为列表", where=where))
     rules: list[CustomRule] = []
     for i, item in enumerate(items, start=1):
         if not isinstance(item, dict):
-            raise TemplateError(stored("{where}：第 {i} 条自定义规则写得不对", where=where, i=i))
+            raise TemplateError(stored("{where}：第 {i} 条自定义规则格式错误", where=where, i=i))
         check = item.get("check")
         if not isinstance(check, str) or not check.strip():
-            raise TemplateError(stored("{where}：第 {i} 条自定义规则没写条件", where=where, i=i))
+            raise TemplateError(stored("{where}：第 {i} 条自定义规则缺少条件", where=where, i=i))
         severity = item.get("severity", "error")
         if severity not in ("error", "warning"):
             raise TemplateError(
                 stored(
-                    "{where}：第 {i} 条自定义规则的 severity 只能是 error 或 warning",
+                    ("{where}：第 {i} 条自定义规则的 severity 只能为 error 或 warning"),
                     where=where,
                     i=i,
                 )
@@ -1096,9 +1102,7 @@ def _custom_rules(items: Any, tables: list[TemplateTable], where: str) -> tuple[
         per_row = item.get("per_row") or None
         if per_row is not None and per_row not in {t.name for t in tables}:
             raise TemplateError(
-                stored(
-                    "{where}：第 {i} 条自定义规则的 per_row 不是这个模板里的表", where=where, i=i
-                )
+                stored("{where}：第 {i} 条自定义规则的 per_row 不是此模板中的表", where=where, i=i)
             )
         rules.append(
             CustomRule(str(item.get("title") or "").strip(), check.strip(), severity, per_row)
@@ -1134,7 +1138,7 @@ def _check_formulas(template: Template, where: str) -> None:
         }:
             raise TemplateError(
                 stored(
-                    "{where}：「{label}」的公式不能用别的计算字段（只能用单据上抽的）",
+                    ("{where}：「{label}」的公式不能引用其他计算字段（仅可引用从单据抽取的字段）"),
                     where=where,
                     label=label,
                 )
@@ -1153,7 +1157,7 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
         if not isinstance(field_name, str) or not _FIELD_NAME.match(field_name):
             raise TemplateError(
                 stored(
-                    "{where}：第 {i} 个字段的 name 只能用小写英文字母、数字和下划线",
+                    ("{where}：第 {i} 个字段的 name 只能包含小写英文字母、数字和下划线"),
                     where=where,
                     i=i,
                 )
@@ -1161,20 +1165,20 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
         if item.get("type") not in get_args(FieldType):
             raise TemplateError(
                 stored(
-                    "{where}：字段 {field_name} 的 type 只能是 string、number、date、date_range",
+                    ("{where}：字段 {field_name} 的 type 只能为 string、number、date、date_range"),
                     where=where,
                     field_name=field_name,
                 )
             )
         if any(f.name == field_name for f in fields):
             raise TemplateError(
-                stored("{where}：字段 {field_name} 重复了", where=where, field_name=field_name)
+                stored("{where}：字段 {field_name} 重复", where=where, field_name=field_name)
             )
         aliases = item.get("aliases", [])
         if not isinstance(aliases, list) or not all(isinstance(a, str) for a in aliases):
             raise TemplateError(
                 stored(
-                    "{where}：字段 {field_name} 的 aliases 应该是文字列表",
+                    "{where}：字段 {field_name} 的 aliases 应为文字列表",
                     where=where,
                     field_name=field_name,
                 )
@@ -1184,7 +1188,7 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
         if not isinstance(options, list) or not all(isinstance(o, str) for o in options):
             raise TemplateError(
                 stored(
-                    "{where}：字段 {field_name} 的 options 应该是文字列表",
+                    "{where}：字段 {field_name} 的 options 应为文字列表",
                     where=where,
                     field_name=field_name,
                 )
@@ -1193,7 +1197,7 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
         if not isinstance(compute, str):
             raise TemplateError(
                 stored(
-                    "{where}：字段 {field_name} 的 compute 应该是一条公式",
+                    "{where}：字段 {field_name} 的 compute 应为一条公式",
                     where=where,
                     field_name=field_name,
                 )
@@ -1201,7 +1205,7 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
         if compute.strip() and item["type"] != "number":
             raise TemplateError(
                 stored(
-                    "{where}：字段 {field_name} 有公式，type 要是 number",
+                    "{where}：字段 {field_name} 含公式，type 需为 number",
                     where=where,
                     field_name=field_name,
                 )
@@ -1210,8 +1214,10 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
         if range_export not in get_args(RangeExport):
             raise TemplateError(
                 stored(
-                    "{where}：字段 {field_name} 的 range_export 只能是 normalized、original、"
-                    "columns",
+                    (
+                        "{where}：字段 {field_name} 的 range_export 只能为 normalized"
+                        "、original、columns"
+                    ),
                     where=where,
                     field_name=field_name,
                 )
@@ -1220,7 +1226,7 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
         if not isinstance(separator, str) or not separator.strip() or len(separator) > 10:
             raise TemplateError(
                 stored(
-                    "{where}：字段 {field_name} 的分隔符要写 1～10 个字",
+                    "{where}：字段 {field_name} 的分隔符需为 1～10 个字符",
                     where=where,
                     field_name=field_name,
                 )

@@ -15,7 +15,7 @@ function sourceName(c: Candidate): string {
     case 'text_layer':
       return t('PDF 文字层')
     case 'zoom':
-      return c.dpi ? t('放大到 {{dpi}} DPI 再识别', { dpi: c.dpi }) : t('原图局部再识别')
+      return c.dpi ? t('放大至 {{dpi}} DPI 后识别', { dpi: c.dpi }) : t('原图局部重新识别')
     case 'form':
       return t('表单字段')
   }
@@ -45,9 +45,9 @@ function Crop({ documentId, c }: { documentId: string; c: Candidate }) {
   return (
     <Image
       src={crop.data}
-      alt={t('原图这一块')}
+      alt={t('原图局部')}
       style={{ maxHeight: 48, maxWidth: 220, objectFit: 'contain', border: '1px solid #eee' }}
-      preview={{ mask: t('放大看') }}
+      preview={{ mask: t('放大查看') }}
     />
   )
 }
@@ -77,7 +77,7 @@ export function Candidates({
   return (
     <div style={{ marginTop: 8 }}>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {t('几个来源读出来的不一样，看图选一个：')}
+        {t('多个来源的识别结果不一致，请对照图像选择：')}
       </Typography.Text>
       <Flex vertical gap={6} style={{ marginTop: 4 }}>
         {items.map((c, i) => {
@@ -103,14 +103,14 @@ export function Candidates({
                 </Typography.Text>
               )}
               {c.rule_ok === true && (
-                <Tooltip title={t('换成这个值，和这个字段有关的规则都能通过（只是提示）')}>
+                <Tooltip title={t('改为此值后，与该字段相关的规则均可通过（仅供参考）')}>
                   <Tag icon={<CheckOutlined />} color="success" style={{ marginInlineEnd: 0 }}>
                     {t('符合规则')}
                   </Tag>
                 </Tooltip>
               )}
               {c.rule_ok === false && (
-                <Tooltip title={t('换成这个值，和这个字段有关的规则过不了（只是提示）')}>
+                <Tooltip title={t('改为此值后，与该字段相关的规则无法通过（仅供参考）')}>
                   <Tag icon={<CloseOutlined />} color="warning" style={{ marginInlineEnd: 0 }}>
                     {t('规则不通过')}
                   </Tag>
@@ -133,7 +133,7 @@ export function Candidates({
                         change: {
                           action: 'edit',
                           value: shown,
-                          reason: t('看原图后采用{{sourceName}}读的「{{text}}」', { sourceName: sourceName(c), text: c.text }),
+                          reason: t('核对原图后采用{{sourceName}}识别的「{{text}}」', { sourceName: sourceName(c), text: c.text }),
                         },
                       },
                       { onSuccess: onDone },
@@ -143,7 +143,7 @@ export function Candidates({
                   {t('采用')}
                 </Button>
               )}
-              {current && <Tag style={{ marginInlineEnd: 0 }}>{t('现在的值')}</Tag>}
+              {current && <Tag style={{ marginInlineEnd: 0 }}>{t('当前值')}</Tag>}
             </Flex>
           )
         })}

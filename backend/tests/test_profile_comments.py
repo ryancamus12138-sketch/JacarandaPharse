@@ -61,7 +61,7 @@ def test_avatar_rejects_bad_files(client):
         "/api/v1/auth/profile/avatar", files={"file": ("x.png", b"not an image", "image/png")}
     )
     assert bad.status_code == 422
-    assert "打不开" in bad.json()["detail"]
+    assert "无法打开" in bad.json()["detail"]
     gif = io.BytesIO()
     Image.new("RGB", (10, 10)).save(gif, format="GIF")
     wrong = client.put(
@@ -215,7 +215,7 @@ def test_comments(client, docs, factory):  # noqa: F811
     no_page = client.post(url, json={"body": "x", "field_name": "total"})
     assert no_page.status_code == 422
     past_end = client.post(url, json={"body": "x", "field_name": "total", "page": 9})
-    assert "只有 1 页" in past_end.json()["detail"]
+    assert "仅有 1 页" in past_end.json()["detail"]
     assert on_field["author"] == "本机用户"
     assert on_field["mine"] is True
     assert client.post(url, json={"body": "   "}).status_code == 422

@@ -46,7 +46,7 @@ def run_eval(
             return "missing"
         if found.status == "running":
             found.status = "failed"
-            found.error = stored("上次评测跑到一半中断了（worker 停了），请重新开始")
+            found.error = stored("上次评测在运行中被中断（worker 已停止），请重新开始")
             found.finished_at = datetime.now(UTC)
             session.commit()
             return "interrupted"

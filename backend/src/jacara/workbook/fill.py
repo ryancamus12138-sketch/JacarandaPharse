@@ -53,7 +53,7 @@ def fill_workbook(template: Template, original: bytes, rows: list[DocRow], title
     """title: name of the copied sheet for monthly sheets (for example "2026-11-12 export")."""
     layout = template.workbook
     if layout is None:
-        raise ValueError(tr("这个模板没有工作簿样式"))
+        raise ValueError(tr("此模板没有工作簿版式"))
     book = load_workbook(io.BytesIO(original))
     grouped = {s.same_as for s in layout.sheets if s.same_as}
     for sheet in layout.sheets:
@@ -122,7 +122,7 @@ def _entity_rows(template: Template, sheet: WorkbookSheet, rows: list[DocRow]) -
             distinct = {normalize(str(v)) for v, _ in present}
             note = None
             if len(distinct) > 1:
-                note = tr("几份单据写的不一样：\n") + "\n".join(
+                note = tr("多份单据内容不一致：\n") + "\n".join(
                     tr("{file}：{value}", file=f, value=v) for v, f in present
                 )
             row.append((value, note))

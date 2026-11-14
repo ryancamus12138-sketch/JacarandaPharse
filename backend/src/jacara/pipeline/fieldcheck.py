@@ -121,7 +121,8 @@ def _check_value(
     ocr_text = " ".join(ln.text for ln in a.evidence.lines)
     if _rows(hits) > 1:
         note = stored(
-            "PDF 文字层这里有好几行字（「{text}」），对不上是哪一行，没法核对", text=layer_text
+            ("PDF 文本层此处有多行文字（「{text}」），无法确定对应哪一行，无法核对"),
+            text=layer_text,
         )
         return replace(
             a,
@@ -141,13 +142,13 @@ def _check_value(
     same = _squash(plain_cjk(layer_text)) == _squash(plain_cjk(ocr_text))
     if same:
         note = stored(
-            "PDF 文字层和 OCR 这里都是「{text}」，和现在的值「{value}」对不上",
+            "PDF 文本层与 OCR 此处均为「{text}」，与当前值「{value}」不符",
             text=layer_text,
             value=a.field.value,
         )
     else:
         note = stored(
-            "PDF 文字层这里写的是「{text}」，和 OCR 读的「{ocr}」不一样",
+            "PDF 文本层此处为「{text}」，与 OCR 识别的「{ocr}」不一致",
             text=layer_text,
             ocr=ocr_text,
         )
@@ -159,21 +160,29 @@ def _check_value(
         layer_value = _value(a.field.type, layer_text)
         if zoom_agrees:
             verdict = stored(
-                "{how}读成「{text}」，和现在的值一致", how=zoomed.note, text=zoomed.text
+                "{how}结果为「{text}」，与当前值一致", how=zoomed.note, text=zoomed.text
             )
         elif supports(a.field.type, layer_value, zoomed.text, key, day_first):
             verdict = (
-                stored("{how}读成「{text}」，和文字层、OCR 一致", how=zoomed.note, text=zoomed.text)
+                stored(
+                    "{how}结果为「{text}」，与文本层和 OCR 一致", how=zoomed.note, text=zoomed.text
+                )
                 if same
-                else stored("{how}读成「{text}」，和文字层一致", how=zoomed.note, text=zoomed.text)
+                else stored(
+                    "{how}结果为「{text}」，与文本层一致", how=zoomed.note, text=zoomed.text
+                )
             )
         elif supports(a.field.type, _value(a.field.type, ocr_text), zoomed.text, key, day_first):
-            verdict = stored("{how}读成「{text}」，和 OCR 一致", how=zoomed.note, text=zoomed.text)
+            verdict = stored(
+                "{how}结果为「{text}」，与 OCR 一致", how=zoomed.note, text=zoomed.text
+            )
         else:
             verdict = (
-                stored("{how}读成「{text}」，和前两处也不一样", how=zoomed.note, text=zoomed.text)
+                stored("{how}结果为「{text}」，与前两者均不一致", how=zoomed.note, text=zoomed.text)
                 if same
-                else stored("{how}读成「{text}」，三处都不一样", how=zoomed.note, text=zoomed.text)
+                else stored(
+                    "{how}结果为「{text}」，三者均不一致", how=zoomed.note, text=zoomed.text
+                )
             )
         note = join_notes(note, verdict)
     review = key or not zoom_agrees
@@ -231,7 +240,7 @@ def _missing(
     label = _find_label(spec, page.lines)
     if label is None:
         if spec.required:
-            note = stored("模板要求填写，原文里没找到这个字段的标签，留空待审")
+            note = stored("模板要求必填，原文中未找到该字段的标签，留空待审核")
             return replace(a, needs_review=True, note=join_notes(a.note, note))
         return a
     line, rest = label
@@ -307,14 +316,16 @@ def _missing(
             for c in found_all
         )
         note = stored(
-            "模型没有给出「{label}」；在原文「{line}」旁边找到 {found}，请核对后采用",
+            ("模型未给出「{label}」；在原文「{line}」附近找到 {found}，请核对后采用"),
             label=spec.label,
             line=line.text,
             found=found,
         )
         return replace(a, candidates=found_all, needs_review=True, note=join_notes(a.note, note))
     if spec.required:
-        note = stored("模板要求填写；原文有「{line}」，旁边没读到值，留空待审", line=line.text)
+        note = stored(
+            ("模板要求必填；原文中有「{line}」，但其附近未读取到值，留空待审核"), line=line.text
+        )
         return replace(a, needs_review=True, note=join_notes(a.note, note))
     return a
 
@@ -427,14 +438,14 @@ def _check_form(a: AlignedField, spec: TemplateField, page: OcrPage) -> AlignedF
     )
     if a.field.value is None:
         note = stored(
-            "PDF 表单字段「{name}」里存着「{value}」（{shown}），请核对后采用",
+            ("PDF 表单字段「{name}」中存储了「{value}」（{shown}），请核对后采用"),
             name=form.name,
             value=form.value,
             shown=shown,
         )
     else:
         note = stored(
-            "PDF 表单字段「{name}」存的是「{value}」（{shown}），和现在的值不一样，请核对",
+            ("PDF 表单字段「{name}」中存储的是「{value}」（{shown}），与当前值不一致，请核对"),
             name=form.name,
             value=form.value,
             shown=shown,
@@ -468,7 +479,7 @@ def _visibility(form: FormValue, page: OcrPage) -> bool | None:
     return None
 
 
-VISIBILITY = {True: N_("页面上能看到"), False: N_("页面不可见"), None: N_("可见性待确认")}
+VISIBILITY = {True: N_("页面可见"), False: N_("页面不可见"), None: N_("可见性待确认")}
 """Note shown on a form-field candidate for each visibility state."""
 
 
@@ -477,8 +488,8 @@ VISIBILITY = {True: N_("页面上能看到"), False: N_("页面不可见"), None
 
 SOURCE_NAMES = {
     "ocr": "OCR",
-    "text_layer": N_("PDF 文字层"),
-    "zoom": N_("局部放大再识别"),
+    "text_layer": N_("PDF 文本层"),
+    "zoom": N_("局部放大后重新识别"),
     "form": N_("表单字段"),
 }
 

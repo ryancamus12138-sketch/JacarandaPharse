@@ -7,7 +7,7 @@ import type { Extraction } from '../../api/types'
 import { useTranslation } from 'react-i18next'
 import { t } from '../../i18n'
 
-const BY_TEXT = { get model() { return t('模型选的') }, get keywords() { return t('按字段名、模板名对出来的') }, get none() { return t('没有可选的模板') } }
+const BY_TEXT = { get model() { return t('由模型选择') }, get keywords() { return t('按字段名和模板名匹配') }, get none() { return t('没有可选模板') } }
 
 /**
  * How this document was processed: which template automatic selection picked and why, and whether the model
@@ -32,7 +32,7 @@ export function ExtractionNotes({
     <Flex gap={8} wrap align="center" style={{ marginBottom: 12 }}>
       {classified && (
         <Popover
-          title={t('自动判断用哪个模板')}
+          title={t('自动选择模板')}
           content={
             <Flex vertical gap={6} style={{ maxWidth: 360 }}>
               <Typography.Text>{classified.reason}</Typography.Text>
@@ -42,7 +42,7 @@ export function ExtractionNotes({
               {classified.candidates.length > 0 && (
                 <>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {t('比较过的模板（按字段名对上的多少排）：')}
+                    {t('参与比较的模板（按字段名匹配数排序）：')}
                   </Typography.Text>
                   {classified.candidates.map((c) => (
                     <Flex key={c.template_id} justify="space-between" gap={12}>
@@ -60,7 +60,7 @@ export function ExtractionNotes({
                 </>
               )}
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t('选得不对：点"重新处理"，换一个模板。')}
+                {t('如选择有误，请点击“重新处理”并更换模板。')}
               </Typography.Text>
             </Flex>
           }
@@ -71,18 +71,18 @@ export function ExtractionNotes({
         </Popover>
       )}
       {vision && (
-        <Tooltip title={t('{{vision}}。OCR 文字里对不上的值标了"看原图读的"，请对着原图核对。', { vision })}>
+        <Tooltip title={t('{{vision}}。与 OCR 文字不符的值已标注“读取自原图”，请对照原图核对。', { vision })}>
           <Tag icon={<EyeOutlined />} color="orange">
-            {t('模型看了原图')}
+            {t('模型读取了原图')}
           </Tag>
         </Tooltip>
       )}
       {lessons > 0 && (
         <Tooltip
-          title={t('抽取时告诉了模型：同一个模板以前人工改过的 {{lessons}} 个地方（容易错在哪），值仍然按这张单据的原文。在 .env 里 JACARA_LEARN=false 可以关掉。', { lessons })}
+          title={t('抽取时已向模型提供同一模板此前经人工修改的 {{lessons}} 处示例（易错之处），取值仍以本单据原文为准。可在 .env 中设置 JACARA_LEARN=false 关闭。', { lessons })}
         >
           <Tag icon={<BulbOutlined />} color="cyan">
-            {t('参考了以前改过的 {{lessons}} 处', { lessons })}
+            {t('参考了 {{lessons}} 处历史修改', { lessons })}
           </Tag>
         </Tooltip>
       )}
@@ -117,16 +117,16 @@ function SentTag({
   const partial = sent.blocks < sent.total_blocks
   return (
     <Popover
-      title={t('发给模型的单据文字')}
+      title={t('发送给模型的单据文字')}
       trigger="click"
       open={open}
       onOpenChange={setOpen}
       content={
         <Flex vertical gap={8} style={{ width: 560, maxWidth: '80vw' }}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t('{{blocks}} 个文字块、{{chars}} 字', { blocks: sent.blocks, chars: sent.chars })}
-            {sent.images > 0 && t('，附了 {{images}} 张原图', { images: sent.images })}
-            {sent.lessons > 0 && t('，带了 {{lessons}} 个以前改过的例子', { lessons: sent.lessons })}{t('。⟨数字⟩ 是文字块编号。 值不在这里面，是 OCR 没认出来；在里面却没取到，是模型漏了。')}
+            {t('{{blocks}} 个文字块、{{chars}} 个字符', { blocks: sent.blocks, chars: sent.chars })}
+            {sent.images > 0 && t('，附 {{images}} 张原图', { images: sent.images })}
+            {sent.lessons > 0 && t('，含 {{lessons}} 个历史修改示例', { lessons: sent.lessons })}{t('。⟨数字⟩ 为文字块编号。若值不在其中，说明 OCR 未识别出；若在其中却未抽取，说明模型遗漏。')}
           </Typography.Text>
           {text.isLoading && <Spin size="small" />}
           {text.error && <Alert type="error" showIcon message={text.error.message} />}
@@ -149,7 +149,7 @@ function SentTag({
       }
     >
       <Tag icon={<FileTextOutlined />} color={partial ? 'gold' : undefined} style={{ cursor: 'pointer' }}>
-        {t('发给模型 {{blocks}}{{total}} 个文字块', { blocks: sent.blocks, total: partial ? ` / ${sent.total_blocks}` : '' })}
+        {t('发送给模型 {{blocks}}{{total}} 个文字块', { blocks: sent.blocks, total: partial ? ` / ${sent.total_blocks}` : '' })}
       </Tag>
     </Popover>
   )

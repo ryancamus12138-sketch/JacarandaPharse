@@ -50,13 +50,13 @@ export function templateOptions(templates: Template[]) {
   const auto = mine.length
     ? [
         {
-          label: t('让系统选'),
+          label: t('由系统选择'),
           title: 'auto',
           options: [
             {
               value: AUTO,
-              label: t('自动判断（从我的模板里选最合适的）'),
-              search: t('自动判断 auto 让系统选'),
+              label: t('自动判断（从我的模板中选择最合适的）'),
+              search: t('自动判断 auto 由系统选择'),
             },
           ],
         },
@@ -78,7 +78,7 @@ export function templateOptions(templates: Template[]) {
       label: t('没有合适的模板'),
       title: 'discover',
       options: [
-        { value: DISCOVER, label: t('抽取所有键值对（之后可以存成模板）'), search: t('抽取所有键值对 discover') },
+        { value: DISCOVER, label: t('抽取所有键值对（之后可保存为模板）'), search: t('抽取所有键值对 discover') },
       ],
     },
   ]

@@ -128,7 +128,7 @@ def open_workbook(data: bytes) -> Any:
         return load_workbook(io.BytesIO(data), data_only=True)
     except Exception as err:
         raise WorkbookError(
-            tr("打不开这个 Excel。只支持 .xlsx；老的 .xls 请先在 Excel 里另存为 .xlsx")
+            tr("无法打开此 Excel 文件。仅支持 .xlsx；旧版 .xls 请先在 Excel 中另存为 .xlsx")
         ) from err
 
 
@@ -271,7 +271,7 @@ def _sheet(ws: Worksheet, column_options: dict[int, list[str]]) -> SheetGuess:
     hidden = ws.sheet_state != "visible"
     if header_row == 0:
         return SheetGuess(
-            ws.title, "ignore", 0, 0, hidden, reason=tr("没找到表头（说明、备注之类）")
+            ws.title, "ignore", 0, 0, hidden, reason=tr("未找到表头（可能为说明、备注等）")
         )
     body = data_rows(rows, header_row)
     columns: list[ColumnGuess] = []
@@ -370,11 +370,11 @@ def _guess_roles(sheets: list[SheetGuess], option_sheets: set[str]) -> None:
     data = [s for s in sheets if s.header_row > 0]
     for s in data:
         if s.name in option_sheets or (len(s.columns) <= 2 and _OPTIONS_NAME.search(s.name)):
-            s.role, s.reason = "options", tr("被下拉框引用，或者像选项、说明")
+            s.role, s.reason = "options", tr("被下拉框引用，或疑似选项、说明")
         elif _OPTIONS_NAME.search(s.name):
-            s.role, s.reason = "ignore", tr("名字像填表说明")
+            s.role, s.reason = "ignore", tr("名称疑似填表说明")
         elif _REFERENCE_NAME.search(s.name):
-            s.role, s.reason = "reference", tr("名字像名单、字典、代码表")
+            s.role, s.reason = "reference", tr("名称疑似清单、字典或代码表")
             key = _key(s)
             s.key_header = key.header if key else (s.columns[0].header if s.columns else "")
         elif s.hidden:
@@ -388,7 +388,7 @@ def _guess_roles(sheets: list[SheetGuess], option_sheets: set[str]) -> None:
         signature = tuple(normalize(c.header) for c in s.columns)
         if len(signature) >= 2 and signature in seen:
             s.same_as = seen[signature].name
-            s.reason = tr("表头和「{name}」一样", name=seen[signature].name)
+            s.reason = tr("表头与「{name}」相同", name=seen[signature].name)
         else:
             seen.setdefault(signature, s)
 
@@ -412,14 +412,14 @@ def _guess_roles(sheets: list[SheetGuess], option_sheets: set[str]) -> None:
                 if entity_like and a.role == "document":
                     a.role, a.key_header = "entity", ca.header
                     a.reason = tr(
-                        "「{name}」里同一个「{header}」出现好几次，这里一个一行",
+                        "「{name}」中同一「{header}」出现多次，此表每个「{header}」一行",
                         name=b.name,
                         header=ca.header,
                     )
                 if b.role == "document":
                     b.role, b.key_header = "items", cb.header
                     b.reason = tr(
-                        "同一个「{header}」有好几行，连到「{name}」", header=cb.header, name=a.name
+                        "同一「{header}」有多行，关联至「{name}」", header=cb.header, name=a.name
                     )
     # Line items without a document sheet: the linking column of the line items is a document-level
     # field.
