@@ -1,7 +1,9 @@
 # Desktop app: build the macOS and Windows installers.
 #
-# - Run by hand (Actions → desktop → Run workflow): builds and checks both installers and keeps them
-#   as workflow artifacts.
+# - On a pull request that changes the packaging (the paths below): builds and checks both
+#   installers and keeps them as workflow artifacts. GitHub runs a workflow's manual trigger only
+#   once the file is on the default branch, so a new packaging change is checked this way.
+# - Run by hand (Actions → desktop → Run workflow): the same, for any branch.
 # - On a v* tag: the same, and the installers and their .sha256 files are attached to a draft
 #   release of this repository, to be checked by hand before anything is published.
 #
@@ -12,13 +14,21 @@
 # on the shell → Tauri installer → SHA-256 of each installer.
 #
 # macOS uses opencv-python-headless built from source without FFmpeg (packaging/desktop/opencv.lock
-# says why); from that step on, uv must not sync the environment (UV_NO_SYNC), or it would put the
+# says why); every step runs uv with --no-sync, because syncing the environment would put the
 # PyPI wheel back.
 name: desktop
 
 on:
   push:
     tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/desktop.yml"
+      - "desktop/**"
+      - "packaging/desktop/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "web/package-lock.json"
   workflow_dispatch:
 
 permissions:
