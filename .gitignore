@@ -34,3 +34,6 @@ web/dist/
 
 # ===== 备份包：里面是你的业务数据，不进仓库（ADR 0054） =====
 backups/
+
+# ===== 发布包（scripts/build_release.sh 生成，ADR 0064） =====
+release/

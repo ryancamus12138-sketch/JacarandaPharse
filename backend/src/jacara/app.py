@@ -14,6 +14,7 @@ from jacara import __version__
 from jacara.core.config import get_settings
 from jacara.core.permissions import PermissionDenied
 from jacara.core.web import mount_web
+from jacara.modules.app_settings.router import router as settings_router
 from jacara.modules.audit.router import router as audit_router
 from jacara.modules.auth.router import auth_router, users_router
 from jacara.modules.comments.router import comments_router, document_comments_router
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
     api.include_router(ocr_samples_router)
     api.include_router(models_router)
     api.include_router(hub_router)
+    api.include_router(settings_router)
 
     @api.get("/health", tags=["系统"], summary="服务是否在运行")
     def health() -> dict[str, str]:

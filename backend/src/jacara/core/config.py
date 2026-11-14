@@ -8,14 +8,37 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic.fields import FieldInfo
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """谁优先（ADR 0063）：初始化参数 → 环境变量 → .env → 设置页上改的 → 默认值。"""
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            PageSettingsSource(settings_cls),
+            file_secret_settings,
+        )
 
     jacara_mode: Literal["personal", "team"] = "personal"
 
@@ -240,3 +263,49 @@ def chosen_file(key: str) -> Path | None:
     path = Path(value)
     path = path if path.is_absolute() else PROJECT_ROOT / path
     return path if path.is_file() else None
+
+
+PAGE_SETTINGS_FILE = "data/settings.json"
+"""设置页上改的设置（ADR 0063）：本机的，不进仓库。.env 里写了的优先。"""
+
+PAGE_EDITABLE = (
+    "jacara_vision",
+    "jacara_pdf_read",
+    "jacara_ocr_max_side",
+    "jacara_layout",
+    "jacara_learn",
+    "jacara_learn_mode",
+    "jacara_pipeline",
+    "jacara_watch_dir",
+    "jacara_watch_template",
+    "max_upload_mb",
+    "jacara_api_docs",
+)
+"""设置页能改的只有这几项。数据库、对象存储的地址和密钥、模式（个人版 / 团队版）只能写 .env。"""
+
+
+def page_settings_path() -> Path:
+    return PROJECT_ROOT / PAGE_SETTINGS_FILE
+
+
+def page_settings() -> dict[str, Any]:
+    """设置页上改过的（只认 PAGE_EDITABLE 里的；文件坏了当没有）。"""
+    import json
+
+    try:
+        data = json.loads(page_settings_path().read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: v for k, v in data.items() if k in PAGE_EDITABLE}
+
+
+class PageSettingsSource(PydanticBaseSettingsSource):
+    """pydantic-settings 的一个设置来源：data/settings.json 里设置页改过的那几项。"""
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
+        return page_settings().get(field_name), field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        return page_settings()

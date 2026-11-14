@@ -34,9 +34,9 @@ import {
   Upload,
 } from 'antd'
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router'
 import { ApiError } from '../../api/client'
 import {
-  activateModelVersion,
   cancelModelUpload,
   createEval,
   type Dataset,
@@ -370,14 +370,6 @@ function ModelsTab({ canManage, datasetNames }: { canManage: boolean; datasetNam
     void queryClient.invalidateQueries({ queryKey: ['hub-models'] })
     void queryClient.invalidateQueries({ queryKey: ['models'] })
   }
-  const activate = useMutation({
-    mutationFn: ({ name, version }: { name: string; version: number }) => activateModelVersion(name, version),
-    onSuccess: (data) => {
-      refresh()
-      Modal.info({ title: '已选用', content: `${data.restart_hint}。在终端里运行 uv run jacara stop，再 uv run jacara start。` })
-    },
-    onError: (err) => void message.error(errorText(err)),
-  })
   const remove = useMutation({
     mutationFn: ({ name, version }: { name: string; version: number }) => deleteModelVersion(name, version),
     onSuccess: refresh,
@@ -467,18 +459,9 @@ function ModelsTab({ canManage, datasetNames }: { canManage: boolean; datasetNam
           {
             title: '',
             key: 'actions',
-            width: 260,
+            width: 130,
             render: (_: unknown, v: ModelVersion) => (
               <Space size={4} wrap>
-                <Button
-                  size="small"
-                  type={v.in_use ? 'default' : 'primary'}
-                  disabled={v.in_use || data?.env_locked.includes(v.kind)}
-                  loading={activate.isPending && activate.variables?.version === v.version && activate.variables?.name === model.name}
-                  onClick={() => activate.mutate({ name: model.name, version: v.version })}
-                >
-                  用这个版本
-                </Button>
                 <Tooltip title="打包成 zip（权重 + 模型卡），拿到另一台电脑上导入">
                   <Button size="small" icon={<DownloadOutlined />} onClick={() => download.mutate({ name: model.name, version: v.version })} />
                 </Tooltip>
@@ -506,8 +489,8 @@ function ModelsTab({ canManage, datasetNames }: { canManage: boolean; datasetNam
     <Flex vertical gap={12}>
       <Flex justify="space-between" align="center" gap={8} wrap>
         <Typography.Text type="secondary">
-          模型文件在本机的 models/hub/ 里，每个版本一个文件夹、一张模型卡。"在用"的就是换模型页选的那个；
-          换了以后要 jacara stop、jacara start 才生效。
+          模型文件在本机的 models/hub/ 里，每个版本一个文件夹、一张模型卡。要用哪个版本，去{' '}
+          <Link to="/settings/models">设置 → 模型</Link> 里选（模型库里的版本都在下拉里）。
         </Typography.Text>
         {canManage && (
           <Button type="primary" icon={<CloudUploadOutlined />} onClick={() => setImporting({})}>

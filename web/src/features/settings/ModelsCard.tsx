@@ -2,6 +2,7 @@ import { SwapOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, App, Button, Card, Flex, Select, Table, type TableProps, Tag, Typography } from 'antd'
 import { useState } from 'react'
+import { Link } from 'react-router'
 import { ApiError } from '../../api/client'
 import { chooseModels, getModels, type ModelSlot } from '../../api/models'
 import { useAuth } from '../../auth/useAuth'
@@ -106,9 +107,10 @@ export function ModelsCard() {
           />
         )}
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          只能选 models/ 文件夹里已有的文件（离线，不会下载）：大模型、视觉模型放 models/，自己训练的 OCR 模型放
-          models/ocr/（文件名里带 det、rec，字典是 .txt），表格模型放 models/table/。.env 里写了的优先，这里改不了。
-          改完要重启 jacara 才生效。
+          只能选本机已有的文件（离线，不会下载）。最方便的是先在{' '}
+          <Link to="/hub">模型和数据集</Link> 里导入（会检查文件、记版本），导入的版本都会出现在下拉里，名字后面写着"（模型库）"。
+          手动放文件也行：大模型、视觉模型放 models/，OCR 模型放 models/ocr/（文件名里带 det、rec，字典是 .txt），表格模型放
+          models/table/。.env 里写了的优先，这里改不了。改完要 jacara stop、jacara start 才生效。
         </Typography.Text>
         <Table rowKey="key" size="small" pagination={false} columns={columns} dataSource={models.data?.slots ?? []} />
       </Flex>

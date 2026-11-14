@@ -27,9 +27,13 @@ from jacara.plugins.validators import RuleValidator
 
 
 @pytest.fixture(autouse=True)
-def personal_mode(monkeypatch):
-    """测试默认用个人模式，不管你自己的 .env 里写的是什么。要测团队模式的文件再自己切过去。"""
+def personal_mode(monkeypatch, tmp_path):
+    """测试默认用个人模式，不管你自己的 .env 里写的是什么。要测团队模式的文件再自己切过去。
+    设置页改的设置（ADR 0063）也换到临时文件夹，不读你自己的 data/settings.json。"""
+    from jacara.core import config
+
     monkeypatch.setenv("JACARA_MODE", "personal")
+    monkeypatch.setattr(config, "page_settings_path", lambda: tmp_path / "page-settings.json")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

@@ -1,34 +1,45 @@
 import {
   AppstoreOutlined,
-  AuditOutlined,
+  ArrowLeftOutlined,
   BarChartOutlined,
   DashboardOutlined,
   DatabaseOutlined,
   ExportOutlined,
   FileTextOutlined,
-  InfoCircleOutlined,
   LogoutOutlined,
   MenuOutlined,
   ScanOutlined,
-  TeamOutlined,
+  SettingOutlined,
 } from '@ant-design/icons'
 import { Button, Flex, Grid, Layout, Menu, type MenuProps, Tag, Typography } from 'antd'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { useAuth } from '../auth/useAuth'
+import { lastPage, rememberPage, useSettingsSections } from '../features/settings/sections'
 import { UserAvatar } from './UserAvatar'
 
-/** 登录后所有页面共用的外框：左边菜单、顶上用户名和退出。中间的 <Outlet /> 放具体页面。 */
+/**
+ * 登录后所有页面共用的外框：左边菜单、顶上用户名和退出。中间的 <Outlet /> 放具体页面。
+ * 进了设置（/settings/…），左边栏换成设置的几类，最上面一个"返回"回到进设置之前的那一页（ADR 0063）。
+ */
 export function AppLayout() {
-  const { me, can, logout } = useAuth()
+  const { me, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   // 窄屏（小于 992 像素，比如笔记本分屏、平板）：左边菜单收起，点左上角的小按钮再打开
   const screens = Grid.useBreakpoint()
   const narrow = screens.lg === false
   const [collapsed, setCollapsed] = useState(true)
+  const inSettings = location.pathname.startsWith('/settings')
+  const sections = useSettingsSections()
 
-  // 菜单按权限显示：使用者看不到管理员的菜单
+  // 记下进设置之前在哪一页
+  useEffect(() => {
+    if (!location.pathname.startsWith('/settings')) {
+      rememberPage(location.pathname + location.search)
+    }
+  }, [location.pathname, location.search])
+
   const items: MenuProps['items'] = [
     { key: '/dashboard', icon: <DashboardOutlined />, label: '工作台' },
     { key: '/documents', icon: <FileTextOutlined />, label: '文档' },
@@ -37,13 +48,8 @@ export function AppLayout() {
     { key: '/insights', icon: <BarChartOutlined />, label: '统计' },
     { key: '/ocr-samples', icon: <ScanOutlined />, label: 'OCR 样本' },
     { key: '/hub', icon: <DatabaseOutlined />, label: '模型和数据集' },
-    { key: '/system', icon: <InfoCircleOutlined />, label: '系统信息' },
-    ...(can('user:manage')
-      ? [{ key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' }]
-      : []),
-    ...(can('audit:read')
-      ? [{ key: '/admin/audit-logs', icon: <AuditOutlined />, label: '审计日志' }]
-      : []),
+    // 用户管理、审计日志在 设置 → 团队和权限 里（只有团队版有，ADR 0063）
+    { key: '/settings', icon: <SettingOutlined />, label: '设置' },
   ]
   // 当前网址对应哪个菜单（/documents/123 也算"文档"）
   const selected = items
@@ -62,8 +68,13 @@ export function AppLayout() {
       {me?.role === 'admin' ? '管理员' : '使用者'}
     </Tag>
   )
+  function go(path: string) {
+    void navigate(path)
+    if (narrow) setCollapsed(true) // 窄屏：选好就收起来
+  }
+
   function openProfile() {
-    void navigate('/profile')
+    void navigate('/settings/personal')
     if (narrow) setCollapsed(true)
   }
 
@@ -91,43 +102,65 @@ export function AppLayout() {
             JacarandaParse
           </Typography.Title>
         </Flex>
-        {/* 头像和昵称：点进去是个人资料 */}
-        <Flex
-          role="button"
-          tabIndex={0}
-          aria-label="个人资料"
-          align="center"
-          gap={10}
-          onClick={openProfile}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') openProfile()
-          }}
-          style={{
-            margin: '8px 12px 4px',
-            padding: '8px',
-            borderRadius: 8,
-            cursor: 'pointer',
-            background: location.pathname === '/profile' ? '#f4f0fb' : undefined,
-          }}
-        >
-          <UserAvatar size={36} />
-          <Flex vertical style={{ minWidth: 0 }}>
-            <Typography.Text strong ellipsis style={{ maxWidth: 140 }}>
-              {name}
-            </Typography.Text>
-            <span>{roleTag}</span>
+        {inSettings ? (
+          <>
+            <Button
+              type="text"
+              icon={<ArrowLeftOutlined />}
+              onClick={() => go(lastPage())}
+              style={{ margin: '8px 12px 0', justifyContent: 'flex-start', width: 'calc(100% - 24px)' }}
+            >
+              返回
+            </Button>
+            <Typography.Title level={4} style={{ margin: '12px 24px 8px' }}>
+              设置
+            </Typography.Title>
+            <Menu
+              mode="inline"
+              items={sections.map((s) => ({ key: `/settings/${s.key}`, icon: s.icon, label: s.label }))}
+              selectedKeys={[location.pathname]}
+              onClick={({ key }) => go(key)}
+              style={{ borderInlineEnd: 'none' }}
+            />
+          </>
+        ) : (
+          <>
+          {/* 头像和昵称：点进去是个人资料 */}
+          <Flex
+            role="button"
+            tabIndex={0}
+            aria-label="个人资料"
+            align="center"
+            gap={10}
+            onClick={openProfile}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') openProfile()
+            }}
+            style={{
+              margin: '8px 12px 4px',
+              padding: '8px',
+              borderRadius: 8,
+              cursor: 'pointer',
+              background: location.pathname === '/settings/personal' ? '#f4f0fb' : undefined,
+            }}
+          >
+            <UserAvatar size={36} />
+            <Flex vertical style={{ minWidth: 0 }}>
+              <Typography.Text strong ellipsis style={{ maxWidth: 140 }}>
+                {name}
+              </Typography.Text>
+              <span>{roleTag}</span>
+            </Flex>
           </Flex>
-        </Flex>
-        <Menu
-          mode="inline"
-          items={items}
-          selectedKeys={selected}
-          onClick={({ key }) => {
-            void navigate(key)
-            if (narrow) setCollapsed(true) // 窄屏：选好就收起来
-          }}
-          style={{ borderInlineEnd: 'none' }}
-        />
+          <Menu
+            mode="inline"
+            items={items}
+            selectedKeys={selected}
+            onClick={({ key }) => go(key)}
+            style={{ borderInlineEnd: 'none' }}
+          />
+          </>
+        )}
       </Layout.Sider>
       <Layout>
         <Layout.Header
@@ -164,7 +197,7 @@ export function AppLayout() {
                 退出
               </Button>
             ) : (
-              <Tag>个人模式</Tag>
+              <Tag>个人版</Tag>
             )}
           </Flex>
         </Layout.Header>

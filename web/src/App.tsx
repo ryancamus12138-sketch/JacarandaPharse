@@ -4,16 +4,10 @@ import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router'
 import { AuthProvider } from './auth/AuthProvider'
 import { LoginPage } from './auth/LoginPage'
 import { ResetPasswordPage } from './auth/ResetPasswordPage'
-import { RequireAuth, RequirePermission } from './auth/RequireAuth'
+import { RequireAuth } from './auth/RequireAuth'
 import { AppLayout } from './components/AppLayout'
 
 // 每个页面单独打包，打开时才下载：第一次打开网页要下载的东西少很多
-const AuditLogPage = lazy(() =>
-  import('./features/admin/AuditLogPage').then((m) => ({ default: m.AuditLogPage })),
-)
-const UsersPage = lazy(() =>
-  import('./features/admin/UsersPage').then((m) => ({ default: m.UsersPage })),
-)
 const DashboardPage = lazy(() =>
   import('./features/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })),
 )
@@ -38,8 +32,8 @@ const HubPage = lazy(() =>
 const DetEditorPage = lazy(() =>
   import('./features/ocr-samples/DetEditorPage').then((m) => ({ default: m.DetEditorPage })),
 )
-const SystemPage = lazy(() =>
-  import('./features/system/SystemPage').then((m) => ({ default: m.SystemPage })),
+const SettingsPage = lazy(() =>
+  import('./features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })),
 )
 const TemplatesPage = lazy(() =>
   import('./features/templates/TemplatesPage').then((m) => ({ default: m.TemplatesPage })),
@@ -56,9 +50,6 @@ const TemplateEditorPage = lazy(() =>
   })),
 )
 
-const ProfilePage = lazy(() =>
-  import('./features/profile/ProfilePage').then((m) => ({ default: m.ProfilePage })),
-)
 
 /** 页面还在下载时显示转圈。 */
 function Page({ children }: { children: ReactNode }) {
@@ -147,32 +138,14 @@ export default function App() {
                 </Page>
               }
             />
-            <Route path="system" element={<Page>
-                  <SystemPage />
+            <Route path="settings/:section?" element={<Page>
+                  <SettingsPage />
                 </Page>} />
-            <Route path="profile" element={<Page>
-                  <ProfilePage />
-                </Page>} />
-            <Route
-              path="admin/users"
-              element={
-                <RequirePermission permission="user:manage">
-                  <Page>
-                  <UsersPage />
-                </Page>
-                </RequirePermission>
-              }
-            />
-            <Route
-              path="admin/audit-logs"
-              element={
-                <RequirePermission permission="audit:read">
-                  <Page>
-                  <AuditLogPage />
-                </Page>
-                </RequirePermission>
-              }
-            />
+            {/* 以前的网址：都搬进了设置（ADR 0063） */}
+            <Route path="system" element={<Navigate to="/settings/about" replace />} />
+            <Route path="profile" element={<Navigate to="/settings/personal" replace />} />
+            <Route path="admin/users" element={<Navigate to="/settings/team" replace />} />
+            <Route path="admin/audit-logs" element={<Navigate to="/settings/team" replace />} />
             <Route
               path="*"
               element={

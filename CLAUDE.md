@@ -56,6 +56,8 @@ backend/src/jacara/
     fields/         字段值与人工审核：修改、确认、修改历史（/api/v1/values）
     auth/           团队、用户、登录会话、重设码（/api/v1/auth、/api/v1/users）
     audit/          审计日志：只追加（/api/v1/audit-logs）
+    app_settings/   设置页上能改的设置（ADR 0063）：/api/v1/settings。存 data/settings.json，
+                    .env 优先（core/config.py 的 PageSettingsSource，只认 PAGE_EDITABLE 里的几项）
     hub/            模型和数据集库（ADR 0059）、OCR 模型评测（ADR 0060）：/api/v1/hub。
                     registry.py 管 models/hub 里的文件和模型卡（不进数据库），datasets.py 读 PaddleOCR 格式的 zip，
                     evals.py 是后台任务跑的评测
@@ -120,6 +122,9 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 `reviews` 里带着每个字段最新的审核结果；格子写审核之后的值，改过的标蓝、批注写原值和原因。
 多个文档默认每份一个 Excel、打包成 zip（`export.zip`，重名加 (2)）；也可以汇总到一个 Excel（`export.xlsx`）。
 两种导出共用 `_exportable()` 的检查，都记审计日志（detail 里有 format）。
+
+**个人版和团队版（ADR 0063）：** 同一份代码，`JACARA_MODE` 区分，不另开分支或文件夹；前端只看 `/auth/me` 的 `mode`
+决定显示什么。团队版的代码和测试都要保留、照跑。
 
 **账号和权限：** `JACARA_MODE=personal`（默认）不用登录；`team` 模式必须登录，请求头带 `Authorization: Bearer <token>`。
 只有两种角色：管理员（admin）和使用者（member）。使用者默认能看、能下载、能导出，其余权限（`GRANTABLE`）
@@ -224,6 +229,11 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
 ## 常用命令
 
 ```bash
+# 个人版发布和安装（ADR 0064）
+./scripts/install.sh                      # 用户：第一次安装（uv sync --no-dev + jacara setup）
+uv run jacara setup                       # 生成 .env（随机密钥、个人版）、启动 Docker、建表、检查模型；可以重复运行
+./scripts/build_release.sh                # 维护者：打发布包到 release/（推 v* 标签时 GitHub Actions 自动打包发布）
+
 # 环境
 uv sync                                   # 安装依赖
 cp .env.example .env                      # 第一次：复制配置后把 change-me 都改成随机值

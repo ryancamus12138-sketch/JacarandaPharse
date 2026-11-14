@@ -14,7 +14,7 @@ from jacara import __version__
 from jacara.core.config import Settings
 from jacara.core.health import run_checks
 from jacara.core.owner import Owner
-from jacara.core.permissions import require
+from jacara.core.permissions import allowed, require
 from jacara.models import Document, ExtractedValue, Extraction, ValueRevision
 from jacara.modules.exports.repository import ExportRepository
 from jacara.modules.system.schemas import (
@@ -41,6 +41,21 @@ class SystemService:
 
     def info(self) -> SystemInfo:
         require(self.owner, "document:read")
+        found = self._info()
+        if "system:manage" in allowed(self.owner):
+            return found
+        # 不是管理员：只看版本、通不通、数据量；地址、文件名、路径、怎么修不给看（ADR 0063）
+        found.model.server = ""
+        found.model.file = None
+        found.model.vision_file = None
+        found.watch_dir = None
+        found.services = [
+            ServiceCheck(name=s.name, ok=s.ok, detail="正常" if s.ok else "连不上，请找管理员")
+            for s in found.services
+        ]
+        return found
+
+    def _info(self) -> SystemInfo:
         return SystemInfo(
             version=__version__,
             mode=self.settings.jacara_mode,

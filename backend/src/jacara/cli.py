@@ -86,6 +86,13 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("templates", help="列出所有模板（backend/src/jacara/templates/*.toml）")
 
     sub.add_parser("doctor", help="检查数据库、任务队列、对象存储、本地模型是否连得上")
+    p_setup = sub.add_parser(
+        "setup",
+        help="第一次安装：生成 .env、启动数据库等、建表、检查模型（可以重复运行，ADR 0064）",
+    )
+    p_setup.add_argument(
+        "--no-docker", action="store_true", help="不启动 Docker（数据库等已经用别的办法跑起来了）"
+    )
 
     p_api = sub.add_parser("api", help="启动 Web 服务（API 和接口文档）")
     p_api.add_argument("--port", type=int, default=8000, help="端口，默认 8000")
@@ -288,6 +295,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "doctor":
         return _doctor()
+    if args.command == "setup":
+        from jacara.core.config import PROJECT_ROOT
+        from jacara.ops.setup import run_setup
+
+        return run_setup(PROJECT_ROOT, docker=not args.no_docker)
     if args.command == "templates":
         return _templates()
     if args.command == "api":
