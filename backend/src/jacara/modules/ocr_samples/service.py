@@ -15,10 +15,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from PIL import Image
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from jacara.core.i18n import stored, tr
+from jacara.core.i18n import language, stored, tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import allowed, require
 from jacara.core.storage import ObjectStorage, StorageError
@@ -64,12 +64,13 @@ from jacara.modules.ocr_samples.schemas import (
     SampleOut,
     SampleSettings,
     SplitCount,
+    TemplateOption,
     UnitOut,
     VerifyOut,
 )
-from jacara.pipeline.current import labels_of, template_of
+from jacara.pipeline.current import label_for, labels_of, template_of, template_title
 from jacara.pipeline.pages import ocr_page_json
-from jacara.plugins.extractors.base import DISCOVER, split_cell_name
+from jacara.plugins.extractors.base import split_cell_name
 from jacara.templates import Template
 
 log = logging.getLogger(__name__)
@@ -123,9 +124,55 @@ def _sensitive(template: Template | None, field: str) -> bool:
 
 
 def _template_title(extraction: Extraction, template: Template | None) -> str:
-    if extraction.template == DISCOVER:
-        return tr("抽取所有键值对")
-    return template.title if template else extraction.template
+    return template_title(extraction, template)
+
+
+def _template_key(sample: OcrSample) -> str:
+    """Identity of the sample's template; samples whose field value no longer existed when keys
+    were introduced fall back to the stored name."""
+    return sample.template_key or sample.template
+
+
+def display_names(
+    session: Session, samples: Sequence[OcrSample]
+) -> dict[uuid.UUID, tuple[str, str]]:
+    """Sample id → (template name, field name) in the reader's language, read from the template its
+    extraction used (one sample may be listed in Chinese and exported in English: the identity is
+    template_key and field, the names follow the reader). The names stored at collection time
+    are used when the field value or template no longer exists."""
+    value_ids = {s.value_id for s in samples if s.value_id is not None}
+    extraction_of: dict[uuid.UUID, uuid.UUID] = (
+        {
+            value_id: extraction_id
+            for value_id, extraction_id in session.execute(
+                select(ExtractedValue.id, ExtractedValue.extraction_id).where(
+                    ExtractedValue.id.in_(value_ids)
+                )
+            ).all()
+        }
+        if value_ids
+        else {}
+    )
+    names: dict[uuid.UUID, tuple[str, dict[str, str]]] = {}
+    if extraction_of:
+        for extraction in session.scalars(
+            select(Extraction).where(Extraction.id.in_(set(extraction_of.values())))
+        ):
+            template = template_of(extraction)
+            names[extraction.id] = (
+                _template_title(extraction, template),
+                labels_of(extraction, language()),
+            )
+    out: dict[uuid.UUID, tuple[str, str]] = {}
+    for sample in samples:
+        extraction_id = extraction_of.get(sample.value_id) if sample.value_id else None
+        found = names.get(extraction_id) if extraction_id else None
+        if found is None:
+            out[sample.id] = (sample.template, sample.field_label)
+        else:
+            title, labels = found
+            out[sample.id] = (title, label_for(labels, sample.field) or sample.field_label)
+    return out
 
 
 def collect(
@@ -186,6 +233,7 @@ def collect(
         ocr_text=ocr_text,
         category=category_of(kind, ocr_text, truth),
         error_tags=error_tags(ocr_text, truth),
+        template_key=extraction.template[:64],
         template=_template_title(extraction, template)[:200],
         field=field[:200],
         field_label=(labels.get(field) or value.label or value.name)[:200],
@@ -288,7 +336,12 @@ class OcrSampleService:
         if source_format:
             query = query.where(OcrSample.source_format == source_format)
         if template:
-            query = query.where(OcrSample.template == template)
+            query = query.where(
+                or_(
+                    OcrSample.template_key == template,
+                    and_(OcrSample.template_key == "", OcrSample.template == template),
+                )
+            )
         return query
 
     def list(
@@ -330,16 +383,31 @@ class OcrSampleService:
             statuses={k: int(v) for k, v in statuses.items()},
         )
 
-    def templates(self) -> list[str]:
-        """Template names that have samples, for filtering."""
+    def templates(self) -> list[TemplateOption]:
+        """Templates that have samples, for filtering: one entry per template identity, named in
+        the reader's language."""
         require(self.owner, "value:read")
-        rows = self.session.scalars(
-            select(OcrSample.template)
-            .where(OcrSample.team_id == self.owner.team_id)
+        team = self.owner.team_id
+        pairs = self.session.execute(
+            select(OcrSample.template_key, OcrSample.template)
+            .where(OcrSample.team_id == team)
             .distinct()
-            .order_by(OcrSample.template)
+        ).all()
+        # One sample per template identity is enough to read its name.
+        samples: list[OcrSample] = []
+        for key in {k or t for k, t in pairs}:
+            sample = self.session.scalars(self._query(None, None, None, key).limit(1)).first()
+            if sample is not None:
+                samples.append(sample)
+        names = display_names(self.session, samples)
+        options: dict[str, str] = {}
+        for sample in samples:
+            key = _template_key(sample)
+            if key:
+                options.setdefault(key, names[sample.id][0] or key)
+        return sorted(
+            (TemplateOption(key=k, title=v) for k, v in options.items()), key=lambda o: o.title
         )
-        return [r for r in rows if r]
 
     def _out(self, samples: Sequence[OcrSample]) -> list[SampleOut]:
         from jacara.modules.fields.models import ValueRevision
@@ -366,6 +434,7 @@ class OcrSampleService:
             if ids
             else {}
         )
+        shown = display_names(self.session, samples)
         return [
             SampleOut(
                 id=s.id,
@@ -378,9 +447,10 @@ class OcrSampleService:
                 ocr_text=s.ocr_text,
                 category=s.category,  # type: ignore[arg-type]
                 error_tags=list(s.error_tags or []),
-                template=s.template,
+                template=shown[s.id][0],
+                template_key=_template_key(s),
                 field=s.field,
-                field_label=s.field_label,
+                field_label=shown[s.id][1],
                 source_format=s.source_format,  # type: ignore[arg-type]
                 ocr_engine=s.ocr_engine,
                 width=s.width,
@@ -575,6 +645,7 @@ class OcrSampleService:
             ocr_text=text,
             category="correct",
             error_tags=[],
+            template_key=extraction.template[:64],
             template=_template_title(extraction, template)[:200],
             field=field[:200],
             field_label=(labels.get(field) or value.label or value.name)[:200],
@@ -664,6 +735,7 @@ class OcrSampleService:
             ocr_text=ocr_text,
             category=category_of(kind, ocr_text, guess),
             error_tags=error_tags(ocr_text, guess),
+            template_key=extraction.template[:64],
             template=_template_title(extraction, template)[:200],
             field=field[:200],
             field_label=(labels.get(field) or value.label or value.name)[:200],
@@ -785,7 +857,7 @@ class OcrSampleService:
                 OcrSample.status != "withdrawn",
             )
         )
-        labels = labels_of(extraction) if extraction is not None else {}
+        labels = labels_of(extraction, language()) if extraction is not None else {}
         return UnitOut(
             document_id=document.id,
             filename=document.filename,
@@ -1019,14 +1091,21 @@ class OcrSampleService:
         for sample, group, split in kept:
             if split == "val":
                 val_groups[sample.category].add(group)
+        names = display_names(self.session, [s for s, _, _ in kept])
+        titles = {_template_key(s): names[s.id][0] for s, _, _ in kept}
         distributions: list[Distribution] = []
         for by in ("template", "category", "source_format"):
             table: dict[str, Counter[str]] = defaultdict(Counter)
             for sample, _, split in kept:
-                key = str(getattr(sample, by))
+                key = _template_key(sample) if by == "template" else str(getattr(sample, by))
                 table[key]["test" if split == "test_locked" else split] += 1
             distributions += [
-                Distribution(by=by, key=key, **{k: v for k, v in c.items()})  # type: ignore[arg-type]
+                Distribution(
+                    by=by,  # type: ignore[arg-type]
+                    key=key,
+                    label=titles.get(key, "") if by == "template" else "",
+                    **{k: v for k, v in c.items()},
+                )
                 for key, c in sorted(table.items())
             ]
         return {
@@ -1078,6 +1157,9 @@ class OcrSampleService:
         manifest: list[str] = []
         items: list[dict[str, Any]] = []
         exported: list[tuple[OcrSample, uuid.UUID, str]] = []
+        # Names follow the reader's language; template_id and field identify the same template and
+        # field in every export, whatever language it was made in.
+        names = display_names(self.session, [s for s, _, _ in kept])
         out = io.BytesIO()
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
             for sample, group, split in kept:
@@ -1102,8 +1184,10 @@ class OcrSampleService:
                             "ocr_text": sample.ocr_text,
                             "category": sample.category,
                             "error_tags": list(sample.error_tags or []),
-                            "template": sample.template,
+                            "template_id": _template_key(sample),
+                            "template": names[sample.id][0],
                             "field": sample.field,
+                            "field_label": names[sample.id][1],
                             "document_group": groups.anonymous(seed, group),
                             "split": part,
                             "split_version": version,
@@ -1402,7 +1486,11 @@ def corpus(samples: Sequence[OcrSample]) -> tuple[list[str], Counter[str]]:
 
 
 def _dist(d: Distribution, kind: str) -> str:
-    key = {"pdf": "PDF", "image": tr("照片")}.get(d.key) or tr(CATEGORIES.get(d.key, d.key))
+    key = (
+        d.label
+        or {"pdf": "PDF", "image": tr("照片")}.get(d.key)
+        or tr(CATEGORIES.get(d.key, d.key))
+    )
     if kind == "test":
         return f"{key} {d.test}"
     return tr("{key} 训练 {train} / 验证 {val}", key=key, train=d.train, val=d.val)

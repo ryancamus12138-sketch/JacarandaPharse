@@ -4,7 +4,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: JacarandaParse 1.0.0\n"
-"POT-Creation-Date: 2026-11-14 06:33+0000\n"
+"POT-Creation-Date: 2026-11-14 07:06+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -156,8 +156,8 @@ msgid "已就绪（{model_server}）"
 msgstr ""
 
 #: backend/src/jacara/core/i18n.py:129
-#: backend/src/jacara/modules/ocr_samples/service.py:1327
-#: backend/src/jacara/pipeline/current.py:210
+#: backend/src/jacara/modules/ocr_samples/service.py:1411
+#: backend/src/jacara/pipeline/current.py:224
 #: backend/src/jacara/pipeline/entities.py:78
 #: backend/src/jacara/plugins/exporters/excel.py:453
 msgid "；"
@@ -441,7 +441,7 @@ msgid "{function}({args})"
 msgstr ""
 
 #: backend/src/jacara/formulas.py:389
-#: backend/src/jacara/modules/ocr_samples/service.py:1310
+#: backend/src/jacara/modules/ocr_samples/service.py:1394
 msgid "，"
 msgstr ""
 
@@ -732,8 +732,8 @@ msgid "只有写这条备注的人或管理员能删"
 msgstr ""
 
 #: backend/src/jacara/modules/comments/service.py:114
-#: backend/src/jacara/modules/documents/service.py:1025
-#: backend/src/jacara/modules/templates/service.py:1214
+#: backend/src/jacara/modules/documents/service.py:1026
+#: backend/src/jacara/modules/templates/service.py:1217
 msgid "找不到这个文档"
 msgstr ""
 
@@ -765,91 +765,91 @@ msgstr ""
 msgid "其他"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:202
+#: backend/src/jacara/modules/documents/service.py:203
 #, python-brace-format
 msgid "不支持的文件类型：{content_type}，支持图片和 PDF"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:206
+#: backend/src/jacara/modules/documents/service.py:207
 #, python-brace-format
 msgid "文件超过 {limit} MB"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:208
+#: backend/src/jacara/modules/documents/service.py:209
 #: backend/src/jacara/modules/hub/service.py:222
 #: backend/src/jacara/modules/templates/service.py:703
 msgid "文件是空的"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:217
-#: backend/src/jacara/modules/documents/service.py:862
-#: backend/src/jacara/modules/documents/service.py:891
+#: backend/src/jacara/modules/documents/service.py:218
+#: backend/src/jacara/modules/documents/service.py:863
+#: backend/src/jacara/modules/documents/service.py:892
 #: backend/src/jacara/modules/hub/service.py:405
 #: backend/src/jacara/modules/hub/service.py:421
 #: backend/src/jacara/modules/hub/service.py:461
 #: backend/src/jacara/modules/ocr_samples/det.py:441
-#: backend/src/jacara/modules/ocr_samples/service.py:410
-#: backend/src/jacara/modules/ocr_samples/service.py:1070
+#: backend/src/jacara/modules/ocr_samples/service.py:480
+#: backend/src/jacara/modules/ocr_samples/service.py:1149
 #: backend/src/jacara/modules/templates/service.py:721
-#: backend/src/jacara/modules/templates/service.py:799
+#: backend/src/jacara/modules/templates/service.py:802
 msgid "对象存储暂时不可用，请稍后再试"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:256
-#: backend/src/jacara/modules/documents/service.py:278
+#: backend/src/jacara/modules/documents/service.py:257
+#: backend/src/jacara/modules/documents/service.py:279
 msgid "这个文档没有保存原始文件（命令行导入的），无法处理"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:259
+#: backend/src/jacara/modules/documents/service.py:260
 #, python-brace-format
 msgid "文档状态是 {status}，不能重新处理"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:265
-#: backend/src/jacara/modules/documents/service.py:334
+#: backend/src/jacara/modules/documents/service.py:266
+#: backend/src/jacara/modules/documents/service.py:335
 #: backend/src/jacara/modules/hub/service.py:517
 msgid "任务队列暂时不可用，请稍后再试"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:281
+#: backend/src/jacara/modules/documents/service.py:282
 #, python-brace-format
 msgid "文档状态是 {status}，现在不能重新处理"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:285
-#: backend/src/jacara/modules/documents/service.py:356
+#: backend/src/jacara/modules/documents/service.py:286
+#: backend/src/jacara/modules/documents/service.py:357
 msgid "原因选了\"其他\"，请写一句说明"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:315
+#: backend/src/jacara/modules/documents/service.py:316
 #, python-brace-format
 msgid "{label}：{note}"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:344
+#: backend/src/jacara/modules/documents/service.py:345
 #, python-brace-format
 msgid "文档状态是 {status}，不在审核"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:368
+#: backend/src/jacara/modules/documents/service.py:369
 msgid "正在排队"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:368
+#: backend/src/jacara/modules/documents/service.py:369
 msgid "正在处理"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:374
+#: backend/src/jacara/modules/documents/service.py:375
 #, python-brace-format
 msgid "{filename}：{state}"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:387
+#: backend/src/jacara/modules/documents/service.py:388
 #, python-brace-format
 msgid "{name}：{message}"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:399
+#: backend/src/jacara/modules/documents/service.py:400
 #: backend/src/jacara/modules/fields/service.py:77
 #: backend/src/jacara/modules/fields/service.py:183
 #: backend/src/jacara/modules/fields/service.py:398
@@ -857,148 +857,142 @@ msgstr ""
 msgid "文档状态是 {status}，处理完成后才能审核"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:407
+#: backend/src/jacara/modules/documents/service.py:408
 #, python-brace-format
 msgid "沿用第 {run} 轮的审核"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:457
+#: backend/src/jacara/modules/documents/service.py:458
 #, python-brace-format
 msgid "{filename}：正在处理，等处理完再删"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:567
+#: backend/src/jacara/modules/documents/service.py:568
 #, python-brace-format
 msgid "这个文档没有第 {viewing} 轮的结果"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:600
+#: backend/src/jacara/modules/documents/service.py:601
 msgid "找不到这次抽取"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:603
+#: backend/src/jacara/modules/documents/service.py:604
 msgid "这次抽取没有记下发给模型的文字（更新之前处理的）"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:617
-#: backend/src/jacara/modules/documents/service.py:635
+#: backend/src/jacara/modules/documents/service.py:618
+#: backend/src/jacara/modules/documents/service.py:636
 #, python-brace-format
 msgid "第 {page} 页没有抽取结果"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:646
+#: backend/src/jacara/modules/documents/service.py:647
 #, python-brace-format
 msgid "文档状态是 {status}，处理完成（done）后才能完成审核"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:650
+#: backend/src/jacara/modules/documents/service.py:651
 #, python-brace-format
 msgid "还有 {pending} 个字段等待确认"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:663
+#: backend/src/jacara/modules/documents/service.py:664
 msgid "只有处理完、还没完成审核的文档可以跳过"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:701
+#: backend/src/jacara/modules/documents/service.py:702
 #, python-brace-format, python-format
 msgid "{stem}-{day:%Y%m%d}-{n}份.xlsx"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:707
+#: backend/src/jacara/modules/documents/service.py:708
 #, python-brace-format, python-format
 msgid "jacara-{day:%Y%m%d}-{n}份.xlsx"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:728
+#: backend/src/jacara/modules/documents/service.py:729
 #, python-brace-format, python-format
 msgid "jacara-{day:%Y%m%d}-{n}份.zip"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:746
-#: backend/src/jacara/modules/documents/service.py:786
+#: backend/src/jacara/modules/documents/service.py:747
+#: backend/src/jacara/modules/documents/service.py:787
 #, python-brace-format, python-format
 msgid "jacara-{day:%Y%m%d}-{n}份"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:806
+#: backend/src/jacara/modules/documents/service.py:807
 #, python-brace-format, python-format
 msgid "{day:%Y-%m-%d} 导出"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:816
+#: backend/src/jacara/modules/documents/service.py:817
 msgid "请至少选择一个文档"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:818
+#: backend/src/jacara/modules/documents/service.py:819
 #, python-brace-format
 msgid "一次最多导出 {limit} 个文档"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:824
+#: backend/src/jacara/modules/documents/service.py:825
 #, python-brace-format
 msgid "找不到文档：{documents}"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:831
+#: backend/src/jacara/modules/documents/service.py:832
 #, python-brace-format
 msgid "这些文档还没处理完，不能导出：{documents}"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:858
-#: backend/src/jacara/modules/documents/service.py:878
+#: backend/src/jacara/modules/documents/service.py:859
+#: backend/src/jacara/modules/documents/service.py:879
 msgid "这个文档没有保存原始文件（命令行导入的）"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:871
-#: backend/src/jacara/modules/documents/service.py:965
+#: backend/src/jacara/modules/documents/service.py:872
+#: backend/src/jacara/modules/documents/service.py:966
 msgid "这个文件打不开，可能已损坏"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:883
+#: backend/src/jacara/modules/documents/service.py:884
 #, python-brace-format
 msgid "这个文档只有 {page_count} 页，没有第 {page} 页"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:976
+#: backend/src/jacara/modules/documents/service.py:977
 msgid "OCR 引擎没有准备好"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:994
+#: backend/src/jacara/modules/documents/service.py:995
 msgid "模型现在不能看图：把视觉模型 mmproj-F16.gguf 放进 models/，重新 jacara start"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:1030
+#: backend/src/jacara/modules/documents/service.py:1031
 msgid "后面"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:1031
 #: backend/src/jacara/modules/documents/service.py:1032
-#: backend/src/jacara/modules/documents/service.py:1036
+#: backend/src/jacara/modules/documents/service.py:1033
+#: backend/src/jacara/modules/documents/service.py:1037
 msgid "右边"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:1033
+#: backend/src/jacara/modules/documents/service.py:1034
 msgid "这一行右边"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:1034
 #: backend/src/jacara/modules/documents/service.py:1035
+#: backend/src/jacara/modules/documents/service.py:1036
 msgid "下面"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:1224
-#: backend/src/jacara/modules/insights/service.py:107
-#: backend/src/jacara/modules/ocr_samples/service.py:127
-msgid "抽取所有键值对"
-msgstr ""
-
-#: backend/src/jacara/modules/documents/service.py:1280
+#: backend/src/jacara/modules/documents/service.py:1278
 #, python-brace-format
 msgid "第 {page} 页：{note}"
 msgstr ""
 
-#: backend/src/jacara/modules/documents/service.py:1321
+#: backend/src/jacara/modules/documents/service.py:1319
 msgid "PDF 文件打不开，可能已损坏"
 msgstr ""
 
@@ -1615,52 +1609,52 @@ msgstr ""
 msgid "整个不一样"
 msgstr ""
 
-#: backend/src/jacara/modules/insights/service.py:55
+#: backend/src/jacara/modules/insights/service.py:61
 msgid "（敏感字段，不显示）"
 msgstr ""
 
-#: backend/src/jacara/modules/insights/service.py:72
+#: backend/src/jacara/modules/insights/service.py:78
 #, python-brace-format
 msgid "人改判：{override_note}"
 msgstr ""
 
-#: backend/src/jacara/modules/insights/service.py:74
+#: backend/src/jacara/modules/insights/service.py:80
 msgid "人改判"
 msgstr ""
 
-#: backend/src/jacara/modules/insights/service.py:325
+#: backend/src/jacara/modules/insights/service.py:329
 msgid "找不到这条归因"
 msgstr ""
 
-#: backend/src/jacara/modules/insights/service.py:328
+#: backend/src/jacara/modules/insights/service.py:332
 #, python-brace-format
 msgid "阶段只能是：{stages}"
 msgstr ""
 
-#: backend/src/jacara/modules/insights/service.py:367
+#: backend/src/jacara/modules/insights/service.py:371
 msgid "# 成对测评清单：jacara eval pairs --manifest 这个文件"
 msgstr ""
 
-#: backend/src/jacara/modules/insights/service.py:368
+#: backend/src/jacara/modules/insights/service.py:372
 msgid "# 标准答案是审核完成后的当前值；照片和 PDF 成对的，自己加上 photo = \"...\""
 msgstr ""
 
-#: backend/src/jacara/modules/insights/service.py:444
+#: backend/src/jacara/modules/insights/service.py:448
 #, python-brace-format
 msgid "共 {count} 张单据，含敏感字段。"
 msgstr ""
 
-#: backend/src/jacara/modules/insights/service.py:446
+#: backend/src/jacara/modules/insights/service.py:450
 #, python-brace-format
 msgid "共 {count} 张单据，不含敏感字段。"
 msgstr ""
 
-#: backend/src/jacara/modules/insights/service.py:461
+#: backend/src/jacara/modules/insights/service.py:465
 #, python-brace-format
 msgid "审核数据-{stamp}.zip"
 msgstr ""
 
-#: backend/src/jacara/modules/insights/service.py:464
+#: backend/src/jacara/modules/insights/service.py:468
 #, python-brace-format
 msgid ""
 "审核过的单据导出（JacarandaParse）\n"
@@ -1793,12 +1787,12 @@ msgid "标了不用"
 msgstr ""
 
 #: backend/src/jacara/modules/ocr_samples/det.py:401
-#: backend/src/jacara/modules/ocr_samples/service.py:982
+#: backend/src/jacara/modules/ocr_samples/service.py:1054
 msgid "所在的组被隔离了（合并或拆开时发现已经导出过）"
 msgstr ""
 
 #: backend/src/jacara/modules/ocr_samples/det.py:403
-#: backend/src/jacara/modules/ocr_samples/service.py:984
+#: backend/src/jacara/modules/ocr_samples/service.py:1056
 msgid "锁定测试集（单独导出）"
 msgstr ""
 
@@ -1826,19 +1820,19 @@ msgstr ""
 
 #: backend/src/jacara/modules/ocr_samples/det.py:556
 #: backend/src/jacara/modules/ocr_samples/groups.py:44
-#: backend/src/jacara/modules/ocr_samples/service.py:1240
+#: backend/src/jacara/modules/ocr_samples/service.py:1324
 msgid "训练集"
 msgstr ""
 
 #: backend/src/jacara/modules/ocr_samples/det.py:556
 #: backend/src/jacara/modules/ocr_samples/groups.py:45
-#: backend/src/jacara/modules/ocr_samples/service.py:1240
+#: backend/src/jacara/modules/ocr_samples/service.py:1324
 msgid "验证集"
 msgstr ""
 
 #: backend/src/jacara/modules/ocr_samples/det.py:556
 #: backend/src/jacara/modules/ocr_samples/groups.py:46
-#: backend/src/jacara/modules/ocr_samples/service.py:1240
+#: backend/src/jacara/modules/ocr_samples/service.py:1324
 msgid "锁定测试集"
 msgstr ""
 
@@ -1860,7 +1854,7 @@ msgid "这是你自己的业务数据（整页单据图），不要放进代码�
 msgstr ""
 
 #: backend/src/jacara/modules/ocr_samples/det.py:575
-#: backend/src/jacara/modules/ocr_samples/service.py:1256
+#: backend/src/jacara/modules/ocr_samples/service.py:1340
 msgid "## 划分"
 msgstr ""
 
@@ -1874,7 +1868,7 @@ msgid "按业务单据分组：同一张单据的页全在同一边，和识别�
 msgstr ""
 
 #: backend/src/jacara/modules/ocr_samples/det.py:591
-#: backend/src/jacara/modules/ocr_samples/service.py:1281
+#: backend/src/jacara/modules/ocr_samples/service.py:1365
 msgid "## 文件"
 msgstr ""
 
@@ -1912,7 +1906,7 @@ msgid "4. 换上去之前，先在数据集库里用验证集或锁定测试集�
 msgstr ""
 
 #: backend/src/jacara/modules/ocr_samples/det.py:613
-#: backend/src/jacara/modules/ocr_samples/service.py:1333
+#: backend/src/jacara/modules/ocr_samples/service.py:1417
 msgid "## 没有导出的"
 msgstr ""
 
@@ -1948,7 +1942,7 @@ msgid "确认是同一张单据时，两组已经导出过、分在不同边（{
 msgstr ""
 
 #: backend/src/jacara/modules/ocr_samples/groups.py:321
-#: backend/src/jacara/modules/ocr_samples/service.py:839
+#: backend/src/jacara/modules/ocr_samples/service.py:911
 msgid "找不到这张单据"
 msgstr ""
 
@@ -1985,343 +1979,343 @@ msgstr ""
 msgid "管理员手动改的"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:214
+#: backend/src/jacara/modules/ocr_samples/service.py:262
 msgid "这个文档没有保存原始文件"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:242
+#: backend/src/jacara/modules/ocr_samples/service.py:290
 msgid "对象存储暂时不可用"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:399
+#: backend/src/jacara/modules/ocr_samples/service.py:469
 msgid "找不到这条样本"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:406
+#: backend/src/jacara/modules/ocr_samples/service.py:476
 msgid "这条样本没有裁图（裁图失败了，可以重试）"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:419
+#: backend/src/jacara/modules/ocr_samples/service.py:489
 msgid "图中原文不能是空的，也不能有 Tab、换行"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:434
+#: backend/src/jacara/modules/ocr_samples/service.py:504
 msgid "裁图失败的样本先重试"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:476
+#: backend/src/jacara/modules/ocr_samples/service.py:546
 msgid "已经有样本了"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:522
+#: backend/src/jacara/modules/ocr_samples/service.py:592
 msgid "已经收过了"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:540
+#: backend/src/jacara/modules/ocr_samples/service.py:610
 msgid "没有值"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:542
+#: backend/src/jacara/modules/ocr_samples/service.py:612
 msgid "人改过（这是错例，用补收）"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:544
-#: backend/src/jacara/modules/ocr_samples/service.py:622
+#: backend/src/jacara/modules/ocr_samples/service.py:614
+#: backend/src/jacara/modules/ocr_samples/service.py:693
 #: backend/src/jacara/pipeline/process.py:100
 msgid "没有原始文件"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:547
+#: backend/src/jacara/modules/ocr_samples/service.py:617
 msgid "没有出处"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:551
-#: backend/src/jacara/modules/ocr_samples/service.py:626
+#: backend/src/jacara/modules/ocr_samples/service.py:621
+#: backend/src/jacara/modules/ocr_samples/service.py:697
 msgid "这一页的字是 PDF 自带的，不是 OCR 认的"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:555
-#: backend/src/jacara/modules/ocr_samples/service.py:630
+#: backend/src/jacara/modules/ocr_samples/service.py:625
+#: backend/src/jacara/modules/ocr_samples/service.py:701
 msgid "敏感字段不收"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:559
+#: backend/src/jacara/modules/ocr_samples/service.py:629
 msgid "出处不是正好一整块原文"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:562
+#: backend/src/jacara/modules/ocr_samples/service.py:632
 msgid "这一块里除了值还有别的字"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:618
+#: backend/src/jacara/modules/ocr_samples/service.py:689
 msgid "手打的值（没点原文、没框），不知道在图上哪里"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:649
+#: backend/src/jacara/modules/ocr_samples/service.py:720
 msgid "没有能当原文的文字"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:690
+#: backend/src/jacara/modules/ocr_samples/service.py:762
 msgid "这条样本没有失败，不用重试"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:693
+#: backend/src/jacara/modules/ocr_samples/service.py:765
 msgid "找不到原来的文档"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:697
+#: backend/src/jacara/modules/ocr_samples/service.py:769
 #, python-brace-format
 msgid "还是没裁出来：{error}"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:835
+#: backend/src/jacara/modules/ocr_samples/service.py:907
 msgid "两边是同一张单据"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:844
+#: backend/src/jacara/modules/ocr_samples/service.py:916
 #, python-brace-format
 msgid "{filename} 没有从第 {page} 页开始的单据"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:868
+#: backend/src/jacara/modules/ocr_samples/service.py:940
 msgid "已记下：不是同一张，不再提名"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:883
+#: backend/src/jacara/modules/ocr_samples/service.py:955
 #, python-brace-format
 msgid "已合并。两组以前导出过、分在不同边，整组隔离，{affected_exports} 次导出受影响"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:887
+#: backend/src/jacara/modules/ocr_samples/service.py:959
 #, python-brace-format
 msgid "已合并成一组（{split}）"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:919
+#: backend/src/jacara/modules/ocr_samples/service.py:991
 #, python-brace-format
 msgid "已拆开。原来的组导出过，两边都隔离，{affected_exports} 次导出受影响"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:923
+#: backend/src/jacara/modules/ocr_samples/service.py:995
 msgid "已拆开"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:974
+#: backend/src/jacara/modules/ocr_samples/service.py:1046
 msgid "撤回了"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:976
+#: backend/src/jacara/modules/ocr_samples/service.py:1048
 msgid "补收的，还没复核"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:978
+#: backend/src/jacara/modules/ocr_samples/service.py:1050
 msgid "裁图失败，没有图"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:980
+#: backend/src/jacara/modules/ocr_samples/service.py:1052
 msgid "图中原文是空的或有 Tab、换行"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:997
+#: backend/src/jacara/modules/ocr_samples/service.py:1069
 msgid "同一张图有两种写法"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1001
+#: backend/src/jacara/modules/ocr_samples/service.py:1073
 msgid "同一张图重复，只留一份"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1073
+#: backend/src/jacara/modules/ocr_samples/service.py:1152
 msgid "没有能导出的样本"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1089
+#: backend/src/jacara/modules/ocr_samples/service.py:1171
 msgid "图片找不到或打不开"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1128
+#: backend/src/jacara/modules/ocr_samples/service.py:1212
 msgid "样本的图片都找不到了"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1183
+#: backend/src/jacara/modules/ocr_samples/service.py:1267
 #, python-brace-format
 msgid "OCR样本测试集-{stamp}.zip"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1185
+#: backend/src/jacara/modules/ocr_samples/service.py:1269
 #, python-brace-format
 msgid "OCR样本-{stamp}.zip"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1219
+#: backend/src/jacara/modules/ocr_samples/service.py:1303
 msgid "这次没有验证集（组太少，或都分进了训练集）"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1220
+#: backend/src/jacara/modules/ocr_samples/service.py:1304
 #, python-brace-format
 msgid "验证集 {groups} 组、{rows} 行"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1223
+#: backend/src/jacara/modules/ocr_samples/service.py:1307
 #, python-brace-format
 msgid "{where}：只能检查流程，不能说明模型好坏"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1226
+#: backend/src/jacara/modules/ocr_samples/service.py:1310
 #, python-brace-format
 msgid "{where}：可以看整体趋势"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1227
+#: backend/src/jacara/modules/ocr_samples/service.py:1311
 #, python-brace-format
 msgid "{where}：偏少，趋势仅供参考"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1242
+#: backend/src/jacara/modules/ocr_samples/service.py:1326
 msgid "# JacarandaParse OCR 样本（锁定测试集）"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1244
+#: backend/src/jacara/modules/ocr_samples/service.py:1328
 msgid "# JacarandaParse OCR 样本"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1247
+#: backend/src/jacara/modules/ocr_samples/service.py:1331
 #, python-brace-format, python-format
 msgid "格式版本 {format_version}，划分版本 {version}，导出时间 {time:%Y-%m-%d %H:%M}。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1252
+#: backend/src/jacara/modules/ocr_samples/service.py:1336
 #, python-brace-format
 msgid "一共 {n} 条。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1254
+#: backend/src/jacara/modules/ocr_samples/service.py:1338
 msgid "这是你自己的业务数据，不要放进代码仓库、不要上传到公开的地方。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1260
+#: backend/src/jacara/modules/ocr_samples/service.py:1344
 #, python-brace-format
 msgid "- {name}：{groups} 组（独立的业务单据）、{rows} 行（`rec_gt_{split}.txt`）"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1276
+#: backend/src/jacara/modules/ocr_samples/service.py:1360
 msgid "按单据分组：同一张单据（重新处理的几轮、PDF 和照片、重复上传的同一个文件）的样本全在同一边，多次导出始终在同一边（`document_group` 是稳定的组号，不含业务信息）。80/20 是按组的目标比例，组少时行数比例会偏。`rec_gt.txt` 是训练集和验证集合起来。锁定测试集不在这里，单独导出。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1283
+#: backend/src/jacara/modules/ocr_samples/service.py:1367
 msgid "- `crop_img/`：每条一张单行小图，文件名只是编号。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1284
+#: backend/src/jacara/modules/ocr_samples/service.py:1368
 msgid "- `rec_gt_*.txt`：每行一条，图片路径、一个 Tab、图上原样的文字（UTF-8，无 BOM）。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1286
+#: backend/src/jacara/modules/ocr_samples/service.py:1370
 msgid "- `manifest.jsonl`：每行一条的详细信息：OCR 当时读成什么（`ocr_text`）、分类、错误标签、模板、字段、组号、分在哪边（`split`）、划分版本、标签修订号（`sample_revision`）、来源、首轮 OCR 的版本。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1289
+#: backend/src/jacara/modules/ocr_samples/service.py:1373
 msgid "## 分类"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1293
+#: backend/src/jacara/modules/ocr_samples/service.py:1377
 #, python-brace-format
 msgid "- {name}（`{category}`）：{n} 条"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1302
+#: backend/src/jacara/modules/ocr_samples/service.py:1386
 msgid "认错字、漏认是错例；认对的行是审核时核对过、OCR 本来就读对的。微调时错例和认对的行一起用，只用错例模型会把原来认得好的字\"忘掉\"。原因未确定的：图和首轮识别时的不完全一样，看过再决定用不用。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1309
+#: backend/src/jacara/modules/ocr_samples/service.py:1393
 #, python-brace-format
 msgid "错误标签：{tags}"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1318
+#: backend/src/jacara/modules/ocr_samples/service.py:1402
 msgid "分类"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1318
+#: backend/src/jacara/modules/ocr_samples/service.py:1402
 #: backend/src/jacara/plugins/exporters/csv_files.py:19
 #: backend/src/jacara/plugins/exporters/excel.py:328
 #: backend/src/jacara/plugins/exporters/excel.py:335
 msgid "来源"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1318
+#: backend/src/jacara/modules/ocr_samples/service.py:1402
 #: backend/src/jacara/templates/__init__.py:993
 msgid "模板"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1319
+#: backend/src/jacara/modules/ocr_samples/service.py:1403
 msgid "## 分布（只报告，不为凑比例挪组）"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1325
+#: backend/src/jacara/modules/ocr_samples/service.py:1409
 #, python-brace-format
 msgid "- {title}：{items}"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1335
+#: backend/src/jacara/modules/ocr_samples/service.py:1419
 #, python-brace-format
 msgid "- {reason}：{n} 条"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1339
+#: backend/src/jacara/modules/ocr_samples/service.py:1423
 msgid "## 在 PaddleOCR 里训练识别模型"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1341
+#: backend/src/jacara/modules/ocr_samples/service.py:1425
 msgid "1. 解压到一个文件夹，例如 `/data/jacara_ocr`。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1343
+#: backend/src/jacara/modules/ocr_samples/service.py:1427
 msgid "2. 识别训练配置里：`Train.dataset.data_dir` 和 `Eval.dataset.data_dir` 写这个文件夹，`Train.dataset.label_file_list` 写 `rec_gt_train.txt`，`Eval.dataset.label_file_list` 写 `rec_gt_val.txt`（`SimpleDataSet` 直接能读）。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1346
+#: backend/src/jacara/modules/ocr_samples/service.py:1430
 msgid "3. 用和系统现在用的识别模型同一系列的配置、字典和预训练权重做微调；字典里没有的字训练时会被跳过，最好先检查一遍。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1349
+#: backend/src/jacara/modules/ocr_samples/service.py:1433
 msgid "4. 训练好后导出推理模型、转成 ONNX，放进项目的 `models/ocr/`（文件名带 rec），在系统信息页\"换模型\"里选上，jacara stop、jacara start 后生效。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1353
+#: backend/src/jacara/modules/ocr_samples/service.py:1437
 msgid "反复看验证集的结果来调训练，验证集会慢慢\"被调过\"；正式验收用锁定测试集，或者新进的单据。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1356
+#: backend/src/jacara/modules/ocr_samples/service.py:1440
 msgid "## 数量和配比（PaddleOCR 微调文档的建议）"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1359
+#: backend/src/jacara/modules/ocr_samples/service.py:1443
 #, python-brace-format
 msgid "- 不改字典时，识别数据建议至少 {minimum} 行；这次 {n} 行，还不够，先攒或按下面合成补。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1365
+#: backend/src/jacara/modules/ocr_samples/service.py:1449
 #, python-brace-format
 msgid "- 不改字典时，识别数据建议至少 {minimum} 行；这次 {n} 行。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1370
+#: backend/src/jacara/modules/ocr_samples/service.py:1454
 msgid "- 这些场景数据和通用的真实数据（例如 LSVT、RCTW、MTWI）每轮大约 1:1 混着训练，用 `Train.dataset.ratio_list` 调（例如场景 1.0、通用 0.1），免得只认得这一种单据。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1373
+#: backend/src/jacara/modules/ocr_samples/service.py:1457
 msgid "- 某些字老认错时，用 TextRenderer 这类工具合成补充：语料用 `corpus/real_text.txt`（图上原样的文字），重点合成 `corpus/hard_chars.txt` 里的字；原有数据和合成数据的比例 10:1 到 5:1，学习率调小。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1375
+#: backend/src/jacara/modules/ocr_samples/service.py:1459
 msgid "- 训练出来的模型先用回放（jacara eval replay）和锁定测试集比过，再换上去。"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1405
+#: backend/src/jacara/modules/ocr_samples/service.py:1491
 msgid "照片"
 msgstr ""
 
-#: backend/src/jacara/modules/ocr_samples/service.py:1408
+#: backend/src/jacara/modules/ocr_samples/service.py:1496
 #, python-brace-format
 msgid "{key} 训练 {train} / 验证 {val}"
 msgstr ""
@@ -2385,7 +2379,7 @@ msgid "在单据{where}"
 msgstr ""
 
 #: backend/src/jacara/modules/templates/service.py:378
-#: backend/src/jacara/modules/templates/service.py:1142
+#: backend/src/jacara/modules/templates/service.py:1145
 msgid "这个操作要数据库会话"
 msgstr ""
 
@@ -2395,7 +2389,7 @@ msgid "没有叫 {row} 的表"
 msgstr ""
 
 #: backend/src/jacara/modules/templates/service.py:451
-#: backend/src/jacara/modules/templates/service.py:1206
+#: backend/src/jacara/modules/templates/service.py:1209
 msgid "找不到这个模板"
 msgstr ""
 
@@ -2454,62 +2448,62 @@ msgstr ""
 msgid "Excel 超过 {limit} MB"
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:765
+#: backend/src/jacara/modules/templates/service.py:768
 #, python-brace-format
 msgid "从 Excel 建：{filename}"
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:791
+#: backend/src/jacara/modules/templates/service.py:794
 msgid "找不到上传的 Excel，请重新上传"
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:804
+#: backend/src/jacara/modules/templates/service.py:807
 msgid "对象存储没有准备好"
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:843
+#: backend/src/jacara/modules/templates/service.py:846
 msgid "请选择我的模板，或者\"抽取所有键值对\""
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:847
+#: backend/src/jacara/modules/templates/service.py:850
 #, python-brace-format
 msgid "模板「{title}」已经归档了，不能再用来上传"
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:855
+#: backend/src/jacara/modules/templates/service.py:858
 msgid "这份文档用的模板已经删除了，请选一个模板再重新处理"
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:894
+#: backend/src/jacara/modules/templates/service.py:897
 msgid "这份文档没有存 OCR 结果（更新前处理的），请先重新处理一次再试跑"
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:897
+#: backend/src/jacara/modules/templates/service.py:900
 msgid "模型服务没有准备好"
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:968
+#: backend/src/jacara/modules/templates/service.py:971
 msgid "这份文档不是\"抽取所有键值对\"处理的，不能当样例"
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:975
+#: backend/src/jacara/modules/templates/service.py:978
 #, python-brace-format
 msgid "样例里没有 {source}"
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:987
+#: backend/src/jacara/modules/templates/service.py:990
 msgid "用样例建模板"
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:1009
+#: backend/src/jacara/modules/templates/service.py:1012
 msgid "在样例上框选建模板"
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:1038
+#: backend/src/jacara/modules/templates/service.py:1041
 msgid "用样例建模板：选中的键值对搬过来，不重新抽取"
 msgstr ""
 
-#: backend/src/jacara/modules/templates/service.py:1216
+#: backend/src/jacara/modules/templates/service.py:1219
 msgid "这份文档还没处理完"
 msgstr ""
 
@@ -2565,37 +2559,41 @@ msgstr ""
 msgid "按公式算（{readable}），但{reason}，算不出来"
 msgstr ""
 
-#: backend/src/jacara/pipeline/current.py:212
+#: backend/src/jacara/pipeline/current.py:74
+msgid "抽取所有键值对"
+msgstr ""
+
+#: backend/src/jacara/pipeline/current.py:226
 #, python-brace-format
 msgid "{places} 等 {n} 处"
 msgstr ""
 
-#: backend/src/jacara/pipeline/current.py:216
+#: backend/src/jacara/pipeline/current.py:230
 msgid "可能重复报销"
 msgstr ""
 
-#: backend/src/jacara/pipeline/current.py:218
+#: backend/src/jacara/pipeline/current.py:232
 #, python-brace-format
 msgid "{label}「{value}」和{places}一样，请确认是不是同一张单据传了两次"
 msgstr ""
 
-#: backend/src/jacara/pipeline/current.py:242
+#: backend/src/jacara/pipeline/current.py:256
 #, python-brace-format
 msgid "这个文件的{pages}"
 msgstr ""
 
-#: backend/src/jacara/pipeline/current.py:245
+#: backend/src/jacara/pipeline/current.py:259
 #, python-brace-format
 msgid "《{filename}》{pages}（{day} 上传）"
 msgstr ""
 
-#: backend/src/jacara/pipeline/current.py:256
+#: backend/src/jacara/pipeline/current.py:270
 #: backend/src/jacara/plugins/exporters/base.py:131
 #, python-brace-format
 msgid "第 {page} 页"
 msgstr ""
 
-#: backend/src/jacara/pipeline/current.py:258
+#: backend/src/jacara/pipeline/current.py:272
 #: backend/src/jacara/plugins/exporters/base.py:133
 #, python-brace-format
 msgid "第 {first}–{last} 页"

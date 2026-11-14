@@ -66,11 +66,16 @@ class OcrSample(Base, OwnedMixin, TimestampMixin):
     """rec_error (misread), correct (correctly read line), missed (not detected), unclear (cause
     undetermined)."""
     error_tags: Mapped[list[Any]] = mapped_column(JsonColumn, default=list)
+    template_key: Mapped[str] = mapped_column(String(64), default="", server_default="", index=True)
+    """Template identity: extractions.template (the id of my template, the file name of a built-in
+    one). Filters, statistics and exports group by it; names are only for display."""
     template: Mapped[str] = mapped_column(String(200), default="")
-    """Template name (used in exports), for example "Receipt"."""
+    """Template name at collection time, for example "Receipt". Shown only when the template can no
+    longer be loaded; otherwise the name is read from the template in the reader's language."""
     field: Mapped[str] = mapped_column(String(200), default="")
     """Field ID (table cells without the row number: items.amount)."""
     field_label: Mapped[str] = mapped_column(String(200), default="")
+    """Field name at collection time; shown only when the template can no longer be loaded."""
     source_format: Mapped[str] = mapped_column(String(8))
     """pdf or image."""
     ocr_engine: Mapped[str] = mapped_column(String(128), default="")

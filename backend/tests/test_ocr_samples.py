@@ -272,7 +272,53 @@ def test_filters(client, document_id):
     assert samples(client, category="correct")["total"] == 1
     assert samples(client, category=["correct", "rec_error"])["total"] == 2
     assert samples(client, source_format="pdf")["total"] == 0
-    assert client.get("/api/v1/ocr-samples/templates").json() == [RECEIPT]
+    assert client.get("/api/v1/ocr-samples/templates").json() == [
+        {"key": "receipt", "title": RECEIPT}
+    ]
+    assert samples(client, template="receipt")["total"] == 2
+    assert samples(client, template="other")["total"] == 0
+
+
+def test_a_sample_is_one_template_and_field_in_every_language(client, document_id, monkeypatch):
+    from dataclasses import replace
+
+    from jacara.modules.ocr_samples import service as samples_service
+    from jacara.pipeline import current
+
+    base = load_template("receipt")
+    bilingual = replace(
+        base,
+        titles=(("en", "Receipt"),),
+        fields=tuple(
+            replace(f, names=(("en", "Total"),)) if f.name == "total" else f for f in base.fields
+        ),
+    )
+    monkeypatch.setattr(samples_service, "template_of", lambda extraction: bilingual)
+    monkeypatch.setattr(current, "template_of", lambda extraction: bilingual)
+    turn_on(client)
+    pick(client, values(client, document_id)["total"], 9, "9.00")
+    english = {"Accept-Language": "en"}
+    zh = samples(client)["items"][0]
+    en = client.get("/api/v1/ocr-samples", headers=english).json()["items"][0]
+    label = next(f.label for f in base.fields if f.name == "total")
+    assert (zh["template"], zh["field_label"]) == (RECEIPT, label)
+    assert (en["template"], en["field_label"]) == ("Receipt", "Total")
+    # Shown in two languages, still one template and one field.
+    assert zh["template_key"] == en["template_key"] == "receipt"
+    assert zh["field"] == en["field"] == "total"
+    assert client.get("/api/v1/ocr-samples/templates", headers=english).json() == [
+        {"key": "receipt", "title": "Receipt"}
+    ]
+    manifests = []
+    for headers in ({}, english):
+        archive = zipfile.ZipFile(
+            io.BytesIO(client.get("/api/v1/ocr-samples/export", headers=headers).content)
+        )
+        manifests.append(json.loads(archive.read("manifest.jsonl").decode().splitlines()[0]))
+    chinese, translated = manifests
+    assert (chinese["template_id"], chinese["field"]) == (translated["template_id"], "total")
+    assert (chinese["template"], translated["template"]) == (RECEIPT, "Receipt")
+    assert (chinese["field_label"], translated["field_label"]) == (label, "Total")
 
 
 # ---- Export ----
@@ -330,8 +376,10 @@ def test_export_preview_and_zip(client, factory, document_id):
         "ocr_text": "100",
         "category": "rec_error",
         "error_tags": ["missing"],
+        "template_id": "receipt",
         "template": RECEIPT,
         "field": "change",
+        "field_label": "change",  # Not a field of the template: its ID is the name.
         "split": part,
         "split_version": 1,
         "sample_revision": 1,

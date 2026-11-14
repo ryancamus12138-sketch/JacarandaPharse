@@ -24,7 +24,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from jacara.core.i18n import N_, join_items, tr
+from jacara.core.i18n import N_, join_items, language, tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.storage import ObjectStorage
@@ -45,8 +45,14 @@ from jacara.modules.insights.schemas import (
     TemplateStat,
 )
 from jacara.modules.ocr_samples.models import OcrSample
-from jacara.pipeline.current import current_values, label_for, labels_of, template_of
-from jacara.plugins.extractors.base import DISCOVER, split_cell_name
+from jacara.pipeline.current import (
+    current_values,
+    label_for,
+    labels_of,
+    template_of,
+    template_title,
+)
+from jacara.plugins.extractors.base import split_cell_name
 from jacara.templates import STARTERS, Template
 
 RECENT = 30
@@ -103,9 +109,7 @@ def _generic(name: str) -> str:
 
 
 def _title(extraction: Extraction, template: Template | None) -> str:
-    if extraction.template == DISCOVER:
-        return tr("抽取所有键值对")
-    return template.title if template else extraction.template
+    return template_title(extraction, template)
 
 
 def _sensitive_names(template: Template | None) -> set[str]:
@@ -148,7 +152,7 @@ class InsightsService:
         for document in documents:
             for extraction in document.extractions:
                 template = template_of(extraction)
-                labels = labels_of(extraction)
+                labels = labels_of(extraction, language())
                 sensitive = _sensitive_names(template)
                 title = _title(extraction, template)
                 for value in extraction.values:

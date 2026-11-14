@@ -30,8 +30,13 @@ export interface OcrSample {
   ocr_text: string | null
   category: SampleCategory
   error_tags: string[]
+  /** Template name in the reader's language. */
   template: string
+  /** Template identity (filter value): the same template whatever language it is shown in. */
+  template_key?: string
+  /** Field ID: the same field whatever language it is shown in. */
   field: string
+  /** Field name in the reader's language. */
   field_label: string
   source_format: SourceFormat
   ocr_engine: string
@@ -76,6 +81,16 @@ export interface SplitCount {
   rows: number
 }
 
+/** Lines per template, category or origin. label: display name of the key (template names in the reader's language). */
+export interface Distribution {
+  by: 'template' | 'category' | 'source_format'
+  key: string
+  label?: string
+  train: number
+  val: number
+  test: number
+}
+
 export interface ExportPreview {
   kind: ExportKind
   included: number
@@ -88,7 +103,7 @@ export interface ExportPreview {
   evidence: { level: 'process' | 'thin' | 'trend' | 'none'; message: string } | null
   /** Number of groups per category in the validation set. */
   val_category_groups: Partial<Record<SampleCategory, number>>
-  distributions: { by: 'template' | 'category' | 'source_format'; key: string; train: number; val: number; test: number }[]
+  distributions: Distribution[]
   /** Recommended minimum number of lines for fine-tuning a PaddleOCR recognition model. */
   paddle_minimum?: number
 }
@@ -186,8 +201,14 @@ export function listSamples(filters: SampleFilters, limit: number, offset: numbe
   return api<SampleList>(`/ocr-samples?${query(filters, { limit: String(limit), offset: String(offset) })}`)
 }
 
-export function sampleTemplates(): Promise<string[]> {
-  return api<string[]>('/ocr-samples/templates')
+/** A template that has samples: key is the filter value, title its name in the reader's language. */
+export interface SampleTemplate {
+  key: string
+  title: string
+}
+
+export function sampleTemplates(): Promise<SampleTemplate[]> {
+  return api<SampleTemplate[]>('/ocr-samples/templates')
 }
 
 export function getSampleImage(id: string): Promise<Blob> {

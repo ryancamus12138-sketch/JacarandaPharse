@@ -1528,5 +1528,6 @@
   "名称和说明可以写几种语言：审核页、导出、预览时切换。没写的语言显示主语言的。名称也会告诉模型单据上可能这么写": "Names and descriptions can be written in several languages and switched on the review page, in exports and in previews. Languages without a text show the primary language one. Names also tell the model how the document may label a field",
   "编辑语言": "Editing language",
   "名称和说明显示为{{languageName}}；没写这种语言的显示主语言（{{primaryName}}）的。": "Names and descriptions are shown in {{languageName}}; those without this language are shown in the primary language ({{primaryName}}).",
-  "没开": "Off"
+  "没开": "Off",
+  "字段 ID：{{field}}": "Field ID: {{field}}"
 }

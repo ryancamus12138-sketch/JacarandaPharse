@@ -76,6 +76,7 @@ from jacara.pipeline.current import (
     source_value,
     suggestions,
     template_of,
+    template_title,
     wants_source,
 )
 from jacara.pipeline.entities import entity_conflicts
@@ -87,7 +88,7 @@ from jacara.plugins.exporters import create_exporter
 from jacara.plugins.exporters.csv_files import workbook_to_csv
 from jacara.plugins.exporters.excel import cell_value
 from jacara.plugins.extractors import ExtractionError
-from jacara.plugins.extractors.base import DISCOVER, split_cell_name
+from jacara.plugins.extractors.base import split_cell_name
 from jacara.plugins.extractors.llm import look_at
 from jacara.plugins.model_backends import ModelBackend, ModelBackendError
 from jacara.plugins.ocr.base import OcrEngine
@@ -1220,10 +1221,7 @@ def range_out(value: str | None, day_first: bool | None) -> RangeOut | None:
 
 
 def _template_title(extraction: Extraction) -> str:
-    if extraction.template == DISCOVER:
-        return tr("抽取所有键值对")
-    template = template_of(extraction)
-    return template.title if template else extraction.template
+    return template_title(extraction)
 
 
 def _with_states(

@@ -29,11 +29,13 @@ import { Link, useSearchParams } from 'react-router'
 import { ApiError } from '../../api/client'
 import {
   CATEGORIES,
+  type Distribution,
   type ExportKind,
   type OcrSample,
   type SampleCategory,
   type SampleFilters,
   type SampleStatus,
+  type SampleTemplate,
   type SourceFormat,
   TAGS,
   downloadSamples,
@@ -137,7 +139,7 @@ function CollectSwitch() {
  * Export: choose the scope, preview (groups and lines in training and validation, sufficiency, excluded
  * reasons) and download the ZIP.
  */
-function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: () => void; templates: string[] }) {
+function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: () => void; templates: SampleTemplate[] }) {
   const { t } = useTranslation()
   const { message } = App.useApp()
   const { can } = useAuth()
@@ -278,7 +280,7 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
             placeholder={t('全部模板')}
             value={template}
             onChange={setTemplate}
-            options={templates.map((templateName) => ({ value: templateName, label: templateName }))}
+            options={templates.map((o) => ({ value: o.key, label: o.title }))}
           />
         </Flex>
         {categories.length === 0 ? (
@@ -366,9 +368,10 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
                             {
                               title: '',
                               dataIndex: 'key',
-                              render: (k: string) =>
-                                ({ pdf: 'PDF', image: t('照片') } as Record<string, string>)[k] ??
-                                CATEGORIES[k as SampleCategory]?.name ??
+                              render: (k: string, d: Distribution) =>
+                                d.label ||
+                                ({ pdf: 'PDF', image: t('照片') } as Record<string, string>)[k] ||
+                                CATEGORIES[k as SampleCategory]?.name ||
                                 k,
                             },
                             ...parts.map((p) => ({
@@ -586,7 +589,8 @@ export function OcrSamplesPage() {
       key: 'field',
       render: (_, s) => (
         <Flex vertical>
-          <span>
+          {/* Names follow the reader's language; the field ID is the same in every language. */}
+          <span title={t('字段 ID：{{field}}', { field: s.field })}>
             {s.field_label}
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {' '}
@@ -734,7 +738,7 @@ export function OcrSamplesPage() {
                     placeholder={t('全部模板')}
                     value={template}
                     onChange={(v) => reset(() => setTemplate(v))}
-                    options={(templates.data ?? []).map((templateName) => ({ value: templateName, label: templateName }))}
+                    options={(templates.data ?? []).map((o) => ({ value: o.key, label: o.title }))}
                   />
                 </Flex>
               </Flex>

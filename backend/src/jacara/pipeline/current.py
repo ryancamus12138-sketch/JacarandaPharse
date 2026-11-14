@@ -12,6 +12,7 @@ from contextlib import suppress
 from dataclasses import replace
 from typing import Any, Literal, cast
 
+from jacara.core.i18n import language as reader_language
 from jacara.core.i18n import tr
 from jacara.core.textvalue import signed_number
 from jacara.models import ExtractedValue, Extraction, TemplateVersion
@@ -64,9 +65,22 @@ def template_of(extraction: Extraction) -> Template | None:
         return None
 
 
+def template_title(extraction: Extraction, template: Template | None = None) -> str:
+    """Display name of the template used for this page, in the reader's language when the template
+    has a name in it (otherwise its primary language). Lists across templates use it; the template
+    itself is identified by extraction.template (its id or file name), never by this name.
+    template: the result of template_of(extraction) when the caller already has it."""
+    if extraction.template == DISCOVER:
+        return tr("抽取所有键值对")
+    if template is None:
+        template = template_of(extraction)
+    return template.title_in(reader_language()) if template else extraction.template
+
+
 def labels_of(extraction: Extraction, language: str | None = None) -> dict[str, str]:
     """Field ID → display name (for the review page and exports). Table cells are looked up as
-    "table.column".
+    "table.column". Lists across templates pass reader_language() for names in the reader's
+    language.
 
         Uses the default language; with language set, the template's names in that language,
     falling back to the default. Key-value discovery fields use the label on the document. Fields

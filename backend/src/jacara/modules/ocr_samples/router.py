@@ -40,6 +40,7 @@ from jacara.modules.ocr_samples.schemas import (
     SourceFormat,
     SplitIn,
     Status,
+    TemplateOption,
     UnitOut,
     VerifyIn,
     VerifyOut,
@@ -67,7 +68,9 @@ def get_service(
 Service = Annotated[OcrSampleService, Depends(get_service)]
 Categories = Annotated[list[Category] | None, Query(description="只看这几种分类")]
 Format = Annotated[SourceFormat | None, Query(description="pdf 或 image")]
-TemplateName = Annotated[str | None, Query(max_length=200, description="只看这个模板")]
+TemplateName = Annotated[
+    str | None, Query(max_length=200, description="只看这个模板（/ocr-samples/templates 给的 key）")
+]
 Kind = Annotated[ExportKind, Query(description="train_val：训练和验证；test：锁定测试集")]
 
 
@@ -112,7 +115,7 @@ def list_samples(
 
 
 @router.get("/templates", summary="有样本的模板")
-def sample_templates(service: Service) -> list[str]:
+def sample_templates(service: Service) -> list[TemplateOption]:
     return service.templates()
 
 

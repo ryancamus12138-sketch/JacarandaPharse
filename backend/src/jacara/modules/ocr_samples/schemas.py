@@ -41,8 +41,13 @@ class SampleOut(BaseModel):
     category: Category
     error_tags: list[str]
     template: str
+    """Template name in the reader's language."""
+    template_key: str = ""
+    """Template identity (filter value): the same template whatever language it is shown in."""
     field: str
+    """Field ID: the same field whatever language it is shown in."""
     field_label: str
+    """Field name in the reader's language."""
     source_format: SourceFormat
     ocr_engine: str
     width: int | None
@@ -114,12 +119,22 @@ class Evidence(BaseModel):
     message: str
 
 
+class TemplateOption(BaseModel):
+    """A template that has samples: key is the filter value, title its name in the reader's
+    language."""
+
+    key: str
+    title: str
+
+
 class Distribution(BaseModel):
     """Lines in training and validation by template, category and origin (distribution only; groups
     are never moved to balance proportions)."""
 
     by: Literal["template", "category", "source_format"]
     key: str
+    label: str = ""
+    """Display name of the key (template names in the reader's language)."""
     train: int = 0
     val: int = 0
     test: int = 0
