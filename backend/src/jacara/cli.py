@@ -216,6 +216,57 @@ def main(argv: list[str] | None = None) -> int:
         "--out", type=Path, default=Path("data/eval/replay"), help="结果放在哪里（只在本机）"
     )
 
+    p_ocr_eval = eval_sub.add_parser(
+        "ocr",
+        help="OCR 模型评测：在数据集上比较两个识别（或检测）模型（ADR 0060）",
+    )
+    source = p_ocr_eval.add_mutually_exclusive_group(required=True)
+    source.add_argument(
+        "--dataset", help="数据集库里的数据集：名字，或 名字@版本（不写版本用最新的）"
+    )
+    source.add_argument(
+        "--dataset-file",
+        type=Path,
+        help="本机的数据集 zip（PaddleOCR / PaddleX 格式），不进数据集库",
+    )
+    p_ocr_eval.add_argument(
+        "--kind",
+        choices=["ocr_rec", "ocr_det"],
+        default="ocr_rec",
+        help="--dataset-file 是识别还是检测",
+    )
+    p_ocr_eval.add_argument(
+        "--split",
+        choices=["val", "test", "train", "all"],
+        default="val",
+        help="评哪一边，默认验证集",
+    )
+    model_help = "current（现在用的）、builtin（RapidOCR 自带的），或模型库里的 名字@v版本号"
+    p_ocr_eval.add_argument("--a", default="current", help="对照的一边：" + model_help)
+    p_ocr_eval.add_argument("--b", required=True, help="要试的一边：" + model_help)
+    p_ocr_eval.add_argument(
+        "--out", type=Path, default=Path("results/eval"), help="结果放在哪里（只在本机）"
+    )
+
+    p_models = sub.add_parser("models", help="模型库（ADR 0059）：离线导入权重、列出版本")
+    models_sub = p_models.add_subparsers(dest="models_command", required=True)
+    models_sub.add_parser("list", help="列出模型库里的模型和版本")
+    p_import = models_sub.add_parser(
+        "import", help="把本机的权重文件（例如从 U 盘拷来的）导入模型库，成为新版本"
+    )
+    p_import.add_argument("file", type=Path, help="权重文件：.gguf 或 .onnx")
+    p_import.add_argument("--name", required=True, help="模型名（字母、数字、._-）")
+    p_import.add_argument(
+        "--kind",
+        required=True,
+        choices=["model", "mmproj", "ocr_det", "ocr_rec", "table"],
+        help="model 大模型、mmproj 视觉模型、ocr_det 文字检测、ocr_rec 文字识别、table 表格结构",
+    )
+    p_import.add_argument("--dict", type=Path, help="识别模型的字典（.txt）；模型自带字符表时不用")
+    p_import.add_argument("--base-model", help="从哪个模型微调来的")
+    p_import.add_argument("--license", help="许可，例如 apache-2.0")
+    p_import.add_argument("--description", default="", help="说明：怎么训练的、用了什么数据")
+
     p_user = sub.add_parser("user", help="管理用户（团队模式）")
     user_sub = p_user.add_subparsers(dest="user_command", required=True)
     p_add = user_sub.add_parser("add", help="新建用户，密码会提示输入")
@@ -255,6 +306,8 @@ def main(argv: list[str] | None = None) -> int:
         return _backfill_ocr()
     if args.command == "user":
         return _user(args)
+    if args.command == "models":
+        return _models(args)
     if args.command == "eval":
         return _eval(args)
     if args.command == "ocr":
@@ -729,6 +782,123 @@ def _eval_replay(args: argparse.Namespace) -> int:
     return 0
 
 
+def _model_ref(text: str) -> dict[str, object]:
+    """current、builtin，或 名字@v版本号（版本号前的 v 可以不写）。"""
+    import re
+
+    if text in ("current", "builtin"):
+        return {"source": text}
+    match = re.fullmatch(r"(.+)@v?(\d+)", text)
+    if match is None:
+        raise ValueError(f"看不懂 {text}：要写 current、builtin，或 名字@v版本号")
+    return {"source": "hub", "name": match[1], "version": int(match[2])}
+
+
+def _eval_ocr(args: argparse.Namespace) -> int:
+    from datetime import datetime
+
+    from jacara.core.config import get_settings
+    from jacara.eval.ocr import EvalArm, default_engine, run, write_result
+    from jacara.modules.hub import datasets as dataset_files
+    from jacara.modules.hub.registry import HubError
+    from jacara.modules.hub.schemas import ModelRef
+    from jacara.modules.hub.service import resolve_arm
+
+    try:
+        refs = [ModelRef.model_validate(_model_ref(x)) for x in (args.a, args.b)]
+    except ValueError as err:
+        print(err)
+        return 1
+    try:
+        if args.dataset_file:
+            data = args.dataset_file.read_bytes()
+            kind, label = args.kind, args.dataset_file.name
+        else:
+            data, kind, label = _dataset_bytes(args.dataset)
+        parsed = dataset_files.parse(data, kind)
+        task = "rec" if kind == "ocr_rec" else "det"
+        # "现在用的"、模型库版本按和网页同一套代码解析
+        raw = [resolve_arm(get_settings(), n, r, task) for n, r in zip("AB", refs, strict=True)]
+    except (HubError, OSError) as err:
+        print(getattr(err, "message", err))
+        return 1
+    arms = tuple(
+        EvalArm(a["name"], a["label"], a["det"], a["rec"], a["dict"], a["sha256"]) for a in raw
+    )
+    print(f"OCR 模型评测：{label} 的 {args.split}，A {arms[0].label} 对 B {arms[1].label}")
+    try:
+        result = run(data, parsed, args.split, (arms[0], arms[1]), default_engine, print)
+    except ValueError as err:
+        print(err)
+        return 1
+    out = args.out / f"ocr-{datetime.now():%Y%m%d-%H%M%S}"
+    md = write_result(result, out, label)
+    print(md.read_text(encoding="utf-8"))
+    print(f"结果在 {out}（lines.jsonl 里有单据上的文字，只放在本机）")
+    return 0
+
+
+def _dataset_bytes(spec: str) -> tuple[bytes, str, str]:
+    """数据集库里的数据集（命令行看得到所有团队的，和回放一样）：名字，或 名字@版本。"""
+    from sqlalchemy import select
+
+    from jacara.core.db import get_session_factory
+    from jacara.core.storage import get_storage
+    from jacara.modules.hub.models import Dataset
+    from jacara.modules.hub.registry import HubError
+
+    name, _, version = spec.rpartition("@") if "@" in spec else (spec, "", "")
+    with get_session_factory()() as session:
+        query = select(Dataset).where(Dataset.name == name)
+        if version:
+            query = query.where(Dataset.version == int(version.lstrip("v")))
+        found = session.scalars(query.order_by(Dataset.version.desc())).all()
+        if not found:
+            raise HubError("not_found", f"数据集库里没有 {spec}")
+        if len({d.team_id for d in found}) > 1:
+            raise HubError(
+                "invalid", f"好几个团队都有叫 {name} 的数据集，用 --dataset-file 指定文件"
+            )
+        dataset = found[0]
+        return (
+            get_storage().get(dataset.storage_key),
+            dataset.kind,
+            f"{dataset.name} v{dataset.version}",
+        )
+
+
+def _models(args: argparse.Namespace) -> int:
+    from jacara.modules.hub import registry
+    from jacara.modules.hub.registry import HubError
+    from jacara.modules.hub.service import import_files
+
+    if args.models_command == "list":
+        found = registry.versions()
+        if not found:
+            print("模型库是空的（models/hub/）。")
+        for v in found:
+            files = "、".join(f"{f.name}（{f.size / 1e6:.1f} MB）" for f in v.files)
+            print(f"{v.name} v{v.version}  {registry.KINDS[v.kind]}  {files}")
+        return 0
+    meta = {
+        "base_model": args.base_model,
+        "license": args.license,
+        "imported_by": "命令行",
+    }
+    try:
+        version = import_files(args.name, args.kind, args.file, args.dict, meta, args.description)
+    except (HubError, OSError) as err:
+        print(f"导入失败：{getattr(err, 'message', err)}")
+        return 1
+    kind = registry.KINDS[version.kind]
+    print(f"已导入 {version.name} v{version.version}（{kind}）：{version.path}")
+    for f in version.files:
+        print(f"  {f.name}  {f.size} 字节  sha256 {f.sha256}")
+    print('在网页"模型和数据集"里点"用这个版本"，或者"换模型"里选它；')
+    print("jacara stop、jacara start 后生效。")
+    return 0
+
+
 class _NoOcr:
     """回放用 OCR 快照，不认字；真叫到了说明没有快照又没加 --reread。"""
 
@@ -748,6 +918,8 @@ def _eval(args: argparse.Namespace) -> int:
         return _eval_pairs(args)
     if args.eval_command == "replay":
         return _eval_replay(args)
+    if args.eval_command == "ocr":
+        return _eval_ocr(args)
     if args.eval_command == "download":
         try:
             count = download_sroie(args.data)

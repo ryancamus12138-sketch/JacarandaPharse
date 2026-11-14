@@ -70,6 +70,7 @@ def _open_png(data: bytes) -> None:
 def verify(factory: sessionmaker[Session], storage: ObjectStorage) -> list[Check]:
     """逐样打开恢复出来的东西。"""
     from jacara.models import (
+        Dataset,
         Document,
         Export,
         ExtractedValue,
@@ -88,6 +89,7 @@ def verify(factory: sessionmaker[Session], storage: ObjectStorage) -> list[Check
     snapshots = Check("OCR 快照")
     exports = Check("导出记录的文件")
     avatars = Check("头像")
+    datasets = Check("数据集（ADR 0059）")
     with factory() as session:
         documents = session.scalars(
             select(Document).options(
@@ -130,4 +132,14 @@ def verify(factory: sessionmaker[Session], storage: ObjectStorage) -> list[Check
         for profile in session.scalars(select(Profile).where(Profile.avatar_at.is_not(None))).all():
             key = f"avatars/{profile.user_id}.png"
             _try(avatars, key, lambda k=key: _open_png(storage.get(k)))
-    return [originals, reviews, templates, samples, snapshots, exports, avatars]
+        for dataset in session.scalars(select(Dataset)).all():
+            label, key = f"{dataset.name} 第 {dataset.version} 版", dataset.storage_key
+            _try(datasets, label, lambda k=key, d=dataset: _same_hash(storage.get(k), d.sha256))
+    return [originals, reviews, templates, samples, snapshots, exports, avatars, datasets]
+
+
+def _same_hash(data: bytes, expected: str) -> None:
+    import hashlib
+
+    if hashlib.sha256(data).hexdigest() != expected:
+        raise ValueError("SHA-256 和记录的不一样")

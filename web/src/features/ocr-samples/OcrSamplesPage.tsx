@@ -1,4 +1,4 @@
-import { CheckOutlined, DownloadOutlined, HistoryOutlined, ReloadOutlined, RollbackOutlined, UndoOutlined } from '@ant-design/icons'
+import { CheckOutlined, DatabaseOutlined, DownloadOutlined, HistoryOutlined, ReloadOutlined, RollbackOutlined, UndoOutlined } from '@ant-design/icons'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Alert,
@@ -11,6 +11,7 @@ import {
   Empty,
   Flex,
   Image,
+  Input,
   Modal,
   Radio,
   Segmented,
@@ -24,7 +25,7 @@ import {
   Typography,
 } from 'antd'
 import { useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { ApiError } from '../../api/client'
 import {
   CATEGORIES,
@@ -44,6 +45,7 @@ import {
   collectConfirmed,
   verifySamples,
   retrySample,
+  saveSamplesAsDataset,
   sampleTemplates,
   setSampleSettings,
   updateSample,
@@ -51,6 +53,7 @@ import {
 import { useAuth } from '../../auth/useAuth'
 import { saveFile } from '../../utils/download'
 import { formatTime } from '../../utils/format'
+import { DetPagesTab } from './DetPagesTab'
 import { ExportsTab } from './ExportsTab'
 import { GroupsTab } from './GroupsTab'
 
@@ -132,11 +135,14 @@ function CollectSwitch() {
 /** 导出：选范围、看预览（训练和验证各几组几行、够不够、不导出的原因），下载 ZIP。 */
 function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: () => void; templates: string[] }) {
   const { message } = App.useApp()
+  const { can } = useAuth()
+  const canStore = can('value:review')
   const queryClient = useQueryClient()
   const [kind, setKind] = useState<ExportKind>('train_val')
   const [categories, setCategories] = useState<SampleCategory[]>(['rec_error', 'missed', 'correct'])
   const [format, setFormat] = useState<SourceFormat | ''>('')
   const [template, setTemplate] = useState<string | undefined>()
+  const [datasetName, setDatasetName] = useState('')
   const filters: SampleFilters = {
     category: categories,
     source_format: format || undefined,
@@ -157,6 +163,18 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
     },
     onError: (err) => void message.error(errorText(err)),
   })
+  const store = useMutation({
+    mutationFn: () =>
+      saveSamplesAsDataset(filters, kind, { name: datasetName.trim(), description: 'OCR 样本导出（ADR 0050）' }),
+    onSuccess: (d) => {
+      void message.success(`已存进数据集库：${d.name} v${d.version}，可以在“模型和数据集”页拿它比较识别模型`)
+      void queryClient.invalidateQueries({ queryKey: ['ocr-exports'] })
+      void queryClient.invalidateQueries({ queryKey: ['ocr-groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['hub-datasets'] })
+      onClose()
+    },
+    onError: (err) => void message.error(errorText(err)),
+  })
   const data = preview.data
   const ready = categories.length > 0 && (data?.included ?? 0) > 0
   const parts = kind === 'test' ? (['test'] as const) : (['train', 'val'] as const)
@@ -172,6 +190,16 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
         <Button key="cancel" onClick={onClose}>
           取消
         </Button>,
+        <Tooltip key="dataset" title={datasetName.trim() ? '' : '先在下面填数据集的名字'}>
+          <Button
+            icon={<DatabaseOutlined />}
+            disabled={!ready || !datasetName.trim() || !canStore}
+            loading={store.isPending}
+            onClick={() => store.mutate()}
+          >
+            存进数据集库
+          </Button>
+        </Tooltip>,
         <Button
           key="ok"
           type="primary"
@@ -347,6 +375,14 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
             </Flex>
           )
         )}
+        {canStore && (
+          <Input
+            value={datasetName}
+            onChange={(e) => setDatasetName(e.target.value)}
+            placeholder="存进数据集库（给 OCR 模型评测用）时的名字，例如 收据识别"
+            maxLength={64}
+          />
+        )}
         {kind === 'train_val' && categories.includes('rec_error') && !categories.includes('correct') && (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             只用错例微调，模型容易把原来认得好的字"忘掉"。建议把「认对的行」一起导出。
@@ -369,7 +405,9 @@ export function OcrSamplesPage() {
   const [template, setTemplate] = useState<string | undefined>()
   const [pageNo, setPageNo] = useState(1)
   const [exporting, setExporting] = useState(false)
-  const [tab, setTab] = useState('samples')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('tab') ?? 'samples'
+  const setTab = (key: string) => setSearchParams(key === 'samples' ? {} : { tab: key }, { replace: true })
   const settings = useQuery({ queryKey: ['ocr-sample-settings'], queryFn: getSampleSettings })
   const filters: SampleFilters = {
     category: category ? [category] : undefined,
@@ -724,6 +762,11 @@ export function OcrSamplesPage() {
             </Flex>
           </Card>
             ),
+          },
+          {
+            key: 'det',
+            label: '检测样本',
+            children: <DetPagesTab canExport={can('document:export')} />,
           },
           {
             key: 'groups',

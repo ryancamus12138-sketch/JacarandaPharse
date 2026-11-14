@@ -56,13 +56,18 @@ backend/src/jacara/
     fields/         字段值与人工审核：修改、确认、修改历史（/api/v1/values）
     auth/           团队、用户、登录会话、重设码（/api/v1/auth、/api/v1/users）
     audit/          审计日志：只追加（/api/v1/audit-logs）
+    hub/            模型和数据集库（ADR 0059）、OCR 模型评测（ADR 0060）：/api/v1/hub。
+                    registry.py 管 models/hub 里的文件和模型卡（不进数据库），datasets.py 读 PaddleOCR 格式的 zip，
+                    evals.py 是后台任务跑的评测
+    ocr_samples/    OCR 样本（ADR 0050）和检测样本（det.py，ADR 0061）：/api/v1/ocr-samples
     templates/      模板：/api/v1/templates。我的模板和版本存数据库（templates、template_versions），
                     起步、内置模板是文件；用样例建模板、试跑也在这里
   models.py     汇总所有数据库表（给 Alembic 用）
   app.py        FastAPI 应用：create_app()，挂载 /api/v1，最后挂网页
   worker.py     后台 worker：Celery 任务定义，jacara worker 启动
   cli.py        命令行入口（jacara start 一起启动模型、worker、API）
-  eval/         评测（开发用）：sroie.py 读数据集，score.py 打分和指标，run.py 跑流水线、写结果
+  eval/         评测：sroie.py 读数据集，score.py 打分和指标，run.py 跑流水线、写结果；
+                replay.py 回放（ADR 0053），tables.py 表格明细配对（ADR 0062），ocr.py OCR 模型评测（ADR 0060）
 backend/migrations/   Alembic 数据库迁移
 backend/tests/        自动测试（pytest）
 web/          前端（React + TypeScript + Vite + Ant Design + react-router + TanStack Query）
@@ -206,7 +211,8 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
   （`MemoryStorage`、`FakeQueue` 在 conftest.py），接口测试用 `dependency_overrides` 替换依赖。
   测试默认是个人模式（conftest 的 `personal_mode`），不受自己 `.env` 影响；要测团队模式的文件自己切过去。
   测网页用临时文件夹造一个假的 dist（`JACARA_WEB_DIR`），不需要真的 npm run build。
-- 评测（ADR 0023）：代码在 `backend/src/jacara/eval/`，`jacara eval` 运行，只在开发时用。数据集放 `datasets/`、结果放 `results/eval/`，都不进 Git。
+- 评测（ADR 0023）：代码在 `backend/src/jacara/eval/`，`jacara eval` 运行，只在开发时用。
+  例外是 OCR 模型评测（ADR 0060）：网页"模型和数据集"里也能点，后台队列跑，结果存数据库。数据集放 `datasets/`、结果放 `results/eval/`，都不进 Git。
   改了提示词、模型、对齐规则或模板，都要跑一次评测，结果记进 `docs/eval/README.md`；最看重“放行准确率”（没标黄的值有多准）。
 - 改了数据库表就生成一条迁移，检查后再提交；需要改已有数据时在迁移里手写 SQL。
 - 重要的技术选择写一条 ADR（`docs/adr/NNNN-标题.md`），格式参考 0002。
@@ -254,6 +260,11 @@ cd web && npm install                     # 第一次，或者 package.json 变�
 npm install 包名                          # 加新包：一定要在 web/ 里
 npm run dev -- --force                    # 装了新包后页面异常：清掉 Vite 缓存再启动
 npm run lint && npm run build             # 前端检查（提交前）；build 同时生成 dist/ 给 jacara start 用
+
+# 模型库和 OCR 模型评测（ADR 0059、0060）
+uv run jacara models list                                            # 模型库里的模型和版本
+uv run jacara models import 文件.onnx --name receipt-rec --kind ocr_rec   # 离线导入权重（大模型 --kind model）
+uv run jacara eval ocr --dataset 收据识别 --b receipt-rec@v2           # 在数据集的验证集上比较现在用的和 v2
 
 # 不用 API，直接在命令行处理一个文件
 uv run jacara ocr <图片或PDF>                        # 只做文字识别

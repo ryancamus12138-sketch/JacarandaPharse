@@ -25,6 +25,10 @@ EXTRACT_QUEUE = "extract"
 """流水线的第二站（ADR 0051）：OCR 工位认好字，把"抽取这个文档"放进这个队列，模型工位领。"""
 
 
+EVAL_OCR = "jacara.eval_ocr"
+"""OCR 模型评测（ADR 0060）：放进 OCR 工位的队列（QUEUE），那边本来就装着 OCR。"""
+
+
 class QueueError(Exception):
     """任务队列（Valkey）连不上。"""
 
@@ -32,6 +36,10 @@ class QueueError(Exception):
 class TaskQueue(Protocol):
     def enqueue_document(self, document_id: uuid.UUID) -> None:
         """把一个文档放进待处理队列。"""
+        ...
+
+    def enqueue_eval(self, run_id: uuid.UUID) -> None:
+        """把一次 OCR 模型评测放进队列（ADR 0060）。"""
         ...
 
 
@@ -76,4 +84,10 @@ class CeleryQueue:
             # retry=False：连不上就马上报错，由调用方决定怎么办
             self.app.send_task(PROCESS_DOCUMENT, args=[str(document_id)], retry=False)
         except Exception as err:  # kombu 的连接错误种类很多，统一包成 QueueError
+            raise QueueError("任务队列（Valkey）连不上") from err
+
+    def enqueue_eval(self, run_id: uuid.UUID) -> None:
+        try:
+            self.app.send_task(EVAL_OCR, args=[str(run_id)], queue=QUEUE, retry=False)
+        except Exception as err:
             raise QueueError("任务队列（Valkey）连不上") from err

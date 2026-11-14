@@ -106,20 +106,45 @@ def _files(pattern: str, keep: object = None) -> list[ModelFile]:
 
 
 def candidates(slot: str) -> list[ModelFile]:
-    """每一项能选哪些文件。"""
+    """每一项能选哪些文件：models/ 里按 ADR 0046 的位置放的，
+    加上模型库（ADR 0059）里这一种的版本。"""
     if slot == "model":
-        return _files("*.gguf", lambda p: not is_mmproj(p))
-    if slot == "mmproj":
-        return _files("*.gguf", is_mmproj)
-    if slot == "ocr_det":
-        return _files("ocr/**/*.onnx", lambda p: "det" in p.name.lower())
-    if slot == "ocr_rec":
-        return _files("ocr/**/*.onnx", lambda p: "rec" in p.name.lower())
-    if slot == "ocr_dict":
-        return _files("ocr/**/*.txt")
-    if slot == "table":
-        return _files("table/**/*.onnx")
-    raise KeyError(slot)
+        found = _files("*.gguf", lambda p: not is_mmproj(p))
+    elif slot == "mmproj":
+        found = _files("*.gguf", is_mmproj)
+    elif slot == "ocr_det":
+        found = _files("ocr/**/*.onnx", lambda p: "det" in p.name.lower())
+    elif slot == "ocr_rec":
+        found = _files("ocr/**/*.onnx", lambda p: "rec" in p.name.lower())
+    elif slot == "ocr_dict":
+        found = _files("ocr/**/*.txt")
+    elif slot == "table":
+        found = _files("table/**/*.onnx")
+    else:
+        raise KeyError(slot)
+    return found + _hub_files(slot)
+
+
+def _hub_files(slot: str) -> list[ModelFile]:
+    from jacara.modules.hub import registry
+
+    found = []
+    for v in registry.versions():
+        path = v.dictionary if slot == "ocr_dict" and v.kind == "ocr_rec" else None
+        if v.kind == slot:
+            path = v.weights
+        if path is None:
+            continue
+        stat = path.stat()
+        found.append(
+            ModelFile(
+                path=str(path.relative_to(PROJECT_ROOT)),
+                name=f"{v.name} v{v.version}（模型库）",
+                size=stat.st_size,
+                modified=datetime.fromtimestamp(stat.st_mtime, UTC),
+            )
+        )
+    return found
 
 
 def _relative(path: Path | None) -> str | None:

@@ -242,6 +242,8 @@ class OcrSampleService:
     def __init__(
         self, session: Session, owner: Owner, storage: ObjectStorage | None = None
     ) -> None:
+        self.last_export_id: uuid.UUID | None = None
+        """最近一次导出的记录 id（存进数据集库时记上，ADR 0059）。"""
         self.session = session
         self.owner = owner
         self.storage = storage
@@ -1122,18 +1124,19 @@ class OcrSampleService:
             "source_format": source_format,
             "template": template,
         }
-        self.session.add(
-            OcrSampleExport(
-                kind=kind,
-                split_version=version,
-                filters=filters,
-                counts=counts,
-                items=items,
-                affected=[],
-                user_id=self.owner.user_id,
-                team_id=team,
-            )
+        export_record = OcrSampleExport(
+            kind=kind,
+            split_version=version,
+            filters=filters,
+            counts=counts,
+            items=items,
+            affected=[],
+            user_id=self.owner.user_id,
+            team_id=team,
         )
+        self.session.add(export_record)
+        self.session.flush()
+        self.last_export_id = export_record.id
         record(
             self.session,
             self.owner,
@@ -1148,6 +1151,31 @@ class OcrSampleService:
         stamp = datetime.now().strftime("%Y%m%d-%H%M")
         suffix = "测试集" if kind == "test" else ""
         return f"OCR样本{suffix}-{stamp}.zip", out.getvalue()
+
+    def export_to_dataset(
+        self,
+        name: str,
+        description: str,
+        category: Sequence[str] | None = None,
+        source_format: str | None = None,
+        template: str | None = None,
+        kind: str = "train_val",
+    ) -> Any:
+        """导出（照常记导出记录）后直接存进数据集库（ADR 0059），不用先下载再上传。"""
+        from jacara.core.config import get_settings
+        from jacara.modules.hub.registry import HubError
+        from jacara.modules.hub.service import HubService
+
+        require(self.owner, "value:review")
+        _, data = self.export(category, source_format, template, kind)
+        hub = HubService(self.session, self.owner, get_settings(), self.storage)
+        try:
+            dataset = hub.save_dataset(
+                name, "ocr_rec", "samples", description, data, self.last_export_id
+            )
+        except HubError as err:
+            raise SampleError(err.code, err.message) from err
+        return hub.dataset_out(dataset)
 
 
 def _evidence(groups_: int, rows: int) -> Evidence:

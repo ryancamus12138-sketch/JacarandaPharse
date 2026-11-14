@@ -1,6 +1,7 @@
 /** OCR 纠错样本：/api/v1/ocr-samples（ADR 0050）。 */
 
 import { api, apiBlob, apiDownload, type DownloadedFile } from './client'
+import type { Dataset } from './hub'
 
 export type SampleCategory = 'rec_error' | 'correct' | 'missed' | 'unclear'
 /** pending：从以前的修改补收的（ADR 0053），人复核了才变成 ready、才能导出。 */
@@ -139,7 +140,8 @@ export interface PairResult {
 export interface ExportRecord {
   id: string
   created_at: string
-  kind: ExportKind
+  /** det、det_test：检测样本的导出（ADR 0061）。 */
+  kind: ExportKind | 'det' | 'det_test'
   split_version: number
   counts: Partial<Record<'train' | 'val' | 'test', SplitCount>>
   filters: { category?: string[]; source_format?: string | null; template?: string | null }
@@ -258,4 +260,108 @@ export function findUnits(q: string): Promise<Unit[]> {
 
 export function listExports(): Promise<ExportRecord[]> {
   return api<ExportRecord[]>('/ocr-samples/exports')
+}
+
+// ---- 存进数据集库（ADR 0059） ----
+
+/** 和导出 ZIP 一样（照常记导出记录），直接存进数据集库，给 OCR 模型评测用。 */
+export function saveSamplesAsDataset(
+  filters: SampleFilters,
+  kind: ExportKind,
+  data: { name: string; description: string },
+): Promise<Dataset> {
+  return api<Dataset>(`/ocr-samples/export/dataset?${query(filters, { kind })}`, { method: 'POST', json: data })
+}
+
+// ---- 检测样本（ADR 0061） ----
+
+/** none：还没存过（打开时给预标注）；draft：存过还没确认；confirmed：确认了，导出；excluded：不用这一页。 */
+export type DetStatus = 'none' | 'draft' | 'confirmed' | 'excluded'
+
+export const DET_STATUS: Record<DetStatus, { name: string; color: string }> = {
+  none: { name: '还没做', color: 'default' },
+  draft: { name: '没确认', color: 'orange' },
+  confirmed: { name: '确认了', color: 'green' },
+  excluded: { name: '不用', color: 'default' },
+}
+
+export interface DetBox {
+  /** 四个角 [[x, y] × 4]，页面图上的像素，从左上开始顺时针。 */
+  points: [number, number][]
+  text: string
+  /** 看不清：导出成 ###，不参与训练。 */
+  ignore: boolean
+  /** ocr：OCR 认的；sample：审核时改对了原文的；missed：审核时框选的漏认；manual：在这里画的。 */
+  origin: 'ocr' | 'sample' | 'missed' | 'manual'
+}
+
+export interface DetPageItem {
+  document_id: string
+  filename: string
+  page: number
+  status: DetStatus
+  boxes: number
+  revision: number
+  confirmed_at: string | null
+}
+
+export interface DetPageList {
+  items: DetPageItem[]
+  total: number
+  /** 每种状态几页；sensitive 是有敏感字段、不能做的页数。 */
+  counts: Partial<Record<DetStatus | 'sensitive', number>>
+}
+
+export interface DetPage {
+  document_id: string
+  filename: string
+  page: number
+  width: number
+  height: number
+  status: DetStatus
+  revision: number
+  boxes: DetBox[]
+  ocr_engine: string
+  confirmed_at: string | null
+}
+
+export interface DetExportPreview {
+  kind: ExportKind
+  included: number
+  boxes: number
+  splits: Partial<Record<'train' | 'val' | 'test', SplitCount>>
+  excluded: Record<string, number>
+  split_version: number
+}
+
+export function listDetPages(status: DetStatus | '', offset: number, limit: number): Promise<DetPageList> {
+  const q = new URLSearchParams({ offset: String(offset), limit: String(limit) })
+  if (status) q.set('status', status)
+  return api<DetPageList>(`/ocr-samples/det-pages?${q}`)
+}
+
+export function getDetPage(documentId: string, page: number): Promise<DetPage> {
+  return api<DetPage>(`/ocr-samples/det-pages/${documentId}/${page}`)
+}
+
+export function saveDetPage(
+  documentId: string,
+  page: number,
+  data: { revision: number; boxes: DetBox[] },
+  action?: 'confirm' | 'exclude' | 'reopen',
+): Promise<DetPage> {
+  const url = `/ocr-samples/det-pages/${documentId}/${page}${action ? `/${action}` : ''}`
+  return api<DetPage>(url, { method: action ? 'POST' : 'PUT', json: data })
+}
+
+export function previewDetExport(kind: ExportKind): Promise<DetExportPreview> {
+  return api<DetExportPreview>(`/ocr-samples/det-pages/export/preview?kind=${kind}`)
+}
+
+export function downloadDetPages(kind: ExportKind): Promise<DownloadedFile> {
+  return apiDownload(`/ocr-samples/det-pages/export?kind=${kind}`, '检测样本.zip')
+}
+
+export function saveDetPagesAsDataset(kind: ExportKind, data: { name: string; description: string }): Promise<Dataset> {
+  return api<Dataset>(`/ocr-samples/det-pages/export/dataset?kind=${kind}`, { method: 'POST', json: data })
 }
