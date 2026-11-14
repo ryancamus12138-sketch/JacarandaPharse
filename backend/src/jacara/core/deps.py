@@ -19,7 +19,7 @@ from jacara.core.config import get_settings
 from jacara.core.db import session_scope
 from jacara.core.i18n import tr
 from jacara.core.owner import PERSONAL_OWNER, Owner
-from jacara.core.queue import CeleryQueue, TaskQueue
+from jacara.core.queue import TaskQueue, create_queue
 from jacara.core.storage import ObjectStorage
 from jacara.core.storage import get_storage as _get_storage
 from jacara.modules.auth.service import AuthService
@@ -62,7 +62,7 @@ def get_model() -> ModelBackend:
 
 
 def get_queue() -> TaskQueue:
-    return CeleryQueue()
+    return create_queue()
 
 
 def get_token(

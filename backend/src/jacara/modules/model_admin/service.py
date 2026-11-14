@@ -16,14 +16,20 @@ from pathlib import Path
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from jacara.core.config import CHOICES_FILE, PROJECT_ROOT, Settings, is_mmproj, model_choices
+from jacara.core import config
+from jacara.core.config import CHOICES_FILE, Settings, is_mmproj, model_choices
 from jacara.core.i18n import N_, tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.modules.audit.service import record
 from jacara.modules.system.service import model_props
 
-MODELS = PROJECT_ROOT / "models"
+
+def _models() -> Path:
+    """models/ in the data directory. Resolved on every call because tests replace the data
+    directory with a temporary one."""
+    return config.data_home() / "models"
+
 
 SLOTS: dict[str, str] = {
     "model": N_("大模型"),
@@ -93,13 +99,13 @@ class ModelError(Exception):
 
 def _files(pattern: str, keep: object = None) -> list[ModelFile]:
     found = []
-    for path in sorted(MODELS.glob(pattern)):
+    for path in sorted(_models().glob(pattern)):
         if not path.is_file() or (callable(keep) and not keep(path)):
             continue
         stat = path.stat()
         found.append(
             ModelFile(
-                path=str(path.relative_to(PROJECT_ROOT)),
+                path=path.relative_to(config.data_home()).as_posix(),
                 name=path.name,
                 size=stat.st_size,
                 modified=datetime.fromtimestamp(stat.st_mtime, UTC),
@@ -141,7 +147,7 @@ def _hub_files(slot: str) -> list[ModelFile]:
         stat = path.stat()
         found.append(
             ModelFile(
-                path=str(path.relative_to(PROJECT_ROOT)),
+                path=path.relative_to(config.data_home()).as_posix(),
                 name=tr("{name} v{version}（模型库）", name=v.name, version=v.version),
                 size=stat.st_size,
                 modified=datetime.fromtimestamp(stat.st_mtime, UTC),
@@ -154,7 +160,7 @@ def _relative(path: Path | None) -> str | None:
     if path is None:
         return None
     try:
-        return str(path.resolve().relative_to(PROJECT_ROOT))
+        return path.resolve().relative_to(config.data_home().resolve()).as_posix()
     except ValueError:
         return str(path)
 
@@ -232,7 +238,7 @@ class ModelAdminService:
                 raise ModelError(tr("必须选择大模型"))
             choices[key] = value
             changed[key] = value
-        target = PROJECT_ROOT / CHOICES_FILE
+        target = config.data_home() / CHOICES_FILE
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(choices, ensure_ascii=False, indent=2), "utf-8")
         record(self.session, self.owner, "system:models", None, None, **changed)

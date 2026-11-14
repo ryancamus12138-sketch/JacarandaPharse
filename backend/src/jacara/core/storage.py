@@ -1,11 +1,16 @@
 """Object storage for uploaded originals (images, PDFs).
 
-Application code depends only on the ObjectStorage interface: S3Storage (SeaweedFS) in production
-and development, an in-memory fake in tests."""
+Application code depends only on the ObjectStorage interface: S3Storage (SeaweedFS) for the server
+deployment, LocalStorage (files/ in the data directory) for the desktop edition, an in-memory fake
+in tests. JACARA_STORAGE selects between the first two."""
 
 from __future__ import annotations
 
+import mimetypes
+import os
+import tempfile
 from functools import lru_cache
+from pathlib import Path
 from typing import Protocol
 
 from jacara.core.config import Settings, get_settings
@@ -28,6 +33,14 @@ class ObjectStorage(Protocol):
 
     def delete(self, key: str) -> None:
         """Delete an object (when a document is deleted). A missing object is not an error."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Keys of all stored objects (for backups)."""
+        ...
+
+    def content_type(self, key: str) -> str:
+        """Media type recorded for an object (for backups)."""
         ...
 
 
@@ -110,6 +123,83 @@ class S3Storage:
             raise StorageError(tr("读取文件信息失败：{err}", err=err)) from err
 
 
+class LocalStorage:
+    """Object storage in a local folder: key a/b/c.jpg is the file <root>/a/b/c.jpg.
+
+    - Keys containing "..", absolute paths or backslashes are rejected, so no key can reach outside
+      the folder.
+    - Writes go to a temporary file in the same folder first and are then moved into place with
+      os.replace, which is atomic on the same file system (Python documentation); an interrupted
+      write never leaves a half-written file under the real name.
+    - The media type is derived from the file extension (mimetypes). The type of each document is
+      also stored in the database (documents.content_type); the storage type is only used by
+      backups."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def _path(self, key: str) -> Path:
+        parts = key.split("/")
+        if (
+            not key
+            or "\\" in key
+            or key.startswith("/")
+            or any(part in ("", ".", "..") for part in parts)
+            or ":" in parts[0]
+        ):
+            raise StorageError(tr("文件路径无效：{key}", key=key))
+        return self.root.joinpath(*parts)
+
+    def put(self, key: str, data: bytes, content_type: str) -> None:
+        path = self._path(key)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                dir=path.parent, prefix=".", suffix=TEMPORARY, delete=False
+            ) as handle:
+                handle.write(data)
+                temporary = Path(handle.name)
+            os.replace(temporary, path)
+        except OSError as err:
+            raise StorageError(tr("保存文件失败：{err}", err=err)) from err
+
+    def get(self, key: str) -> bytes:
+        try:
+            return self._path(key).read_bytes()
+        except OSError as err:
+            raise StorageError(tr("读取文件失败：{err}", err=err)) from err
+
+    def delete(self, key: str) -> None:
+        try:
+            self._path(key).unlink(missing_ok=True)
+        except OSError as err:
+            raise StorageError(tr("删除文件失败：{err}", err=err)) from err
+
+    def keys(self) -> list[str]:
+        if not self.root.is_dir():
+            return []
+        return sorted(
+            path.relative_to(self.root).as_posix()
+            for path in self.root.rglob("*")
+            if path.is_file() and not path.name.endswith(TEMPORARY)
+        )
+
+    def content_type(self, key: str) -> str:
+        return mimetypes.guess_type(self._path(key).name)[0] or "application/octet-stream"
+
+
+TEMPORARY = ".jacara-tmp"
+"""Suffix of files being written; never reported as stored objects."""
+
+LOCAL_FILES = "files"
+"""Folder of LocalStorage in the data directory."""
+
+
 @lru_cache
 def get_storage() -> ObjectStorage:
-    return S3Storage(get_settings())
+    settings = get_settings()
+    if settings.jacara_storage == "local":
+        from jacara.core.config import data_home
+
+        return LocalStorage(data_home() / LOCAL_FILES)
+    return S3Storage(settings)

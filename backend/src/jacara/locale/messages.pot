@@ -4,7 +4,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: JacarandaParse 1.0.0\n"
-"POT-Creation-Date: 2026-11-14 08:42+0000\n"
+"POT-Creation-Date: 2026-11-14 10:29+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -220,34 +220,44 @@ msgstr ""
 msgid "没有权限：{name}（{hint}）"
 msgstr ""
 
-#: backend/src/jacara/core/queue.py:86 backend/src/jacara/core/queue.py:94
-#: backend/src/jacara/core/queue.py:100
+#: backend/src/jacara/core/queue.py:104 backend/src/jacara/core/queue.py:112
+#: backend/src/jacara/core/queue.py:118
 msgid "无法连接任务队列（Valkey）"
 msgstr ""
 
-#: backend/src/jacara/core/storage.py:68
+#: backend/src/jacara/core/queue.py:181
+#, python-brace-format
+msgid "无法写入任务队列：{err}"
+msgstr ""
+
+#: backend/src/jacara/core/storage.py:81 backend/src/jacara/core/storage.py:164
 #, python-brace-format
 msgid "保存文件失败：{err}"
 msgstr ""
 
-#: backend/src/jacara/core/storage.py:77
+#: backend/src/jacara/core/storage.py:90 backend/src/jacara/core/storage.py:170
 #, python-brace-format
 msgid "读取文件失败：{err}"
 msgstr ""
 
-#: backend/src/jacara/core/storage.py:85
+#: backend/src/jacara/core/storage.py:98 backend/src/jacara/core/storage.py:176
 #, python-brace-format
 msgid "删除文件失败：{err}"
 msgstr ""
 
-#: backend/src/jacara/core/storage.py:101
+#: backend/src/jacara/core/storage.py:114
 #, python-brace-format
 msgid "列出文件失败：{err}"
 msgstr ""
 
-#: backend/src/jacara/core/storage.py:110
+#: backend/src/jacara/core/storage.py:123
 #, python-brace-format
 msgid "读取文件信息失败：{err}"
+msgstr ""
+
+#: backend/src/jacara/core/storage.py:150
+#, python-brace-format
+msgid "文件路径无效：{key}"
 msgstr ""
 
 #: backend/src/jacara/core/web.py:22
@@ -1219,27 +1229,27 @@ msgid "{kind}: {detail}"
 msgstr ""
 
 #: backend/src/jacara/modules/hub/registry.py:29
-#: backend/src/jacara/modules/model_admin/service.py:29
+#: backend/src/jacara/modules/model_admin/service.py:35
 msgid "大模型"
 msgstr ""
 
 #: backend/src/jacara/modules/hub/registry.py:30
-#: backend/src/jacara/modules/model_admin/service.py:30
+#: backend/src/jacara/modules/model_admin/service.py:36
 msgid "视觉模型"
 msgstr ""
 
 #: backend/src/jacara/modules/hub/registry.py:31
-#: backend/src/jacara/modules/model_admin/service.py:31
+#: backend/src/jacara/modules/model_admin/service.py:37
 msgid "OCR 文字检测"
 msgstr ""
 
 #: backend/src/jacara/modules/hub/registry.py:32
-#: backend/src/jacara/modules/model_admin/service.py:32
+#: backend/src/jacara/modules/model_admin/service.py:38
 msgid "OCR 文字识别"
 msgstr ""
 
 #: backend/src/jacara/modules/hub/registry.py:33
-#: backend/src/jacara/modules/model_admin/service.py:34
+#: backend/src/jacara/modules/model_admin/service.py:40
 msgid "表格结构模型"
 msgstr ""
 
@@ -1657,21 +1667,21 @@ msgid ""
 "以上为业务数据，请按所在单位的数据管理规定保存，请勿提交到代码仓库。\n"
 msgstr ""
 
-#: backend/src/jacara/modules/model_admin/service.py:33
+#: backend/src/jacara/modules/model_admin/service.py:39
 msgid "OCR 识别字典"
 msgstr ""
 
-#: backend/src/jacara/modules/model_admin/service.py:145
+#: backend/src/jacara/modules/model_admin/service.py:151
 #, python-brace-format
 msgid "{name} v{version}（模型库）"
 msgstr ""
 
-#: backend/src/jacara/modules/model_admin/service.py:226
+#: backend/src/jacara/modules/model_admin/service.py:232
 #, python-brace-format
 msgid "{slot}只能选择 models/ 中已有的文件，未找到 {file}"
 msgstr ""
 
-#: backend/src/jacara/modules/model_admin/service.py:232
+#: backend/src/jacara/modules/model_admin/service.py:238
 msgid "必须选择大模型"
 msgstr ""
 

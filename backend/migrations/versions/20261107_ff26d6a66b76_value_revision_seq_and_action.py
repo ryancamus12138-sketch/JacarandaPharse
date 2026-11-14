@@ -25,9 +25,10 @@ def upgrade() -> None:
         "value_revisions",
         sa.Column("action", sa.String(length=16), server_default="edit", nullable=False),
     )
-    op.create_unique_constraint(
-        op.f("uq_value_revisions_value_id"), "value_revisions", ["value_id", "seq"]
-    )
+    # Batch mode: SQLite cannot add constraints with ALTER TABLE; on PostgreSQL this runs the same
+    # ALTER statement as before.
+    with op.batch_alter_table("value_revisions") as batch:
+        batch.create_unique_constraint(op.f("uq_value_revisions_value_id"), ["value_id", "seq"])
     # ### end Alembic commands ###
 
 

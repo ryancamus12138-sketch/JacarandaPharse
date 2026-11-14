@@ -5,8 +5,8 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: JacarandaParse 1.0.0\n"
-"POT-Creation-Date: 2026-11-14 08:42+0000\n"
-"PO-Revision-Date: 2026-11-14 08:42+0000\n"
+"POT-Creation-Date: 2026-11-14 10:29+0000\n"
+"PO-Revision-Date: 2026-11-14 10:29+0000\n"
 "Last-Translator: JacarandaParse\n"
 "Language: en\n"
 "Language-Team: English\n"
@@ -223,35 +223,45 @@ msgstr "ask an administrator to grant it"
 msgid "没有权限：{name}（{hint}）"
 msgstr "Permission denied: {name} ({hint})"
 
-#: backend/src/jacara/core/queue.py:86 backend/src/jacara/core/queue.py:94
-#: backend/src/jacara/core/queue.py:100
+#: backend/src/jacara/core/queue.py:104 backend/src/jacara/core/queue.py:112
+#: backend/src/jacara/core/queue.py:118
 msgid "无法连接任务队列（Valkey）"
 msgstr "Unable to reach the task queue (Valkey)"
 
-#: backend/src/jacara/core/storage.py:68
+#: backend/src/jacara/core/queue.py:181
+#, python-brace-format
+msgid "无法写入任务队列：{err}"
+msgstr "Cannot write to the task queue: {err}"
+
+#: backend/src/jacara/core/storage.py:81 backend/src/jacara/core/storage.py:164
 #, python-brace-format
 msgid "保存文件失败：{err}"
 msgstr "Failed to save the file: {err}"
 
-#: backend/src/jacara/core/storage.py:77
+#: backend/src/jacara/core/storage.py:90 backend/src/jacara/core/storage.py:170
 #, python-brace-format
 msgid "读取文件失败：{err}"
 msgstr "Failed to read the file: {err}"
 
-#: backend/src/jacara/core/storage.py:85
+#: backend/src/jacara/core/storage.py:98 backend/src/jacara/core/storage.py:176
 #, python-brace-format
 msgid "删除文件失败：{err}"
 msgstr "Failed to delete the file: {err}"
 
-#: backend/src/jacara/core/storage.py:101
+#: backend/src/jacara/core/storage.py:114
 #, python-brace-format
 msgid "列出文件失败：{err}"
 msgstr "Failed to list files: {err}"
 
-#: backend/src/jacara/core/storage.py:110
+#: backend/src/jacara/core/storage.py:123
 #, python-brace-format
 msgid "读取文件信息失败：{err}"
 msgstr "Failed to read file information: {err}"
+
+#: backend/src/jacara/core/storage.py:150
+#, python-brace-format
+msgid "文件路径无效：{key}"
+msgstr "Invalid file path: {key}"
 
 #: backend/src/jacara/core/web.py:22
 msgid "网页尚未构建。请在项目目录运行：cd web && npm install && npm run build，然后重启。"
@@ -1222,27 +1232,27 @@ msgid "{kind}: {detail}"
 msgstr "{kind}: {detail}"
 
 #: backend/src/jacara/modules/hub/registry.py:29
-#: backend/src/jacara/modules/model_admin/service.py:29
+#: backend/src/jacara/modules/model_admin/service.py:35
 msgid "大模型"
 msgstr "Large language model"
 
 #: backend/src/jacara/modules/hub/registry.py:30
-#: backend/src/jacara/modules/model_admin/service.py:30
+#: backend/src/jacara/modules/model_admin/service.py:36
 msgid "视觉模型"
 msgstr "Vision model"
 
 #: backend/src/jacara/modules/hub/registry.py:31
-#: backend/src/jacara/modules/model_admin/service.py:31
+#: backend/src/jacara/modules/model_admin/service.py:37
 msgid "OCR 文字检测"
 msgstr "OCR text detection"
 
 #: backend/src/jacara/modules/hub/registry.py:32
-#: backend/src/jacara/modules/model_admin/service.py:32
+#: backend/src/jacara/modules/model_admin/service.py:38
 msgid "OCR 文字识别"
 msgstr "OCR text recognition"
 
 #: backend/src/jacara/modules/hub/registry.py:33
-#: backend/src/jacara/modules/model_admin/service.py:34
+#: backend/src/jacara/modules/model_admin/service.py:40
 msgid "表格结构模型"
 msgstr "Table structure model"
 
@@ -1673,21 +1683,21 @@ msgstr ""
 "\n"
 "This is your business data: store it according to your data policies and keep it out of code repositories.\n"
 
-#: backend/src/jacara/modules/model_admin/service.py:33
+#: backend/src/jacara/modules/model_admin/service.py:39
 msgid "OCR 识别字典"
 msgstr "OCR recognition dictionary"
 
-#: backend/src/jacara/modules/model_admin/service.py:145
+#: backend/src/jacara/modules/model_admin/service.py:151
 #, python-brace-format
 msgid "{name} v{version}（模型库）"
 msgstr "{name} v{version} (model library)"
 
-#: backend/src/jacara/modules/model_admin/service.py:226
+#: backend/src/jacara/modules/model_admin/service.py:232
 #, python-brace-format
 msgid "{slot}只能选择 models/ 中已有的文件，未找到 {file}"
 msgstr "{slot} must be a file already in models/; {file} not found"
 
-#: backend/src/jacara/modules/model_admin/service.py:232
+#: backend/src/jacara/modules/model_admin/service.py:238
 msgid "必须选择大模型"
 msgstr "A language model is required"
 

@@ -16,6 +16,7 @@ dependencies = [
     "fastapi>=0.162.0",
     "fastapi-offline>=1.7.7",
     "httpx>=0.28.1",
+    "huey>=3.5.4",
     "numpy>=2",
     "onnxruntime>=1.31.1",
     "openpyxl>=3.1.5",

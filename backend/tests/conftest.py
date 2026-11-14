@@ -12,13 +12,13 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from jacara.app import create_app
 from jacara.core.config import get_settings
-from jacara.core.db import Base, session_scope
+from jacara.core.db import Base, session_scope, sqlite_pragmas
 from jacara.core.deps import get_ocr, get_queue, get_session, get_storage
 from jacara.core.i18n import render
 from jacara.core.queue import QueueError
@@ -39,6 +39,8 @@ def personal_mode(monkeypatch, tmp_path):
     from jacara.core import config
 
     monkeypatch.setenv("JACARA_MODE", "personal")
+    for name in ("JACARA_HOME", "JACARA_DATABASE", "JACARA_STORAGE", "JACARA_QUEUE"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(config, "page_settings_path", lambda: tmp_path / "page-settings.json")
     get_settings.cache_clear()
     yield
@@ -122,6 +124,8 @@ def factory() -> sessionmaker[Session]:
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
+    # Same connection settings as the desktop edition (foreign keys enforced, as in PostgreSQL).
+    event.listen(engine, "connect", sqlite_pragmas)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)
 

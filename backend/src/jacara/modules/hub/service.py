@@ -140,7 +140,7 @@ class HubService:
             if path is None:
                 continue
             try:
-                used.add(path.resolve().relative_to(config.PROJECT_ROOT.resolve()).as_posix())
+                used.add(path.resolve().relative_to(config.data_home().resolve()).as_posix())
             except ValueError:
                 continue
         return used
@@ -479,6 +479,9 @@ class HubService:
         keys = [dataset.storage_key, *(r.lines_key for r in runs if r.lines_key)]
         for run in runs:
             self.session.delete(run)
+        # The runs reference the dataset and there is no relationship() between them, so the unit
+        # of work does not order these deletes; remove the runs first, as the foreign key requires.
+        self.session.flush()
         record(
             self.session,
             self.owner,

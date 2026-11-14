@@ -90,10 +90,10 @@ class DocumentRepository:
     def delete(self, document: Document) -> None:
         """Delete a document and all its results from the database:
                 error attributions → review records → fields → detection samples → extractions of
-        every run → comments → OCR samples → document."""
+        every run → comments → OCR samples → sample group membership → document."""
         from sqlalchemy import delete
 
-        from jacara.models import Comment, DetPage, ErrorAttribution, OcrSample
+        from jacara.models import Comment, DetPage, DocGroupMember, ErrorAttribution, OcrSample
 
         extractions = select(Extraction.id).where(Extraction.document_id == document.id)
         values = select(ExtractedValue.id).where(ExtractedValue.extraction_id.in_(extractions))
@@ -108,6 +108,9 @@ class DocumentRepository:
         self.session.execute(delete(Extraction).where(Extraction.document_id == document.id))
         self.session.execute(delete(Comment).where(Comment.document_id == document.id))
         self.session.execute(delete(OcrSample).where(OcrSample.document_id == document.id))
+        self.session.execute(
+            delete(DocGroupMember).where(DocGroupMember.document_id == document.id)
+        )
         self.session.execute(delete(Document).where(Document.id == document.id))
         self.session.expunge(document)
 

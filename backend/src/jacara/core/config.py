@@ -43,6 +43,17 @@ class Settings(BaseSettings):
 
     jacara_mode: Literal["personal", "team"] = "personal"
 
+    jacara_database: Literal["postgres", "sqlite"] = "postgres"
+    """Database: postgres (the server deployment with docker compose) or sqlite (the desktop
+    edition; a single file, jacara.db, in the data directory). Mirrors Gitea's [database]
+    DB_TYPE."""
+    jacara_storage: Literal["s3", "local"] = "s3"
+    """Where uploaded originals and other files are stored: s3 (SeaweedFS or any S3-compatible
+    store) or local (the files/ folder in the data directory). Mirrors Gitea's STORAGE_TYPE."""
+    jacara_queue: Literal["celery", "huey"] = "celery"
+    """Background task queue: celery (with Valkey) or huey (stored in queue.db in the data
+    directory; no separate service). Mirrors Gitea's [queue] TYPE."""
+
     jacara_api_docs: bool = True
     """Whether to serve the API documentation at /docs. Disable (false) when others use this
     instance, to expose fewer API details."""
@@ -126,6 +137,8 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         """SQLAlchemy connection URL. Contains the password; do not log it."""
+        if self.jacara_database == "sqlite":
+            return f"sqlite:///{(data_home() / SQLITE_FILE).as_posix()}"
         password = self.postgres_password.get_secret_value()
         return (
             f"postgresql+psycopg://{self.postgres_user}:{password}"
@@ -148,25 +161,25 @@ class Settings(BaseSettings):
         specify one with --model or JACARA_MODEL."""
         if self.jacara_model is not None:
             path = self.jacara_model
-            return path if path.is_absolute() else PROJECT_ROOT / path
+            return path if path.is_absolute() else data_home() / path
         chosen = chosen_file("model")
         if chosen:
             return chosen
-        found = sorted(p for p in (PROJECT_ROOT / "models").glob("*.gguf") if not is_mmproj(p))
+        found = sorted(p for p in (data_home() / "models").glob("*.gguf") if not is_mmproj(p))
         return found[0] if len(found) == 1 else None
 
     def find_mmproj(self) -> Path | None:
         """Vision projector file: JACARA_MMPROJ first, then the only mmproj*.gguf in models/."""
         if self.jacara_mmproj is not None:
             path = self.jacara_mmproj
-            path = path if path.is_absolute() else PROJECT_ROOT / path
+            path = path if path.is_absolute() else data_home() / path
             return path if path.is_file() else None
         if model_choices().get("mmproj") == "":
             return None  # Vision model disabled in the web UI.
         chosen = chosen_file("mmproj")
         if chosen:
             return chosen
-        found = sorted(p for p in (PROJECT_ROOT / "models").glob("*.gguf") if is_mmproj(p))
+        found = sorted(p for p in (data_home() / "models").glob("*.gguf") if is_mmproj(p))
         return found[0] if len(found) == 1 else None
 
     def table_model(self) -> Path | None:
@@ -174,7 +187,7 @@ class Settings(BaseSettings):
         path = (
             self.jacara_table_model
             or chosen_file("table")
-            or PROJECT_ROOT / "models" / "table" / "slanet-plus.onnx"
+            or data_home() / "models" / "table" / "slanet-plus.onnx"
         )
         return path if path.is_file() else None
 
@@ -189,7 +202,7 @@ class Settings(BaseSettings):
             ("dict", self.jacara_ocr_dict),
         ):
             path = (
-                (env if env.is_absolute() else PROJECT_ROOT / env)
+                (env if env.is_absolute() else data_home() / env)
                 if env
                 else chosen_file(f"ocr_{key}")
             )
@@ -198,12 +211,14 @@ class Settings(BaseSettings):
         return found
 
     def weak_secrets(self) -> list[str]:
-        """Names in .env of secrets that are still empty or still the example value change-me."""
-        secrets = {
-            "POSTGRES_PASSWORD": self.postgres_password,
-            "S3_ACCESS_KEY": self.s3_access_key,
-            "S3_SECRET_KEY": self.s3_secret_key,
-        }
+        """Names in .env of secrets that are still empty or still the example value change-me.
+        Only the services actually in use are checked: SQLite and local storage have no secrets."""
+        secrets: dict[str, SecretStr] = {}
+        if self.jacara_database == "postgres":
+            secrets["POSTGRES_PASSWORD"] = self.postgres_password
+        if self.jacara_storage == "s3":
+            secrets["S3_ACCESS_KEY"] = self.s3_access_key
+            secrets["S3_SECRET_KEY"] = self.s3_secret_key
         return [
             name
             for name, value in secrets.items()
@@ -215,6 +230,23 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 """Project root: this file lives in backend/src/jacara/core/, four levels below the root."""
 
 _PLACEHOLDERS = {"", "change-me"}
+
+SQLITE_FILE = "jacara.db"
+"""SQLite database file in the data directory (JACARA_DATABASE=sqlite)."""
+
+
+def data_home() -> Path:
+    """Root directory for data written at run time: models/, data/settings.json, .run/, and in the
+    desktop edition the SQLite database, the task queue and stored files.
+
+    Set only through the JACARA_HOME environment variable, because the settings page file itself
+    lives here and must be found before any settings are read. Defaults to the project root, so
+    development and docker compose deployments keep their current layout. Read on every call so
+    that tests can replace PROJECT_ROOT."""
+    import os
+
+    value = os.environ.get("JACARA_HOME")
+    return Path(value).expanduser() if value else PROJECT_ROOT
 
 
 def is_mmproj(path: Path) -> bool:
@@ -230,7 +262,7 @@ def get_settings() -> Settings:
     return Settings()
 
 
-MODEL_KEY_FILE = PROJECT_ROOT / ".run" / "model-key"
+MODEL_KEY_FILE = data_home() / ".run" / "model-key"
 """Model server API key generated by each `jacara start` (owner-readable only). Read by the worker
 and the CLI."""
 
@@ -257,7 +289,7 @@ CHOICES_FILE = "models/selected.json"
 """Model files selected in the web UI, stored in models/ (not tracked in the repository; local to
 each machine).
 Format: {"model": "models/xxx.gguf", "mmproj": "models/mmproj.gguf" or "" (disabled), "table": …,
-"ocr_det": …, "ocr_rec": …, "ocr_dict": …}; paths are relative to the project root. Values set in
+"ocr_det": …, "ocr_rec": …, "ocr_dict": …}; paths are relative to the data directory. Values set in
 .env take precedence."""
 
 
@@ -266,7 +298,7 @@ def model_choices() -> dict[str, str]:
     corrupt."""
     import json
 
-    path = PROJECT_ROOT / CHOICES_FILE
+    path = data_home() / CHOICES_FILE
     try:
         data = json.loads(path.read_text("utf-8"))
     except (OSError, ValueError):
@@ -280,7 +312,7 @@ def chosen_file(key: str) -> Path | None:
     if not value:
         return None
     path = Path(value)
-    path = path if path.is_absolute() else PROJECT_ROOT / path
+    path = path if path.is_absolute() else data_home() / path
     return path if path.is_file() else None
 
 
@@ -306,7 +338,7 @@ and the edition (personal or team), can only be set in .env."""
 
 
 def page_settings_path() -> Path:
-    return PROJECT_ROOT / PAGE_SETTINGS_FILE
+    return data_home() / PAGE_SETTINGS_FILE
 
 
 def page_settings() -> dict[str, Any]:

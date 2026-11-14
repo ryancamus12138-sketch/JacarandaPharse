@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
 
     from jacara.core.config import Settings
-    from jacara.core.storage import S3Storage
+    from jacara.ops.backup import FileStore
 
 DRILL_PROJECT = "jacara-drill"
 DRILL_POSTGRES_PORT = 55432
@@ -74,7 +74,7 @@ def _report(checks: list[Check]) -> bool:
 
 
 def run_backup(
-    engine: Engine, storage: S3Storage, out_dir: Path, version: str, running: bool
+    engine: Engine, storage: FileStore, out_dir: Path, version: str, running: bool
 ) -> int:
     from sqlalchemy import func, select
 
@@ -104,17 +104,17 @@ def run_backup(
 
 
 def run_restore(archive: Path, settings: Settings, running: bool) -> int:
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
-    from jacara.core.storage import S3Storage
+    from jacara.core.db import create_db_engine
+    from jacara.core.storage import get_storage
 
     if running:
         print("jacara 正在运行。先 jacara stop 再恢复。")
         return 1
     url = settings.database_url
-    engine = create_engine(url)
-    storage = S3Storage(settings)
+    engine = create_db_engine(url)
+    storage = get_storage()
     try:
         print(f"恢复 {archive}（先核对整个包，再恢复到空的数据库和存储）")
         manifest = restore(archive, engine, storage, lambda rev: migrate_to(url, rev), _say)
@@ -168,8 +168,13 @@ def run_drill(archive: Path, keep: bool) -> int:
     )
     env = dict(os.environ)
     env.update(POSTGRES_PORT=str(DRILL_POSTGRES_PORT), S3_PORT=str(DRILL_S3_PORT))
+    # The drill always uses the docker compose services, whatever JACARA_DATABASE and
+    # JACARA_STORAGE say.
     settings = Settings(
-        postgres_port=DRILL_POSTGRES_PORT, s3_endpoint=f"http://127.0.0.1:{DRILL_S3_PORT}"
+        jacara_database="postgres",
+        jacara_storage="s3",
+        postgres_port=DRILL_POSTGRES_PORT,
+        s3_endpoint=f"http://127.0.0.1:{DRILL_S3_PORT}",
     )
     url = settings.database_url
     engine = create_engine(url)

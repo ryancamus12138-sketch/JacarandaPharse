@@ -14,9 +14,10 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, ClassVar
 
-from sqlalchemy import JSON, DateTime, Engine, MetaData, Uuid, create_engine, func
+from sqlalchemy import JSON, DateTime, Engine, MetaData, Uuid, create_engine, event, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -59,10 +60,51 @@ def new_id() -> uuid.UUID:
     return uuid.uuid4()
 
 
+SQLITE_TIMEOUT = 30.0
+"""Seconds a SQLite connection waits for another process's write lock before failing (the
+`timeout` argument of sqlite3.connect, 5 seconds by default). The API and the two pipeline
+workers write to the same file; their writes are short, but a 5-second wait can be exceeded while
+a worker saves a large document."""
+
+
+def sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:
+    """Settings applied to every new SQLite connection.
+
+    - journal_mode=WAL: readers and the writer do not block each other (SQLite documentation,
+      "Write-Ahead Logging"). WAL does not work on network file systems, so the data directory must
+      be on a local disk.
+    - foreign_keys=ON: SQLite does not enforce foreign keys unless enabled per connection
+      (SQLAlchemy documentation, "Foreign Key Support"); PostgreSQL always enforces them, so both
+      databases behave the same."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
+def create_db_engine(url: str) -> Engine:
+    """Engine for a PostgreSQL or SQLite URL. For SQLite the folder is created and every
+    connection gets sqlite_pragmas."""
+    if not url.startswith("sqlite"):
+        return create_engine(url, pool_pre_ping=True)
+    from sqlalchemy.engine import make_url
+
+    database = make_url(url).database
+    if database and database != ":memory:":
+        Path(database).parent.mkdir(parents=True, exist_ok=True)
+    # check_same_thread=False: pooled connections are handed to FastAPI's worker threads; each
+    # session still uses its connection from one thread at a time.
+    engine = create_engine(
+        url, connect_args={"timeout": SQLITE_TIMEOUT, "check_same_thread": False}
+    )
+    event.listen(engine, "connect", sqlite_pragmas)
+    return engine
+
+
 @lru_cache
 def get_engine() -> Engine:
     """Database connection pool, shared by the whole process."""
-    return create_engine(get_settings().database_url, pool_pre_ping=True)
+    return create_db_engine(get_settings().database_url)
 
 
 @lru_cache

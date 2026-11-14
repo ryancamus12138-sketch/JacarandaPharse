@@ -79,24 +79,23 @@ def upgrade() -> None:
         "documents", sa.Column("current_run", sa.Integer(), server_default="1", nullable=False)
     )
     op.add_column("documents", sa.Column("run_reason", sa.Text(), nullable=True))
-    op.create_foreign_key(
-        "fk_documents_template_version_id",
-        "documents",
-        "template_versions",
-        ["template_version_id"],
-        ["id"],
-    )
+    # Batch mode: SQLite cannot add foreign keys with ALTER TABLE; on PostgreSQL this runs the same
+    # ALTER statement as before.
+    with op.batch_alter_table("documents") as batch:
+        batch.create_foreign_key(
+            "fk_documents_template_version_id", "template_versions", ["template_version_id"], ["id"]
+        )
     # Extractions: run number, reason, template version.
     op.add_column("extractions", sa.Column("run", sa.Integer(), server_default="1", nullable=False))
     op.add_column("extractions", sa.Column("run_reason", sa.Text(), nullable=True))
     op.add_column("extractions", sa.Column("template_version_id", sa.Uuid(), nullable=True))
-    op.create_foreign_key(
-        "fk_extractions_template_version_id",
-        "extractions",
-        "template_versions",
-        ["template_version_id"],
-        ["id"],
-    )
+    with op.batch_alter_table("extractions") as batch:
+        batch.create_foreign_key(
+            "fk_extractions_template_version_id",
+            "template_versions",
+            ["template_version_id"],
+            ["id"],
+        )
     op.create_index("ix_extractions_document_run", "extractions", ["document_id", "run"])
     # Values: original label on the document (key-value discovery).
     op.add_column("extracted_values", sa.Column("label", sa.String(length=200), nullable=True))

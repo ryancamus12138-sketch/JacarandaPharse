@@ -22,8 +22,6 @@ def models(tmp_path, monkeypatch):
     (root / "models" / "ocr" / "my_rec.onnx").write_bytes(b"x")
     (root / "models" / "ocr" / "keys.txt").write_text("a")
     monkeypatch.setattr(config, "PROJECT_ROOT", root)
-    monkeypatch.setattr(service, "PROJECT_ROOT", root)
-    monkeypatch.setattr(service, "MODELS", root / "models")
     monkeypatch.setattr(service, "model_props", lambda _s: {})
     return root
 

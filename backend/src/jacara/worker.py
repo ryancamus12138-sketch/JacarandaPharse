@@ -1,19 +1,21 @@
-"""Background worker: takes tasks from the Valkey queue and processes uploaded documents.
+"""Background worker: takes tasks from the queue and processes uploaded documents.
 
-Start: uv run jacara worker (docker compose and `jacara serve` must be running)
+Start: uv run jacara worker (the API and the model server must be running)
 
 The worker is a separate process from the API: the API returns immediately after an upload and
 processing happens here. OCR models and the LLM client are loaded on the first task and reused
-afterwards."""
+afterwards.
+
+The jobs (process_document_job, ...) do not depend on the queue implementation. JACARA_QUEUE
+decides whether they are consumed from Celery (Valkey) or from Huey (queue.db); see
+core/queue.py."""
 
 from __future__ import annotations
 
 import logging
 import uuid
 from functools import lru_cache
-from typing import Any, Literal
-
-from celery.signals import worker_ready
+from typing import Literal
 
 from jacara.core.config import get_settings
 from jacara.core.queue import (
@@ -22,8 +24,7 @@ from jacara.core.queue import (
     EXTRACT_QUEUE,
     PROCESS_DOCUMENT,
     QUEUE,
-    CeleryQueue,
-    get_celery,
+    create_queue,
 )
 from jacara.core.storage import get_storage
 from jacara.pipeline.process import (
@@ -36,8 +37,6 @@ from jacara.pipeline.process import (
 from jacara.pipeline.run import Pipeline
 
 log = logging.getLogger(__name__)
-
-celery_app = get_celery()
 
 
 @lru_cache
@@ -68,33 +67,32 @@ Stage = Literal["all", "read", "extract"]
 STAGE: Stage = "all"
 
 
-@celery_app.task(name=PROCESS_DOCUMENT)
-def process_document_task(document_id: str) -> str:
-    """A queued task: process one document. Arguments are strings because tasks are serialized to
-    JSON in Valkey.
+# ---- Jobs: identical for every queue implementation ----
 
-        The OCR stage only runs OCR and hands off to the model stage; without stages the document
+
+def process_document_job(document_id: str) -> str:
+    """Process one document. Arguments are strings because tasks are serialized in the queue.
+
+    The OCR stage only runs OCR and hands off to the model stage; without stages the document
     is processed end to end."""
     if STAGE == "read":
         return read_document(
             uuid.UUID(document_id),
             storage=get_storage(),
             pipeline=get_pipeline(),
-            send=CeleryQueue(celery_app).enqueue_extract,
+            send=create_queue().enqueue_extract,
         )
     return process_document(uuid.UUID(document_id), storage=get_storage(), pipeline=get_pipeline())
 
 
-@celery_app.task(name=EXTRACT_DOCUMENT)
-def extract_document_task(document_id: str, attempt: str) -> Outcome:
-    """Model stage task: extract a document already OCR'd by the OCR stage."""
+def extract_document_job(document_id: str, attempt: str) -> Outcome:
+    """Model stage: extract a document already OCR'd by the OCR stage."""
     return extract_document(
         uuid.UUID(document_id), attempt, storage=get_storage(), pipeline=get_pipeline()
     )
 
 
-@celery_app.task(name=EVAL_OCR)
-def eval_ocr_task(run_id: str) -> str:
+def eval_ocr_job(run_id: str) -> str:
     """OCR model evaluation: runs on the OCR stage; each arm creates an OCR engine from its own
     model files."""
     from jacara.core.db import get_session_factory
@@ -103,8 +101,7 @@ def eval_ocr_task(run_id: str) -> str:
     return run_eval(uuid.UUID(run_id), get_session_factory(), get_storage())
 
 
-@worker_ready.connect
-def _on_ready(**_: Any) -> None:
+def _reset_on_start() -> None:
     # With stages, `jacara start` does this once before starting both stages: if one stage started
     # working before the other started and ran this, documents in progress would be treated as
     # interrupted.
@@ -115,21 +112,52 @@ def _on_ready(**_: Any) -> None:
         log.warning("%d 个文档上次处理到一半被中断，已标记为失败，可以重新处理", count)
 
 
+# ---- Consumers ----
+
+
 def run_worker(stage: Stage = "all") -> None:
     """Start the worker; stop with Ctrl + C.
 
-        stage: all runs everything in one process (consuming both queues); read consumes uploaded
-    documents and only runs OCR; extract consumes OCR'd documents and calls the model. `jacara
-    start` runs read and extract by default.
+        stage: all runs everything in one process; read consumes uploaded documents and only runs
+    OCR; extract consumes OCR'd documents and calls the model. `jacara start` runs read and extract
+    by default.
 
-        --pool=solo: one process, one document at a time. The local LLM answers one request at a
-    time, so more processes would only queue; moreover, onnxruntime (used by OCR) tends to crash
-    in forked child processes on macOS, which solo mode avoids."""
+        One task at a time in one process: the local LLM answers one request at a time, so more
+    workers would only queue; moreover, onnxruntime (used by OCR) tends to crash in forked child
+    processes on macOS."""
     global STAGE
     STAGE = stage
+    if get_settings().jacara_queue == "huey":
+        _run_huey(stage)
+    else:
+        _run_celery(stage)
+
+
+def _run_huey(stage: Stage) -> None:
+    """Huey consumer with one worker thread (worker_type="thread", workers=1), the equivalent of
+    Celery's --pool=solo --concurrency=1. The all stage consumes the OCR-stage queue only: without
+    stages no document is handed to the model-stage queue."""
+    from jacara.core.queue import get_hueys, huey_tasks
+
+    huey_tasks()  # Register the tasks before the consumer starts.
+    name = EXTRACT_QUEUE if stage == "extract" else QUEUE
+    _reset_on_start()
+    get_hueys()[name].create_consumer(workers=1, worker_type="thread").run()
+
+
+def _run_celery(stage: Stage) -> None:
+    from celery.signals import worker_ready
+
+    from jacara.core.queue import get_celery
+
+    app = get_celery()
+    app.task(name=PROCESS_DOCUMENT)(process_document_job)
+    app.task(name=EXTRACT_DOCUMENT)(extract_document_job)
+    app.task(name=EVAL_OCR)(eval_ocr_job)
+    worker_ready.connect(lambda **_: _reset_on_start(), weak=False)
     queues = {"all": f"{QUEUE},{EXTRACT_QUEUE}", "read": QUEUE, "extract": EXTRACT_QUEUE}[stage]
     name = "jacara" if stage == "all" else f"jacara-{stage}"
-    celery_app.worker_main(
+    app.worker_main(
         [
             "worker",
             "--pool=solo",

@@ -37,7 +37,14 @@ def run_migrations_online() -> None:
     """Online mode: connect to the database and run the migrations."""
     engine = create_engine(_url(), poolclass=pool.NullPool)
     with engine.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        # SQLite cannot alter tables in place; render_as_batch makes autogenerate write new
+        # migrations in batch mode (create a new table, copy, swap), which runs as plain ALTER
+        # statements on PostgreSQL (Alembic documentation, "Running Batch Migrations for SQLite").
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=connection.dialect.name == "sqlite",
+        )
         with context.begin_transaction():
             context.run_migrations()
 

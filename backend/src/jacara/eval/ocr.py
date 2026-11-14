@@ -416,7 +416,7 @@ def default_engine(arm: EvalArm) -> EvalEngine:
     settings = config.get_settings()
 
     def path(value: str | None) -> Path | None:
-        return config.PROJECT_ROOT / value if value else None
+        return config.data_home() / value if value else None
 
     return RapidOcrEngine(
         OcrConfig(

@@ -41,8 +41,6 @@ RAPID_MODELS = Path(__import__("rapidocr").__file__).parent / "models"
 def root(tmp_path, monkeypatch):
     (tmp_path / "models").mkdir()
     monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr(model_admin, "PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr(model_admin, "MODELS", tmp_path / "models")
     monkeypatch.setattr(model_admin, "model_props", lambda _s: {})
     for name in ("JACARA_MODEL", "JACARA_OCR_REC", "JACARA_OCR_DET", "JACARA_OCR_DICT"):
         monkeypatch.delenv(name, raising=False)

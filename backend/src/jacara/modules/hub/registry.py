@@ -64,14 +64,14 @@ class HubError(Exception):
 
 
 def hub_root() -> Path:
-    """models/hub. Reads config.PROJECT_ROOT on every call because tests replace it with a temporary
-    directory."""
-    return config.PROJECT_ROOT / "models" / "hub"
+    """models/hub in the data directory. Resolved on every call because tests replace the data
+    directory with a temporary one."""
+    return config.data_home() / "models" / "hub"
 
 
 def relative(path: Path) -> str:
-    """Path relative to the project root (the form stored in selected.json)."""
-    return path.relative_to(config.PROJECT_ROOT).as_posix()
+    """Path relative to the data directory (the form stored in selected.json)."""
+    return path.relative_to(config.data_home()).as_posix()
 
 
 # ---- Model card ----

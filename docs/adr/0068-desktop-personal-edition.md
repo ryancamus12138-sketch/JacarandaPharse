@@ -1,0 +1,637 @@
+# 0068 桌面个人版：Tauri 外壳、内嵌数据库与队列、未签名发布
+
+状态：已采纳（2026-11）
+
+部分取代：ADR 0064 中"发布包 = 源码 + 网页"的做法（源码不再随发布包公开，见第 9 节）。ADR 0064 的 Docker 版保留，
+供开发和以后的团队版使用。
+
+## 背景
+
+ADR 0064 的个人版是一个 zip：源码、打包好的网页、`JacarandaParse.command`。用户要自己安装 Docker（PostgreSQL、
+Valkey、SeaweedFS）、uv 和 llama.cpp，并在终端执行 `jacara setup`、`jacara start`。这对普通用户门槛过高。
+
+本 ADR 的目标：用户下载一个安装包（macOS `.dmg`、Windows `.exe`），双击安装，双击打开，不需要命令行，也不需要
+安装任何其他软件。
+
+已确定的前提（与作者讨论后确定）：
+
+1. **只做桌面版，不做网页版。** 公开网址的在线服务需要访客之间的数据隔离、带 GPU 的服务器，并且要保管他人上传
+   的单据，成本和责任都不适合当前阶段。
+2. **源码只放在私有仓库。** 公开仓库只放说明、截图、演示视频和安装包。
+3. **第一版不做代码签名。** 在公开仓库的说明里写清楚 macOS 和 Windows 上的放行步骤（第 8 节）。
+4. **许可沿用 Apache 2.0，增加 NOTICE 文件署名。** 署名为笔名 Ryan Camus（第 9 节）。
+5. **Windows 按自动检测使用显卡（Vulkan）或 CPU**（3.4 节）。
+6. **模型在程序内下载**，用户少一步。为此修改规则 1（第 6 节"规则 1 的修改"）。
+7. **允许在程序内检查和安装新版本**，由用户点击触发（第 13 节）。
+
+## 决定一览
+
+| 项目 | 决定 | 依据 |
+|---|---|---|
+| 代码组织 | 同一份代码，新增桌面运行方式；不建新仓库 | ADR 0063；GitLab 合并 CE/EE 仓库的经验 |
+| 外壳 | Tauri 2 | 系统自带 WebView、最小程序不足 600 KB；官方支持随应用附带 Python 服务程序 |
+| Python 打包 | PyInstaller，单文件夹（onedir）模式 | 单文件模式每次启动需解压且产生两个进程 |
+| 数据库 | SQLite（WAL 模式） | 数据表已兼容 SQLite；Gitea 等成熟项目同时支持 SQLite 与 PostgreSQL |
+| 文件存储 | 本地文件夹 | Gitea `STORAGE_TYPE=local` |
+| 任务队列 | Huey（MIT），SQLite 存储 | 支持 SQLite 存储、线程工作者、重试 |
+| 大模型服务 | 随安装包附带 llama.cpp 官方构建的 `llama-server` | MIT 许可；官方发布 macOS arm64、Windows CPU/Vulkan 构建 |
+| 数据位置 | Tauri `appLocalDataDir` | macOS `~/Library/Application Support/<标识符>`；Windows `%LOCALAPPDATA%\<标识符>` |
+| 本机安全 | 随机端口 + 每次启动的随机令牌 + Host 检查 + Origin 检查 | Jupyter 令牌机制；MCP 规范防 DNS 重绑定要求；OWASP |
+| 支持平台 | macOS（Apple 芯片）、Windows 10/11 x64 | GitHub 已停用 Intel Mac 标准运行器；Python 已将 Intel Mac 降为二级支持 |
+| 安装包 | macOS `.dmg`；Windows NSIS `-setup.exe`（按用户安装，无需管理员） | Tauri 安装包文档 |
+| 签名 | macOS 仅做 ad-hoc 签名；Windows 不签名 | Apple 芯片要求程序至少有签名；第 8 节 |
+| 模型文件 | 不放进安装包；首次启动向导中由用户点击"下载"，程序从 Hugging Face 下载并校验 | GitHub Releases 单个文件必须小于 2 GiB，模型约 5.68 GB；下载做法参照 huggingface_hub（固定提交、按 SHA-256 校验） |
+
+## 1. 代码组织
+
+- **不建新仓库，不另开文件夹。** 沿用 ADR 0063：个人版和团队版是同一份代码。桌面版是"另一种运行方式"，不是
+  另一套代码。开发在新分支（如 `feature/desktop`）上进行，合并回主线后照常发布。
+- 新增目录：
+  - `desktop/`：Tauri 工程（`src-tauri/` 下的 Rust 代码和 `tauri.conf.json`）。
+  - `packaging/desktop/`：PyInstaller 的构建配置（`.spec`）、llama.cpp 版本与校验值清单、许可清单生成脚本。
+- **运行方式由三个设置分别决定**，参照 Gitea 的 `DB_TYPE`、`STORAGE_TYPE`、`[queue] TYPE` 三项配置：
+
+  | 设置 | 可选值 | 默认值（服务器方式） | 桌面版 |
+  |---|---|---|---|
+  | `JACARA_DATABASE` | `postgres`、`sqlite` | `postgres` | `sqlite` |
+  | `JACARA_STORAGE` | `s3`、`local` | `s3` | `local` |
+  | `JACARA_QUEUE` | `celery`、`huey` | `celery` | `huey` |
+  | `JACARA_HOME` | 数据根目录 | 项目根目录 | 第 4 节的数据目录 |
+
+  三项分开而不合并为一个"桌面模式"开关，好处是测试可以逐项组合，开发时也能单独试用 SQLite。
+- 桌面版固定为个人模式（`JACARA_MODE=personal`）。团队版仍按 Docker 方式部署，不做桌面版。
+
+## 2. 进程结构
+
+```
+JacarandaParse（Tauri 主程序，Rust）
+ └─ jacara-backend desktop          ← PyInstaller 打包的 Python 程序；负责启动、监视、关闭以下进程
+     ├─ 网页和 API（uvicorn，在本进程内运行）
+     ├─ jacara-backend worker --stage read      ← OCR 工位（Huey 消费者）
+     ├─ jacara-backend worker --stage extract   ← 模型工位（Huey 消费者）
+     └─ llama-server                             ← 大模型服务
+```
+
+与现在 `jacara start` 的结构一致（API 在主进程，两个工位和模型服务是子进程），只是由 Tauri 而不是终端启动。
+
+**启动顺序**
+
+1. Tauri 用单实例插件保证只运行一个程序；再次双击时聚焦已有窗口。
+2. Tauri 启动 `jacara-backend desktop`，通过环境变量传入数据目录、日志目录、资源目录。
+3. 后端在 `127.0.0.1` 上选取空闲端口（向系统申请端口 0），生成本次启动的随机令牌，执行数据库迁移，
+   将中断的文档标记为失败（沿用 `reset_interrupted`），启动两个工位和模型服务。
+4. 后端就绪后，在标准输出打印一行 `JACARA_READY http://127.0.0.1:<端口>/desktop/enter?token=<令牌>`。
+5. Tauri 读到这一行后，让窗口打开该地址（第 5 节）。启动期间窗口显示"正在启动"页面。
+
+**关闭顺序和防止残留进程**
+
+- 用户关闭窗口时，Tauri 通知后端退出；后端先停止接收新任务，再依次结束子进程，与现在 `jacara stop` 的做法相同。
+- 父进程意外退出时，子进程也必须结束：
+  - **后端监视 Tauri**：Tauri 持有后端的标准输入管道；Tauri 退出后管道关闭，后端读到结束即自行退出。
+    两个工位以同样方式监视后端。
+  - **Windows**：后端把所有子进程放进一个设置了 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的作业对象。按微软文档，
+    最后一个作业句柄关闭时，系统会结束作业中的全部进程；用 `CreateProcess` 创建的子进程默认也在作业中。
+    这样即使后端被强制结束，`llama-server` 也不会残留。
+  - **macOS**：后端把子进程编号写入数据目录下的 `run.json`（沿用 `.run/` 的做法）；下次启动时先清理上次残留的进程。
+- 打包后 `sys.executable` 指向打包程序本身，不再是 Python 解释器。现在用 `[sys.executable, "-m", "jacara.cli", ...]`
+  启动子进程的地方，改为调用打包程序的子命令（`jacara-backend worker ...`）。
+
+## 3. 内嵌部件
+
+### 3.1 数据库：SQLite
+
+- 文件：`<数据目录>/jacara.db`。
+- 连接设置：
+  - `journal_mode=WAL`：读和写互不阻塞，适合 API 与两个工位同时访问。SQLite 文档说明 WAL 不能用于网络文件系统，
+    所以数据目录必须在本机磁盘上（第 4 节的默认位置满足这一点）。
+  - `foreign_keys=ON`：SQLite 默认不检查外键，需要在每次连接时打开（SQLAlchemy 文档给出的做法是在连接事件里执行该
+    PRAGMA）。
+  - 等待锁的时间设为 30 秒（`sqlite3.connect` 的 `timeout` 参数，默认 5 秒），避免工位写入时 API 立即报"数据库被锁"。
+- 数据表定义已经兼容 SQLite（JSON 列在 PostgreSQL 上用 JSONB，在 SQLite 上用 JSON；测试一直用 SQLite）。
+  模糊搜索用的 `ilike` 在 SQLite 上由 SQLAlchemy 转换为等价写法。
+- **迁移**：现有 24 个迁移只在 PostgreSQL 上执行过。SQLite 不支持大部分 `ALTER TABLE`，按 Alembic 文档在
+  `migrations/env.py` 中对 SQLite 启用批量模式（`render_as_batch`，即"建新表—复制数据—替换旧表"）。在 PostgreSQL 上
+  批量模式直接执行原来的 ALTER 语句，已有数据库不受影响。新增测试：在空 SQLite 数据库上从头执行全部迁移，再与
+  模型定义比对。
+
+### 3.2 文件存储：本地文件夹
+
+- 新增 `LocalStorage`，实现现有的 `ObjectStorage` 接口（`put`、`get`、`delete`），备份所需的 `keys`、`content_type`
+  同样实现。
+- 存储键映射为 `<数据目录>/files/<键>`；含 `..` 或绝对路径的键一律拒绝。
+- 写入时先写临时文件，再用 `os.replace` 替换（Python 文档：同一文件系统上的重命名是原子操作），断电时不会留下写了
+  一半的文件。
+- `content_type` 由文件扩展名推断（`mimetypes`），推断不出时为 `application/octet-stream`。文档的内容类型本来就记
+  在数据库 `documents.content_type` 中，存储层的类型只在备份时使用。
+
+### 3.3 任务队列：Huey
+
+- 桌面版不使用 Celery 和 Valkey，改用 Huey（MIT 许可）的 SQLite 存储，文件为 `<数据目录>/queue.db`
+  （与业务数据库分开，避免互相等待锁）。
+- 实现现有的 `TaskQueue` 接口（`enqueue_document`、`enqueue_eval`，以及工位之间的 `enqueue_extract`）。业务代码不变。
+- 两个工位对应两个队列（与现在的 `pipeline`、`extract` 队列同名）。每个工位进程运行一个 Huey 消费者，
+  线程工作者、数量为 1，相当于现在的 `--pool=solo --concurrency=1`（本机模型一次只处理一个请求；onnxruntime
+  在 macOS 上的 fork 子进程中容易崩溃）。
+- 任务在 `queue.db` 中持久保存，程序重启后继续处理；处理到一半被中断的文档，按现有规则标记为失败、可重新处理。
+- 服务器方式继续使用 Celery，不受影响。
+
+### 3.4 大模型服务：llama.cpp
+
+- 随安装包附带 llama.cpp 官方发布的构建（MIT 许可）：
+  - macOS：`llama-<版本>-bin-macos-arm64.tar.gz`（Metal 加速）。
+  - Windows：`llama-<版本>-bin-win-cpu-x64.zip` 和 `llama-<版本>-bin-win-vulkan-x64.zip`。
+- 版本固定，在 `packaging/desktop/llama.lock` 中记录版本号和每个压缩包的 SHA-256；构建时下载并校验，不一致即失败。
+- **Windows 选择 CPU 还是 GPU**：首次启动时运行 Vulkan 版的 `llama-server --list-devices`（官方参数："列出可用设备
+  后退出"）；有可用显卡就用 Vulkan 版，否则用 CPU 版。结果记入设置，可在"模型"页手动切换。不附带 CUDA 版
+  （需要额外的 CUDA 运行库，体积大）。**此方案需在有独立显卡和无独立显卡的 Windows 实机上各验证一次。**
+- 保留现有保护措施：每次启动生成随机 API 密钥，通过环境变量 `LLAMA_API_KEY` 传给 `llama-server`；只监听
+  `127.0.0.1`；关闭自带网页（`--no-webui`）；macOS 上设置 `GGML_METAL_BF16_DISABLE=1`。
+- `server_command` 查找 `llama-server` 的顺序改为：先看新设置 `JACARA_LLAMA_SERVER`（桌面版指向安装包内的文件），
+  再在系统路径中查找。
+
+### 3.5 OCR、版面和表格模型
+
+- RapidOCR 自带的 PP-OCRv6 检测、识别模型和方向分类模型，随 Python 包一起打包。
+- 版面模型：只打包 `rapid_layout/models/layout_cdla.onnx`。`rapid-layout` 也提供 YOLOv8 版面模型，其权重是 AGPL 许可
+  （见 `structure/engines.py` 的说明），违反规则 10。**构建脚本检查打包结果中 `rapid_layout` 目录只有
+  `layout_cdla.onnx`，出现其他权重文件即构建失败。**
+- 表格模型 SLANet-plus（Apache 2.0，约 7 MB）：现在要求用户自己下载。桌面版改为随安装包附带，构建时按 README 中已有
+  的 SHA-256 校验。
+
+### 3.6 网页
+
+- `web/dist` 作为 Tauri 资源打包，后端通过 `JACARA_WEB_DIR` 找到它。
+
+## 4. 数据目录
+
+- 根目录使用 Tauri 的 `appLocalDataDir`：
+  - macOS：`~/Library/Application Support/<标识符>/`
+  - Windows：`%LOCALAPPDATA%\<标识符>\`
+- 日志使用 Tauri 的 `appLogDir`：macOS `~/Library/Logs/<标识符>/`，Windows `%LOCALAPPDATA%\<标识符>\logs\`。
+- **标识符**：Tauri 要求反向域名格式，只能含字母、数字、连字符和点，且在所有应用中唯一。作者没有自己的域名，
+  采用托管平台前缀 `io.github.<用户名>.<应用名>`（Flathub 对托管在 GitHub 上的应用规定的做法）。暂定
+  `io.github.ryancamus12138-sketch.jacarandaparse`（与发布用的 GitHub 账户对应）。**标识符发布后不能再改**，否则旧用户的
+  数据目录找不到。
+- 目录内容：
+
+  | 路径 | 内容 |
+  |---|---|
+  | `jacara.db` | 业务数据库 |
+  | `queue.db` | 任务队列 |
+  | `files/` | 上传的原始文件、OCR 样本、导出文件等（原对象存储中的内容） |
+  | `models/` | 模型库和 `selected.json`（原项目下的 `models/`） |
+  | `settings.json` | 设置页保存的设置（原 `data/settings.json`） |
+  | `backups/` | 备份包 |
+  | `run.json` | 运行中的进程编号（原 `.run/`） |
+
+- 现在 `core/config.py` 中有 12 处、其他文件中有 13 处用 `PROJECT_ROOT` 拼接路径。其中运行数据（模型、设置、`.run`）
+  的路径改为用 `JACARA_HOME`。
+  `PROJECT_ROOT` 只保留给随程序分发的只读文件。服务器方式下 `JACARA_HOME` 默认等于项目根目录，行为不变。
+- 卸载程序不删除数据目录。README 写明数据目录位置，以及需要彻底删除时如何手动删除。
+
+## 5. 本机安全
+
+**问题**：个人模式不需要登录。任何本机程序，以及用户浏览器里打开的任何网页，都能向 `127.0.0.1` 上的端口发请求。
+攻击者还可以利用 DNS 重绑定，让恶意网页读到本机服务的返回内容。MCP 规范对本机 HTTP 服务明确要求：必须校验
+`Origin` 头以防 DNS 重绑定、只绑定 `127.0.0.1`、应当有身份验证。
+
+**措施**（四项同时采用）：
+
+1. **随机端口**：每次启动由系统分配空闲端口，不再固定为 8000。
+2. **每次启动的随机令牌**（参照 Jupyter Server：启动时生成令牌，首次访问时通过网址传入，之后改用 Cookie）：
+   - 后端用 `secrets.token_urlsafe(32)` 生成令牌，只通过标准输出交给 Tauri，不写入文件。
+   - Tauri 打开 `/desktop/enter?token=<令牌>`；后端核对后设置 `HttpOnly`、`SameSite=Strict` 的 Cookie，再跳转到首页。
+   - 之后每个 `/api` 请求都必须带这个 Cookie，否则返回 401。
+3. **Host 检查**：只接受 `Host` 为 `127.0.0.1:<端口>` 或 `localhost:<端口>` 的请求（Starlette `TrustedHostMiddleware`），
+   DNS 重绑定的请求带的是攻击者的域名，会被拒绝。
+4. **跨站请求检查**：对 POST、PUT、PATCH、DELETE 请求，按 OWASP 建议检查 `Sec-Fetch-Site`，缺失时检查 `Origin`；
+   来源不是本机地址的一律拒绝。
+
+第 3、4 项对现有的服务器个人版同样有效（现在没有任何 Host 或 Origin 检查），建议一并启用。
+
+## 6. 界面改动
+
+| 位置 | 改动 |
+|---|---|
+| 设置 → 个人 | 个人模式下隐藏"账号"卡片（用户名、团队、角色、权限、修改密码），只保留头像和昵称 |
+| 设置 → 数据和备份 | 去掉命令行步骤，改为"立即备份""从备份恢复""打开备份文件夹"按钮（见下） |
+| 设置 → 模型 | 首次启动向导（见下）；Windows 增加"计算设备：自动 / CPU / 显卡（Vulkan）" |
+| 设置 → 关于和诊断 | 显示版本、署名（NOTICE 内容）、许可、第三方许可清单、数据目录和日志目录，"打开数据文件夹"按钮 |
+| 全站提示 | 18 个文件中约 40 处提到 `jacara start`、`docker compose`、`brew install` 等命令。桌面版改为界面操作的说法，例如"重新启动 JacarandaParse 后生效" |
+
+**备份和恢复**
+
+- 沿用 ADR 0054 的备份格式（数据库各表的 JSON 行 + 全部文件，打包为 `.tar`，与数据库种类无关），所以桌面版的备份
+  和服务器版的备份可以互相恢复。
+- 备份：后端暂停两个工位，执行备份，写入 `<数据目录>/backups/`，再恢复工位。
+- 恢复：现有规则是"只能恢复到空环境"。桌面版的做法是：先把当前的 `jacara.db`、`queue.db`、`files/` 移到
+  `<数据目录>/before-restore-<时间>/`（不删除），在空环境中恢复并逐项校验；校验失败则移回原数据。
+- "打开数据文件夹"由后端调用系统命令完成（macOS `open`，Windows `os.startfile`），不需要 Tauri 的插件。
+
+**模型为什么不放进安装包**
+
+- GitHub Releases 规定每个文件必须小于 2 GiB。大模型约 5.68 GB、视觉模型约 0.92 GB，无法作为一个安装包上传；
+  拆成多个文件又失去"双击安装"的意义。
+- 每次发布新版本，用户都要重新下载 6 GB 以上，而模型通常没有变化。
+- 模型有自己的许可和版本，用户也可能已经下载过，或想换用模型库中的其他模型。
+
+**首次启动向导和模型下载**
+
+检测不到大模型时显示向导，提供三种方式：
+
+1. **在程序内下载（默认）**：列出要下载的文件、大小和许可，用户点"下载"后开始。下载来源自动选择、失败时自动切换（见下），
+   用户不需要选择。
+2. **放入文件夹**：向导显示"模型收件"文件夹 `<数据目录>/models/inbox/` 和需要的文件名，提供"打开文件夹"按钮。
+   用户用浏览器或其他工具从任一来源下载，把文件放进去，程序检测到后自动校验、合并、导入并继续（见下）。
+3. **选择已下载的文件**：用现有的分块上传接口导入模型库（会复制一份）。
+
+下载的文件清单（`packaging/desktop/models.lock`，随程序发布，不在运行时获取）：
+
+| 文件 | 大小 | 许可 | 是否默认勾选 |
+|---|---|---|---|
+| `Qwen3.5-9B-Q4_K_M.gguf`（大模型） | 5.68 GB | Apache 2.0 | 是 |
+| `mmproj-F16.gguf`（视觉模型，照片和扫描件 OCR 不可靠时让模型看原图） | 0.92 GB | Apache 2.0 | 是 |
+
+每个文件记录：字节数、完整文件的 SHA-256，以及各下载来源的地址。已核对（2026-11-14）：作者电脑上的两个文件与
+Hugging Face 上的文件 SHA-256 一致：
+
+| 文件 | 字节数 | SHA-256 |
+|---|---|---|
+| `Qwen3.5-9B-Q4_K_M.gguf` | 5,680,522,464 | `03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8` |
+| `mmproj-F16.gguf` | 918,166,080 | `f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f` |
+
+**下载来源**（三个来源都提供完整的单个文件，不需要拆分）：
+
+| 来源 | 地址格式 | 核对结果（2026-11-14） |
+|---|---|---|
+| Hugging Face（unsloth 官方仓库） | `https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/<提交编号>/<文件名>` | 两个文件 SHA-256 一致 |
+| hf-mirror.com（社区维护的 Hugging Face 镜像） | `https://hf-mirror.com/unsloth/Qwen3.5-9B-GGUF/resolve/<提交编号>/<文件名>` | 视觉模型：重定向后返回 200，`content-length` 918,166,080，`x-linked-etag` 等于 SHA-256 |
+| 魔搭社区 ModelScope（unsloth 仓库） | `https://www.modelscope.cn/models/unsloth/Qwen3.5-9B-GGUF/resolve/<提交编号>/<文件名>` | 接口返回的两个文件 SHA-256 一致。接口中的 `Size`（5,837,251,808 和 921,705,024）与实际不同，但实际下载时视觉模型的 `content-range` 总长为 918,166,080，与实际一致；支持 `Range`（返回 206） |
+
+- 使用**固定的提交编号**而不是 `main` / `master`，避免仓库更新后下到不同的文件。这与 huggingface_hub 文档的建议一致；
+  该文档还说明大文件的 ETag 就是它的 SHA-256。
+- 清单中的字节数和 SHA-256 以作者核对过的文件为准，**不采用各来源接口返回的元数据**（魔搭接口的 `Size` 就与实际不符）。
+  下载时按响应的 `content-length` 和下载完成后的 SHA-256 判断，任何一项与清单不符都视为失败。
+- 魔搭对 `HEAD` 请求返回 200 但不带 `content-length`，所以下载程序不用 `HEAD` 探测文件，一律用带 `Range` 的 `GET`
+  请求，从 `content-range` 中读取总长。
+- hf-mirror.com 不是 Hugging Face 官方服务，可用性不受保证；因为有 SHA-256 校验，它只可能"下载失败"，不可能"下载到错误
+  的文件"。
+- 魔搭社区由阿里巴巴运营，Qwen 模型的官方发布渠道之一；在中国大陆访问通常比 Hugging Face 顺畅。
+- 因为按 SHA-256 校验，无论从哪个来源下载，得到的都是同一个文件。以后增加来源，只需在清单中加地址。
+- 不在本项目的 GitHub 发布页转存模型：单个文件须小于 2 GiB，大模型必须拆分；实测 gzip、xz 压缩只能缩小 1%–2%
+  （模型参数已量化为约 4 位，数据接近随机），无法避免拆分。
+
+**自动选择和切换来源**
+
+参照 APT 的镜像下载方式（`apt-transport-mirror`）：按优先级依次尝试；一个镜像下载失败时，自动换列表中的下一个，
+直到成功或全部失败，用户不需要介入。
+
+- **优先级**：Hugging Face（官方仓库）→ 魔搭社区 → hf-mirror.com（社区镜像，放在最后）。
+- **判定失败**：连接失败、HTTP 错误，或连续 30 秒几乎收不到数据（参照 curl 的 `--speed-time`：只设 `--speed-limit`
+  时默认 30 秒；速度下限按 curl 的默认 1 字节/秒）。三种情况都立即换下一个来源。
+- **切换时不从头下载**：三个来源的文件逐字节相同（SHA-256 一致、字节数一致），已下载的部分直接保留，向下一个来源用
+  `Range` 请求剩余部分。下载完成后校验整个文件的 SHA-256；万一不一致，删除后从当前来源重新下载一次，仍不一致则报错。
+- **记住结果**：成功的来源记入设置，下次（例如下载视觉模型、换新推荐模型）优先使用。在中国大陆，第一次 Hugging Face
+  连接失败后会自动换到魔搭社区，之后都直接用魔搭社区。
+- **界面**：进度条上方显示当前来源，例如"正在从魔搭社区下载（Hugging Face 连接失败，已自动切换）"。全部来源都失败时，
+  显示每个来源的失败原因，并提供"重试"和"放入文件夹"两个选项。
+- **手动指定**：向导的"高级"中可以固定使用某一个来源，供自动选择不理想时使用；默认是"自动"。
+
+**放入文件夹的检测方式**
+
+- 向导打开期间，后端每 2 秒检查一次 `models/inbox/`（只看文件名和大小，开销很小）。
+- 某个文件的大小与清单一致，且连续两次检查大小不变（表示已经复制或下载完毕），才计算 SHA-256。
+- 校验通过后把文件移动到模型库并设为"使用中"，向导进入下一步；校验不通过则在向导中标出是哪个文件，
+  文件保留在原处，由用户删除后重新下载。
+- 文件名不在清单中的 `.gguf` 文件不自动导入，提示用户改用"选择已下载的文件"作为自定义模型导入，避免误用。
+
+下载过程：
+
+- **开始前检查磁盘空间**：剩余空间少于"文件大小 + 1 GB"时不开始，并提示需要多少空间。
+- **断点续传**：先写入 `<数据目录>/models/downloads/<文件名>.part`。中断后再次开始时，用 HTTP `Range` 请求剩余部分，
+  并带上 `If-Range`（首次下载时记录的 ETag）。服务器返回 206 就接着写；返回 200 说明文件变了，丢弃已下载部分重新开始
+  （MDN `If-Range` 文档描述的标准做法）。
+- **进度**：页面显示已下载大小、速度、预计剩余时间；可以暂停、继续、取消。关闭程序后再打开，可以从断点继续。
+- **校验**：下载完成后计算 SHA-256，与清单对比；不一致则删除文件并提示重新下载。字节数不一致同样视为失败。
+- **导入**：校验通过后把文件**移动**（不是复制）到模型库，设为"使用中"，重启模型服务。不会多占一份空间。
+- **网络限制**：只请求清单里的地址。允许各来源把请求重定向到它们的文件存储服务器，但只接受 HTTPS；
+  不发送任何用户数据、不带 Cookie、不带任何账号令牌（三个来源都是公开的，不需要登录）。
+- **实现**：使用已有依赖 `httpx`（BSD 许可）以流式方式下载，不引入 `huggingface_hub`。下载在后端进程中进行，
+  不经过 Tauri。
+- **需实机验证**：魔搭已确认支持 `Range`（2026-11-14）；Hugging Face 和 hf-mirror.com 重定向后的存储服务器对 `Range`
+  的支持，以及网络不稳定时断点续传是否正常，在实现时验证。
+
+**规则 1 的修改**
+
+现在的规则 1 是"运行时不访问任何外部网络"。改为：
+
+> 运行时不访问外部网络。只有两个例外，且都必须由用户在界面上主动点击触发：
+> (1) 模型下载：从随程序发布的固定清单中的地址下载模型文件，下载后按清单校验 SHA-256；
+> (2) 程序更新：从固定的发布地址读取最新版本信息，用户确认后下载安装包，安装前校验更新签名（第 13 节）。
+> 不得在后台自动联网，不得发送用户数据，不做遥测。
+
+除这一处外，其他功能（识别、审核、导出、备份）照常完全离线。下载完模型后断开网络，程序可以正常使用。
+
+**中国大陆的用户**
+
+在中国大陆通常无法直接访问 Hugging Face。按上面的自动切换，第一次连接失败后会自动改用魔搭社区，不需要用户操作。
+三个来源都无法访问时，用户可以用任何方式取得文件，再"放入文件夹"。
+
+**在 Tauri 窗口中需要单独处理的浏览器行为**
+
+- **下载**：现在的导出用 Blob 加 `<a download>` 保存。Windows 的 WebView2 支持这种下载；macOS 的 WKWebView
+  需要 Tauri 的下载事件（`DownloadEvent::Requested` 可以指定保存位置）处理。**Blob 地址的下载在 macOS 上必须实机
+  验证**；如果不支持，桌面版改为由后端直接把文件写入系统"下载"文件夹（用 `platformdirs` 取得路径，它已是现有依赖）。
+- **拖放上传**：Tauri 默认拦截文件拖放；按 Tauri 文档，要在 Windows 上使用 HTML5 拖放，需关闭 `dragDropEnabled`。
+- **外部链接**：Hugging Face、GitHub 等外部链接在系统浏览器中打开，不在程序窗口中打开。
+- **网页引擎差异**：macOS 上是 Safari 的内核，Windows 上是 Edge 的内核。前端要在两者上各完整检查一遍。
+
+## 7. 打包
+
+### 7.1 Python 部分：PyInstaller 单文件夹模式
+
+| 方案 | 结论 | 理由 |
+|---|---|---|
+| PyInstaller 单文件夹（onedir） | **采用** | 构建快，社区钩子覆盖面广；生成的程序可按任意许可发布，只要符合各依赖的许可 |
+| PyInstaller 单文件（onefile） | 不用 | 每次启动都要把全部文件解压到临时目录，并以两个进程运行，与第 2 节的进程管理冲突 |
+| Nuitka | 暂不用 | 把 Python 编译为 C，较难还原源码；但构建时间长（中等规模项目 5–15 分钟，PyInstaller 约 30 秒），工具本身为 AGPL（对生成的程序有例外） |
+| Briefcase | 不用 | 自成一套打包和安装流程，与 Tauri 外壳重复 |
+
+- 单文件夹整体作为 Tauri 资源（`bundle.resources`）打包，由 Rust 代码直接启动。Tauri 的 `externalBin` 只适合单个
+  可执行文件，不适合单文件夹。
+- 桌面版不需要的依赖不打包：`celery`、`redis`（Valkey 客户端）、`boto3`、`psycopg`。在 `pyproject.toml` 中把它们移到
+  可选依赖组 `server`，服务器方式安装时带上。**这样 LGPL 许可的 `psycopg` 不会出现在安装包中。**
+- PyInstaller 不能跨平台构建，macOS 包在 macOS 上构建，Windows 包在 Windows 上构建。
+- 说明：PyInstaller 打包的是 `.pyc` 字节码，有心人可以还原出接近源码的内容。源码不公开主要靠"不发布源码"，
+  不靠打包工具。若以后需要更强的保护，再评估 Nuitka。
+
+### 7.2 Tauri 外壳和安装包
+
+- macOS：`.dmg`（拖入"应用程序"文件夹）。只支持 Apple 芯片。
+- Windows：NSIS 安装程序 `-setup.exe`，默认按用户安装到 `%LOCALAPPDATA%`，不需要管理员权限。WebView2 采用默认的
+  "下载引导程序"方式；Windows 10（2018 年 4 月更新及以后）和 Windows 11 已自带 WebView2，通常无需下载。
+  不提供 MSI（MSI 只在企业批量部署时需要）。
+- macOS 最低系统版本：构建后检查各二进制文件（Python 运行库、onnxruntime、llama-server）要求的最低版本，取最高者写入
+  `tauri.conf.json` 的 `bundle.macOS.minimumSystemVersion` 和 README。
+
+### 7.3 自动构建
+
+- GitHub Actions，两台运行器：`macos-15`（Apple 芯片）和 `windows-latest`。不用 `macos-14`：GitHub 已于
+  2026 年 11 月 2 日停用该镜像。
+- 使用 Tauri 官方的 `tauri-apps/tauri-action` 构建并创建草稿发布，人工检查后再正式发布。
+- 构建步骤：安装依赖 → 构建网页 → PyInstaller 打包后端 → 下载并校验 llama.cpp 和表格模型 → 生成许可清单 →
+  检查 AGPL 权重和签名 → Tauri 打包 → 计算 SHA-256。
+- 后端测试也在 Windows 上运行一遍（现有代码只在 macOS 上运行过，进程管理、路径、信号处理需要验证）。
+- 不支持 Intel Mac：GitHub 已停用最后一个 Intel Mac 标准镜像（`macos-13`），只剩 `macos-15-intel` 维持到 2027 年秋；
+  Python 也已把 Intel Mac 降为二级支持。Intel Mac 没有 Metal 加速的大模型推理，9B 模型速度也难以接受。
+
+## 8. 未签名发布
+
+### 8.1 macOS
+
+- Tauri 文档指出：Apple 芯片要求从互联网下载的程序必须有签名，没有 Apple 证书时可以使用 ad-hoc 签名
+  （签名身份设为 `-`）。ad-hoc 签名不能免去用户的手动放行。
+- 构建后用 `codesign --verify --deep --strict` 检查程序包内每个二进制文件（含 PyInstaller 收集的动态库和
+  `llama-server`）都已签名；未签名的在打包脚本中逐个 ad-hoc 签名。
+- 用户首次打开时的步骤（README 中配图说明）：
+  1. 双击打开，系统提示无法验证开发者，点"完成"。
+  2. 打开"系统设置 → 隐私与安全性"，在页面下方找到 JacarandaParse，点"仍要打开"，输入登录密码。
+  3. macOS 15 起不能再用"按住 Control 键点按 → 打开"绕过（Apple 2024 年 8 月的开发者公告）。
+- 如果提示"已损坏，无法打开"：先核对 SHA-256 与发布页一致，再在终端执行
+  `xattr -cr /Applications/JacarandaParse.app`。这会去掉系统的隔离标记，只对确认来自官方发布页的文件这样做。
+
+### 8.2 Windows
+
+- 未签名的程序会被 SmartScreen 拦截，显示"Windows 已保护你的电脑"。用户点"更多信息"，再点"仍要运行"。
+- 微软文档说明：未签名的文件，每个新版本的信誉都从零开始，提示不会因为旧版本下载过而消失。
+- 企业电脑可能被策略禁止运行未签名程序，README 中注明。
+
+### 8.3 以后签名的条件
+
+- macOS：需加入 Apple 开发者计划（账号持有人）获取 Developer ID 证书，再用 `notarytool` 公证。
+- Windows：微软 Artifact Signing 的个人开发者只限美国和加拿大；其他地区个人可购买 OV 证书（每年约 150–300 美元）；
+  符合条件的开源项目可申请 SignPath Foundation。源码不公开，所以 SignPath Foundation 不适用。
+
+## 9. 许可和公开仓库
+
+- **许可**：沿用 Apache 2.0。新增 `NOTICE` 文件：
+
+  ```
+  JacarandaParse
+  Copyright 2026 Ryan Camus
+  ```
+
+  Apache 2.0 第 4 条（d）项要求转发者保留 NOTICE 中的署名；第 6 条不授予使用作者名称的权利。`LICENSE` 末尾的
+  `Copyright [yyyy] [name of copyright owner]` 是许可原文附带的填写示例，保持原样。
+- **第三方许可清单**（`THIRD_PARTY_LICENSES`，随安装包发布，"关于"页可以查看），构建时自动生成：
+  - Python 依赖：`pip-licenses`（MIT）带 `--with-license-file --with-notice-file`，并用 `--fail-on` 拦截
+    GPL、AGPL、LGPL（一旦出现即构建失败）。
+  - 网页依赖：`license-checker-rseidelsohn`（BSD-3-Clause）带 `--production`。
+  - Tauri 的 Rust 依赖：`cargo-about`。
+  - 手工补充：llama.cpp（MIT）、Python 运行时（PSF 许可）、RapidOCR 和版面模型、SLANet-plus（Apache 2.0）。
+  - 模型不随安装包分发，但在清单和 README 中注明：Qwen3.5-9B 为 Apache 2.0，GGUF 文件来自 unsloth 的转换仓库，
+    同样标为 Apache 2.0。
+- **现有依赖的许可检查结果**（2026-11-14，后端 97 个包、前端 8 个直接依赖）：
+  - 没有 GPL、AGPL。
+  - `psycopg`、`psycopg-binary` 为 LGPL-3.0：桌面版不打包（7.1 节）。
+  - `certifi`、`tqdm` 为 MPL-2.0（文件级要求）：不修改其源码，附上许可原文即可。
+  - 前端直接依赖全部为 MIT；间接依赖在构建时由上面的工具全量检查。
+- **构建工具的许可**：PyInstaller 为 GPL 加引导程序例外，生成的程序可按任意许可发布；社区钩子包的标准钩子为
+  GPL-2.0 及以上，只在构建时运行，不进入安装包；进入安装包的运行时钩子为 Apache 2.0。规则 10 约束的是运行时依赖，
+  构建工具不受影响。
+- **公开仓库只放两个文件**：`README.md` 和 `LICENSE`。参照两个闭源桌面软件的公开仓库：Obsidian 的
+  `obsidian-releases` 只用于发布安装包，说明中写明软件不开源；LM Studio 的 `lmstudio-bug-tracker` 只用于收集问题。
+  - `NOTICE` 和 `THIRD_PARTY_LICENSES` 放在安装包内，并在"设置 → 关于"中显示。Apache 2.0 第 4 条（d）项允许 NOTICE
+    随分发物一起提供或在程序中显示，安装包本身就是分发物，满足要求。
+  - 截图和 GIF 通过 GitHub 编辑页面上传为附件（`github.com/user-attachments/...` 链接），不在仓库中放图片文件；
+    演示视频放在视频网站，README 中只放链接。
+  - Releases 中放安装包、`.sha256` 文件和 `latest.json`（程序内更新用）。发布说明来自 `packaging/notes/<版本>.md`，
+    只写用户能感知的变化，不写开发细节。
+- **README 的内容**（`packaging/README.md`，发布时复制到公开仓库）：按 GitHub 文档对 README 的建议
+  （做什么、为什么有用、怎么开始、到哪里求助、谁在维护）组织为：一句话介绍、截图和演示视频、功能、下载、系统要求、
+  安装和放行步骤、第一次使用、数据和隐私、更新和备份、问题反馈、许可；末尾附英文摘要。
+  不写开发相关内容（技术架构、开发环境、测试、设计记录、路线图）。
+  文中用"【发布前填写：…】"标出发布前才能确定的内容（截图、视频、内存要求、程序大小、反馈渠道）；发布流程检查
+  README 中不再有该标记，否则发布失败。
+- **安装包内不含测试和文档**：PyInstaller 只收集运行时导入的代码；构建脚本检查打包结果中没有 `tests`、`docs`
+  目录和 `.md` 设计文档，出现即构建失败。测试、设计文档（ADR）、CHANGELOG 只保留在私有仓库中。
+- **不再公开源码**：现在的 `release.yml` 把 `git archive` 生成的源码 zip 上传到公开仓库的 Releases。改为只上传安装包。
+  已经发布的源码 zip 是否从公开仓库删除，由作者决定（已下载的人仍可按 Apache 2.0 使用那一版）。
+
+## 10. 体积和硬件要求
+
+**现在的体积**（2026-11-14 在作者电脑上测量）：
+
+| 部分 | 大小 |
+|---|---|
+| Python 依赖（`.venv`） | 约 833 MB，其中开发工具和桌面版不需要的服务器依赖约 347 MB |
+| 打包好的网页（`web/dist`） | 约 6.3 MB |
+| 大模型 `Qwen3.5-9B-Q4_K_M.gguf` | 5.68 GB |
+| 视觉模型 `mmproj-F16.gguf` | 0.92 GB |
+| 表格模型 | 约 7.5 MB |
+| Docker 镜像（PostgreSQL、Valkey、SeaweedFS）、llama.cpp | 未测量（桌面版不再需要 Docker） |
+
+**桌面版安装后的预计体积**：去掉开发工具和服务器依赖后，Python 依赖约 465 MB，加上 Python 运行库、网页、表格模型和
+llama-server。安装包经过压缩，下载体积会更小。准确数字以第一次构建的实测为准，写入 README。模型另外下载。
+
+
+**硬件要求**
+
+- macOS：Apple 芯片。Windows：Windows 10/11 x64。
+- 磁盘：大模型约 5.68 GB，视觉模型和安装包另计；导入模型时会临时多占一份模型大小的空间。
+- 内存：在 16 GB 内存的 Mac 和 Windows 电脑上实测（含 32768 上下文长度）后写入 README，不预先估计。
+
+## 11. 本版不做
+
+- 网页版、在线体验版。
+- 代码签名和公证（第 8.3 节）。
+- 后台自动检查更新（只在用户点击"检查更新"时检查，第 13 节）。
+- Intel Mac、Windows ARM、Linux 桌面版。
+- Windows CUDA 加速。
+- 团队版桌面程序。
+- 在本项目 GitHub 发布页转存模型（需拆分，见上）。
+
+## 12. 实施步骤和验收
+
+| 步骤 | 内容 | 验收 |
+|---|---|---|
+| 1 | 后端可切换：`JACARA_HOME`、三项运行方式设置、`LocalStorage`、Huey 队列、SQLite 连接设置、迁移批量模式 | 全部测试在 SQLite + 本地存储 + Huey 下通过；空 SQLite 上执行全部迁移后与模型定义一致；Docker 方式不受影响 |
+| 2 | `jacara desktop` 子命令：随机端口、令牌、Host 和 Origin 检查、进程管理、就绪输出 | 在 Mac 上从源码运行，正常启动和退出；强制结束父进程后没有残留进程；带错误 Host 或外站 Origin 的请求被拒绝 |
+| 3 | 界面改动和模型下载（第 6 节） | Safari 内核和 Edge 内核下各完整走一遍：上传、识别、审核、导出、备份、恢复、首次启动向导；下载中途断网再恢复能续传；篡改文件后校验失败 |
+| 4 | PyInstaller 打包后端，附带 llama.cpp 和模型文件，生成许可清单 | 打包结果在没有安装 Python 的 Mac 上运行；AGPL 权重检查和许可检查生效 |
+| 5 | Tauri 外壳、`.dmg`、Windows 安装包、GitHub Actions | 在全新的 macOS 用户账户和全新的 Windows 虚拟机上安装、放行、首次启动、下载模型、处理样例单据、导出、退出后无残留进程、升级安装保留数据、卸载 |
+| 6 | `NOTICE`、README、放行说明配图、`release.yml` 改为只发布安装包和 `latest.json` | 公开仓库中不含源码；README 中的每个步骤都按实际界面截图核对 |
+| 7 | 升级和备份（第 13 节）：升级前备份、降级保护、程序内更新、自动备份、从备份恢复 | 用上一版本建的数据升级到新版本无损；迁移失败能还原；装回旧版本时拒绝打开；在另一台电脑上从备份完整恢复 |
+
+## 13. 升级、数据迁移和备份
+
+### 13.1 程序和数据分开存放
+
+- 程序装在"应用程序"文件夹（macOS）或 `%LOCALAPPDATA%` 下的安装目录（Windows，NSIS 按用户安装的默认位置），数据在第 4 节的数据目录。
+- 安装新版本只替换程序文件，**数据目录不动**：业务数据、上传的文件、模型库（含已下载的模型）、设置全部保留。
+  用户不需要做任何迁移操作。
+- 卸载程序同样不删除数据目录（第 4 节）。
+
+### 13.2 新版本第一次启动时自动升级数据
+
+- 数据目录中记录 `version.json`：上次运行的程序版本和数据库迁移版本（参照 Firefox 在配置目录的 `compatibility.ini`
+  中记录 `LastVersion`）。
+- **新版本打开旧数据**：
+  1. 先自动做一次"升级前备份"：用 SQLite 在线备份复制 `jacara.db`，连同 `settings.json`、`version.json` 存入
+     `backups/pre-upgrade-<旧版本>-<时间>/`。上传的文件不复制，因为迁移只改数据库表，不改文件。若以后某个迁移必须
+     改动文件，该迁移自己负责先备份受影响的文件。
+  2. 执行数据库迁移（`alembic upgrade head`，与现在 `jacara setup` 的做法相同）。
+  3. 迁移失败时，用第 1 步的副本还原数据库，提示错误原因，并告知可以重新安装旧版本继续使用。
+- **旧版本打开新数据**（用户装回了旧版本）：数据库迁移版本是旧程序不认识的，程序**拒绝打开**，提示"数据由更新的版本
+  创建，请安装 X.Y.Z 或更新的版本"，不做任何改动，避免损坏数据。这与 Firefox 的降级保护（"You've launched an older
+  version of Firefox using a profile that may not be compatible"）以及标准模板表格拒绝读取更新格式（ADR 0067）是同一做法。
+  如果确实要退回旧版本，可以用旧版本恢复 `pre-upgrade-<旧版本>` 中的备份。
+- 设置文件 `settings.json`：新版本不认识的项忽略，缺少的项用默认值（pydantic-settings 的现有行为）。设置项改名时，
+  在升级步骤中改写，并记入 CHANGELOG。
+
+### 13.3 模型
+
+- 已下载的模型在数据目录的模型库中，升级后照常使用，"使用中"的选择也保留。
+- 新版本的 `models.lock` 推荐了新模型时，"模型"页显示"有新的推荐模型"，由用户决定是否下载。旧模型保留，直到用户
+  在模型库中删除。每条抽取结果记录了所用模型的名称和版本（规则 4），换模型后旧结果仍可追溯。
+- 新版本附带的 llama.cpp 会更新。发布前的检查清单中加入一项：用上一个版本推荐的模型在新版本中处理样例单据，
+  确认仍能正常加载和抽取。
+
+### 13.4 获取新版本
+
+两种方式都提供：
+
+1. **程序内更新（推荐）**：设置 → 关于和诊断 → "检查更新"。
+   - 用户点击后，程序读取 `https://github.com/<公开仓库>/releases/latest/download/latest.json`（Tauri 更新插件的
+     静态文件格式，由 `tauri-action` 生成）。有新版本时显示版本号和 CHANGELOG 中的更新说明。
+   - 用户点"下载并安装"后，Tauri 更新插件下载安装包，**校验更新签名**，然后安装并重启。Windows 使用 `passive` 模式
+     （只显示进度条，不需要操作）。
+   - 更新签名是 Tauri 自己的签名密钥，免费生成，与 Apple、微软的代码签名证书无关。Tauri 文档说明：更新签名不能关闭；
+     **私钥丢失后，已安装的用户将无法再通过程序内更新升级**。私钥只保存在 GitHub Actions 的密钥
+     （`TAURI_SIGNING_PRIVATE_KEY`）和作者自己的离线备份中，不放进仓库，也不放进 `.env`。
+   - macOS：由程序自己下载的文件不带系统的隔离标记（浏览器下载的才带），预计更新后不需要再次手动放行。**需在实机验证。**
+   - 不在后台自动检查。
+2. **手动下载**："前往下载页"按钮在系统浏览器中打开公开仓库的 Releases 页面。用户下载新安装包，直接安装覆盖即可，
+   数据同样保留。
+
+### 13.5 备份：导出全部数据，需要时再导入
+
+现有的备份功能（ADR 0054）就是"把全部数据导出成一个文件，以后再导入"：备份包含数据库全部表和全部上传文件，
+恢复前逐项校验 SHA-256。桌面版在此基础上：
+
+- **手动完整备份**：设置 → 数据和备份 → "立即备份"。可选择保存位置（例如移动硬盘、网盘同步文件夹）。
+  备份另外包含 `settings.json` 和"使用中的模型"清单（文件名和 SHA-256）。
+  可勾选"包含模型文件"：默认不勾选，因为模型有 6 GB 以上，而且可以按清单重新下载。
+- **自动备份**：每天自动备份一次数据库，保存在数据目录的 `backups/` 中，保留最近 14 份（参照 Immich 的默认设置：
+  每天一次、保留最近 14 份），可在设置中修改。与 Immich 相同，自动备份只含数据库，不含上传的文件；需要完整保护时用
+  手动完整备份存到另一个磁盘（Immich 建议的 3-2-1 原则：3 份副本、2 种介质、1 份异地）。
+- **恢复和换电脑**：在新电脑上安装程序，首次启动向导中选择"从备份恢复"，选择备份文件即可。备份中没有模型文件时，
+  按"使用中的模型"清单提示下载。
+- **跨版本**：备份记录了数据库迁移版本。旧版本的备份可以恢复到新版本（恢复时先建到备份时的版本，导入数据后再升级，
+  现有的恢复流程已经这样做）；新版本的备份不能恢复到旧版本，提示需要安装的版本。
+
+## 已确定
+
+1. 署名：Ryan Camus（`NOTICE`、"关于"页、README）。
+2. 标识符：`io.github.ryancamus12138-sketch.jacarandaparse`。
+3. Windows 显卡加速：自动检测，有可用显卡用 Vulkan，否则用 CPU。
+4. 模型下载：在程序内下载，按 Hugging Face → 魔搭社区 → hf-mirror.com 的顺序自动选择，失败时自动切换并接着下载；
+   也可以手动下载后放入文件夹自动检测。
+5. 更新：用户点击"检查更新"后可在程序内下载安装，也可以去发布页手动下载。规则 1 增加这两个例外。
+
+## 参考
+
+- GitLab：Merging CE and EE codebases — https://about.gitlab.com/blog/merging-ce-and-ee-codebases/
+- Tauri：What is Tauri — https://v2.tauri.app/start/
+- Tauri：Embedding External Binaries（sidecar）— https://v2.tauri.app/develop/sidecar
+- Tauri：Resources — https://v2.tauri.app/develop/resources/
+- Tauri：path API（appLocalDataDir、appLogDir、resourceDir）— https://v2.tauri.app/reference/javascript/api/namespacepath
+- Tauri：Single Instance 插件 — https://v2.tauri.app/plugin/single-instance
+- Tauri：Windows Installer — https://v2.tauri.app/distribute/windows-installer/
+- Tauri：DMG — https://v2.tauri.app/distribute/dmg/
+- Tauri：macOS Code Signing（ad-hoc 签名）— https://v2.tauri.app/distribute/sign/macos/
+- Tauri：GitHub 发布流程 — https://tauri.app/distribute/pipelines/github/
+- Tauri：`WindowConfig.drag_drop_enabled` — https://docs.rs/tauri-utils/2.9.3/tauri_utils/config/struct.WindowConfig.html
+- Tauri：`Config.identifier` — https://docs.rs/tauri-utils/2.9.3/tauri_utils/config/struct.Config.html
+- Tauri：`DownloadEvent` — https://docs.rs/tauri-runtime/2.10.0/src/tauri_runtime/webview.rs.html
+- PyInstaller：License — https://pyinstaller.org/en/latest/license.html
+- PyInstaller：Advanced Topics（单文件模式的进程和临时目录）— https://pyinstaller.org/en/latest/advanced-topics.html
+- pyinstaller-hooks-contrib — https://pypi.org/project/pyinstaller-hooks-contrib
+- Nuitka（pydevtools 手册）— https://pydevtools.com/handbook/reference/nuitka/
+- Gitea：Configuration Cheat Sheet（DB_TYPE、STORAGE_TYPE、queue TYPE）— https://docs.gitea.com/1.19/administration/config-cheat-sheet
+- Huey — https://github.com/coleifer/huey ；API 文档 — https://huey.readthedocs.io/en/latest/api.html
+- SQLite：Write-Ahead Logging — https://www.sqlite.org/wal.html
+- Alembic：Batch Migrations for SQLite — https://alembic.sqlalchemy.org/en/latest/batch.html
+- llama.cpp：发布构建的文件名（release workflow）— https://huggingface.co/datasets/echodict/llama.cpp/blob/main/.github/workflows/release.yml
+- llama.cpp：`llama-server` 参数 — https://manpages.debian.org/unstable/llama.cpp-tools/llama-server.1.en.html
+- GitHub：About releases（单个文件小于 2 GiB）— https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases
+- huggingface_hub：Downloading files（resolve 地址、固定提交、ETag 与 SHA-256）— https://huggingface.co/docs/huggingface_hub/package_reference/file_download
+- MDN：If-Range — https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Range
+- Tauri：Updater 插件 — https://v2.tauri.app/plugin/updater/
+- Firefox 降级保护说明 — https://its.forsythtech.edu/support/solutions/articles/10000049967
+- Immich：Backup and Restore（自动备份默认值、3-2-1）— https://docs.immich.app/administration/backup-and-restore
+- 程序自行下载的更新不带隔离标记 — https://flaviocopes.com/mac-app-updates.md
+- 魔搭社区：unsloth/Qwen3.5-9B-GGUF — https://www.modelscope.cn/models/unsloth/Qwen3.5-9B-GGUF
+- MindNLP：使用镜像下载模型（hf-mirror、ModelScope）— https://mindnlp.readthedocs.io/tutorials/use_mirror/
+- APT：apt-transport-mirror（按优先级尝试镜像、失败自动换下一个）— https://www.mankier.com/1/apt-transport-mirror
+- curl：`--speed-time`（默认 30 秒，速度下限默认 1 字节/秒）— https://daniel.haxx.se/blog/?p=14009 ；https://fuchsia.googlesource.com/third_party/curl/+/refs/heads/main/docs/cmdline-opts/speed-time.md
+- GitHub：About READMEs — https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes
+- Obsidian：obsidian-releases README — https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/README.md
+- LM Studio：lmstudio-bug-tracker — https://github.com/lmstudio-ai/lmstudio-bug-tracker
+- 微软：Job Objects — https://learn.microsoft.com/windows/win32/procthread/job-objects
+- Jupyter Server：Security — https://jupyter-server.readthedocs.io/en/latest/operators/security.html
+- MCP 规范：Transports（Security Warning）— https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
+- OWASP：CSRF Prevention Cheat Sheet — https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
+- Flathub：Requirements（应用 ID）— https://docs.flathub.org/docs/for-app-authors/requirements
+- Apple：Developer ID — https://developer.apple.com/developer-id
+- macOS Sequoia 取消 Control 点按绕过（Michael Tsai 汇总 Apple 公告）— https://mjtsai.com/blog/2024/07/05/sequoia-removes-gatekeeper-contextual-menu-override
+- AppleInsider：macOS Sequoia 的运行时保护变化 — https://appleinsider.com/inside/macos-sequoia/tips/whats-changed-in-runtime-protection-for-macos-sequoia
+- 微软：Code signing options — https://learn.microsoft.com/windows/apps/package-and-deploy/code-signing-options
+- 微软：SmartScreen reputation — https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation
+- GitHub：macOS 14 runner image retirement — https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-retirement
+- Python 讨论：Dropping Intel Mac to Tier 2 — https://discuss.python.org/t/dropping-intel-mac-to-tier-2/102100
+- Apache License 2.0 — https://www.apache.org/licenses/LICENSE-2.0
+- pip-licenses — https://pypi.org/project/pip-licenses/
+- license-checker-rseidelsohn — https://www.npmjs.com/package/license-checker-rseidelsohn
+- cargo-about — https://embarkstudios.github.io/cargo-about
+- Qwen3.5-9B — https://huggingface.co/Qwen/Qwen3.5-9B ；GGUF — https://huggingface.co/unsloth/Qwen3.5-9B-GGUF

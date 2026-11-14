@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from jacara import __version__
+from jacara.core.config import data_home
 from jacara.core.i18n import render
 
 if TYPE_CHECKING:
@@ -1071,7 +1072,7 @@ def _watch(args: argparse.Namespace) -> int:
     from jacara.core.config import get_settings
     from jacara.core.db import session_scope
     from jacara.core.owner import PERSONAL_OWNER
-    from jacara.core.queue import CeleryQueue
+    from jacara.core.queue import create_queue
     from jacara.core.storage import get_storage
     from jacara.models import User
     from jacara.modules.auth.service import owner_of
@@ -1108,7 +1109,7 @@ def _watch(args: argparse.Namespace) -> int:
         folder,
         None,
         get_storage(),
-        CeleryQueue(),
+        create_queue(),
         owner,
         template=args.template or settings.jacara_watch_template,
         split=split,
@@ -1337,9 +1338,9 @@ def _backup_commands(args: argparse.Namespace) -> int:
     if args.command == "restore":
         return commands.run_restore(args.archive, settings, _running())
     from jacara.core.db import get_engine
-    from jacara.core.storage import S3Storage
+    from jacara.core.storage import get_storage
 
-    return commands.run_backup(get_engine(), S3Storage(settings), args.out, __version__, _running())
+    return commands.run_backup(get_engine(), get_storage(), args.out, __version__, _running())
 
 
 def _stop_running() -> int:
@@ -1468,7 +1469,7 @@ MODEL_PORT = 8080
 """Port of the model server started by jacara start; matches the default MODEL_SERVER."""
 
 
-RUN_FILE = Path(__file__).resolve().parents[3] / ".run" / "jacara.json"
+RUN_FILE = data_home() / ".run" / "jacara.json"
 """Process ids written by jacara start (.run/ is git-ignored); used by jacara stop."""
 
 _RED, _YELLOW, _GREEN = "31", "33", "32"
