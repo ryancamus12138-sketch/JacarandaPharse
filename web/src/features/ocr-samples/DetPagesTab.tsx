@@ -47,7 +47,7 @@ function DetExportDialog({ open, onClose }: { open: boolean; onClose: () => void
   const store = useMutation({
     mutationFn: () => saveDetPagesAsDataset(kind, { name: name.trim(), description: t('检测样本导出') }),
     onSuccess: (d) => {
-      void message.success(t('已保存到数据集库：{{name}} v{{version}}', { name: d.name, version: d.version }))
+      void message.success(t('已保存为数据集：{{name}} v{{version}}', { name: d.name, version: d.version }))
       done()
     },
     onError: (err) => void message.error(errorText(err)),
@@ -71,7 +71,7 @@ function DetExportDialog({ open, onClose }: { open: boolean; onClose: () => void
           loading={store.isPending}
           onClick={() => store.mutate()}
         >
-          {t('保存到数据集库')}
+          {t('保存为数据集')}
         </Button>,
         <Button
           key="zip"
@@ -114,7 +114,7 @@ function DetExportDialog({ open, onClose }: { open: boolean; onClose: () => void
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {t('ZIP 包含 images/（整页图像）及 det_gt_train.txt、det_gt_val.txt（每行格式：图片路径、Tab、文本框 JSON），可直接用于 PaddleOCR 检测训练。按业务单据划分，同一单据的所有页位于同一划分。')}
         </Typography.Text>
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('保存到数据集库时的名称，例如“收据检测”')} maxLength={64} />
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('保存为数据集时的名称，例如“收据检测”')} maxLength={64} />
       </Flex>
     </Modal>
   )

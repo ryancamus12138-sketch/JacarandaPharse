@@ -8,6 +8,8 @@ export interface ModelFile {
   name: string
   size: number
   modified: string
+  /** Who ships the file when it is not imported (the table model shipped with the program). */
+  provider?: string | null
 }
 
 export interface ModelSlot {
@@ -18,6 +20,8 @@ export interface ModelSlot {
   source: 'env' | 'choice' | 'auto' | 'builtin' | 'bundled' | 'none'
   env: string
   files: ModelFile[]
+  /** What the slot uses when nothing is chosen, with where it comes from (OCR slots). */
+  default_label: string | null
 }
 
 export interface ModelsInfo {

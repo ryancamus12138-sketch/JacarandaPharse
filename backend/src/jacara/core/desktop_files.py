@@ -215,12 +215,13 @@ def choose_folder(prompt: str) -> Path | None:
 
 def choose_file(prompt: str, extensions: tuple[str, ...]) -> Path | None:
     """Let the user choose a file with one of these extensions (without dots). None when
-    cancelled."""
+    cancelled. The caller checks the extension of the chosen file.
+
+    On macOS the dialog lists every file: `choose file of type` takes type identifiers, and an
+    extension that no application has registered (.gguf) matches no type, so every file would be
+    greyed out."""
     if sys.platform == "darwin":
-        kinds = "{" + ", ".join(_applescript_text(e) for e in extensions) + "}"
-        script = (
-            f"POSIX path of (choose file with prompt {_applescript_text(prompt)} of type {kinds})"
-        )
+        script = f"POSIX path of (choose file with prompt {_applescript_text(prompt)})"
         return _ask(["osascript", "-e", script])
     if sys.platform == "win32":
         patterns = ";".join(f"*.{e}" for e in extensions)

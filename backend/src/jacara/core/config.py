@@ -189,7 +189,9 @@ class Settings(BaseSettings):
             path = self.jacara_model
             return path if path.is_absolute() else data_home() / path
         chosen = chosen_file("model")
-        if chosen:
+        if chosen or self.jacara_desktop:
+            # The desktop app runs only what is in use in the model library (ADR 0068): loose
+            # files in models/ are offered for import in the wizard instead.
             return chosen
         found = sorted(p for p in (data_home() / "models").glob("*.gguf") if not is_mmproj(p))
         return found[0] if len(found) == 1 else None
@@ -203,7 +205,7 @@ class Settings(BaseSettings):
         if model_choices().get("mmproj") == "":
             return None  # Vision model disabled in the web UI.
         chosen = chosen_file("mmproj")
-        if chosen:
+        if chosen or self.jacara_desktop:
             return chosen
         found = sorted(p for p in (data_home() / "models").glob("*.gguf") if is_mmproj(p))
         return found[0] if len(found) == 1 else None
@@ -222,14 +224,13 @@ class Settings(BaseSettings):
 
     def table_model(self) -> Path | None:
         """Table structure model file, or None: JACARA_TABLE_MODEL, then the web UI selection, then
-        models/table/slanet-plus.onnx in the data directory, then the copy shipped with the program
-        (bundled_table_model)."""
-        path = (
-            self.jacara_table_model
-            or chosen_file("table")
-            or data_home() / "models" / "table" / "slanet-plus.onnx"
-        )
-        if path.is_file():
+        (not in the desktop app) models/table/slanet-plus.onnx in the data directory, then the copy
+        shipped with the program (bundled_table_model)."""
+        path = self.jacara_table_model or chosen_file("table")
+        if path is None and not self.jacara_desktop:
+            # The desktop app runs imported models only; a loose file is offered for import.
+            path = data_home() / "models" / "table" / "slanet-plus.onnx"
+        if path is not None and path.is_file():
             return path
         if self.jacara_table_model is None and not model_choices().get("table"):
             return bundled_table_model()

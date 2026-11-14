@@ -4,12 +4,12 @@ without the user: after a restart the partial files are shown as paused."""
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import os
 import re
+import shutil
 import threading
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from jacara.core.i18n import join_items, render, stored, tr
@@ -25,6 +25,7 @@ from jacara.downloads import (
     fetch,
     inbox_dir,
     load_lock,
+    models_dir,
     part_of,
     read_state,
     sha256_of,
@@ -42,6 +43,54 @@ CUSTOM_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 ACTIVE = ("waiting", "downloading", "verifying", "importing")
 """Item states in which the file is being worked on."""
 
+PARTIAL = (".crdownload", ".part", ".download")
+"""Names browsers give a file while they are still downloading it (Chrome .crdownload, Firefox
+.part, Safari .download): left alone until the browser gives it its real name."""
+
+ONNX_HINTS = (
+    ("table", re.compile(r"slanet|table")),
+    ("ocr_det", re.compile(r"(?<![a-z])det(ection)?(?![a-z])")),
+    ("ocr_rec", re.compile(r"(?<![a-z])rec(ognition)?(?![a-z])")),
+)
+"""Kind suggested for an .onnx file from the words in its path, as PaddleOCR names its models
+(PP-OCRv5_server_det, PP-OCRv5_server_rec, SLANet_plus). Only a suggestion: the user chooses."""
+
+GGUF_KINDS = ("model", "mmproj")
+ONNX_KINDS = ("ocr_det", "ocr_rec", "table")
+
+
+def custom_name(stem: str) -> str:
+    """Model library name for a file imported as it is."""
+    return CUSTOM_NAME.sub("-", stem).strip("-._")[:64] or "model"
+
+
+def onnx_hint(rel: str) -> str | None:
+    lower = rel.lower()
+    return next((kind for kind, words in ONNX_HINTS if words.search(lower)), None)
+
+
+def _row(name: str, size: int, status: str, **extra: Any) -> dict[str, Any]:
+    return {
+        "name": name,
+        "size": size,
+        "expected": None,
+        "status": status,
+        "done": None,
+        "total": None,
+        "error": None,
+        "kind": None,
+        "importable": False,
+        "deletable": True,
+        "link": False,
+        "target": None,
+        "legacy": False,
+        "parts": None,
+        "count": None,
+        "dictionaries": [],
+        "suggested": None,
+        **extra,
+    }
+
 
 class Downloads:
     def __init__(self, lock: tuple[LockedFile, ...] | None = None) -> None:
@@ -56,6 +105,8 @@ class Downloads:
         has the listed size and did not change between two checks (copying has finished)."""
         self.inbox_failed: dict[str, tuple[int, float]] = {}
         """Inbox files that failed the check, not checked again until they change."""
+        self.inbox_other = 0
+        """Other files in the inbox at the last check (not model files): only counted."""
 
     # ---- What is offered ----
 
@@ -162,7 +213,10 @@ class Downloads:
                 if item.origin == "download":
                     self._download(item)
                 elif item.origin == "file" or (
-                    item.origin == "inbox" and item.path is not None and item.path.is_symlink()
+                    item.origin == "inbox"
+                    and item.path is not None
+                    and item.path.is_symlink()
+                    and not item.extra
                 ):
                     # A link is not moved into the model library: the library would only hold the
                     # link, and the file it points to could change or disappear.
@@ -244,6 +298,15 @@ class Downloads:
         item.state, item.done = "verifying", 0
         item.total = path.stat().st_size
         if item.custom:
+            if item.origin == "inbox":
+                # Checked before anything leaves the inbox: the model library removes a version it
+                # refuses.
+                from jacara.modules.hub import registry
+
+                try:
+                    registry.check(item.kind or item.file.slot, path, item.dictionary)
+                except registry.HubError as err:
+                    raise DownloadError(err.message) from err
             return
         if item.total != item.file.size:
             raise DownloadError(
@@ -266,6 +329,18 @@ class Downloads:
         if item.copy is not None:
             item.copy.unlink(missing_ok=True)  # The copy; the file itself is untouched.
             item.copy = None
+        if (
+            item.origin == "inbox"
+            and item.path is not None
+            and item.path.name != item.file.filename
+        ):
+            raise DownloadError(
+                stored(
+                    "{name} 与清单中的 {listed} 大小相同，但内容不同，不是这个文件",
+                    name=item.rel or item.path.name,
+                    listed=item.file.filename,
+                )
+            )
         if item.origin == "inbox":
             raise DownloadError(
                 stored(
@@ -288,7 +363,8 @@ class Downloads:
         self._verify(item)
 
     def _import(self, item: Item) -> None:
-        """Move the checked file into the model library as a new version and put it to use."""
+        """Move the checked file into the model library as a new version and put it to use (OCR
+        models: only into the library; they are switched to on the settings page)."""
         from jacara.core.config import get_settings
         from jacara.core.db import session_scope
         from jacara.modules.audit.service import record
@@ -302,9 +378,8 @@ class Downloads:
         with session_scope() as session:
             hub = HubService(session, owner, get_settings())
             if item.imported is None:
-                path = self._path(item)
                 work = registry.incoming()
-                os.replace(path, work / item.file.filename)
+                leave = self._gather(item, work)
                 file = item.file
                 meta: dict[str, Any] = {
                     "base_model": file.base_model,
@@ -316,8 +391,18 @@ class Downloads:
                         (s.url for s in file.sources if s.id == item.source), file.sources[0].url
                     )
                 version = registry.add_version(
-                    file.name, file.slot, work, file.filename, None, meta, file.description
+                    file.name,
+                    item.kind or file.slot,
+                    work,
+                    file.filename,
+                    item.dictionary.name if item.dictionary else None,
+                    meta,
+                    file.description,
                 )
+                # In the library now: the inbox files that were linked or copied leave the inbox.
+                for path in leave:
+                    path.unlink(missing_ok=True)
+                    _prune(path.parent)
                 item.imported = f"{version.name}@v{version.version}"
                 record(
                     session,
@@ -333,12 +418,47 @@ class Downloads:
                     ],
                 )
             name, number = item.imported.rsplit("@v", 1)
-            hub.use(name, int(number))
+            if item.use:
+                hub.use(name, int(number))
         if item.origin == "download":
             state = read_state()
             (state.get("etags") or {}).pop(item.file.filename, None)
             write_state(state)
         item.done = item.total
+
+    def _gather(self, item: Item, work: Path) -> list[Path]:
+        """Put the files of item into work for the model library. Returns the inbox files to remove
+        once the library has taken them.
+
+        A partial download or a copy made by this program is moved. An inbox file is hard-linked
+        (copied where the disk cannot) and removed from the inbox only after the import: if the
+        library refuses it, the file is still where the user put it. A symbolic link is copied, so
+        the file it points to stays where it is. The recognition dictionary is copied."""
+        leave: list[Path] = []
+        main = self._path(item)
+        if item.origin != "inbox" or item.copy is not None:
+            os.replace(main, work / item.file.filename)
+        elif self._bring(main, work / item.file.filename):
+            leave.append(main)
+        for path in item.extra:
+            if self._bring(path, work / path.name):
+                leave.append(path)
+        if item.dictionary is not None:
+            shutil.copyfile(item.dictionary, work / item.dictionary.name)
+        return leave
+
+    @staticmethod
+    def _bring(source: Path, target: Path) -> bool:
+        """Hard-link (or copy) an inbox file into target. Returns whether it is to leave the inbox
+        afterwards (not for links: the file they point to is the user's)."""
+        if source.is_symlink():
+            shutil.copyfile(source, target)
+            return False
+        try:
+            os.link(source, target)
+        except OSError:
+            shutil.copyfile(source, target)
+        return True
 
     @staticmethod
     def _path(item: Item) -> Path:
@@ -354,71 +474,336 @@ class Downloads:
     # ---- Inbox and chosen files ----
 
     def scan_inbox(self, owner: Owner) -> list[dict[str, Any]]:
-        """Files in the inbox and what happens to them. Nothing needs confirming: a listed file
-        that has the listed size and did not change between two checks is checked and imported
-        on its own, and its row shows how far that has got."""
+        """Model files in the inbox, at any depth, and loose .gguf files in the models folder (where
+        earlier versions kept them), with what happens to them. Rows are named by their path
+        relative to the models folder.
+
+        Nothing needs confirming for listed files: a file with the size of a listed file that did
+        not change between two checks is checked and imported, also when it was renamed (in a
+        Hugging Face cache, blobs/ holds the files under their hash). Other .gguf and .onnx files
+        are imported when the user asks (import_inbox). Loose files in the models folder are only
+        imported when asked too."""
+        from jacara.core.config import is_mmproj
         from jacara.modules.hub import registry
 
-        folder = inbox_dir()
-        folder.mkdir(parents=True, exist_ok=True)
+        root = models_dir()
         # Files that failed their check are not checked again until they change.
         for item in list(self.items.values()):
-            if item.origin == "inbox" and item.state == "failed" and item.path is not None:
-                with contextlib.suppress(OSError):
-                    stat = item.path.stat()
-                    self.inbox_failed[item.path.name] = (stat.st_size, stat.st_mtime)
+            if item.origin == "inbox" and item.state == "failed" and item.rel is not None:
+                key = _key([p for p in (item.path, *item.extra) if p is not None])
+                if key is not None:
+                    self.inbox_failed[item.rel] = key
         library = {f.sha256 for v in registry.versions() for f in v.files}
-        found: list[dict[str, Any]] = []
+        sizes = {f.size: f for f in self.listed()}
+        files, links = self._walk()
+        other = 0
+        rows: list[dict[str, Any]] = []
         ready: list[Item] = []
-        for path in sorted(folder.iterdir()):
-            if not path.is_file() or path.name.startswith("."):
+        claimed: set[str] = set()
+        gguf: list[Path] = []
+        onnx: list[Path] = []
+        texts: dict[Path, list[str]] = {}
+        for path in files:
+            rel = self._rel(path)
+            if path.name.lower().endswith(PARTIAL):
+                rows.append(_row(rel, _size(path), "copying"))
                 continue
-            stat = path.stat()
-            key = (stat.st_size, stat.st_mtime)
+            try:
+                stat = path.stat()
+            except OSError:  # A link to a file that is gone.
+                other += 1
+                continue
+            suffix = path.suffix.lower()
+            loose = path.parent == root
             file = self.locked(path.name)
-            done: int | None = None
-            total: int | None = None
-            if file is None:
-                status = "unknown" if path.suffix.lower() == ".gguf" else "ignored"
-            elif stat.st_size < file.size:
-                status = "copying"
-            elif stat.st_size > file.size:
-                status = "wrong_size"
-            elif self.inbox_failed.get(path.name) == key:
-                status = "failed"
-            elif self.inbox_seen.get(path.name) != key:
-                status = "copying"
+            renamed = False
+            if file is None and suffix in (".gguf", "") and stat.st_size in sizes:
+                file, renamed = sizes[stat.st_size], True
+            key = (stat.st_size, stat.st_mtime)
+            if file is not None and renamed and self.inbox_failed.get(rel) == key:
+                file = None  # Same size, other content: not the listed file.
+            if file is not None and not loose:
+                rows.append(
+                    self._listed_row(path, rel, key, file, renamed, library, ready, claimed)
+                )
+            elif suffix == ".gguf":
+                gguf.append(path)
+            elif suffix == ".onnx":
+                onnx.append(path)
+            elif suffix == ".txt":
+                texts.setdefault(path.parent, []).append(rel)
             else:
-                current = self.items.get(file.filename)
-                if current is not None and current.state in ACTIVE:
-                    if current.origin == "inbox" and current.path == path:
-                        # Copying a link counts as putting the file into the library.
-                        status = "importing" if current.state == "downloading" else current.state
-                        done, total = current.done, current.total
-                    else:
-                        status = "busy"
-                elif file.sha256 in library:
-                    status = "in_library"
-                else:
-                    status = "waiting"
-                    ready.append(Item(file, origin="inbox", path=path, total=file.size))
-            self.inbox_seen[path.name] = key
-            found.append(
-                {
-                    "name": path.name,
-                    "size": stat.st_size,
-                    "expected": file.size if file else None,
-                    "status": status,
-                    "done": done,
-                    "total": total,
-                }
+                other += 1
+        for group in _groups(gguf):
+            kind = "mmproj" if is_mmproj(group[0]) else "model"
+            rows.append(self._custom_row(group, kind, []))
+        for path in onnx:
+            rows.append(
+                self._custom_row([path], onnx_hint(self._rel(path)), texts.get(path.parent, []))
             )
+        rows += [_row(self._rel(p), 0, "folder_link") for p in links]
+        self.inbox_other = other
         if ready:
             with self._lock:
                 for item in ready:
                     self.items[item.file.filename] = item
             self._run(owner)
-        return found
+        for row in rows:
+            path = root.joinpath(*PurePosixPath(row["name"]).parts)
+            row["link"] = path.is_symlink()
+            row["target"] = str(path.resolve()) if row["link"] else None
+            # Outside the inbox: where earlier versions kept models, not part of the desktop app's
+            # models folder (hub/, inbox/, downloads/, selected.json).
+            row["legacy"] = PurePosixPath(row["name"]).parts[0] != "inbox"
+            # Not while it is being worked on; a folder (Safari's download package) only by hand.
+            row["deletable"] = row["status"] not in ("waiting", "verifying", "importing") and (
+                row["link"] or not path.is_dir()
+            )
+        return sorted(rows, key=lambda r: r["name"])
+
+    def _walk(self) -> tuple[list[Path], list[Path]]:
+        """Files under the inbox at any depth, plus the model files where earlier versions kept
+        them. Hidden files and folders are skipped. Returns (files, links to folders). Links to
+        folders are not entered (os.walk does not follow them), so a link cannot make the scan go
+        round in circles; a Safari .download package is a folder and is listed as a file being
+        downloaded."""
+        inbox = inbox_dir()
+        inbox.mkdir(parents=True, exist_ok=True)
+        files: list[Path] = []
+        links: list[Path] = []
+        for top, dirs, names in os.walk(inbox):
+            here = Path(top)
+            entered = []
+            for name in sorted(dirs):
+                path = here / name
+                if name.startswith("."):
+                    continue
+                if path.is_symlink():
+                    links.append(path)
+                elif name.lower().endswith(PARTIAL):
+                    files.append(path)
+                else:
+                    entered.append(name)
+            dirs[:] = entered
+            files += [here / n for n in sorted(names) if not n.startswith(".")]
+        # Where earlier versions kept models: loose in models/, OCR models in models/ocr/, table
+        # models in models/table/. The desktop app runs imported models only, so these are offered.
+        root = models_dir()
+        files += sorted(p for p in root.glob("*.gguf") if not p.name.startswith("."))
+        for folder, patterns in (("ocr", ("*.onnx", "*.txt")), ("table", ("*.onnx",))):
+            for pattern in patterns:
+                files += sorted(
+                    p
+                    for p in (root / folder).rglob(pattern)
+                    if p.is_file() and not any(part.startswith(".") for part in p.parts)
+                )
+        return files, links
+
+    @staticmethod
+    def _rel(path: Path) -> str:
+        return path.relative_to(models_dir()).as_posix()
+
+    def _at(self, rel: str) -> Item | None:
+        """The item working on (or done with) this inbox file."""
+        return next(
+            (i for i in list(self.items.values()) if i.origin == "inbox" and i.rel == rel), None
+        )
+
+    def _listed_row(
+        self,
+        path: Path,
+        rel: str,
+        key: tuple[int, float],
+        file: LockedFile,
+        renamed: bool,
+        library: set[str],
+        ready: list[Item],
+        claimed: set[str],
+    ) -> dict[str, Any]:
+        stable = self.inbox_seen.get(rel) == key
+        self.inbox_seen[rel] = key
+        row = _row(rel, key[0], "copying", expected=file.size, kind=file.slot)
+        mine = self._at(rel)
+        other = self.items.get(file.filename)
+        if key[0] < file.size:
+            return row
+        if key[0] > file.size:
+            return {**row, "status": "wrong_size"}
+        if self.inbox_failed.get(rel) == key:
+            error = render(mine.error) if mine is not None and mine.error else None
+            return {**row, "status": "failed", "error": error}
+        if not stable:
+            return row
+        if mine is not None and mine.state in ACTIVE:
+            # Copying a link counts as putting the file into the library.
+            state = "importing" if mine.state == "downloading" else mine.state
+            return {**row, "status": state, "done": mine.done, "total": mine.total}
+        if (other is not None and other.state in ACTIVE) or file.filename in claimed:
+            return {**row, "status": "busy"}
+        if mine is not None and mine.state == "done":
+            return {**row, "status": "in_library"}
+        if file.sha256 in library:
+            return {**row, "status": "same_size_in_library" if renamed else "in_library"}
+        claimed.add(file.filename)
+        ready.append(Item(file, origin="inbox", path=path, rel=rel, total=file.size))
+        return {**row, "status": "waiting"}
+
+    def _custom_row(
+        self, paths: list[Path], kind: str | None, dictionaries: list[str]
+    ) -> dict[str, Any]:
+        """A model file not in the list (or a loose file in the models folder), or the files of a
+        split GGUF model: imported when the user asks."""
+        from jacara.modules.hub import registry
+
+        first = paths[0]
+        rel = self._rel(first)
+        key = _key(paths)
+        size = key[0] if key is not None else 0
+        stable = key is not None and self.inbox_seen.get(rel) == key
+        if key is not None:
+            self.inbox_seen[rel] = key
+        split = registry.SPLIT.fullmatch(first.name)
+        stem = split["stem"] if split else first.stem
+        listed = self.locked(first.name)
+        row = _row(
+            rel,
+            size,
+            "copying",
+            kind=listed.slot if listed is not None and listed.size == size else kind,
+            dictionaries=dictionaries,
+            suggested=listed.name if listed is not None else custom_name(stem),
+            parts=len(paths) if split else None,
+            count=int(split["count"]) if split else None,
+        )
+        mine = self._at(rel)
+        if mine is not None and mine.state in ACTIVE:
+            state = "importing" if mine.state == "downloading" else mine.state
+            return {**row, "status": state, "done": mine.done, "total": mine.total}
+        if mine is not None and mine.state == "done":
+            return {**row, "status": "in_library"}
+        if split and (int(split["part"]) != 1 or len(paths) != int(split["count"])):
+            return {**row, "status": "shards_missing"}
+        if not stable:
+            return row
+        if mine is not None and mine.state == "failed" and self.inbox_failed.get(rel) == key:
+            error = render(mine.error) if mine.error else None
+            return {**row, "status": "failed", "error": error, "importable": True}
+        return {**row, "status": "unknown", "importable": True}
+
+    def import_inbox(
+        self, rel: str, kind: str, name: str, dictionary: str | None, owner: Owner
+    ) -> None:
+        """Import a file shown in the inbox list when the user asks: a listed file (checked against
+        the list), or any .gguf / .onnx file as it is, as the chosen kind. A split GGUF model is
+        imported with all its files, a recognition model with the chosen dictionary. .gguf files
+        are put to use; OCR models are switched to on the settings page."""
+        from jacara.modules.hub import registry
+
+        path = self._resolve(rel)
+        if kind not in registry.KINDS:
+            raise DownloadError(stored("未知种类：{kind}", kind=kind))
+        suffix = registry.FORMATS[kind]
+        if path.suffix.lower() != suffix:
+            raise DownloadError(
+                stored("{kind}需要 {suffix} 文件", kind=stored(registry.KINDS[kind]), suffix=suffix)
+            )
+        listed = self.locked(path.name)
+        if listed is not None and listed.slot == kind and path.stat().st_size == listed.size:
+            item = Item(listed, origin="inbox", path=path, rel=rel, total=listed.size)
+            slot = listed.filename
+        else:
+            try:
+                registry.precheck(name, kind)
+            except registry.HubError as err:
+                raise DownloadError(err.message) from err
+            extra: list[Path] = []
+            split = registry.SPLIT.fullmatch(path.name)
+            if split is not None:
+                extra = [path.parent / p for p in registry.split_parts(path.name)]
+                missing = [p.name for p in extra if not p.is_file()]
+                if int(split["part"]) != 1 or missing:
+                    raise DownloadError(
+                        stored("分片模型缺少文件：{files}", files=join_items(missing or [rel]))
+                    )
+            chosen = None
+            if dictionary:
+                if kind != "ocr_rec":
+                    raise DownloadError(stored("仅识别模型需要字典"))
+                chosen = self._resolve(dictionary)
+            size = sum(p.stat().st_size for p in (path, *extra))
+            file = LockedFile(
+                slot="model",
+                name=name,
+                filename=path.name,
+                size=size,
+                sha256="0" * 64,
+                license="",
+                base_model="",
+                default=False,
+                sources=(),
+            )
+            item = Item(
+                file,
+                origin="inbox",
+                path=path,
+                rel=rel,
+                total=size,
+                custom=True,
+                kind=kind,
+                extra=extra,
+                dictionary=chosen,
+                # An OCR model is switched to on the settings page, unless the moved file is the
+                # one in use (a loose file of an earlier version): then the import takes its place.
+                use=kind in GGUF_KINDS or _in_use(kind, path),
+            )
+            slot = f"inbox:{rel}"
+        with self._lock:
+            current = self.items.get(slot)
+            if current is not None and current.state in ACTIVE:
+                raise DownloadError(stored("这个文件正在处理"))
+            self.items[slot] = item
+            self.inbox_failed.pop(rel, None)
+        self._run(owner)
+
+    @staticmethod
+    def _resolve(rel: str) -> Path:
+        """An inbox file (or a loose file in the models folder) from its name on the page."""
+        path = _place(rel)
+        if not path.is_file():
+            raise DownloadError(stored("找不到这个文件：{name}", name=rel))
+        return path
+
+    def delete_inbox(self, names: list[str], owner: Owner) -> list[str]:
+        """Delete files shown in the inbox list, when the user asks. A link is removed, not the
+        file it points to; a split model's row removes all its files. Folders left empty inside the
+        inbox go too. Returns what was deleted (paths relative to the models folder)."""
+        from jacara.core.db import session_scope
+        from jacara.modules.audit.service import record
+
+        targets: list[Path] = []
+        for rel in names:
+            path = _place(rel)
+            if not path.is_symlink() and not path.exists():
+                raise DownloadError(stored("找不到这个文件：{name}", name=rel))
+            if path.is_dir() and not path.is_symlink():
+                raise DownloadError(stored("{name} 是文件夹，请在文件管理器中删除", name=rel))
+            for target in _family(path):
+                mine = self._at(self._rel(target))
+                if mine is not None and mine.state in ACTIVE:
+                    raise DownloadError(stored("这个文件正在处理"))
+                targets.append(target)
+        deleted: list[str] = []
+        for path in dict.fromkeys(targets):
+            rel = self._rel(path)
+            path.unlink(missing_ok=True)
+            self.inbox_seen.pop(rel, None)
+            self.inbox_failed.pop(rel, None)
+            deleted.append(rel)
+            _prune(path.parent)
+        if deleted:
+            with session_scope() as session:
+                record(session, owner, "hub:inbox_delete", "model", None, files=deleted)
+        return deleted
 
     def add_file(self, path: Path, owner: Owner) -> None:
         """A model file chosen on this computer. Listed files (same name) are checked against the
@@ -456,7 +841,8 @@ class Downloads:
             out.append(
                 {
                     "filename": item.file.filename,
-                    "slot": item.file.slot,
+                    "slot": item.kind or item.file.slot,
+                    "rel": item.rel,
                     "origin": item.origin,
                     "state": item.state,
                     "done": item.done,
@@ -474,6 +860,106 @@ class Downloads:
                 }
             )
         return out
+
+
+def _place(rel: str) -> Path:
+    """A path shown in the inbox list (relative to the models folder): in the inbox, or where
+    earlier versions kept models (models/, models/ocr/, models/table/). Nothing else."""
+    parts = PurePosixPath(rel).parts
+    inside = len(parts) == 1 or (len(parts) > 1 and parts[0] in ("inbox", "ocr", "table"))
+    if not parts or PurePosixPath(rel).is_absolute() or ".." in parts or not inside:
+        raise DownloadError(stored("找不到这个文件：{name}", name=rel))
+    return models_dir().joinpath(*parts)
+
+
+def _family(path: Path) -> list[Path]:
+    """The files a row stands for: every file of a split model that is there, or the file."""
+    from jacara.modules.hub import registry
+
+    split = registry.SPLIT.fullmatch(path.name)
+    if split is None:
+        return [path]
+    count = int(split["count"])
+    names = [f"{split['stem']}-{n:05d}-of-{count:05d}{path.name[-5:]}" for n in range(1, count + 1)]
+    return [p for p in (path.parent / n for n in names) if p.is_symlink() or p.exists()]
+
+
+FOLDER_METADATA = frozenset({".ds_store", "thumbs.db", "desktop.ini"})
+"""Files the system file manager writes into folders by itself: macOS Finder's .DS_Store (how the
+folder is shown), Windows Explorer's Thumbs.db (thumbnail cache) and desktop.ini (folder view
+settings). Recreated when needed; a folder holding only these counts as empty."""
+
+
+def _prune(folder: Path) -> None:
+    """Remove folders inside the inbox that are left empty, up to the inbox itself (as git does
+    for the folders of removed files). A folder that only holds what the file manager wrote into it
+    (FOLDER_METADATA) counts as empty; anything else in it keeps it."""
+    inbox = inbox_dir()
+    while folder != inbox and inbox in folder.parents:
+        try:
+            entries = list(folder.iterdir())
+            if any(
+                e.name.lower() not in FOLDER_METADATA or e.is_symlink() or not e.is_file()
+                for e in entries
+            ):
+                return
+            for entry in entries:
+                entry.unlink()
+            folder.rmdir()
+        except OSError:
+            return
+        folder = folder.parent
+
+
+def _in_use(kind: str, path: Path) -> bool:
+    from jacara.core.config import get_settings
+
+    settings = get_settings()
+    if kind == "table":
+        used = settings.table_model()
+    else:
+        used = settings.ocr_models().get(kind.removeprefix("ocr_"))
+    return used is not None and used.absolute() == path.absolute()
+
+
+def _size(path: Path) -> int:
+    try:
+        return path.stat().st_size if path.is_file() else 0
+    except OSError:
+        return 0
+
+
+def _key(paths: list[Path]) -> tuple[int, float] | None:
+    """Total size and latest modification time: unchanged between two checks means copying has
+    finished."""
+    try:
+        stats = [p.stat() for p in paths]
+    except OSError:
+        return None
+    return sum(s.st_size for s in stats), max((s.st_mtime for s in stats), default=0.0)
+
+
+def _groups(paths: list[Path]) -> list[list[Path]]:
+    """The .gguf files to show one row each: a split model's files together (same folder, stem and
+    count, in part order), other files alone."""
+    from jacara.modules.hub import registry
+
+    groups: dict[tuple[Path, str, str], list[Path]] = {}
+    single: list[list[Path]] = []
+    for path in paths:
+        split = registry.SPLIT.fullmatch(path.name)
+        if split is None:
+            single.append([path])
+        else:
+            groups.setdefault((path.parent, split["stem"].lower(), split["count"]), []).append(path)
+    return single + [sorted(g, key=_part) for g in groups.values()]
+
+
+def _part(path: Path) -> int:
+    from jacara.modules.hub import registry
+
+    split = registry.SPLIT.fullmatch(path.name)
+    return int(split["part"]) if split else 0
 
 
 DOWNLOADS = Downloads()

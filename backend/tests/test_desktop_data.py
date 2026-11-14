@@ -81,8 +81,13 @@ def job(kind: Kind = "backup") -> Job:
 
 
 def test_full_backup_carries_settings_and_models_and_restores(app, home):
-    (home / "models").mkdir()
-    (home / "models" / "Model-Q4.gguf").write_bytes(b"model weights")
+    # The desktop app runs the model in use in the model library.
+    model = home / "models" / "hub" / "Model-Q4" / "v1" / "Model-Q4.gguf"
+    model.parent.mkdir(parents=True)
+    model.write_bytes(b"model weights")
+    (home / "models" / "selected.json").write_text(
+        json.dumps({"model": "models/hub/Model-Q4/v1/Model-Q4.gguf"}), "utf-8"
+    )
     settings = home / "data" / "settings.json"
     settings.parent.mkdir()
     settings.write_text(json.dumps({"jacara_learn": False}), "utf-8")
@@ -94,19 +99,19 @@ def test_full_backup_carries_settings_and_models_and_restores(app, home):
     assert kinds[Path(with_models["path"]).name] == ("full", True)
 
     upload(app, "b.png")
-    (home / "models" / "Model-Q4.gguf").unlink()
+    model.unlink()
     settings.unlink()
     reset_caches()
     result = restore_backup(job("restore"), Path(with_models["path"]))
     reset_caches()
     assert names(app) == ["a.png"]
-    assert (home / "models" / "Model-Q4.gguf").read_bytes() == b"model weights"
+    assert model.read_bytes() == b"model weights"
     assert json.loads(settings.read_text("utf-8")) == {"jacara_learn": False}
     aside = Path(result["aside"])
     assert aside.parent == home and (aside / "jacara.db").is_file() and (aside / "files").is_dir()
     # A backup without model files lists what to download again.
-    (home / "models" / "Model-Q4.gguf").unlink()
-    assert models_missing(Path(without["path"])) == ["Model-Q4.gguf"]
+    model.unlink()
+    assert models_missing(Path(without["path"])) == ["hub/Model-Q4/v1/Model-Q4.gguf"]
 
 
 def test_a_failed_restore_puts_the_data_back(app, home, monkeypatch):

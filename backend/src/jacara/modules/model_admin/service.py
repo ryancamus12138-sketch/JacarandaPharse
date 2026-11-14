@@ -9,8 +9,11 @@ they differ."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
+from functools import lru_cache
+from importlib.util import find_spec
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -62,6 +65,8 @@ class ModelFile(BaseModel):
     name: str
     size: int
     modified: datetime
+    provider: str | None = None
+    """Who ships the file when it is not imported (the table model shipped with the program)."""
 
 
 class Slot(BaseModel):
@@ -75,6 +80,9 @@ class Slot(BaseModel):
     model); none: none."""
     env: str
     files: list[ModelFile]
+    default_label: str | None = None
+    """What the slot uses when nothing is chosen, with where it comes from (OCR slots: the models
+    shipped inside RapidOCR); None when the slot has no such default."""
 
 
 class ModelsOut(BaseModel):
@@ -122,8 +130,15 @@ def _files(pattern: str, keep: object = None) -> list[ModelFile]:
 
 
 def candidates(slot: str) -> list[ModelFile]:
-    """Selectable files per slot: files placed in the expected locations under models/, plus library
-    versions of this kind."""
+    """Selectable files per slot: the default shipped with the program (table model) and the
+    imported versions of this kind; outside the desktop app also files placed in the expected
+    locations under models/. The desktop app runs imported models only (ADR 0068): loose files are
+    offered for import in the setup wizard instead."""
+    if config.get_settings().jacara_desktop:
+        found: list[ModelFile] = []
+        if slot == "table":
+            found += _bundled()
+        return found + _hub_files(slot)
     if slot == "model":
         found = _files("*.gguf", lambda p: not is_mmproj(p))
     elif slot == "mmproj":
@@ -136,20 +151,98 @@ def candidates(slot: str) -> list[ModelFile]:
         found = _files("ocr/**/*.txt")
     elif slot == "table":
         found = _files("table/**/*.onnx")
-        bundled = bundled_table_model()
-        if bundled is not None and _relative(bundled) not in {f.path for f in found}:
-            stat = bundled.stat()
-            found.append(
-                ModelFile(
-                    path=_relative(bundled) or str(bundled),
-                    name=tr("{name}（随程序附带）", name=bundled.name),
-                    size=stat.st_size,
-                    modified=datetime.fromtimestamp(stat.st_mtime, UTC),
-                )
-            )
+        found += [f for f in _bundled() if f.path not in {f.path for f in found}]
     else:
         raise KeyError(slot)
     return found + _hub_files(slot)
+
+
+def _bundled() -> list[ModelFile]:
+    """The table structure model shipped with the program: the default."""
+    bundled = bundled_table_model()
+    if bundled is None:
+        return []
+    stat = bundled.stat()
+    return [
+        ModelFile(
+            path=_relative(bundled) or str(bundled),
+            name="SLANet-plus",
+            # A PaddleOCR model (PP-Structure) that comes with the program: "built-in" as VS Code
+            # calls what comes with it, with the author named so that it is not taken for ours.
+            provider=tr("PaddleOCR 模型，程序内置"),
+            size=stat.st_size,
+            modified=datetime.fromtimestamp(stat.st_mtime, UTC),
+        )
+    ]
+
+
+RAPIDOCR_DEFAULTS = {"ocr_det": "PP-OCRv6_det_small.onnx", "ocr_rec": "PP-OCRv6_rec_small.onnx"}
+"""The models RapidOCR uses when none is chosen (shipped in its models folder; plugins/ocr/rapid.py
+records them as the defaults)."""
+
+
+def default_label(slot: str) -> str | None:
+    """Label of the "nothing chosen" choice of an OCR slot: the PaddleOCR model RapidOCR ships and
+    uses (who made it, and who distributes it), and
+    for the dictionary the character table stored in the recognition model (RapidOCR reads it from
+    the model's "character" metadata when no dictionary file is given)."""
+    if slot in RAPIDOCR_DEFAULTS:
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            engine = version("rapidocr")
+        except PackageNotFoundError:
+            engine = ""
+        return tr(
+            "{model}（PaddleOCR 模型，RapidOCR {version} 内置）",
+            model=Path(RAPIDOCR_DEFAULTS[slot]).stem,
+            version=engine,
+        )
+    if slot == "ocr_dict":
+        return tr("识别模型内嵌字符表")
+    return None
+
+
+def default_file(slot: str) -> Path | None:
+    """The file a slot uses when nothing is chosen, when it is a file: the table model shipped with
+    the program, or RapidOCR's own detection and recognition models."""
+    if slot == "table":
+        return bundled_table_model()
+    if slot in RAPIDOCR_DEFAULTS:
+        spec = find_spec("rapidocr")
+        if spec is None or spec.origin is None:
+            return None
+        path = Path(spec.origin).parent / "models" / RAPIDOCR_DEFAULTS[slot]
+        return path if path.is_file() else None
+    return None
+
+
+@lru_cache(maxsize=16)
+def _sha256(path: str, size: int, modified: float) -> str:
+    """SHA-256 of a file, kept while its size and modification time stay the same."""
+    del size, modified  # Part of the cache key only.
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        while block := f.read(1 << 20):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def same_as_default(slot: str) -> set[str]:
+    """Imported versions (paths) that are the very file the slot uses by default: shown once, as
+    the default."""
+    from jacara.modules.hub import registry
+
+    default = default_file(slot)
+    if default is None:
+        return set()
+    stat = default.stat()
+    sha = _sha256(str(default), stat.st_size, stat.st_mtime)
+    return {
+        _relative(v.weights) or ""
+        for v in registry.versions()
+        if v.kind == slot and any(f.role == "weights" and f.sha256 == sha for f in v.files)
+    }
 
 
 def _hub_files(slot: str) -> list[ModelFile]:
@@ -166,7 +259,7 @@ def _hub_files(slot: str) -> list[ModelFile]:
         found.append(
             ModelFile(
                 path=path.relative_to(config.data_home()).as_posix(),
-                name=tr("{name} v{version}（模型库）", name=v.name, version=v.version),
+                name=tr("{name} v{version}", name=v.name, version=v.version),
                 size=stat.st_size,
                 modified=datetime.fromtimestamp(stat.st_mtime, UTC),
             )
@@ -230,6 +323,12 @@ class ModelAdminService:
         slots = []
         for key, label in SLOTS.items():
             current, source = self._current(key)
+            # An imported copy of the default is not listed a second time (unless it is chosen).
+            hidden = same_as_default(key) - {current or ""}
+            files = [f for f in candidates(key) if f.path not in hidden]
+            if current and source != "env" and current not in {f.path for f in files}:
+                # A file chosen earlier that is no longer offered (a loose file in models/).
+                files += [f for f in _files(current.removeprefix("models/")) if f.path == current]
             slots.append(
                 Slot(
                     key=key,
@@ -237,7 +336,8 @@ class ModelAdminService:
                     current=current,
                     source=source,
                     env=ENV_NAMES[key],
-                    files=candidates(key),
+                    files=files,
+                    default_label=default_label(key),
                 )
             )
         path = model_props(self.settings.model_server).get("model_path")

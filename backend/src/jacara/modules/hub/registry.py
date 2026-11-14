@@ -23,7 +23,7 @@ from typing import IO, Any
 import yaml
 
 from jacara.core import config
-from jacara.core.i18n import N_, tr
+from jacara.core.i18n import N_, join_items, render, tr
 
 KINDS: dict[str, str] = {
     "model": N_("大模型"),
@@ -48,6 +48,11 @@ NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 as a folder name on every system)."""
 
 FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ ()+-]{0,127}$")
+
+SPLIT = re.compile(r"^(?P<stem>.+)-(?P<part>\d{5})-of-(?P<count>\d{5})\.gguf$", re.IGNORECASE)
+"""A GGUF model split into several files: llama.cpp's gguf-split names them
+<stem>-00001-of-00003.gguf, … (llama_split_path, "%s-%05d-of-%05d.gguf"), and llama-server is given
+the first one and loads the others from the same folder."""
 
 CARD = "README.md"
 INCOMING = ".incoming"
@@ -83,7 +88,8 @@ class CardFile:
     sha256: str
     size: int
     role: str
-    """weights or dict (recognition dictionary)."""
+    """weights, shard (the further files of a split GGUF model) or dict (recognition
+    dictionary)."""
 
 
 @dataclass
@@ -311,6 +317,39 @@ def check(kind: str, weights: Path, dictionary: Path | None) -> dict[str, Any]:
     return check_onnx(weights, kind, dictionary)
 
 
+def split_parts(weights: str) -> list[str]:
+    """The further files of a split GGUF model whose first file is weights; empty when it is not
+    the first file of a split model."""
+    match = SPLIT.fullmatch(weights)
+    if match is None or int(match["part"]) != 1:
+        return []
+    stem, count = match["stem"], int(match["count"])
+    suffix = weights[-5:]  # .gguf as written.
+    return [f"{stem}-{n:05d}-of-{count:05d}{suffix}" for n in range(2, count + 1)]
+
+
+def precheck(name: str, kind: str) -> None:
+    """The checks of add_version that do not need the files: a valid name and kind, and the same
+    kind as the earlier versions of this name."""
+    if not NAME.fullmatch(name):
+        raise HubError(
+            "invalid",
+            tr("模型名称只能包含字母、数字和 ._-，需以字母或数字开头，最多 64 个字符"),
+        )
+    if kind not in KINDS:
+        raise HubError("invalid", tr("未知种类：{kind}", kind=kind))
+    earlier = versions(name)
+    if earlier and earlier[-1].kind != kind:
+        raise HubError(
+            "invalid",
+            tr(
+                "{name} 已是{kind}，新版本需为同一种类；其他种类请使用新名称",
+                name=name,
+                kind=tr(KINDS[earlier[-1].kind]),
+            ),
+        )
+
+
 def safe_filename(filename: str, suffix: str) -> str:
     name = Path(filename.replace("\\", "/")).name.strip()
     if not FILE.fullmatch(name) or not name.lower().endswith(suffix):
@@ -334,32 +373,25 @@ def add_version(
     meta: dict[str, Any],
     description: str,
 ) -> ModelVersion:
-    """work already contains the weights (and dictionary): validate, write the model card and rename
-    to the next version. On error, work is deleted."""
+    """work already contains the weights (and dictionary; for a split GGUF model, every file of
+    it): validate, write the model card and rename to the next version. On error, work is
+    deleted."""
     try:
-        if not NAME.fullmatch(name):
-            raise HubError(
-                "invalid",
-                tr("模型名称只能包含字母、数字和 ._-，需以字母或数字开头，最多 64 个字符"),
-            )
-        if kind not in KINDS:
-            raise HubError("invalid", tr("未知种类：{kind}", kind=kind))
+        precheck(name, kind)
         if dictionary is not None and kind != "ocr_rec":
             raise HubError("invalid", tr("仅识别模型需要字典"))
         if weights == dictionary:
             raise HubError("invalid", tr("字典与模型不能为同一文件"))
-        earlier = versions(name)
-        if earlier and earlier[-1].kind != kind:
+        parts = split_parts(weights) if FORMATS[kind] == ".gguf" else []
+        missing = [p for p in parts if not (work / p).is_file()]
+        if missing:
             raise HubError(
                 "invalid",
-                tr(
-                    "{name} 已是{kind}，新版本需为同一种类；其他种类请使用新名称",
-                    name=name,
-                    kind=tr(KINDS[earlier[-1].kind]),
-                ),
+                tr("分片模型缺少文件：{files}", files=render(join_items(missing))),
             )
         checks = check(kind, work / weights, work / dictionary if dictionary else None)
         files = [_card_file(work / weights, "weights")]
+        files += [_card_file(work / p, "shard") for p in parts]
         if dictionary:
             files.append(_card_file(work / dictionary, "dict"))
         card = {
@@ -429,7 +461,7 @@ def unpack(archive_path: Path, work: Path) -> tuple[str, str | None, dict[str, A
     with zipfile.ZipFile(archive_path) as archive:
         names = set(archive.namelist())
         if CARD not in names:
-            raise HubError("invalid", tr("zip 中缺少模型卡 README.md，不是模型库导出的文件"))
+            raise HubError("invalid", tr("zip 中缺少模型卡 README.md，不是本程序导出的模型文件"))
         card = archive.read(CARD).decode("utf-8")
         tmp = work / "card.md"
         tmp.write_text(card, "utf-8")

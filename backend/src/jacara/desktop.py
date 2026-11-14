@@ -264,6 +264,10 @@ class Child:
     closes, that is when the launcher is gone."""
     after_restart: Callable[[], object] | None = None
     """Called after the child was started again, for example to queue work it lost."""
+    build: Callable[[], tuple[list[str], dict[str, str]] | str] | None = None
+    """Builds the command and environment again before every start, from the current settings. A
+    text instead: why it cannot start (for the model server: the model file is gone); the child is
+    then not started again until the services restart."""
     process: subprocess.Popen[bytes] | None = None
     started: float = 0.0
     failures: int = 0
@@ -274,6 +278,14 @@ class Child:
     """Stopped on purpose for a while (see Supervisor.pause); not restarted meanwhile."""
 
     def start(self) -> None:
+        if self.build is not None:
+            built = self.build()
+            if isinstance(built, str):
+                self.process = None
+                self.given_up = True
+                self.note(f"not started: {built}")
+                return
+            self.command, self.env = built
         with _log(self.name) as log:
             self.process = subprocess.Popen(  # noqa: S603  Our own executable and arguments.
                 self.command,
@@ -457,17 +469,10 @@ class Services:
 
         settings = get_settings()
         children: list[Child] = []
-        model = settings.find_model()
-        if model is not None:
-            from jacara.plugins.model_backends.server import server_command, server_env
-
-            try:
-                command = server_command(model, port=self.model_port, mmproj=settings.find_mmproj())
-            except FileNotFoundError as err:
-                print(f"jacara desktop: {err}", file=sys.stderr, flush=True)
-            else:
-                env = {**server_env(), "LLAMA_API_KEY": self.model_key}
-                children.append(Child("model", command, env))
+        if settings.find_model() is not None:
+            # The model file is looked up again before every start: a file that was moved or
+            # removed is not started over and over with its old path.
+            children.append(Child("model", [], {}, build=self._model_command))
         stages = ("read", "extract") if settings.jacara_pipeline else ("all",)
         for stage in stages:
             children.append(
@@ -491,6 +496,21 @@ class Services:
                 )
             )
         return children
+
+    def _model_command(self) -> tuple[list[str], dict[str, str]] | str:
+        from jacara.core.config import get_settings
+        from jacara.plugins.model_backends.server import server_command, server_env
+
+        settings = get_settings()
+        model = settings.find_model()
+        if model is None or not model.is_file():
+            return f"model file not found: {model}"
+        try:
+            command = server_command(model, port=self.model_port, mmproj=settings.find_mmproj())
+        except FileNotFoundError as err:
+            print(f"jacara desktop: {err}", file=sys.stderr, flush=True)
+            return str(err)
+        return command, {**server_env(), "LLAMA_API_KEY": self.model_key}
 
     def start(self) -> None:
         with self.lock:

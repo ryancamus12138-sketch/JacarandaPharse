@@ -270,6 +270,16 @@ class Item:
     copy: Path | None = None
     """Copy next to the downloads that is checked and imported instead of path: a chosen file, or
     an inbox entry that is a symbolic link (the file it points to stays where it is)."""
+    rel: str | None = None
+    """Inbox file: its path relative to the models folder, as the page shows it."""
+    kind: str | None = None
+    """A file imported as it is: the model library kind chosen for it (file.slot otherwise)."""
+    extra: list[Path] = field(default_factory=list)
+    """The further files of a split GGUF model (inbox)."""
+    dictionary: Path | None = None
+    """Recognition dictionary placed next to an OCR recognition model (inbox)."""
+    use: bool = True
+    """Put the imported version to use (OCR models are switched to on the settings page)."""
     custom: bool = False
     """A chosen file not in models.lock: imported as it is, without checking against the list."""
     imported: str | None = None

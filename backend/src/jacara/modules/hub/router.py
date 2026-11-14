@@ -45,7 +45,7 @@ from jacara.modules.hub.schemas import (
 )
 from jacara.modules.hub.service import HubService
 
-router = APIRouter(prefix="/hub", tags=["模型和数据集库"])
+router = APIRouter(prefix="/hub", tags=["模型和数据集"])
 
 _STATUS = {
     "not_found": status.HTTP_404_NOT_FOUND,
@@ -78,7 +78,7 @@ def _download(filename: str, data: bytes, media_type: str) -> Response:
 # ---- Model library ----
 
 
-@router.get("/models", summary="模型库")
+@router.get("/models", summary="模型")
 def models(service: Service) -> HubModels:
     """Models in the library and each version: model card, files, SHA-256, whether in use."""
     return service.models()
@@ -173,7 +173,7 @@ def download_version(name: str, version: int, service: Service) -> FileResponse:
 # ---- Dataset library ----
 
 
-@router.get("/datasets", summary="数据集库")
+@router.get("/datasets", summary="数据集")
 def datasets(service: Service) -> list[DatasetOut]:
     return service.datasets()
 

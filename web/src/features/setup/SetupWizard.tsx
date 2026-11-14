@@ -1,6 +1,7 @@
 import {
   CheckCircleFilled,
   CloudDownloadOutlined,
+  DeleteOutlined,
   FolderOpenOutlined,
   InboxOutlined,
   PauseCircleOutlined,
@@ -16,6 +17,7 @@ import {
   Collapse,
   Flex,
   Input,
+  Modal,
   Popconfirm,
   Progress,
   Result,
@@ -35,11 +37,14 @@ import { getModels } from '../../api/models'
 import {
   cancelDownloads,
   chooseModelFile,
+  deleteInboxFiles,
   getSetup,
   type InboxFile,
   type ItemState,
+  importInboxFile,
   importModelFile,
   type ListedModel,
+  type ModelKind,
   openInbox,
   pauseDownloads,
   resumeDownloads,
@@ -88,7 +93,8 @@ function slotName(slot: string): string {
 }
 
 /** What one file is doing: progress, where it comes from, why a source was given up. */
-function ItemRow({ item, sources }: { item: SetupItem; sources: SetupState['sources'] }) {
+function ItemRow({ item, setup }: { item: SetupItem; setup: SetupState }) {
+  const sources = setup.sources
   const { t } = useTranslation()
   const label = (id: string | null) => sources.find((s) => s.id === id)?.label ?? id ?? ''
   const percent = item.total > 0 ? Math.floor((item.done / item.total) * 100) : 0
@@ -106,9 +112,9 @@ function ItemRow({ item, sources }: { item: SetupItem; sources: SetupState['sour
   } else if (item.state === 'verifying') {
     detail = t('正在核对文件大小和 SHA-256')
   } else if (item.state === 'importing') {
-    detail = t('正在放入模型库并设为使用中')
+    detail = t('正在导入并设为使用中')
   } else if (item.state === 'done') {
-    detail = item.imported ? t('已放入模型库：{{version}}，并设为使用中', { version: item.imported }) : ''
+    detail = item.imported ? t('已导入为 {{version}}，并设为使用中', { version: item.imported }) : ''
   } else if (item.state === 'paused') {
     detail = t('已下载 {{done}}，可以继续', { done: formatBytes(item.done) })
   } else if (item.state === 'waiting') {
@@ -120,8 +126,8 @@ function ItemRow({ item, sources }: { item: SetupItem; sources: SetupState['sour
     <Flex vertical gap={4} style={{ padding: '8px 0' }}>
       <Flex justify="space-between" align="center" gap={8} wrap>
         <Space size={8} wrap>
-          <Typography.Text strong>{slotName(item.slot)}</Typography.Text>
-          <Typography.Text type="secondary">{item.filename}</Typography.Text>
+          <Typography.Text strong>{setup.kinds[item.slot] ?? slotName(item.slot)}</Typography.Text>
+          <Typography.Text type="secondary">{item.rel ?? item.filename}</Typography.Text>
           {item.origin === 'inbox' && <Tag>{t('放入文件夹')}</Tag>}
           {item.origin === 'file' && <Tag>{t('选择电脑上的文件')}</Tag>}
           {item.custom && <Tag>{t('自定义模型')}</Tag>}
@@ -202,7 +208,7 @@ function DownloadChoice({ setup, busy, onStart }: {
           <Space size={6} wrap>
             <Typography.Text strong>{slotName(f.slot)}</Typography.Text>
             <Tag>{f.slot === 'model' ? t('必需') : t('可选，推荐')}</Tag>
-            {f.in_library && <Tag color="success">{t('已在模型库')}</Tag>}
+            {f.in_library && <Tag color="success">{t('已导入')}</Tag>}
           </Space>
           <Typography.Text type="secondary" style={{ fontSize: 13 }}>
             {f.slot === 'model'
@@ -265,30 +271,180 @@ function DownloadChoice({ setup, busy, onStart }: {
   )
 }
 
-const INBOX_STATUS: Record<InboxFile['status'], { text: () => string; color: string }> = {
+const INBOX_STATUS: Record<InboxFile['status'], { text: (f: InboxFile) => string; color: string }> = {
   copying: { text: () => t('正在复制或下载中'), color: 'processing' },
   waiting: { text: () => t('排队，等前一个文件处理完'), color: 'default' },
   verifying: { text: () => t('正在校验 SHA-256'), color: 'processing' },
-  importing: { text: () => t('正在放入模型库'), color: 'processing' },
-  in_library: { text: () => t('模型库已有这个文件，不再导入，可以删除'), color: 'success' },
+  importing: { text: () => t('正在导入'), color: 'processing' },
+  in_library: { text: () => t('已导入过，可以删除'), color: 'success' },
+  same_size_in_library: { text: () => t('与已导入的推荐模型大小相同，不再校验，可以删除'), color: 'success' },
   busy: { text: () => t('同一文件正在下载或复制，先不处理'), color: 'default' },
   wrong_size: { text: () => t('比清单中的文件大，不是这个文件'), color: 'error' },
-  failed: { text: () => t('与清单中的文件内容不同'), color: 'error' },
-  unknown: { text: () => t('不在清单中：请用"选择电脑上的文件"导入'), color: 'warning' },
-  ignored: { text: () => t('不是模型文件，已忽略'), color: 'default' },
+  failed: { text: (f) => f.error ?? t('与清单中的文件内容不同'), color: 'error' },
+  unknown: { text: () => t('清单外的模型文件：点"导入"选择种类后导入'), color: 'warning' },
+  shards_missing: {
+    text: (f) => t('分片不全：找到 {{parts}} 个，共 {{count}} 个', { parts: f.parts ?? 0, count: f.count ?? 0 }),
+    color: 'warning',
+  },
+  folder_link: { text: () => t('指向文件夹的链接，不会进入；请放入文件夹本身'), color: 'default' },
 }
 
-/** Inbox: files downloaded elsewhere are placed in a folder; complete listed files are imported. */
+/** A status this page does not know (an older page with a newer program) is shown as it is. */
+function inboxStatus(f: InboxFile): { text: (f: InboxFile) => string; color: string } {
+  return (INBOX_STATUS as Partial<typeof INBOX_STATUS>)[f.status] ?? { text: () => f.status, color: 'default' }
+}
+
+const GGUF_KINDS: ModelKind[] = ['model', 'mmproj']
+const ONNX_KINDS: ModelKind[] = ['ocr_det', 'ocr_rec', 'table']
+
+/** Import one file of the inbox list as it is: kind, model library name and (recognition) dictionary. */
+function InboxImport({ file, kinds }: { file: InboxFile; kinds: Record<string, string> }) {
+  const { t } = useTranslation()
+  const { message } = App.useApp()
+  const queryClient = useQueryClient()
+  const onnx = file.name.toLowerCase().endsWith('.onnx')
+  const choices = onnx ? ONNX_KINDS : GGUF_KINDS
+  const [open, setOpen] = useState(false)
+  const [kind, setKind] = useState<ModelKind | undefined>(choices.find((k) => k === file.kind))
+  const [name, setName] = useState(file.suggested ?? '')
+  const [dictionary, setDictionary] = useState<string | null>(null)
+  const run = useMutation({
+    mutationFn: () => importInboxFile(file.name, kind as ModelKind, name.trim(), kind === 'ocr_rec' ? dictionary : null),
+    onSuccess: () => {
+      setOpen(false)
+      if (onnx) void message.success(t('导入完成后，到「设置 → 模型」中换成使用它'))
+      void queryClient.invalidateQueries({ queryKey: ['setup'] })
+    },
+    onError: (err) => void message.error(errorText(err)),
+  })
+  return (
+    <>
+      <Button size="small" onClick={() => setOpen(true)}>
+        {t('导入')}
+      </Button>
+      <Modal
+        open={open}
+        title={t('导入 {{name}}', { name: file.name })}
+        okText={t('导入')}
+        cancelText={t('取消')}
+        okButtonProps={{ disabled: !kind || !name.trim(), loading: run.isPending }}
+        onOk={() => run.mutate()}
+        onCancel={() => setOpen(false)}
+        destroyOnHidden
+      >
+        <Flex vertical gap={12}>
+          <Typography.Text type="secondary">
+            {onnx
+              ? t('ONNX 模型导入后不会自动换上，需要到「设置 → 模型」中选择。')
+              : t('导入后设为使用中。')}
+          </Typography.Text>
+          <Select<ModelKind>
+            placeholder={t('选择种类')}
+            value={kind}
+            onChange={setKind}
+            options={choices.map((k) => ({ value: k, label: kinds[k] ?? k }))}
+          />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('模型名称')} maxLength={64} />
+          {kind === 'ocr_rec' && (
+            <Select<string>
+              allowClear
+              placeholder={t('识别字典（可选）：模型已内置字符表时不需要')}
+              value={dictionary ?? undefined}
+              onChange={(v) => setDictionary(v ?? null)}
+              options={file.dictionaries.map((d) => ({ value: d, label: d }))}
+              notFoundContent={t('同一文件夹中没有 .txt 文件')}
+            />
+          )}
+        </Flex>
+      </Modal>
+    </>
+  )
+}
+
+/** Delete inbox files, after a confirmation that says what goes (links: only the link). all: the button for
+ * every file already imported. */
+function InboxDelete({ files, all = false }: { files: InboxFile[]; all?: boolean }) {
+  const { t } = useTranslation()
+  const { message } = App.useApp()
+  const queryClient = useQueryClient()
+  const run = useMutation({
+    mutationFn: () => deleteInboxFiles(files.map((f) => f.name)),
+    onSuccess: (deleted) => {
+      void message.success(t('已删除 {{count}} 项', { count: deleted.length }))
+      void queryClient.invalidateQueries({ queryKey: ['setup'] })
+    },
+    onError: (err) => void message.error(errorText(err)),
+  })
+  const links = files.filter((f) => f.link)
+  const plain = files.filter((f) => !f.link)
+  // A split model's row stands for all its files.
+  const plainFiles = plain.reduce((n, f) => n + (f.parts ?? 1), 0)
+  const one = files[0]
+  let lines: string[]
+  if (!all && one.link) {
+    lines = [t('仅断开链接，文件本身不会被删除（文件在 {{target}}）。', { target: one.target ?? '' })]
+  } else if (!all) {
+    lines = [
+      one.parts !== null
+        ? t('这个分片模型的 {{count}} 个文件都会被直接删除，不进废纸篓，无法恢复。', { count: one.parts })
+        : t('文件会被直接删除，不进废纸篓，无法恢复。'),
+      t('已导入的模型不受影响。'),
+    ]
+  } else {
+    lines = [
+      ...(plainFiles > 0 ? [t('{{count}} 个文件会被直接删除，不进废纸篓，无法恢复。', { count: plainFiles })] : []),
+      ...(links.length > 0 ? [t('{{count}} 项仅断开链接，文件本身不会被删除。', { count: links.length })] : []),
+      t('已导入的模型不受影响。'),
+    ]
+  }
+  return (
+    <Popconfirm
+      title={all ? t('删除已导入过的 {{count}} 项？', { count: files.length }) : t('删除 {{name}}？', { name: one.name })}
+      description={
+        <Flex vertical gap={2} style={{ maxWidth: 380 }}>
+          {lines.map((line) => (
+            <span key={line} style={{ wordBreak: 'break-all' }}>
+              {line}
+            </span>
+          ))}
+        </Flex>
+      }
+      okText={t('删除')}
+      cancelText={t('取消')}
+      okButtonProps={{ danger: true, loading: run.isPending }}
+      onConfirm={() => run.mutate()}
+    >
+      {all ? (
+        <Button danger icon={<DeleteOutlined />} style={{ width: 'fit-content' }}>
+          {t('删除已导入过的（{{count}}）', { count: files.length })}
+        </Button>
+      ) : (
+        <Button size="small" danger icon={<DeleteOutlined />}>
+          {t('删除')}
+        </Button>
+      )}
+    </Popconfirm>
+  )
+}
+
+/** Inbox: files downloaded elsewhere are placed in a folder, at any depth; listed files are imported by
+ * themselves, other model files when asked. */
 function InboxChoice({ setup }: { setup: SetupState }) {
   const { t } = useTranslation()
   const { message } = App.useApp()
+  const imported = setup.inbox_files.filter(
+    (f) => f.deletable && (f.status === 'in_library' || f.status === 'same_size_in_library'),
+  )
   return (
     <Flex vertical gap={12}>
       <Typography.Text>
-        {t('用浏览器或其他工具下载下面的文件，放进这个文件夹。文件完整后，程序会自动校验、放入模型库并设为使用中。')}
+        {t('用浏览器或其他工具下载下面的文件，放进这个文件夹。文件完整后，程序会自动校验、导入并设为使用中。')}
       </Typography.Text>
       <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-        {t('不需要手动确认：这个页面开着时，每 2 秒检查一次文件夹；文件大小与清单一致、且两次检查之间没有变化，就开始校验 SHA-256，通过后移入模型库（data 文件夹下的 models/hub），并显示在上方"进度"中。')}
+        {t('不需要手动确认：这个页面开着时，每 2 秒检查一次文件夹；文件大小与清单一致、且两次检查之间没有变化，就开始校验 SHA-256，通过后移到数据文件夹的 models/hub/，并显示在上方"进度"中。')}
+      </Typography.Text>
+      <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+        {t('可以直接放入整个下载好的文件夹，任意层级的子文件夹都会查找，包括 Hugging Face 的缓存文件夹。浏览器还没下载完的文件（.crdownload、.part、.download）会等它下载完。清单外的 .gguf、.onnx 文件，以及直接放在 models、models/ocr、models/table 中的模型文件，点"导入"后导入。')}
       </Typography.Text>
       <Space.Compact style={{ width: '100%' }}>
         <Input readOnly value={setup.inbox} />
@@ -308,7 +464,7 @@ function InboxChoice({ setup }: { setup: SetupState }) {
         ]}
       />
       <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-        {t('下载地址：Hugging Face 或魔搭社区上的 unsloth/Qwen3.5-9B-GGUF 仓库。文件名必须和上表一致。')}
+        {t('下载地址：Hugging Face 或魔搭社区上的 unsloth/Qwen3.5-9B-GGUF 仓库。改过名的文件也能认出：大小与清单相同时按 SHA-256 核对。')}
       </Typography.Text>
       {setup.inbox_files.length > 0 && (
         <Table
@@ -317,21 +473,36 @@ function InboxChoice({ setup }: { setup: SetupState }) {
           pagination={false}
           dataSource={setup.inbox_files}
           columns={[
-            { title: t('文件夹中的文件'), dataIndex: 'name' },
+            {
+              title: t('找到的文件（models 文件夹中的位置）'),
+              dataIndex: 'name',
+              render: (v: string, f: InboxFile) => (
+                <Flex vertical gap={2}>
+                  <Typography.Text style={{ wordBreak: 'break-all' }}>{v}</Typography.Text>
+                  {f.link && f.target && (
+                    <Typography.Text type="secondary" style={{ fontSize: 12, wordBreak: 'break-all' }}>
+                      {t('实际文件：{{target}}', { target: f.target })}
+                    </Typography.Text>
+                  )}
+                  {f.kind && <Typography.Text type="secondary" style={{ fontSize: 12 }}>{setup.kinds[f.kind] ?? f.kind}</Typography.Text>}
+                </Flex>
+              ),
+            },
             {
               title: t('大小'),
               key: 'size',
-              width: 200,
+              width: 150,
               render: (_: unknown, f: InboxFile) =>
                 f.expected ? `${formatBytes(f.size)} / ${formatBytes(f.expected)}` : formatBytes(f.size),
             },
             {
               title: t('状态'),
               dataIndex: 'status',
+              width: 300,
               render: (_: unknown, f: InboxFile) => (
                 <Flex vertical gap={2}>
-                  <Tag color={INBOX_STATUS[f.status].color} style={{ whiteSpace: 'normal', width: 'fit-content' }}>
-                    {INBOX_STATUS[f.status].text()}
+                  <Tag color={inboxStatus(f).color} style={{ whiteSpace: 'normal', width: 'fit-content' }}>
+                    {f.legacy && f.status === 'unknown' ? t('不在放入文件夹中，程序不会使用：可以导入或删除') : inboxStatus(f).text(f)}
                   </Tag>
                   {f.done !== null && f.total !== null && f.total > 0 && (
                     <Progress size="small" percent={Math.floor((f.done / f.total) * 100)} status="active" />
@@ -339,8 +510,25 @@ function InboxChoice({ setup }: { setup: SetupState }) {
                 </Flex>
               ),
             },
+            {
+              title: '',
+              key: 'actions',
+              width: 170,
+              render: (_: unknown, f: InboxFile) => (
+                <Space size={4}>
+                  {f.importable && <InboxImport key={f.name} file={f} kinds={setup.kinds} />}
+                  {f.deletable && <InboxDelete files={[f]} />}
+                </Space>
+              ),
+            },
           ]}
         />
+      )}
+      {imported.length > 0 && <InboxDelete files={imported} all />}
+      {setup.inbox_other > 0 && (
+        <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+          {t('另有 {{count}} 个其他文件（不是模型文件），已忽略。', { count: setup.inbox_other })}
+        </Typography.Text>
       )}
     </Flex>
   )
@@ -371,7 +559,7 @@ function FileChoice({ busy }: { busy: boolean }) {
   return (
     <Flex vertical gap={12}>
       <Typography.Text>
-        {t('已经下载好的 .gguf 模型文件：复制一份放入模型库（原文件保留）并设为使用中。清单中的文件会按清单校验；其他文件作为自定义模型导入，文件名含 mmproj 的作为视觉模型。')}
+        {t('已经下载好的 .gguf 模型文件：复制一份导入（原文件保留）并设为使用中。清单中的文件会按清单校验；其他文件作为自定义模型导入，文件名含 mmproj 的作为视觉模型。')}
       </Typography.Text>
       <Space.Compact style={{ width: '100%' }}>
         <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder={t('模型文件的完整路径')} />
@@ -446,6 +634,14 @@ export function SetupWizard() {
       }
     >
       <Flex vertical gap={16} style={{ maxWidth: 920 }}>
+        {data.model_missing && (
+          <Alert
+            type="warning"
+            showIcon
+            title={t('JACARA_MODEL 设置的模型文件不存在：{{path}}', { path: data.model_missing })}
+            description={t('环境变量 JACARA_MODEL、JACARA_MMPROJ 优先于这里的选择。请改正或去掉这两项，然后重新启动程序。')}
+          />
+        )}
         {data.needs_model ? (
           <Alert
             type="info"
@@ -479,7 +675,7 @@ export function SetupWizard() {
                 {(active || resumable) && (
                   <Popconfirm
                     title={t('取消下载？')}
-                    description={t('已下载的部分会被删除；已放入模型库的文件保留。')}
+                    description={t('已下载的部分会被删除；已导入的文件保留。')}
                     okText={t('取消下载')}
                     cancelText={t('返回')}
                     onConfirm={() => void act(cancelDownloads)}
@@ -493,7 +689,7 @@ export function SetupWizard() {
             }
           >
             {items.map((item) => (
-              <ItemRow key={item.filename} item={item} sources={data.sources} />
+              <ItemRow key={`${item.filename}:${item.rel ?? ''}`} item={item} setup={data} />
             ))}
             {items.some((i) => i.state === 'failed' && i.origin === 'download') && (
               <Typography.Text type="secondary" style={{ fontSize: 13 }}>

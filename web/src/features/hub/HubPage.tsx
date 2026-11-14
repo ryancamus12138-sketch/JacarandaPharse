@@ -220,7 +220,7 @@ function ImportModelDialog({
           onChange={(e) => setMode(e.target.value as 'files' | 'archive')}
           options={[
             { value: 'files', label: t('权重文件') },
-            { value: 'archive', label: t('模型库导出的 zip') },
+            { value: 'archive', label: t('导出的模型 zip') },
           ]}
         />
         <Flex gap={8} wrap>
@@ -258,7 +258,7 @@ function ImportModelDialog({
             </Typography.Text>
           </>
         ) : (
-          picker('.zip', archive, setArchive, t('拖入模型库导出的 zip 文件（包含模型卡 README.md）'))
+          picker('.zip', archive, setArchive, t('拖入从本程序导出的模型 zip 文件（包含模型卡 README.md）'))
         )}
         <Flex gap={8} wrap>
           <Input
@@ -476,16 +476,18 @@ function ModelsTab({ canManage, datasetNames }: { canManage: boolean; datasetNam
                 <Tooltip title={t('编辑模型卡')}>
                   <Button size="small" icon={<EditOutlined />} onClick={() => setEditing({ model, version: v })} />
                 </Tooltip>
-                <Popconfirm
-                  title={t('删除 {{name}} v{{version}}？', { name: model.name, version: v.version })}
-                  description={t('文件将从 models/hub 中删除，且无法恢复。')}
-                  okText={t('删除')}
-                  okButtonProps={{ danger: true }}
-                  disabled={v.in_use}
-                  onConfirm={() => remove.mutate({ name: model.name, version: v.version })}
-                >
-                  <Button size="small" danger icon={<DeleteOutlined />} disabled={v.in_use} />
-                </Popconfirm>
+                <Tooltip title={v.in_use ? t('正在使用，不能删除：先在「设置 → 模型」中换成其他版本') : undefined}>
+                  <Popconfirm
+                    title={t('删除 {{name}} v{{version}}？', { name: model.name, version: v.version })}
+                    description={t('文件将从 models/hub 中删除，且无法恢复。')}
+                    okText={t('删除')}
+                    okButtonProps={{ danger: true }}
+                    disabled={v.in_use}
+                    onConfirm={() => remove.mutate({ name: model.name, version: v.version })}
+                  >
+                    <Button size="small" danger icon={<DeleteOutlined />} disabled={v.in_use} />
+                  </Popconfirm>
+                </Tooltip>
               </Space>
             ),
           },
@@ -498,7 +500,7 @@ function ModelsTab({ canManage, datasetNames }: { canManage: boolean; datasetNam
       <Flex justify="space-between" align="center" gap={8} wrap>
         <Typography.Text type="secondary">
           {t('模型文件存放在本机 models/hub/ 目录，每个版本对应一个子目录和一张模型卡。启用版本请在')}{' '}
-          <Link to="/settings/models">{t('设置 → 模型')}</Link>{' '}{t('中选择（模型库中的全部版本均列在下拉列表中）。')}
+          <Link to="/settings/models">{t('设置 → 模型')}</Link>{' '}{t('中选择（已导入的全部版本均列在下拉列表中）。')}
         </Typography.Text>
         {canManage && (
           <Button type="primary" icon={<CloudUploadOutlined />} onClick={() => setImporting({})}>
@@ -515,9 +517,9 @@ function ModelsTab({ canManage, datasetNames }: { canManage: boolean; datasetNam
           })}
         />
       )}
-      {models.isError && <Alert type="error" showIcon title={t('无法读取模型库')} description={errorText(models.error)} />}
+      {models.isError && <Alert type="error" showIcon title={t('无法读取模型列表')} description={errorText(models.error)} />}
       {data && data.models.length === 0 && (
-        <Empty description={t('模型库为空。支持导入 OCR 文字检测、文字识别和表格结构模型（ONNX），以及大模型和视觉模型（GGUF）。')} />
+        <Empty description={t('还没有导入模型。支持导入 OCR 文字检测、文字识别和表格结构模型（ONNX），以及大模型和视觉模型（GGUF）。')} />
       )}
       {data?.models.map((model) => (
         <Card
@@ -570,8 +572,8 @@ function ImportDatasetDialog({ open, onClose }: { open: boolean; onClose: () => 
       const skipped = Object.values(d.problems).reduce((a, b) => a + b, 0)
       void message.success(
         skipped
-          ? t('已保存到数据集库：{{name}} v{{version}}，跳过 {{skipped}} 行', { name: d.name, version: d.version, skipped })
-          : t('已保存到数据集库：{{name}} v{{version}}', { name: d.name, version: d.version }),
+          ? t('已保存为数据集：{{name}} v{{version}}，跳过 {{skipped}} 行', { name: d.name, version: d.version, skipped })
+          : t('已保存为数据集：{{name}} v{{version}}', { name: d.name, version: d.version }),
       )
       void queryClient.invalidateQueries({ queryKey: ['hub-datasets'] })
       onClose()
@@ -823,7 +825,7 @@ function EvalDialog({
   const slot: ModelKind = chosen?.kind === 'ocr_det' ? 'ocr_det' : 'ocr_rec'
   const options = [
     { value: 'current', label: t('当前使用') },
-    { value: 'builtin', label: t('RapidOCR 内置模型') },
+    { value: 'builtin', label: t('默认模型') },
     ...models
       .filter((m) => m.kind === slot)
       .flatMap((m) =>
@@ -955,7 +957,7 @@ function EvalDetail({ run }: { run: EvalRun }) {
                 {(['det', 'rec', 'dict'] as const)
                   .filter((k) => arm[k])
                   .map((k) => t('{{value}}（{{slice}}）', { value: arm[k], slice: (arm.sha256[k] ?? '').slice(0, 12) }))
-                  .join(t('；')) || t('RapidOCR 内置模型')}
+                  .join(t('；')) || t('默认模型')}
               </Typography.Text>
             ),
           })),
@@ -1091,14 +1093,14 @@ export function HubPage() {
         items={[
           {
             key: 'models',
-            label: t('模型库'),
+            label: t('模型'),
             children: <ModelsTab canManage={can('system:manage')} datasetNames={datasetNames} />,
           },
           ...(canExport
             ? [
                 {
                   key: 'datasets',
-                  label: t('数据集库 {{value}}', { value: datasets.data?.length ?? '' }),
+                  label: t('数据集 {{value}}', { value: datasets.data?.length ?? '' }),
                   children: (
                     <DatasetsTab
                       datasets={datasets.data ?? []}

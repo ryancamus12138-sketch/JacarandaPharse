@@ -208,7 +208,9 @@ class HubService:
         work = self._upload_dir(upload_id)
         suffix = Path(filename).suffix.lower()
         if suffix not in (".gguf", ".onnx", ".txt", ".zip"):
-            raise HubError("invalid", tr("仅支持 .gguf、.onnx、识别字典 .txt，或模型库导出的 .zip"))
+            raise HubError(
+                "invalid", tr("仅支持 .gguf、.onnx、识别字典 .txt，或本程序导出的模型 .zip")
+            )
         name = registry.safe_filename(filename, suffix)
         if length:
             registry.check_space(length)
@@ -617,10 +619,10 @@ def resolve_arm(settings: Settings, name: str, ref: ModelRef, task: str) -> dict
         rec, dictionary = own.get("rec"), own.get("dict")
         label = tr("当前使用")
     elif ref.source == "builtin":
-        label = tr("RapidOCR 内置模型")
+        label = tr("默认模型")
     else:
         if ref.name is None or ref.version is None:
-            raise HubError("invalid", tr("请选择模型库中的模型和版本"))
+            raise HubError("invalid", tr("请选择已导入的模型和版本"))
         version = registry.get_version(ref.name, ref.version)
         if version.kind != slot:
             raise HubError(

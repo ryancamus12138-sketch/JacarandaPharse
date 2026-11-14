@@ -378,18 +378,70 @@ Hugging Face 上的文件 SHA-256 一致：
   显示每个来源的失败原因，并提供"重试"和"放入文件夹"两个选项。
 - **手动指定**：向导的"高级"中可以固定使用某一个来源，供自动选择不理想时使用；默认是"自动"。
 
+**只有一个模型文件夹**
+
+桌面版的模型只在 `<数据目录>/models/` 里，各部分分工固定：
+
+| 位置 | 用途 |
+|---|---|
+| `models/hub/<名称>/v<n>/` | 模型库。程序运行的模型**只从这里来**，由 `models/selected.json` 指定 |
+| `models/inbox/` | 唯一的放入口：用户放进来的文件和文件夹 |
+| `models/downloads/` | 程序自己用的临时文件（`.part`、复制中的 `.copy`、`state.json`） |
+| `models/selected.json` | 正在使用的版本（指向 `models/hub/` 中的文件） |
+
+桌面版数据文件夹的 `models/` 中只有上面这几项（`hub/` 下另有导入时用的临时文件夹 `.incoming/`）。程序自带的模型
+不在数据文件夹中：表格结构模型 SLANet-plus 在程序资源目录（安装包内；从源码运行时是项目文件夹的
+`models/table/`），OCR 检测和识别模型在 RapidOCR 包内。旧版本的位置（`models/*.gguf`、`models/ocr/`、
+`models/table/`）中的文件，在放入文件夹列表中标为"不在放入文件夹中，程序不会使用"，可以导入或删除（界面不提"旧版本""桌面版"，用户只看到一个程序）。
+
+- 桌面版不再直接运行 `models/` 根目录里散放的 `.gguf`（`jacara start` 的老规则，命令行版保留）：这类文件出现在
+  放入文件夹的列表里，点"导入"后进模型库。
+- `JACARA_MODEL`、`JACARA_MMPROJ` 环境变量仍然优先（供开发使用），指向的文件不存在时向导显示警告。从访达或
+  开始菜单启动的正式版不会继承终端里设置的变量。
+- 「设置 → 模型」的下拉列表只有**默认**模型（随程序附带的表格模型、RapidOCR 自带的 OCR 模型）和**已导入**的版本。
+  已导入的版本与默认模型是同一个文件（SHA-256 相同）时只列一次（作为默认），除非正选着它。
+  旧版本放在 `models/`、`models/ocr/`、`models/table/` 的文件不再自动使用，在放入文件夹列表中可以导入；
+  导入的正好是正在使用的文件时，导入后改用导入的版本，选择不会落空。
+- 界面用语：不再说"模型库""数据集库"，改为"已导入的模型""数据集"；下拉选项只写名称、版本和大小；
+  默认项写模型名、作者和由谁内置，例如"PP-OCRv6_det_small（PaddleOCR 模型，RapidOCR 3.10.0 内置）"
+  "SLANet-plus（PaddleOCR 模型，程序内置）"，识别字典写"识别模型内嵌字符表"；来源列写"默认""手动选择"。
+  用"内置"而不用"分发"：VS Code 把随程序提供的扩展称为 built-in（"extensions that come with VS Code"，其中也有
+  他人编写的），Positron 称为 Included extensions；"分发"（redistribution）是许可证的法律用语，归属说明放在
+  关于页和许可证清单中（第 9 节）。写明"PaddleOCR 模型"，避免被当成本程序自己的模型。
+- 放入文件夹列表每行可以删除（链接只删链接；分片模型删整组；正在处理的不能删），另有"删除已导入过的文件"。
+  删除是永久的（链接只删链接本身，即断开链接，原文件不动），确认框中说明；删除和导入后，收件文件夹中变空的子文件夹
+  一并删除（与 git 删除文件后的做法相同）；只剩文件管理器自动写入的 `.DS_Store`（访达）、`Thumbs.db`、`desktop.ini`（资源管理器）的文件夹也算空，连同这几个文件删除，有其他任何文件则保留。删除记审计日志 `hub:inbox_delete`。
+- 模型服务每次启动和重启前都重新读取当前选中的模型并确认文件还在（`Child.build`）：文件不在就不启动，写一行
+  原因到 `model.log`，工作台和向导显示需要准备模型；不会拿旧路径反复重启。
+
 **放入文件夹的检测方式**
 
-- 向导打开期间，后端每 2 秒检查一次 `models/inbox/`（只看文件名和大小，开销很小）。
-- 某个文件的大小与清单一致，且连续两次检查大小不变（表示已经复制或下载完毕），才计算 SHA-256。
-- 校验通过后把文件移动到模型库并设为"使用中"，向导进入下一步；校验不通过则在向导中标出是哪个文件，
-  文件保留在原处，由用户删除后重新下载。
-- 文件名不在清单中的 `.gguf` 文件不自动导入，提示用户改用"选择已下载的文件"作为自定义模型导入，避免误用。
-- 不需要用户确认：每个文件一行状态——复制或下载中、排队、正在校验 SHA-256（带进度）、正在放入模型库（带进度）、
-  模型库已有这个文件（按 SHA-256 判断，不再导入，可以删除）、同一文件正在通过下载或复制获取（先不处理）、
-  内容与清单不同、比清单中的文件大。同一过程也显示在向导上方的"进度"中。
-- 收件文件夹中的符号链接不移动（否则模型库里只有链接，指向的文件改动或删除后模型就失效），而是像"选择文件"一样
-  复制一份再校验导入，链接和它指向的文件都保留；之后这一行显示"模型库已有这个文件"。
+- 向导打开期间，后端每 2 秒检查一次 `models/inbox/` 的**所有层级**的子文件夹（`os.walk`），以及 `models/` 根目录
+  散放的 `.gguf`。每一行用相对 `models/` 的路径显示。可以直接放入整个下载好的文件夹：
+  - Hugging Face 缓存（`hf download`）：`snapshots/<提交>/` 里是指向 `blobs/` 的链接，`blobs/` 里的文件以哈希命名；
+  - llama.cpp 的模型文件夹约定：多文件的模型放一个子文件夹，视觉模型文件名以 `mmproj` 开头，分片放在同一子文件夹。
+- 指向文件夹的链接不进入（`os.walk` 默认不跟随），避免循环，列为一行说明；隐藏文件和文件夹跳过；
+  浏览器还没下载完的文件（Chrome `.crdownload`、Firefox `.part`、Safari `.download` 包）等它改成正式名字。
+- **按内容认清单中的文件**：文件名与清单一致，或者大小与清单中某个文件相同（改过名，或 `blobs/` 中以哈希命名），
+  且连续两次检查大小和修改时间不变（复制或下载完毕），就计算 SHA-256；一致则作为那个文件导入，模型库中用清单
+  中的文件名。同一个文件在文件夹中出现多次（`blobs/` 和链接）只导入一次。大小相同但内容不同的改名文件，标出原因，
+  可以作为自定义模型导入。名字相同的文件比清单大或内容不同，标出是哪个文件，文件留在原处。
+- **清单外的文件只在用户点"导入"后处理**：
+  - `.gguf`：文件名含 `mmproj` 的建议为视觉模型（与程序其他地方的判断相同），其余建议为大模型；
+  - 分片模型（gguf-split 命名 `<名称>-00001-of-00003.gguf`）同一子文件夹中的分片合成一行，分片不全时显示
+    "找到 x 个，共 y 个"、不能导入；导入时全部分片进同一个版本（模型卡中第一片为 `weights`，其余为 `shard`），
+    llama-server 拿第一片、从同一文件夹读其余分片；
+  - `.onnx`：按路径中的词建议种类（PaddleOCR 的命名：`det` → 文字检测、`rec` → 文字识别、`slanet`/`table` →
+    表格结构），由用户确认；文字识别模型可以选同一文件夹中的 `.txt` 作为字典。
+  - `.gguf` 导入后设为使用中；OCR 模型只放入模型库，到「设置 → 模型」中换用（与模型库页面一致）。
+  - 名称、种类沿用模型库的规则（`registry.precheck`），不符合时直接提示，文件不动。
+- **导入时不会丢文件**：收件文件夹中的普通文件先硬链接（磁盘不支持时复制）到模型库的临时文件夹，模型库检查通过、
+  版本建好后，才从收件文件夹删除；模型库拒绝时文件仍在原处（模型库会删掉临时文件夹）。符号链接复制一份，
+  链接和它指向的文件都保留。与 LM Studio `lms import` 一致：默认移动，也可以复制或链接。
+- 不需要用户确认清单中的文件：每行一个状态——复制或下载中、排队、正在校验 SHA-256（带进度）、正在放入模型库
+  （带进度）、模型库已有这个文件、大小相同且模型库已有（未再校验）、同一文件正在通过其他方式获取、内容不同、
+  比清单大、分片不全、指向文件夹的链接。同一过程也显示在向导上方的"进度"中，并标出来自"放入文件夹"。
+- 其他文件（说明、配置等）只计数，显示"另有 N 个其他文件，已忽略"。
 
 下载过程：
 
@@ -748,6 +800,15 @@ llama-server。安装包经过压缩，下载体积会更小。准确数字以�
 - GitHub：About READMEs — https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes
 - Obsidian：obsidian-releases README — https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/README.md
 - LM Studio：lmstudio-bug-tracker — https://github.com/lmstudio-ai/lmstudio-bug-tracker
+- huggingface_hub：Manage the cache（`blobs/` 以哈希命名，`snapshots/<提交>/` 是指向它们的链接）— https://huggingface.co/docs/huggingface_hub/guides/manage-cache
+- llama.cpp：`llama-server` README，Using multiple models（多文件模型放子文件夹、mmproj 文件名、分片）— https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md
+- LM Studio：`lms import`（默认移动，`--copy`、`--hard-link`、`--symbolic-link`）— https://lmstudio.ai/docs/cli/local-models/import.md
+- LM Studio：Import Models（`models/<发布者>/<模型>/<文件>.gguf`）— https://lmstudio.ai/docs/app/advanced/import-model
+- Python：`os.walk`（默认不进入指向文件夹的链接）— https://docs.python.org/3/library/os.html#os.walk
+- VS Code：Extension Marketplace（`@builtin`：extensions that come with VS Code）— https://code.visualstudio.com/docs/configure/extensions/extension-marketplace
+- Positron：Extensions（Included extensions：Built-in、Bootstrapped）— https://positron.posit.co/extensions.html
+- PaddleOCR：表格结构识别模块（SLANet_plus）— https://www.paddleocr.ai/latest/version3.x/module_usage/table_structure_recognition.html
+- PaddlePaddle：PP-OCRv6 模型（Hugging Face）— https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_det
 - 微软：Job Objects — https://learn.microsoft.com/windows/win32/procthread/job-objects
 - Jupyter Server：Security — https://jupyter-server.readthedocs.io/en/latest/operators/security.html
 - MCP 规范：Transports（Security Warning）— https://modelcontextprotocol.io/specification/2025-11-25/basic/transports

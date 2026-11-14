@@ -132,7 +132,7 @@ def export_preview(
     return service.preview(category, source_format, template, kind)
 
 
-@router.post("/export/dataset", summary="导出并存进数据集库", status_code=201)
+@router.post("/export/dataset", summary="导出并保存为数据集", status_code=201)
 def export_to_dataset(
     data: DatasetIn,
     service: Service,
@@ -181,7 +181,7 @@ def det_export(service: DetService, kind: Kind = "train_val") -> Response:
     return attachment(filename, data, "application/zip")
 
 
-@router.post("/det-pages/export/dataset", summary="导出检测样本并存进数据集库", status_code=201)
+@router.post("/det-pages/export/dataset", summary="导出检测样本并保存为数据集", status_code=201)
 def det_export_to_dataset(
     data: DatasetIn, service: DetService, kind: Kind = "train_val"
 ) -> DatasetOut:

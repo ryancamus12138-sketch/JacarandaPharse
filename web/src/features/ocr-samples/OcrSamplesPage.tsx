@@ -174,7 +174,7 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
     mutationFn: () =>
       saveSamplesAsDataset(filters, kind, { name: datasetName.trim(), description: t('OCR 样本导出') }),
     onSuccess: (d) => {
-      void message.success(t('已保存到数据集库：{{name}} v{{version}}，可在“模型和数据集”页用于对比识别模型', { name: d.name, version: d.version }))
+      void message.success(t('已保存为数据集：{{name}} v{{version}}，可在“模型和数据集”页用于对比识别模型', { name: d.name, version: d.version }))
       void queryClient.invalidateQueries({ queryKey: ['ocr-exports'] })
       void queryClient.invalidateQueries({ queryKey: ['ocr-groups'] })
       void queryClient.invalidateQueries({ queryKey: ['hub-datasets'] })
@@ -204,7 +204,7 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
             loading={store.isPending}
             onClick={() => store.mutate()}
           >
-            {t('保存到数据集库')}
+            {t('保存为数据集')}
           </Button>
         </Tooltip>,
         <Button
@@ -394,7 +394,7 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
           <Input
             value={datasetName}
             onChange={(e) => setDatasetName(e.target.value)}
-            placeholder={t('保存到数据集库（用于 OCR 模型评测）时的名称，例如“收据识别”')}
+            placeholder={t('保存为数据集（用于 OCR 模型评测）时的名称，例如“收据识别”')}
             maxLength={64}
           />
         )}

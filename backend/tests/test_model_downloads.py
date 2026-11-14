@@ -348,18 +348,19 @@ def test_files_placed_in_the_inbox_are_checked_and_imported(home, server):
     old = time.time() - 5
     first = {f["name"]: f["status"] for f in manager.scan_inbox(PERSONAL_OWNER)}
     assert first == {
-        "Model-Q4.gguf": "copying",
-        "mmproj-F16.gguf": "copying",
-        "Other.gguf": "unknown",
+        "inbox/Model-Q4.gguf": "copying",
+        "inbox/mmproj-F16.gguf": "copying",
+        "inbox/Other.gguf": "copying",
     }
     (inbox / "Model-Q4.gguf").write_bytes(MODEL)
     os.utime(inbox / "Model-Q4.gguf", (old, old))
     second = {f["name"]: f["status"] for f in manager.scan_inbox(PERSONAL_OWNER)}
-    assert second["Model-Q4.gguf"] == "copying"  # Changed since the last check.
-    assert second["mmproj-F16.gguf"] == "waiting"  # Unchanged: checked now.
+    assert second["inbox/Model-Q4.gguf"] == "copying"  # Changed since the last check.
+    assert second["inbox/mmproj-F16.gguf"] == "waiting"  # Unchanged: checked now.
+    assert second["inbox/Other.gguf"] == "unknown"  # Not listed: imported when asked.
     finish(manager)
     third = {f["name"]: f["status"] for f in manager.scan_inbox(PERSONAL_OWNER)}
-    assert third["Model-Q4.gguf"] == "waiting" and third["mmproj-F16.gguf"] == "failed"
+    assert third["inbox/Model-Q4.gguf"] == "waiting" and third["inbox/mmproj-F16.gguf"] == "failed"
     finish(manager)
     items = {i["filename"]: i for i in manager.view()}
     assert items["Model-Q4.gguf"]["state"] == "done"
@@ -414,13 +415,372 @@ def test_inbox_rows_follow_the_file_being_worked_on(home, server):
     # While it is worked on, the row shows the item's step and progress.
     path = inbox / "Model-Q4.gguf"
     manager.items[model.filename] = Item(
-        model, origin="inbox", path=path, state="verifying", done=1000, total=len(MODEL)
+        model,
+        origin="inbox",
+        path=path,
+        rel="inbox/Model-Q4.gguf",
+        state="verifying",
+        done=1000,
+        total=len(MODEL),
     )
     [row] = manager.scan_inbox(PERSONAL_OWNER)
     assert row["status"] == "verifying" and row["done"] == 1000 and row["total"] == len(MODEL)
     manager.items[model.filename].state = "downloading"  # Copying a link.
     assert manager.scan_inbox(PERSONAL_OWNER)[0]["status"] == "importing"
     assert not manager.running()
+
+
+def scan_twice(manager: Downloads) -> dict[str, dict[str, Any]]:
+    """Two checks: the second sees the files unchanged (complete)."""
+    manager.scan_inbox(PERSONAL_OWNER)
+    return {r["name"]: r for r in manager.scan_inbox(PERSONAL_OWNER)}
+
+
+def test_a_downloaded_folder_is_searched_at_any_depth(home, server):
+    """A Hugging Face cache placed in the inbox: blobs/ holds the file under its hash,
+    snapshots/<commit>/ a link with its real name. The file is recognized by content and imported
+    once, under its listed name."""
+    model = locked(server, "Model-Q4.gguf", MODEL)
+    manager = Downloads((model,))
+    repo = home / "models" / "inbox" / "hub" / "models--org--Model-GGUF"
+    blob = repo / "blobs" / hashlib.sha256(MODEL).hexdigest()
+    blob.parent.mkdir(parents=True)
+    blob.write_bytes(MODEL)
+    snapshot = repo / "snapshots" / "abc123"
+    snapshot.mkdir(parents=True)
+    (snapshot / "Model-Q4.gguf").symlink_to(Path("..", "..", "blobs", blob.name))
+    (snapshot / "README.md").write_text("card")
+    (repo / "refs").mkdir()
+    (repo / "refs" / "main").write_text("abc123")
+    rows = scan_twice(manager)
+    base = "inbox/hub/models--org--Model-GGUF"
+    assert rows[f"{base}/blobs/{blob.name}"]["status"] == "waiting"  # Same size: checked.
+    assert rows[f"{base}/snapshots/abc123/Model-Q4.gguf"]["status"] == "busy"  # Taken once.
+    assert manager.inbox_other == 2  # README.md, refs/main.
+    finish(manager)
+    [item] = manager.view()
+    assert item["state"] == "done" and item["imported"] == "Model-Q4@v1"
+    assert selected(home)["model"] == "models/hub/Model-Q4/v1/Model-Q4.gguf"
+    assert not blob.exists()  # Moved into the library; the link left behind points nowhere.
+    assert {r["name"] for r in manager.scan_inbox(PERSONAL_OWNER)} == set()
+
+
+def test_renamed_files_of_the_listed_size_are_checked_by_content(home, server):
+    model = locked(server, "Model-Q4.gguf", MODEL)
+    manager = Downloads((model,))
+    other = home / "models" / "inbox" / "a" / "b" / "renamed.gguf"
+    other.parent.mkdir(parents=True)
+    other.write_bytes(gguf(len(MODEL), 9))  # Same size, other content.
+    assert scan_twice(manager)["inbox/a/b/renamed.gguf"]["status"] == "waiting"
+    finish(manager)
+    [item] = manager.view()
+    assert item["state"] == "failed" and "不是这个文件" in item["error"]
+    [row] = manager.scan_inbox(PERSONAL_OWNER)
+    # Not the listed file: says why, and offers to import it as it is.
+    assert row["status"] == "failed" and row["importable"] and row["kind"] == "model"
+    assert "不是这个文件" in row["error"]
+    assert other.exists()
+
+
+def test_browser_downloads_and_links_to_folders_are_left_alone(home, server, tmp_path):
+    model = locked(server, "Model-Q4.gguf", MODEL)
+    manager = Downloads((model,))
+    inbox = home / "models" / "inbox"
+    inbox.mkdir(parents=True)
+    (inbox / "Model-Q4.gguf.crdownload").write_bytes(MODEL)
+    (inbox / "Big.gguf.download").mkdir()  # Safari's package.
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "Model-Q4.gguf").write_bytes(MODEL)
+    (inbox / "linked").symlink_to(elsewhere, target_is_directory=True)
+    (inbox / "loop").mkdir()
+    (inbox / "loop" / "up").symlink_to(inbox, target_is_directory=True)
+    (inbox / ".hidden.gguf").write_bytes(MODEL)
+    rows = scan_twice(manager)
+    assert {k: r["status"] for k, r in rows.items()} == {
+        "inbox/Model-Q4.gguf.crdownload": "copying",
+        "inbox/Big.gguf.download": "copying",
+        "inbox/linked": "folder_link",
+        "inbox/loop/up": "folder_link",
+    }
+    assert not manager.running() and manager.view() == []
+
+
+def test_model_files_not_in_the_list_are_imported_when_asked(home, server):
+    manager = Downloads(())
+    inbox = home / "models" / "inbox"
+    mine = inbox / "downloads" / "My Model.gguf"
+    mine.parent.mkdir(parents=True)
+    mine.write_bytes(gguf(4000, 1))
+    vision = inbox / "downloads" / "mmproj-mine.gguf"
+    vision.write_bytes(gguf(3000, 2))
+    rows = scan_twice(manager)
+    row = rows["inbox/downloads/My Model.gguf"]
+    assert row["status"] == "unknown" and row["kind"] == "model" and row["suggested"] == "My-Model"
+    assert rows["inbox/downloads/mmproj-mine.gguf"]["kind"] == "mmproj"
+    assert not manager.running()  # Nothing without a click.
+    manager.import_inbox("inbox/downloads/My Model.gguf", "model", "My-Model", None, PERSONAL_OWNER)
+    finish(manager)
+    item = next(i for i in manager.view() if i["rel"] == "inbox/downloads/My Model.gguf")
+    assert item["state"] == "done" and item["imported"] == "My-Model@v1" and item["custom"]
+    assert selected(home)["model"] == "models/hub/My-Model/v1/My Model.gguf"
+    assert not mine.exists()  # Moved into the library.
+    for bad in ("../jacara.db", "/etc/hosts", "data/x.gguf", "inbox/missing.gguf"):
+        with pytest.raises(downloads.DownloadError):
+            manager.import_inbox(bad, "model", "x", None, PERSONAL_OWNER)
+    with pytest.raises(downloads.DownloadError):
+        manager.import_inbox(
+            "inbox/downloads/mmproj-mine.gguf", "ocr_det", "x", None, PERSONAL_OWNER
+        )
+    with pytest.raises(downloads.DownloadError):  # The library's name rules.
+        manager.import_inbox(
+            "inbox/downloads/mmproj-mine.gguf", "mmproj", "a/b", None, PERSONAL_OWNER
+        )
+
+
+def test_a_file_the_library_refuses_stays_in_the_inbox(home, server):
+    manager = Downloads(())
+    bad = home / "models" / "inbox" / "broken.gguf"
+    bad.parent.mkdir(parents=True)
+    bad.write_bytes(b"not a gguf file at all")
+    scan_twice(manager)
+    manager.import_inbox("inbox/broken.gguf", "model", "broken", None, PERSONAL_OWNER)
+    finish(manager)
+    [item] = manager.view()
+    assert item["state"] == "failed" and "GGUF" in item["error"]
+    assert bad.read_bytes() == b"not a gguf file at all"
+    [row] = manager.scan_inbox(PERSONAL_OWNER)
+    assert row["status"] == "failed" and row["importable"] and "GGUF" in row["error"]
+
+
+def test_split_models_are_imported_with_all_their_files(home, server):
+    manager = Downloads(())
+    folder = home / "models" / "inbox" / "Big-Q4"
+    folder.mkdir(parents=True)
+    first = folder / "Big-Q4-00001-of-00002.gguf"
+    first.write_bytes(gguf(5000, 1))
+    assert scan_twice(manager)["inbox/Big-Q4/Big-Q4-00001-of-00002.gguf"]["status"] == (
+        "shards_missing"
+    )
+    with pytest.raises(downloads.DownloadError):
+        manager.import_inbox(
+            first.relative_to(home / "models").as_posix(), "model", "Big", None, PERSONAL_OWNER
+        )
+    (folder / "Big-Q4-00002-of-00002.gguf").write_bytes(gguf(4000, 2))
+    row = scan_twice(manager)["inbox/Big-Q4/Big-Q4-00001-of-00002.gguf"]
+    assert row["status"] == "unknown" and (row["parts"], row["count"]) == (2, 2)
+    assert row["size"] == 9000 and row["suggested"] == "Big-Q4"
+    manager.import_inbox(row["name"], "model", "Big-Q4", None, PERSONAL_OWNER)
+    finish(manager)
+    version = home / "models" / "hub" / "Big-Q4" / "v1"
+    assert sorted(p.name for p in version.glob("*.gguf")) == [
+        "Big-Q4-00001-of-00002.gguf",
+        "Big-Q4-00002-of-00002.gguf",
+    ]
+    from jacara.modules.hub import registry
+
+    [stored_version] = registry.versions("Big-Q4")
+    assert [f.role for f in stored_version.files] == ["weights", "shard"]
+    assert selected(home)["model"].endswith("Big-Q4-00001-of-00002.gguf")
+    assert not folder.exists()  # Emptied by the import: removed.
+
+
+RAPID_MODELS = Path(__import__("rapidocr").__file__).parent / "models"
+
+
+@pytest.mark.skipif(not (RAPID_MODELS / "PP-OCRv6_det_small.onnx").exists(), reason="没有自带模型")
+def test_onnx_models_are_offered_with_a_suggested_kind_and_not_switched_to(home, server):
+    import shutil
+
+    manager = Downloads(())
+    folder = home / "models" / "inbox" / "ocr"
+    folder.mkdir(parents=True)
+    shutil.copyfile(RAPID_MODELS / "PP-OCRv6_det_small.onnx", folder / "PP-OCRv6_det_small.onnx")
+    (folder / "keys.txt").write_text("a\nb\n")
+    (folder / "slanet-plus.onnx").write_bytes(b"x")
+    rows = scan_twice(manager)
+    det = rows["inbox/ocr/PP-OCRv6_det_small.onnx"]
+    assert det["kind"] == "ocr_det" and det["dictionaries"] == ["inbox/ocr/keys.txt"]
+    assert rows["inbox/ocr/slanet-plus.onnx"]["kind"] == "table"
+    with pytest.raises(downloads.DownloadError):  # Only recognition models take a dictionary.
+        manager.import_inbox(det["name"], "ocr_det", "det", "inbox/ocr/keys.txt", PERSONAL_OWNER)
+    manager.import_inbox(det["name"], "ocr_det", "PP-OCRv6-det", None, PERSONAL_OWNER)
+    finish(manager)
+    [item] = manager.view()
+    assert item["state"] == "done" and item["slot"] == "ocr_det"
+    assert "ocr_det" not in selected_or_empty(home)  # Switched to on the settings page.
+
+
+def selected_or_empty(home: Path) -> dict[str, str]:
+    path = home / "models" / "selected.json"
+    return json.loads(path.read_text("utf-8")) if path.exists() else {}
+
+
+def test_loose_files_in_the_models_folder_are_not_run_but_offered(home, server):
+    model = locked(server, "Model-Q4.gguf", MODEL)
+    manager = Downloads((model,))
+    loose = home / "models" / "Model-Q4.gguf"
+    loose.parent.mkdir(parents=True)
+    loose.write_bytes(MODEL)
+    get_settings.cache_clear()
+    assert get_settings().find_model() is None  # The desktop app runs library models only.
+    row = scan_twice(manager)["Model-Q4.gguf"]
+    assert row["status"] == "unknown" and row["kind"] == "model" and row["expected"] is None
+    assert not manager.running()
+    manager.import_inbox("Model-Q4.gguf", "model", "ignored", None, PERSONAL_OWNER)
+    finish(manager)
+    [item] = manager.view()
+    assert item["imported"] == "Model-Q4@v1" and not item["custom"]  # Checked against the list.
+    assert not loose.exists()
+    assert get_settings().find_model() == home / "models/hub/Model-Q4/v1/Model-Q4.gguf"
+
+
+def test_files_in_the_list_can_be_deleted_and_empty_folders_go_too(home, server, tmp_path):
+    model = locked(server, "Model-Q4.gguf", MODEL)
+    manager = Downloads((model,))
+    inbox = home / "models" / "inbox"
+    deep = inbox / "a" / "b"
+    deep.mkdir(parents=True)
+    (deep / "Other.gguf").write_bytes(gguf(100))
+    elsewhere = tmp_path / "keep.gguf"
+    elsewhere.write_bytes(gguf(200))
+    (inbox / "link.gguf").symlink_to(elsewhere)
+    (inbox / "folder-link").symlink_to(tmp_path, target_is_directory=True)
+    split = inbox / "Big"
+    split.mkdir()
+    for n in (1, 2):
+        (split / f"Big-0000{n}-of-00003.gguf").write_bytes(gguf(100, n))
+    (inbox / "Safari.gguf.download").mkdir()
+    (deep / ".DS_Store").write_bytes(b"Finder")  # Written by the file manager: does not count.
+    (inbox / "a" / "Thumbs.db").write_bytes(b"Explorer")
+    keep = inbox / "kept"
+    keep.mkdir()
+    (keep / "x.gguf").write_bytes(gguf(100))
+    (keep / "notes.txt").write_text("mine")
+    rows = scan_twice(manager)
+    assert rows["inbox/link.gguf"]["link"] and rows["inbox/link.gguf"]["deletable"]
+    assert rows["inbox/link.gguf"]["target"] == str(elsewhere.resolve())
+    assert rows["inbox/a/b/Other.gguf"]["target"] is None
+    assert not rows["inbox/Safari.gguf.download"]["deletable"]
+    deleted = manager.delete_inbox(
+        [
+            "inbox/a/b/Other.gguf",
+            "inbox/link.gguf",
+            "inbox/folder-link",
+            "inbox/Big/Big-00001-of-00003.gguf",
+        ],
+        PERSONAL_OWNER,
+    )
+    assert sorted(deleted) == [
+        "inbox/Big/Big-00001-of-00003.gguf",
+        "inbox/Big/Big-00002-of-00003.gguf",
+        "inbox/a/b/Other.gguf",
+        "inbox/folder-link",
+        "inbox/link.gguf",
+    ]
+    assert elsewhere.exists() and tmp_path.is_dir()  # Only the links went.
+    assert not (inbox / "a").exists() and not split.exists()  # Emptied folders are removed.
+    manager.delete_inbox(["inbox/kept/x.gguf"], PERSONAL_OWNER)
+    assert (keep / "notes.txt").exists()  # A folder with other files in it stays.
+    assert inbox.is_dir()
+    for bad in ("../jacara.db", "inbox/missing.gguf", "inbox/Safari.gguf.download", "data/x"):
+        with pytest.raises(downloads.DownloadError):
+            manager.delete_inbox([bad], PERSONAL_OWNER)
+    actions = audit_actions()
+    assert "hub:inbox_delete" in actions
+
+
+def audit_actions() -> list[str]:
+    from sqlalchemy import select
+
+    from jacara.core.db import session_scope
+    from jacara.models import AuditLog
+
+    with session_scope() as session:
+        return list(session.scalars(select(AuditLog.action)))
+
+
+def test_a_file_being_worked_on_is_not_deleted(home, server):
+    model = locked(server, "Model-Q4.gguf", MODEL)
+    manager = Downloads((model,))
+    path = home / "models" / "inbox" / "Model-Q4.gguf"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(MODEL)
+    manager.items[model.filename] = Item(
+        model, origin="inbox", path=path, rel="inbox/Model-Q4.gguf", state="verifying"
+    )
+    rows = scan_twice(manager)
+    assert not rows["inbox/Model-Q4.gguf"]["deletable"]
+    with pytest.raises(downloads.DownloadError):
+        manager.delete_inbox(["inbox/Model-Q4.gguf"], PERSONAL_OWNER)
+    assert path.exists()
+
+
+def test_old_model_folders_are_offered_and_the_settings_list_each_model_once(
+    home, server, tmp_path, monkeypatch
+):
+    """Where earlier versions kept models (models/table/, models/ocr/) the files are offered for
+    import, not run; the settings list the default and the imported versions, an imported copy of
+    the default only once."""
+    from fastapi.testclient import TestClient
+
+    from jacara.app import create_app
+    from jacara.core import config
+    from jacara.modules.hub import registry
+    from jacara.modules.model_admin import service
+
+    program = tmp_path / "program"
+    shipped = program / "models" / "table" / "slanet-plus.onnx"
+    shipped.parent.mkdir(parents=True)
+    shipped.write_bytes(b"table model")
+    monkeypatch.setattr(config, "resource_dir", lambda: program)
+    monkeypatch.setattr(service, "model_props", lambda _s: {})
+    loose = home / "models" / "table" / "slanet-plus.onnx"
+    loose.parent.mkdir(parents=True)
+    loose.write_bytes(b"older table model")
+    (home / "models" / "ocr").mkdir()
+    (home / "models" / "ocr" / "my_det.onnx").write_bytes(b"det")
+    get_settings.cache_clear()
+    assert get_settings().table_model() == shipped  # The loose file is not used.
+    rows = scan_twice(Downloads(()))
+    assert rows["table/slanet-plus.onnx"]["kind"] == "table"
+    assert rows["table/slanet-plus.onnx"]["importable"]
+    assert rows["ocr/my_det.onnx"]["kind"] == "ocr_det" and rows["ocr/my_det.onnx"]["legacy"]
+    monkeypatch.setattr(registry, "check", lambda *_a: {"format": "onnx"})
+    for name, data in (("slanet-copy", b"table model"), ("other", b"another table model")):
+        work = registry.incoming()
+        (work / "t.onnx").write_bytes(data)
+        registry.add_version(name, "table", work, "t.onnx", None, {}, "")
+    with TestClient(create_app(), base_url="http://127.0.0.1") as client:
+        slots = {s["key"]: s for s in client.get("/api/v1/models").json()["slots"]}
+    table = slots["table"]
+    assert table["source"] == "bundled"
+    assert [f["name"] for f in table["files"]] == ["SLANet-plus", "other v1"]
+    assert [f["name"] for f in slots["model"]["files"]] == []  # No loose files.
+
+
+def test_the_model_server_is_not_started_with_a_file_that_is_gone(home, monkeypatch):
+    from jacara import desktop
+    from jacara.plugins.model_backends import server as model_server
+
+    model = home / "models" / "hub" / "M" / "v1" / "M.gguf"
+    model.parent.mkdir(parents=True)
+    model.write_bytes(gguf(100))
+    (home / "models" / "selected.json").write_text(
+        json.dumps({"model": "models/hub/M/v1/M.gguf"}), "utf-8"
+    )
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        model_server, "server_command", lambda m, port, mmproj: ["llama-server", "-m", str(m)]
+    )
+    [child] = [c for c in desktop.Services(1, "key").children() if c.name == "model"]
+    assert child.build is not None
+    built = child.build()  # Looked up again before every start.
+    assert isinstance(built, tuple) and built[0] == ["llama-server", "-m", str(model)]
+    model.unlink()
+    child.start()
+    assert child.process is None and child.given_up
+    assert "model file not found" in (home / "logs" / "model.log").read_text("utf-8")
 
 
 def test_a_chosen_file_is_copied_checked_and_used(home, server, tmp_path):
@@ -494,6 +854,35 @@ def test_the_wizard_api(home, server, monkeypatch):
         assert state["items"][0]["state"] == "done" and state["files"][0]["in_library"] is True
         actions = [x["action"] for x in client.get("/api/v1/audit-logs").json()["items"]]
         assert "hub:model_download" in actions and "hub:model_use" in actions
+
+
+def test_the_wizard_reports_a_missing_jacara_model_and_checks_the_chosen_file(
+    home, server, monkeypatch, tmp_path
+):
+    import subprocess
+
+    from fastapi.testclient import TestClient
+
+    from jacara.app import create_app
+    from jacara.modules.setup import router
+
+    monkeypatch.setattr(router, "DOWNLOADS", Downloads((locked(server, "Model-Q4.gguf", MODEL),)))
+    monkeypatch.setenv("JACARA_MODEL", "models/gone.gguf")
+    get_settings.cache_clear()
+    chosen = tmp_path / "slanet-plus.onnx"
+
+    def dialog(command, **_kwargs):
+        return subprocess.CompletedProcess(command, 0, stdout=f"{chosen}\n".encode(), stderr=b"")
+
+    monkeypatch.setattr(subprocess, "run", dialog)
+    with TestClient(create_app(), base_url="http://127.0.0.1") as client:
+        state = client.get("/api/v1/setup").json()
+        assert state["needs_model"] is True and state["model"] is None
+        assert state["model_missing"] == str(home / "models" / "gone.gguf")
+        refused = client.post("/api/v1/setup/choose-file")
+        assert refused.status_code == 400 and ".gguf" in refused.json()["detail"]
+        chosen = tmp_path / "Model.GGUF"
+        assert client.post("/api/v1/setup/choose-file").json() == {"path": str(chosen)}
 
 
 def test_the_wizard_is_only_in_the_desktop_app(home, monkeypatch):

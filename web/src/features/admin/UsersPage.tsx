@@ -83,7 +83,7 @@ export function UsersPage() {
         title={t('个人模式无需账号')}
         subTitle={
           desktop
-            ? t('桌面版只供本机一人使用，没有账号和登录。')
+            ? t('个人版只供本机一人使用，没有账号和登录。')
             : t('多人使用时，请将 .env 中的 JACARA_MODE 改为 team，重启后端，并使用 jacara user add 创建第一个管理员。')
         }
       />

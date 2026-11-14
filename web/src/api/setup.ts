@@ -42,9 +42,12 @@ export interface SetupItem {
   imported: string | null
   /** A chosen file not in the list, imported as it is. */
   custom: boolean
+  /** Inbox file: its path relative to the models folder. */
+  rel: string | null
 }
 
 export interface InboxFile {
+  /** Path relative to the models folder (inbox/… or a loose file in the models folder). */
   name: string
   size: number
   expected: number | null
@@ -59,19 +62,45 @@ export interface InboxFile {
     | 'verifying'
     | 'importing'
     | 'in_library'
+    | 'same_size_in_library'
     | 'busy'
     | 'wrong_size'
     | 'failed'
     | 'unknown'
-    | 'ignored'
+    | 'shards_missing'
+    | 'folder_link'
   /** Progress (bytes) while verifying or importing. */
   done: number | null
   total: number | null
+  error: string | null
+  /** Model library kind it is taken for, or suggested (null: the user chooses). */
+  kind: string | null
+  /** Can be imported with importInboxFile. */
+  importable: boolean
+  /** Split GGUF model: files found and files it has. */
+  parts: number | null
+  count: number | null
+  /** .txt files next to an .onnx file: recognition dictionaries to choose from. */
+  dictionaries: string[]
+  /** Model library name suggested for the import. */
+  suggested: string | null
+  /** Can be deleted with deleteInboxFiles (not while it is being worked on). */
+  deletable: boolean
+  /** A symbolic link: deleting it leaves the file it points to. */
+  link: boolean
+  /** For a link: the file or folder it points to. */
+  target: string | null
+  /** Outside the inbox, where earlier versions kept models: not used by the desktop app; import or delete it. */
+  legacy: boolean
 }
+
+export type ModelKind = 'model' | 'mmproj' | 'ocr_det' | 'ocr_rec' | 'table'
 
 export interface SetupState {
   /** No large model is found. */
   needs_model: boolean
+  /** Model file set with JACARA_MODEL that does not exist (it takes precedence over the app's choice). */
+  model_missing: string | null
   model: string | null
   mmproj: string | null
   files: ListedModel[]
@@ -82,6 +111,10 @@ export interface SetupState {
   running: boolean
   inbox: string
   inbox_files: InboxFile[]
+  /** Other files in the inbox (not model files): only counted. */
+  inbox_other: number
+  /** Names of the model library kinds. */
+  kinds: Record<string, string>
   /** Free space on the disk of the data folder (bytes). */
   free: number
 }
@@ -116,6 +149,22 @@ export function openInbox(): Promise<void> {
 /** System file dialog for a .gguf file; null when cancelled. */
 export async function chooseModelFile(): Promise<string | null> {
   return (await api<{ path: string | null }>('/setup/choose-file', { method: 'POST' })).path
+}
+
+/**
+ * Import a file shown in the inbox list as the chosen kind. .gguf files are put to use; OCR models only go
+ * into the model library. modelName is ignored for a listed file.
+ */
+export function importInboxFile(name: string, kind: ModelKind, modelName: string, dictionary: string | null): Promise<void> {
+  return api<void>('/setup/inbox/import', {
+    method: 'POST',
+    json: { name, kind, model_name: modelName, dictionary },
+  })
+}
+
+/** Delete files shown in the inbox list, permanently (a link: only the link; a split model: all its files). */
+export async function deleteInboxFiles(names: string[]): Promise<string[]> {
+  return (await api<{ deleted: string[] }>('/setup/inbox/delete', { method: 'POST', json: { names } })).deleted
 }
 
 /** Copy a model file on this computer into the model library and use it. */

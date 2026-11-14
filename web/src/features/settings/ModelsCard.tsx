@@ -14,20 +14,22 @@ import { t } from '../../i18n'
 
 const SOURCE: Record<ModelSlot['source'], { text: string; color: string }> = {
   env: { get text() { return t('.env 指定') }, color: 'blue' },
-  choice: { get text() { return t('网页设置') }, color: 'purple' },
+  choice: { get text() { return t('手动选择') }, color: 'purple' },
   auto: { get text() { return t('自动检测') }, color: 'default' },
-  builtin: { get text() { return t('RapidOCR 内置') }, color: 'default' },
-  bundled: { get text() { return t('随程序附带') }, color: 'default' },
+  builtin: { get text() { return t('默认') }, color: 'default' },
+  bundled: { get text() { return t('默认') }, color: 'default' },
   none: { get text() { return t('无') }, color: 'warning' },
 }
 
 /** Label of the "none" option per slot (the LLM cannot be disabled). */
 const EMPTY: Partial<Record<ModelSlot['key'], string>> = {
   get mmproj() { return t('不使用视觉模型') },
-  get ocr_det() { return t('使用 RapidOCR 内置模型') },
-  get ocr_rec() { return t('使用 RapidOCR 内置模型') },
-  get ocr_dict() { return t('使用 RapidOCR 内置模型') },
   get table() { return t('不使用（按文字位置划分单元格）') },
+}
+
+/** The "nothing chosen" choice: the slot's default (OCR: the model shipped in RapidOCR) or switching it off. */
+function emptyLabel(s: ModelSlot): string | undefined {
+  return s.default_label ?? EMPTY[s.key]
 }
 
 /**
@@ -62,13 +64,18 @@ export function ModelsCard() {
       render: (_, s) => {
         const value = draft[s.key] ?? s.current ?? ''
         const options = [
-          ...(EMPTY[s.key] !== undefined ? [{ value: '', label: EMPTY[s.key] }] : []),
-          ...s.files.map((f) => ({ value: f.path, label: t('{{name}}（{{formatBytes}}）', { name: f.name, formatBytes: formatBytes(f.size) }) })),
+          ...(emptyLabel(s) !== undefined ? [{ value: '', label: emptyLabel(s) }] : []),
+          ...s.files.map((f) => ({
+            value: f.path,
+            label: f.provider
+              ? t('{{name}}（{{provider}}，{{size}}）', { name: f.name, provider: f.provider, size: formatBytes(f.size) })
+              : t('{{name}}（{{formatBytes}}）', { name: f.name, formatBytes: formatBytes(f.size) }),
+          })),
         ]
         if (!editable || s.source === 'env') {
           return (
             <Typography.Text>
-              {s.current ? s.current.split('/').pop() : (EMPTY[s.key] ?? t('无'))}
+              {s.current ? s.current.split('/').pop() : (emptyLabel(s) ?? t('无'))}
             </Typography.Text>
           )
         }
@@ -131,11 +138,21 @@ export function ModelsCard() {
           </Typography.Text>
         )}
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {t('仅可选择本机已有的模型文件，不会联网下载。推荐通过')}{' '}
-          <Link to="/hub">{t('模型和数据集')}</Link>{' '}
-          {desktop
-            ? t('导入（导入时校验文件并记录版本），导入的版本会出现在下拉列表中，并标注“（模型库）”。也可手动放置文件：大模型和视觉模型放在数据文件夹的 models/ 中，OCR 模型放在 models/ocr/（文件名需包含 det 或 rec，字典为 .txt），表格模型放在 models/table/。修改后点击“重新启动后台”生效。')
-            : t('导入（导入时校验文件并记录版本），导入的版本会出现在下拉列表中，并标注“（模型库）”。也可手动放置文件：大模型和视觉模型放在 models/，OCR 模型放在 models/ocr/（文件名需包含 det 或 rec，字典为 .txt），表格模型放在 models/table/。.env 中已指定的项优先生效，无法在此修改。修改后需执行 jacara stop 和 jacara start 才会生效。')}
+          {desktop ? (
+            <>
+              {t('下拉列表中是默认模型和已导入的模型。导入新模型：')}
+              <Link to="/setup">{t('准备模型')}</Link>
+              {t('（下载、放入文件夹或选择文件）或')}{' '}
+              <Link to="/hub">{t('模型和数据集')}</Link>
+              {t('。修改后点击“重新启动后台”生效。')}
+            </>
+          ) : (
+            <>
+              {t('仅可选择本机已有的模型文件，不会联网下载。推荐通过')}{' '}
+              <Link to="/hub">{t('模型和数据集')}</Link>{' '}
+              {t('导入（导入时校验文件并记录版本），导入的版本会出现在下拉列表中。也可手动放置文件：大模型和视觉模型放在 models/，OCR 模型放在 models/ocr/（文件名需包含 det 或 rec，字典为 .txt），表格模型放在 models/table/。.env 中已指定的项优先生效，无法在此修改。修改后需执行 jacara stop 和 jacara start 才会生效。')}
+            </>
+          )}
         </Typography.Text>
         <Table rowKey="key" size="small" pagination={false} columns={columns} dataSource={models.data?.slots ?? []} />
       </Flex>

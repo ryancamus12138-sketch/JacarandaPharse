@@ -4,7 +4,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: JacarandaParse 1.0.0\n"
-"POT-Creation-Date: 2026-11-14 16:02+0000\n"
+"POT-Creation-Date: 2026-11-14 18:27+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -337,107 +337,153 @@ msgstr ""
 msgid "磁盘空间不足：需要 {need:.1f} GB，可用 {free:.1f} GB"
 msgstr ""
 
-#: backend/src/jacara/downloads/__init__.py:279
-#: backend/src/jacara/downloads/__init__.py:303
+#: backend/src/jacara/downloads/__init__.py:292
+#: backend/src/jacara/downloads/__init__.py:316
 #, python-brace-format
 msgid "连续 {seconds} 秒几乎没有收到数据"
 msgstr ""
 
-#: backend/src/jacara/downloads/__init__.py:323
+#: backend/src/jacara/downloads/__init__.py:336
 #, python-brace-format
 msgid "下载地址不是 HTTPS，已拒绝：{host}"
 msgstr ""
 
-#: backend/src/jacara/downloads/__init__.py:329
+#: backend/src/jacara/downloads/__init__.py:342
 msgid "连接超时"
 msgstr ""
 
-#: backend/src/jacara/downloads/__init__.py:331
+#: backend/src/jacara/downloads/__init__.py:344
 #, python-brace-format
 msgid "无法连接：{error}"
 msgstr ""
 
-#: backend/src/jacara/downloads/__init__.py:337
+#: backend/src/jacara/downloads/__init__.py:350
 msgid "重定向次数过多"
-msgstr ""
-
-#: backend/src/jacara/downloads/__init__.py:381
-#, python-brace-format
-msgid "服务器返回的文件范围或大小与清单不符：{range}"
-msgstr ""
-
-#: backend/src/jacara/downloads/__init__.py:389
-#, python-brace-format
-msgid "服务器上的文件大小与清单不符：{size}"
 msgstr ""
 
 #: backend/src/jacara/downloads/__init__.py:394
 #, python-brace-format
+msgid "服务器返回的文件范围或大小与清单不符：{range}"
+msgstr ""
+
+#: backend/src/jacara/downloads/__init__.py:402
+#, python-brace-format
+msgid "服务器上的文件大小与清单不符：{size}"
+msgstr ""
+
+#: backend/src/jacara/downloads/__init__.py:407
+#, python-brace-format
 msgid "服务器返回 HTTP {status}"
 msgstr ""
 
-#: backend/src/jacara/downloads/__init__.py:412
+#: backend/src/jacara/downloads/__init__.py:425
 msgid "服务器发送的数据比清单中的文件大"
 msgstr ""
 
-#: backend/src/jacara/downloads/__init__.py:422
+#: backend/src/jacara/downloads/__init__.py:435
 #, python-brace-format
 msgid "连接中断：{error}"
 msgstr ""
 
-#: backend/src/jacara/downloads/__init__.py:425
+#: backend/src/jacara/downloads/__init__.py:438
 msgid "连接中断，文件没有下载完整"
 msgstr ""
 
-#: backend/src/jacara/downloads/manager.py:86
+#: backend/src/jacara/downloads/manager.py:140
 #, python-brace-format
 msgid "未知的下载来源：{source}"
 msgstr ""
 
-#: backend/src/jacara/downloads/manager.py:90
+#: backend/src/jacara/downloads/manager.py:144
 #, python-brace-format
 msgid "不在模型清单中：{names}"
 msgstr ""
 
-#: backend/src/jacara/downloads/manager.py:171
+#: backend/src/jacara/downloads/manager.py:234
 #, python-brace-format
 msgid "出错了：{error}"
 msgstr ""
 
-#: backend/src/jacara/downloads/manager.py:199
+#: backend/src/jacara/downloads/manager.py:262
 msgid "所有下载来源都失败了"
 msgstr ""
 
-#: backend/src/jacara/downloads/manager.py:216
-#: backend/src/jacara/downloads/manager.py:337
+#: backend/src/jacara/downloads/manager.py:280
+#: backend/src/jacara/downloads/manager.py:471
 msgid "没有选择文件"
 msgstr ""
 
-#: backend/src/jacara/downloads/manager.py:241
+#: backend/src/jacara/downloads/manager.py:314
 #, python-brace-format
 msgid "文件大小与清单不符：{name}（{size} 字节，应为 {expected} 字节）"
 msgstr ""
 
-#: backend/src/jacara/downloads/manager.py:259
+#: backend/src/jacara/downloads/manager.py:339
+#, python-brace-format
+msgid "{name} 与清单中的 {listed} 大小相同，但内容不同，不是这个文件"
+msgstr ""
+
+#: backend/src/jacara/downloads/manager.py:347
 #, python-brace-format
 msgid "校验不一致：{name} 与清单中的文件内容不同。文件留在原处，请删除后重新下载"
 msgstr ""
 
-#: backend/src/jacara/downloads/manager.py:266
+#: backend/src/jacara/downloads/manager.py:353
 #, python-brace-format
 msgid "校验不一致：{name} 与清单中的文件内容不同"
 msgstr ""
 
-#: backend/src/jacara/downloads/manager.py:272
+#: backend/src/jacara/downloads/manager.py:359
 #, python-brace-format
 msgid "下载的文件校验不一致：{name}，已删除，请重试"
 msgstr ""
 
-#: backend/src/jacara/downloads/manager.py:288
+#: backend/src/jacara/downloads/manager.py:376
 msgid "没有开始下载的用户"
 msgstr ""
 
-#: backend/src/jacara/downloads/manager.py:399
+#: backend/src/jacara/downloads/manager.py:704
+#: backend/src/jacara/modules/hub/registry.py:340
+#, python-brace-format
+msgid "未知种类：{kind}"
+msgstr ""
+
+#: backend/src/jacara/downloads/manager.py:708
+#: backend/src/jacara/modules/hub/service.py:269
+#, python-brace-format
+msgid "{kind}需要 {suffix} 文件"
+msgstr ""
+
+#: backend/src/jacara/downloads/manager.py:726
+#: backend/src/jacara/modules/hub/registry.py:390
+#, python-brace-format
+msgid "分片模型缺少文件：{files}"
+msgstr ""
+
+#: backend/src/jacara/downloads/manager.py:731
+#: backend/src/jacara/modules/hub/registry.py:382
+msgid "仅识别模型需要字典"
+msgstr ""
+
+#: backend/src/jacara/downloads/manager.py:763
+#: backend/src/jacara/downloads/manager.py:793
+msgid "这个文件正在处理"
+msgstr ""
+
+#: backend/src/jacara/downloads/manager.py:773
+#: backend/src/jacara/downloads/manager.py:787
+#: backend/src/jacara/downloads/manager.py:871
+#, python-brace-format
+msgid "找不到这个文件：{name}"
+msgstr ""
+
+#: backend/src/jacara/downloads/manager.py:789
+#, python-brace-format
+msgid "{name} 是文件夹，请在文件管理器中删除"
+msgstr ""
+
+#: backend/src/jacara/downloads/manager.py:815
+#: backend/src/jacara/modules/setup/router.py:290
 msgid "请选择 .gguf 模型文件"
 msgstr ""
 
@@ -943,7 +989,7 @@ msgid "备注不存在"
 msgstr ""
 
 #: backend/src/jacara/modules/desktop/router.py:154
-#: backend/src/jacara/modules/setup/router.py:206
+#: backend/src/jacara/modules/setup/router.py:287
 msgid "这台电脑无法打开系统的选择对话框，请直接输入完整路径"
 msgstr ""
 
@@ -960,7 +1006,7 @@ msgid "只能打开 http 或 https 网址"
 msgstr ""
 
 #: backend/src/jacara/modules/desktop/router.py:216
-#: backend/src/jacara/modules/setup/router.py:195
+#: backend/src/jacara/modules/setup/router.py:276
 msgid "找不到这个文件夹"
 msgstr ""
 
@@ -1041,7 +1087,7 @@ msgid "文件超过 {limit} MB"
 msgstr ""
 
 #: backend/src/jacara/modules/documents/service.py:222
-#: backend/src/jacara/modules/hub/service.py:229
+#: backend/src/jacara/modules/hub/service.py:231
 #: backend/src/jacara/modules/templates/service.py:708
 msgid "文件为空"
 msgstr ""
@@ -1049,9 +1095,9 @@ msgstr ""
 #: backend/src/jacara/modules/documents/service.py:231
 #: backend/src/jacara/modules/documents/service.py:932
 #: backend/src/jacara/modules/documents/service.py:961
-#: backend/src/jacara/modules/hub/service.py:412
-#: backend/src/jacara/modules/hub/service.py:428
-#: backend/src/jacara/modules/hub/service.py:468
+#: backend/src/jacara/modules/hub/service.py:414
+#: backend/src/jacara/modules/hub/service.py:430
+#: backend/src/jacara/modules/hub/service.py:470
 #: backend/src/jacara/modules/ocr_samples/det.py:443
 #: backend/src/jacara/modules/ocr_samples/service.py:489
 #: backend/src/jacara/modules/ocr_samples/service.py:1161
@@ -1072,7 +1118,7 @@ msgstr ""
 
 #: backend/src/jacara/modules/documents/service.py:279
 #: backend/src/jacara/modules/documents/service.py:353
-#: backend/src/jacara/modules/hub/service.py:527
+#: backend/src/jacara/modules/hub/service.py:529
 msgid "任务队列暂时不可用，请稍后再试"
 msgstr ""
 
@@ -1486,113 +1532,104 @@ msgid "{kind}: {detail}"
 msgstr ""
 
 #: backend/src/jacara/modules/hub/registry.py:29
-#: backend/src/jacara/modules/model_admin/service.py:41
+#: backend/src/jacara/modules/model_admin/service.py:44
 msgid "大模型"
 msgstr ""
 
 #: backend/src/jacara/modules/hub/registry.py:30
-#: backend/src/jacara/modules/model_admin/service.py:42
+#: backend/src/jacara/modules/model_admin/service.py:45
 msgid "视觉模型"
 msgstr ""
 
 #: backend/src/jacara/modules/hub/registry.py:31
-#: backend/src/jacara/modules/model_admin/service.py:43
+#: backend/src/jacara/modules/model_admin/service.py:46
 msgid "OCR 文字检测"
 msgstr ""
 
 #: backend/src/jacara/modules/hub/registry.py:32
-#: backend/src/jacara/modules/model_admin/service.py:44
+#: backend/src/jacara/modules/model_admin/service.py:47
 msgid "OCR 文字识别"
 msgstr ""
 
 #: backend/src/jacara/modules/hub/registry.py:33
-#: backend/src/jacara/modules/model_admin/service.py:46
+#: backend/src/jacara/modules/model_admin/service.py:49
 msgid "表格结构模型"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:166
+#: backend/src/jacara/modules/hub/registry.py:172
 msgid "模型不存在"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:169
+#: backend/src/jacara/modules/hub/registry.py:175
 #, python-brace-format
 msgid "{name} 不存在第 {version} 版"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:210
+#: backend/src/jacara/modules/hub/registry.py:216
 #, python-brace-format
 msgid "磁盘空间不足：需要 {needed:.1f} GB，仅剩 {free:.1f} GB"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:223
+#: backend/src/jacara/modules/hub/registry.py:229
 msgid "不是 GGUF 文件（文件头不是 GGUF）"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:228
+#: backend/src/jacara/modules/hub/registry.py:234
 msgid "无法识别 GGUF 版本号，文件可能已损坏"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:252
+#: backend/src/jacara/modules/hub/registry.py:258
 #, python-brace-format
 msgid "onnxruntime 无法打开此文件：{detail}"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:259
+#: backend/src/jacara/modules/hub/registry.py:265
 msgid "输入不是 4 维图像（批量、通道、高、宽），不符合 OCR 或表格模型的特征"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:264
+#: backend/src/jacara/modules/hub/registry.py:270
 msgid "此文件的输出为 4 维，应为检测模型而非识别模型"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:266
+#: backend/src/jacara/modules/hub/registry.py:272
 msgid "此文件的输出为 3 维，应为识别模型而非检测模型"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:275
+#: backend/src/jacara/modules/hub/registry.py:281
 msgid "模型已内置字符表，RapidOCR 仅使用内置字符表，上传的字典不会生效"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:284
+#: backend/src/jacara/modules/hub/registry.py:290
 msgid "此识别模型未内置字符表，需同时上传字典（.txt）。否则 RapidOCR 将尝试联网下载字典，离线环境下无法使用"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:343
+#: backend/src/jacara/modules/hub/registry.py:337
 msgid "模型名称只能包含字母、数字和 ._-，需以字母或数字开头，最多 64 个字符"
 msgstr ""
 
 #: backend/src/jacara/modules/hub/registry.py:346
 #, python-brace-format
-msgid "未知种类：{kind}"
-msgstr ""
-
-#: backend/src/jacara/modules/hub/registry.py:348
-msgid "仅识别模型需要字典"
-msgstr ""
-
-#: backend/src/jacara/modules/hub/registry.py:350
-msgid "字典与模型不能为同一文件"
-msgstr ""
-
-#: backend/src/jacara/modules/hub/registry.py:356
-#, python-brace-format
 msgid "{name} 已是{kind}，新版本需为同一种类；其他种类请使用新名称"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:432
-msgid "zip 中缺少模型卡 README.md，不是模型库导出的文件"
+#: backend/src/jacara/modules/hub/registry.py:384
+msgid "字典与模型不能为同一文件"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:442
+#: backend/src/jacara/modules/hub/registry.py:464
+msgid "zip 中缺少模型卡 README.md，不是本程序导出的模型文件"
+msgstr ""
+
+#: backend/src/jacara/modules/hub/registry.py:474
 msgid "模型卡中未指定权重文件"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:447
+#: backend/src/jacara/modules/hub/registry.py:479
 #, python-brace-format
 msgid "zip 中缺少文件或文件名错误：{filename}"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/registry.py:454
+#: backend/src/jacara/modules/hub/registry.py:486
 #, python-brace-format
 msgid "{filename} 的 SHA-256 与模型卡不一致，文件可能已损坏"
 msgstr ""
@@ -1638,105 +1675,100 @@ msgstr ""
 msgid "上传不存在（可能已完成、取消或过期）"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:211
-msgid "仅支持 .gguf、.onnx、识别字典 .txt，或模型库导出的 .zip"
+#: backend/src/jacara/modules/hub/service.py:212
+msgid "仅支持 .gguf、.onnx、识别字典 .txt，或本程序导出的模型 .zip"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:249
+#: backend/src/jacara/modules/hub/service.py:251
 #, python-brace-format
 msgid "尚未上传 {archive}"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:258
+#: backend/src/jacara/modules/hub/service.py:260
 msgid "请选择种类和权重文件"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:262
+#: backend/src/jacara/modules/hub/service.py:264
 #, python-brace-format
 msgid "尚未上传 {name}"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:267
-#, python-brace-format
-msgid "{kind}需要 {suffix} 文件"
-msgstr ""
-
-#: backend/src/jacara/modules/hub/service.py:270
+#: backend/src/jacara/modules/hub/service.py:272
 msgid "字典需为 .txt 文件"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:318
+#: backend/src/jacara/modules/hub/service.py:320
 #, python-brace-format
 msgid "{kind}由 .env 指定，无法在网页中更换"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:335
+#: backend/src/jacara/modules/hub/service.py:337
 msgid "此版本正在使用，请先切换到其他版本再删除"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:387
+#: backend/src/jacara/modules/hub/service.py:389
 msgid "数据集不存在"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:393
+#: backend/src/jacara/modules/hub/service.py:395
 msgid "数据集 zip 最大 1 GB"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:410
+#: backend/src/jacara/modules/hub/service.py:412
 msgid "名称需为 1～64 个字符，且不能包含 /"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:472
+#: backend/src/jacara/modules/hub/service.py:474
 msgid "无法从对象存储读取此数据集"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:485
+#: backend/src/jacara/modules/hub/service.py:487
 msgid "此数据集有正在运行的评测，请在评测结束后删除"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:516
+#: backend/src/jacara/modules/hub/service.py:518
 #, python-brace-format
 msgid "此数据集没有 {split} 划分"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:525
+#: backend/src/jacara/modules/hub/service.py:527
 msgid "两侧为同一模型，无需对比"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:565
+#: backend/src/jacara/modules/hub/service.py:567
 msgid "（已删除）"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:591
+#: backend/src/jacara/modules/hub/service.py:593
 msgid "评测不存在"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:602
+#: backend/src/jacara/modules/hub/service.py:604
 msgid "此次评测尚无逐条结果"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:606
+#: backend/src/jacara/modules/hub/service.py:608
 msgid "无法从对象存储读取逐条结果"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:607
+#: backend/src/jacara/modules/hub/service.py:609
 #, python-brace-format
 msgid "OCR评测-{run}.jsonl"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:618
+#: backend/src/jacara/modules/hub/service.py:620
 msgid "当前使用"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:620
-msgid "RapidOCR 内置模型"
+#: backend/src/jacara/modules/hub/service.py:622
+msgid "默认模型"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:623
-msgid "请选择模型库中的模型和版本"
+#: backend/src/jacara/modules/hub/service.py:625
+msgid "请选择已导入的模型和版本"
 msgstr ""
 
-#: backend/src/jacara/modules/hub/service.py:629
+#: backend/src/jacara/modules/hub/service.py:631
 #, python-brace-format
 msgid "{name} 是{kind}，此数据集需对比{wanted}"
 msgstr ""
@@ -1936,26 +1968,34 @@ msgid ""
 "以上为业务数据，请按所在单位的数据管理规定保存，请勿提交到代码仓库。\n"
 msgstr ""
 
-#: backend/src/jacara/modules/model_admin/service.py:45
+#: backend/src/jacara/modules/model_admin/service.py:48
 msgid "OCR 识别字典"
 msgstr ""
 
-#: backend/src/jacara/modules/model_admin/service.py:145
-#, python-brace-format
-msgid "{name}（随程序附带）"
+#: backend/src/jacara/modules/model_admin/service.py:172
+msgid "PaddleOCR 模型，程序内置"
 msgstr ""
 
-#: backend/src/jacara/modules/model_admin/service.py:169
+#: backend/src/jacara/modules/model_admin/service.py:197
 #, python-brace-format
-msgid "{name} v{version}（模型库）"
+msgid "{model}（PaddleOCR 模型，RapidOCR {version} 内置）"
 msgstr ""
 
-#: backend/src/jacara/modules/model_admin/service.py:259
+#: backend/src/jacara/modules/model_admin/service.py:202
+msgid "识别模型内嵌字符表"
+msgstr ""
+
+#: backend/src/jacara/modules/model_admin/service.py:262
+#, python-brace-format
+msgid "{name} v{version}"
+msgstr ""
+
+#: backend/src/jacara/modules/model_admin/service.py:359
 #, python-brace-format
 msgid "{slot}只能选择 models/ 中已有的文件，未找到 {file}"
 msgstr ""
 
-#: backend/src/jacara/modules/model_admin/service.py:265
+#: backend/src/jacara/modules/model_admin/service.py:365
 msgid "必须选择大模型"
 msgstr ""
 
@@ -2157,7 +2197,7 @@ msgid "3. 使用与系统当前检测模型同系列的配置和预训练权重�
 msgstr ""
 
 #: backend/src/jacara/modules/ocr_samples/det.py:623
-msgid "4. 启用前，请先在数据集库中使用验证集或锁定测试集评测，并与当前模型对比。"
+msgid "4. 启用前，请先在「模型和数据集」中用验证集或锁定测试集评测，并与当前模型对比。"
 msgstr ""
 
 #: backend/src/jacara/modules/ocr_samples/det.py:628
@@ -2554,11 +2594,11 @@ msgstr ""
 msgid "{key} 训练 {train} / 验证 {val}"
 msgstr ""
 
-#: backend/src/jacara/modules/setup/router.py:202
+#: backend/src/jacara/modules/setup/router.py:283
 msgid "选择模型文件（.gguf）"
 msgstr ""
 
-#: backend/src/jacara/modules/setup/router.py:218
+#: backend/src/jacara/modules/setup/router.py:301
 msgid "请填写完整路径"
 msgstr ""
 

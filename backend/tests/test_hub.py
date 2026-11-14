@@ -134,7 +134,7 @@ def test_upload_check_version_use_and_delete(client, factory, root):
     assert [v["version"] for v in listed["models"][0]["versions"]] == [2, 1]
     # Library versions are selectable on the model selection page too.
     names = [f["name"] for f in client.get("/api/v1/models").json()["slots"][0]["files"]]
-    assert "qwen v1（模型库）" in names
+    assert "qwen v1" in names
 
     used = client.post("/api/v1/hub/models/qwen/versions/1/use")
     assert used.status_code == 200, used.text
@@ -474,5 +474,5 @@ def test_command_line_eval_on_a_local_zip(tmp_path, root, monkeypatch, capsys):
     assert code == 0, capsys.readouterr().out
     out = next((tmp_path / "out").iterdir())
     summary = json.loads((out / "summary.json").read_text("utf-8"))
-    assert summary["a"]["lines"] == 4 and summary["arms"][1]["label"] == "RapidOCR 内置模型"
+    assert summary["a"]["lines"] == 4 and summary["arms"][1]["label"] == "默认模型"
     assert "Exact Match" in (out / "summary.md").read_text("utf-8")
