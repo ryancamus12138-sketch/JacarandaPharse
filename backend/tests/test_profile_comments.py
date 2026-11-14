@@ -162,13 +162,13 @@ def test_search_field_values(client, docs, factory):  # noqa: F811
 
 def test_skip_and_unskip(client, docs, factory):  # noqa: F811
     a, b, d = docs["a"], docs["b"], docs["d"]
-    assert client.get(f"/api/v1/documents/{a}/neighbors").json()["next"] == str(b)
+    assert client.get(f"/api/v1/documents/{a}/neighbors").json()["next_to_review"] == str(b)
 
     skipped = client.post(f"/api/v1/documents/{b}/skip", json={"reason": "看不清，问财务"}).json()
     assert skipped["skipped_at"] is not None
     assert skipped["skip_reason"] == "看不清，问财务"
-    # Skipped documents are excluded from "Next".
-    assert client.get(f"/api/v1/documents/{a}/neighbors").json()["next"] == str(d)
+    # Skipped documents are not opened next after a review.
+    assert client.get(f"/api/v1/documents/{a}/neighbors").json()["next_to_review"] == str(d)
     assert names(client, "skipped=true") == ["b"]
     assert names(client, "skipped=false") == ["a", "c", "d", "e"]
     dashboard = client.get("/api/v1/dashboard").json()
@@ -178,7 +178,7 @@ def test_skip_and_unskip(client, docs, factory):  # noqa: F811
 
     back = client.post(f"/api/v1/documents/{b}/unskip").json()
     assert back["skipped_at"] is None
-    assert client.get(f"/api/v1/documents/{a}/neighbors").json()["next"] == str(b)
+    assert client.get(f"/api/v1/documents/{a}/neighbors").json()["next_to_review"] == str(b)
 
     # Only documents awaiting review can be skipped.
     assert client.post(f"/api/v1/documents/{docs['c']}/skip", json={}).status_code == 409

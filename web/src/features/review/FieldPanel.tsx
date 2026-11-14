@@ -1,6 +1,6 @@
 import { CloseOutlined, DeleteOutlined, MessageOutlined, ScanOutlined } from '@ant-design/icons'
-import { Button, Flex, Segmented, Tag, Tooltip, Typography } from 'antd'
-import { useEffect, useRef } from 'react'
+import { Button, Flex, Segmented, Tag, Tooltip, Typography, theme } from 'antd'
+import { type ReactNode, useEffect, useRef } from 'react'
 import type { Extraction, FieldValue, Level } from '../../api/types'
 import {
   boxColor,
@@ -45,6 +45,8 @@ interface Props {
   onSortMode: (mode: SortMode) => void
   /** Unresolved comments per field on this page (field ID → count). */
   comments?: Record<string, number>
+  /** Shown at the right of the summary line (the field-name language choice). */
+  headerExtra?: ReactNode
 }
 
 const LEVEL_SUMMARY: [Level, string, string][] = [
@@ -74,8 +76,10 @@ export function FieldPanel({
   sortMode,
   onSortMode,
   comments = {},
+  headerExtra,
 }: Props) {
   const { t } = useTranslation()
+  const { token } = theme.useToken()
   const { values } = extraction
   // Rules re-evaluated on post-review values (deleted rows excluded); older APIs without them fall back to
   // extraction-time results.
@@ -99,6 +103,22 @@ export function FieldPanel({
   return (
     <Flex vertical gap={12} ref={box}>
       <IssueToggle checks={checks} />
+      {/*
+       * Summary, sort and language stay at the top of the scrolling list, so they are never half hidden while
+       * scrolling through the fields.
+       */}
+      <Flex
+        vertical
+        gap={8}
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 2,
+          background: token.colorBgContainer,
+          paddingBottom: 8,
+          borderBottom: `1px solid ${token.colorSplit}`,
+        }}
+      >
       <Flex justify="space-between" align="center" gap={8} wrap>
         <Typography.Text type="secondary">
           {t('{{length}} 个字段', { length: plain.length })}
@@ -116,15 +136,19 @@ export function FieldPanel({
           ]}
         />
       </Flex>
-      <Flex gap={4} wrap>
-        {LEVEL_SUMMARY.map(([level, color, text]) => {
-          const n = live.filter((v) => levelOf(v) === level).length
-          return n > 0 ? (
-            <Tag key={level} color={color} bordered={false}>
-              {t(text)} {n}
-            </Tag>
-          ) : null
-        })}
+      <Flex justify="space-between" align="center" gap={8} wrap>
+        <Flex gap={4} wrap>
+          {LEVEL_SUMMARY.map(([level, color, text]) => {
+            const n = live.filter((v) => levelOf(v) === level).length
+            return n > 0 ? (
+              <Tag key={level} color={color} bordered={false}>
+                {t(text)} {n}
+              </Tag>
+            ) : null
+          })}
+        </Flex>
+        {headerExtra}
+      </Flex>
       </Flex>
       <Flex vertical gap={4}>
         {plain.map((v) => (

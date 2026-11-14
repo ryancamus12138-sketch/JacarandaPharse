@@ -60,7 +60,13 @@ class ReprocessManyIn(BaseModel):
     """How to read PDFs (PDF only). default follows the system setting; omitted (null): same as last
     time."""
     reason: Literal[
-        "template_changed", "wrong_template", "bad_result", "model_changed", "batch", "other"
+        "template_changed",
+        "wrong_template",
+        "bad_result",
+        "model_changed",
+        "batch",
+        "restart",
+        "other",
     ] = "batch"
     note: str = Field(default="", max_length=500)
 
@@ -251,6 +257,7 @@ REPROCESS_REASONS: dict[str, str] = {
     "bad_result": N_("结果不理想，重新运行"),
     "model_changed": N_("已更换模型或 OCR"),
     "batch": N_("批量重新处理"),
+    "restart": N_("处理时间过长，重新开始"),
     "other": N_("其他"),
 }
 """Reprocessing reasons (display names shown in audit log and history)."""
@@ -264,7 +271,13 @@ class ReprocessIn(BaseModel):
     """Id of one of my templates, discover, or auto (automatic selection). Omitted: the latest
     version of the current template (auto-selected documents are re-selected)."""
     reason: Literal[
-        "template_changed", "wrong_template", "bad_result", "model_changed", "batch", "other"
+        "template_changed",
+        "wrong_template",
+        "bad_result",
+        "model_changed",
+        "batch",
+        "restart",
+        "other",
     ]
     note: str = Field(default="", max_length=500)
     """Additional explanation. Required when the reason is "other"."""
@@ -365,11 +378,20 @@ class PageOcr(BaseModel):
 
 
 class DocumentNeighbors(BaseModel):
-    """Previous / next on the review page: the adjacent documents awaiting review in list order;
-    null if none."""
+    """Previous / next on the review page. null where there is none."""
 
     previous: uuid.UUID | None
+    """Previous document of the list (same filters as the list, any status)."""
     next: uuid.UUID | None
+    """Next document of the list."""
+    position: int | None
+    """1-based position of this document in the list; null when it no longer matches the filters
+    (for example reviewed while the list shows documents awaiting review)."""
+    total: int
+    """Number of documents in the list."""
+    next_to_review: uuid.UUID | None
+    """Document opened after this one is reviewed, skipped or deleted: the next document awaiting
+    review in list order, otherwise the previous one."""
     remaining: int
     """Number of other documents awaiting review."""
 

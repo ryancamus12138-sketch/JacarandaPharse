@@ -99,6 +99,11 @@ class Document(Base, OwnedMixin, TimestampMixin):
     run_reason: Mapped[str | None] = mapped_column(Text)
     """Reason for the next run (entered when reprocessing); recorded on that run's extractions once
     processed."""
+    claim: Mapped[str | None] = mapped_column(String(32))
+    """Token of the worker run that holds this document, set when a worker claims it and cleared
+    when the user stops or restarts processing. A worker writes progress and results only while
+    the token is still its own (a fencing token), so a stopped run can never overwrite a newer
+    one."""
 
     extractions: Mapped[list[Extraction]] = relationship(
         primaryjoin=lambda: and_(

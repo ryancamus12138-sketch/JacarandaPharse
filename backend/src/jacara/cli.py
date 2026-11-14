@@ -1065,6 +1065,26 @@ def _backfill_ocr() -> int:
     return 0 if not failed else 1
 
 
+def _log_for_launcher() -> None:
+    """Make the log file useful when the desktop launcher runs this process:
+    - lines are written as they are printed (a file is otherwise block-buffered, and what is still
+      buffered is lost if the process dies);
+    - a crash in native code (OCR, PDF rendering) writes the Python stack of every thread to the
+      log before the process ends (faulthandler, Python standard library);
+    - log records at INFO and above go to the log with their time."""
+    import faulthandler
+    import logging
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(line_buffering=True)
+    faulthandler.enable()
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+
+
 def _worker(stage: str = "all") -> int:
     import os
 
@@ -1072,9 +1092,16 @@ def _worker(stage: str = "all") -> int:
     from jacara.worker import run_worker
 
     if os.environ.get(WATCH_STDIN) == "1":
-        # Started by the desktop launcher: exit as soon as the launcher is gone. Documents in
-        # progress are marked as interrupted at the next start.
-        on_stdin_closed(lambda: os._exit(0))
+        # Started by the desktop launcher, which writes standard output and error to a log file.
+        _log_for_launcher()
+
+        # Exit as soon as the launcher is gone. Documents in progress are marked as interrupted at
+        # the next start.
+        def leave() -> None:
+            print("启动器已退出，后台任务随之退出", flush=True)
+            os._exit(0)
+
+        on_stdin_closed(leave)
     names = {"all": "后台任务", "read": "后台任务（OCR 工位）", "extract": "后台任务（模型工位）"}
     print(f"{names[stage]}已启动，等待上传的文件（Ctrl + C 停止）")
     run_worker(stage)  # type: ignore[arg-type]

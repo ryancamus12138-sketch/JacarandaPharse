@@ -157,8 +157,14 @@ export interface DocumentFilters {
 
 /** Previous / next on the review page (documents awaiting review only). */
 export interface DocumentNeighbors {
+  /** Previous and next document of the list (same filters as the list page, any status). */
   previous: string | null
   next: string | null
+  /** 1-based position in the list; null when the document no longer matches its filters. */
+  position: number | null
+  total: number
+  /** Opened after this document is reviewed, skipped or deleted. */
+  next_to_review: string | null
   /** Number of other documents awaiting review. */
   remaining: number
 }
@@ -515,6 +521,7 @@ export type ReprocessReason =
   | 'bad_result'
   | 'model_changed'
   | 'batch'
+  | 'restart'
   | 'other'
 
 export const REPROCESS_REASONS: Record<ReprocessReason, string> = {
@@ -523,6 +530,7 @@ export const REPROCESS_REASONS: Record<ReprocessReason, string> = {
   get bad_result() { return t('结果不理想，重新运行') },
   get model_changed() { return t('已更换模型或 OCR') },
   get batch() { return t('批量重新处理') },
+  get restart() { return t('处理时间过长，重新开始') },
   get other() { return t('其他') },
 }
 

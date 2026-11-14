@@ -5,6 +5,7 @@ import {
   DeleteOutlined,
   HistoryOutlined,
   DownOutlined,
+  EllipsisOutlined,
   LeftOutlined,
   RightOutlined,
   SafetyCertificateOutlined,
@@ -16,6 +17,7 @@ import {
   App,
   Button,
   Card,
+  Dropdown,
   Empty,
   Flex,
   Grid,
@@ -27,9 +29,10 @@ import {
   Spin,
   Tooltip,
   Typography,
+  type MenuProps,
 } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { ApiError } from '../../api/client'
 import {
   adoptPrevious,
@@ -71,6 +74,7 @@ import { useRows } from './useRows'
 import { Tip } from '../../components/Tip'
 import { ExtractionNotes } from './ExtractionNotes'
 import { useTranslation } from 'react-i18next'
+import { type ListState, listOf } from '../documents/listState'
 
 /** Next field awaiting confirmation (searching after afterId and wrapping around). */
 function nextPending(values: FieldValue[], afterId: string | null): string | null {
@@ -118,7 +122,7 @@ export function ReviewPage() {
 function ReviewWorkspace({ id }: { id: string }) {
   const { t } = useTranslation()
   const { can } = useAuth()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -174,16 +178,20 @@ function ReviewWorkspace({ id }: { id: string }) {
   const comments = useComments(id)
   const rows = useRows(id)
   const confirmMany = useConfirmMany(id)
-  // Previous and next (documents awaiting review only, in list order).
+  // Previous and next: the documents next to this one in the list it was opened from (same filters, any
+  // status), and the next document awaiting review for after a review.
+  const list = listOf(useLocation().state)
+  const listPath = list ? `/documents?${list}` : '/documents'
   const neighbors = useQuery({
-    queryKey: ['neighbors', id],
-    queryFn: () => getNeighbors(id),
+    queryKey: ['neighbors', id, list],
+    queryFn: () => getNeighbors(id, list),
     enabled: ready,
   })
   const navigate = useNavigate()
   const goTo = (target: string | null | undefined) => {
-    if (target) void navigate(`/documents/${target}`)
+    if (target) void navigate(`/documents/${target}`, { state: { list } satisfies ListState })
   }
+  const toReview = neighbors.data?.next_to_review
   const finish = useMutation({
     mutationFn: () => completeReview(id),
     onSuccess: () => {
@@ -192,10 +200,9 @@ function ReviewWorkspace({ id }: { id: string }) {
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       void queryClient.invalidateQueries({ queryKey: ['neighbors'] })
       // After completing a review, open the next document; stay here if there is none.
-      const next = neighbors.data?.next ?? neighbors.data?.previous
-      if (next) {
+      if (toReview) {
         void message.success(t('已完成审核，已打开下一份（剩余 {{value}} 份）', { value: neighbors.data?.remaining ?? 0 }))
-        goTo(next)
+        goTo(toReview)
       } else {
         void message.success(t('已完成审核。所有待审核文档均已处理'))
       }
@@ -214,8 +221,8 @@ function ReviewWorkspace({ id }: { id: string }) {
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       // After deleting, open the next document awaiting review; return to the list if there is none.
-      const next = neighbors.data?.next ?? neighbors.data?.previous
-      void navigate(next ? `/documents/${next}` : '/documents')
+      if (toReview) goTo(toReview)
+      else void navigate(listPath)
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
@@ -550,62 +557,45 @@ function ReviewWorkspace({ id }: { id: string }) {
       : null
 
   const discover = doc.extractions.some((e) => e.template === 'discover')
-  const toolbar = (
-    <Flex gap={8} wrap justify="start">
-      <RunSwitcher
-        doc={doc}
-        onChange={(next) => {
-          setRun(next)
-          select(null)
-        }}
-      />
-      {canEdit && (doc.suggestions ?? 0) > 0 && (
-        <Popconfirm
-          title={t('沿用上一轮的 {{suggestions}} 项审核结果？', { suggestions: doc.suggestions })}
-          description={t('适用于上一轮经人工审核、且本轮值与位置均一致的字段：值相同的直接确认，上一轮修改过的改为修改后的值。')}
-          okText={t('沿用')}
-          cancelText={t('取消')}
-          onConfirm={() => adopt.mutate()}
-        >
-          <Button icon={<HistoryOutlined />} loading={adopt.isPending}>
-            {t('沿用上一轮审核（{{suggestions}}）', { suggestions: doc.suggestions })}
-          </Button>
-        </Popconfirm>
-      )}
-      {discover && canEdit && can('template:manage') && (
-        <Button type="primary" ghost icon={<AppstoreAddOutlined />} onClick={() => setSavingTemplate(true)}>
-          {t('保存为模板')}
-        </Button>
-      )}
-      {!viewingOld && can('template:manage') && (
-        <Tooltip title={t('在本单据原图上框选所需的值，创建新模板')}>
-          <Button icon={<AppstoreAddOutlined />} onClick={() => navigate(`/templates/from-boxes/${doc.id}`)}>
-            {t('框选创建模板')}
-          </Button>
-        </Tooltip>
-      )}
-      {!viewingOld && can('document:process') && <ReprocessButton doc={doc} />}
-      {doc.status === 'done' && !viewingOld && !doc.skipped_at && can('document:review') && (
-        <SkipButton doc={doc} next={() => goTo(neighbors.data?.next ?? neighbors.data?.previous)} />
-      )}
-      {/*
-       * Field comments are recorded on the document's first page (visible from any page of a multi-page
-       * document).
-       */}
-      <CommentsButton doc={doc} selected={selected} page={extraction?.page ?? page} />
-      {doc.status === 'done' && !viewingOld && (
-        <Tooltip title={finishBlocked}>
-          <Button
-            type="primary"
-            icon={<SafetyCertificateOutlined />}
-            disabled={finishBlocked !== null}
-            loading={finish.isPending}
-            onClick={() => finish.mutate()}
-          >
-            {t('完成审核')}
-          </Button>
-        </Tooltip>
-      )}
+  /** Less frequent actions, kept out of the toolbar so that the review actions stand out. */
+  const moreItems: MenuProps['items'] = [
+    ...(!viewingOld && can('template:manage')
+      ? [
+          {
+            key: 'from-boxes',
+            icon: <AppstoreAddOutlined />,
+            label: t('框选创建模板'),
+            onClick: () => navigate(`/templates/from-boxes/${doc.id}`),
+          },
+        ]
+      : []),
+    ...(can('document:delete') && doc.status !== 'processing'
+      ? [
+          {
+            key: 'delete',
+            icon: <DeleteOutlined />,
+            danger: true,
+            label: t('删除'),
+            onClick: () =>
+              modal.confirm({
+                title: t('删除「{{filename}}」？', { filename: doc.filename }),
+                content: t('原始文件、处理结果、审核记录和备注将全部删除，且无法恢复。删除后将打开下一份。'),
+                okText: t('删除'),
+                okButtonProps: { danger: true },
+                cancelText: t('取消'),
+                onOk: () => remove.mutateAsync(),
+              }),
+          },
+        ]
+      : []),
+  ]
+
+  /**
+   * Review actions: confirm flagged fields, confirm verified fields, complete the review. Next to the title
+   * on wide screens; first in the toolbar on narrow ones.
+   */
+  const reviewActions = (
+    <Flex gap={8} wrap justify="end">
       {/* Always shown; greyed out when nothing is flagged, with a hover explanation. */}
       {canEdit && (
         <Popconfirm
@@ -657,22 +647,65 @@ function ReviewWorkspace({ id }: { id: string }) {
           </Tooltip>
         </Popconfirm>
       )}
-      <ExportButton ids={[doc.id]} languages={languages} language={language} onLanguage={setLanguage} />
-      {can('document:delete') && doc.status !== 'processing' && (
+      {doc.status === 'done' && !viewingOld && (
+        <Tooltip title={finishBlocked}>
+          <Button
+            type="primary"
+            icon={<SafetyCertificateOutlined />}
+            disabled={finishBlocked !== null}
+            loading={finish.isPending}
+            onClick={() => finish.mutate()}
+          >
+            {t('完成审核')}
+          </Button>
+        </Tooltip>
+      )}
+    </Flex>
+  )
+
+  const toolbar = (
+    <Flex gap={8} wrap justify="start">
+      {narrow && reviewActions}
+      <RunSwitcher
+        doc={doc}
+        onChange={(next) => {
+          setRun(next)
+          select(null)
+        }}
+      />
+      {canEdit && (doc.suggestions ?? 0) > 0 && (
         <Popconfirm
-          title={t('删除「{{filename}}」？', { filename: doc.filename })}
-          description={t('原始文件、处理结果、审核记录和备注将全部删除，且无法恢复。删除后将打开下一份。')}
-          okText={t('删除')}
-          okButtonProps={{ danger: true }}
+          title={t('沿用上一轮的 {{suggestions}} 项审核结果？', { suggestions: doc.suggestions })}
+          description={t('适用于上一轮经人工审核、且本轮值与位置均一致的字段：值相同的直接确认，上一轮修改过的改为修改后的值。')}
+          okText={t('沿用')}
           cancelText={t('取消')}
-          onConfirm={() => remove.mutate()}
+          onConfirm={() => adopt.mutate()}
         >
-          <Button danger icon={<DeleteOutlined />} loading={remove.isPending}>
-            {t('删除')}
+          <Button icon={<HistoryOutlined />} loading={adopt.isPending}>
+            {t('沿用上一轮审核（{{suggestions}}）', { suggestions: doc.suggestions })}
           </Button>
         </Popconfirm>
       )}
-      {back}
+      {discover && canEdit && can('template:manage') && (
+        <Button type="primary" ghost icon={<AppstoreAddOutlined />} onClick={() => setSavingTemplate(true)}>
+          {t('保存为模板')}
+        </Button>
+      )}
+      {!viewingOld && can('document:process') && <ReprocessButton doc={doc} />}
+      {doc.status === 'done' && !viewingOld && !doc.skipped_at && can('document:review') && (
+        <SkipButton doc={doc} next={() => goTo(toReview)} />
+      )}
+      {/*
+       * Field comments are recorded on the document's first page (visible from any page of a multi-page
+       * document).
+       */}
+      <CommentsButton doc={doc} selected={selected} page={extraction?.page ?? page} />
+      <ExportButton ids={[doc.id]} languages={languages} language={language} onLanguage={setLanguage} />
+      {moreItems.length > 0 && (
+        <Dropdown menu={{ items: moreItems }} trigger={['click']}>
+          <Button icon={<EllipsisOutlined />}>{t('更多')}</Button>
+        </Dropdown>
+      )}
     </Flex>
   )
 
@@ -680,8 +713,13 @@ function ReviewWorkspace({ id }: { id: string }) {
     <Card
       title={
         <Flex align="center" gap={12} wrap>
+          <Tooltip title={t('返回列表')}>
+            <Link to={listPath} aria-label={t('返回列表')}>
+              <Button type="text" icon={<ArrowLeftOutlined />} />
+            </Link>
+          </Tooltip>
           <Space.Compact>
-            <Tooltip title={t('上一份待审核文档')}>
+            <Tooltip title={t('上一份')}>
               <Button
                 icon={<LeftOutlined />}
                 aria-label={t('上一份')}
@@ -689,13 +727,7 @@ function ReviewWorkspace({ id }: { id: string }) {
                 onClick={() => goTo(neighbors.data?.previous)}
               />
             </Tooltip>
-            <Tooltip
-              title={
-                neighbors.data
-                  ? t('下一份待审核文档（除本份外剩余 {{remaining}} 份）', { remaining: neighbors.data.remaining })
-                  : t('下一份待审核文档')
-              }
-            >
+            <Tooltip title={t('下一份')}>
               <Button
                 icon={<RightOutlined />}
                 aria-label={t('下一份')}
@@ -704,13 +736,19 @@ function ReviewWorkspace({ id }: { id: string }) {
               />
             </Tooltip>
           </Space.Compact>
+          {neighbors.data?.position != null && (
+            <Typography.Text type="secondary">
+              {t('第 {{position}} / {{total}} 份', { position: neighbors.data.position, total: neighbors.data.total })}
+            </Typography.Text>
+          )}
           <Typography.Text strong ellipsis style={{ maxWidth: narrow ? 200 : 360 }}>
             {doc.filename}
           </Typography.Text>
           <StatusTag status={doc.status} />
         </Flex>
       }
-      // Many buttons: place them on a line below the title instead of crowding the file name.
+      extra={narrow ? undefined : reviewActions}
+      // The other actions go on a line below the title instead of crowding the file name.
       styles={{ body: { paddingTop: 16 } }}
     >
       <div style={{ marginBottom: 12 }}>{toolbar}</div>
@@ -948,24 +986,24 @@ function ReviewWorkspace({ id }: { id: string }) {
               />
             </div>
           )}
-          {languages.length > 1 && (
-            <Flex align="center" gap={8} style={{ marginBottom: 8 }}>
-              <Typography.Text type="secondary">{t('字段名')}</Typography.Text>
-              <Select
-                data-keep-selection
-                size="small"
-                aria-label={t('字段名的语言')}
-                value={language}
-                options={languageOptions(languages)}
-                onChange={setLanguage}
-                style={{ minWidth: 140 }}
-              />
-            </Flex>
-          )}
           <div style={{ flex: 1, minHeight: 0, overflow: 'auto', paddingRight: 4 }}>
           {extraction ? (
             <FieldPanel
               extraction={{ ...extraction, values }}
+              headerExtra={
+                languages.length > 1 ? (
+                  <Select
+                    data-keep-selection
+                    size="small"
+                    prefix={t('字段名')}
+                    aria-label={t('字段名的语言')}
+                    value={language}
+                    options={languageOptions(languages)}
+                    onChange={setLanguage}
+                    style={{ minWidth: 150 }}
+                  />
+                ) : undefined
+              }
               sortMode={sortMode}
               comments={openCommentsOnPage(comments.data, extraction.page)}
               onSortMode={(mode) => {

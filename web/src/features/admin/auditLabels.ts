@@ -13,6 +13,7 @@ export const ACTION_LABELS: Record<string, string> = {
   get 'document:upload'() { return t('上传') },
   get 'document:process'() { return t('重新处理（重试）') },
   get 'document:reprocess'() { return t('更换模板并重新处理') },
+  get 'document:stop'() { return t('停止处理') },
   get 'document:skip'() { return t('跳过') },
   get 'document:unskip'() { return t('取消跳过') },
   get 'comment:create'() { return t('添加备注') },

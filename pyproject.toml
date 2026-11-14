@@ -54,6 +54,13 @@ dev = [
 # opencv-python-headless. Installed together they overwrite each other's cv2, so opencv-python is
 # excluded and the headless build is used throughout.
 override-dependencies = ["opencv-python ; sys_platform == 'never'"]
+# opencv-python-headless builds with KleidiCV 26.03 (4.14.0.94 and 5.0.0.93 on Apple Silicon, 5.0.0.93
+# on Linux Arm) read past the end of the source image in cv2.resize with INTER_LINEAR when both
+# sides shrink slightly, as RapidOCR's detection step does (for example 1836x2376 to 1824x2368).
+# This crashed the OCR worker with SIGSEGV in kleidicv_resize_generic_stripe_u8. 4.10 to 4.13
+# (4.13.0.92 has KleidiCV 0.7.0) do not, on macOS Arm and on Linux Arm.
+# backend/tests/test_opencv_resize.py checks this; run it before allowing a newer version.
+constraint-dependencies = ["opencv-python-headless<4.14"]
 
 [build-system]
 requires = ["hatchling"]

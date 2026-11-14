@@ -98,8 +98,12 @@ from jacara.workbook.fill import DocRow, fill_workbook
 
 log = logging.getLogger(__name__)
 
-REPROCESSABLE = {"done", "reviewed", "failed"}
-"""Statuses from which a document can be reprocessed with another template (a new run)."""
+REPROCESSABLE = {"done", "reviewed", "failed", "uploaded", "processing"}
+"""Statuses from which a document can be reprocessed (a new run). A queued or running document is
+restarted: the running worker notices within a second and stops (see claim)."""
+
+STOPPABLE = {"uploaded", "processing"}
+"""Statuses in which processing can be stopped."""
 
 RETRYABLE = {"uploaded", "failed"}
 """Statuses from which a document can be (re)queued. processing is in progress; done already has
@@ -318,6 +322,11 @@ class DocumentService:
         document.status = "uploaded"
         document.error = None
         document.reviewed_at = None
+        # Releases a running worker: it stops at its next progress report and writes nothing.
+        document.claim = None
+        # Progress of the run being replaced; the new run reports its own.
+        document.stage = None
+        document.progress = None
         _clear_skip(document)
         record(
             self.session,
@@ -333,6 +342,26 @@ class DocumentService:
         )
         if not self._enqueue(document):
             raise DocumentError("queue", tr("任务队列暂时不可用，请稍后再试"))
+        return DocumentOut.model_validate(document)
+
+    def stop(self, document_id: uuid.UUID) -> DocumentOut:
+        """Stop processing a queued or running document. The running worker notices at its next
+        progress report (about once a second), abandons its request to the model server and writes
+        nothing; the document becomes failed with a note and can be reprocessed. Earlier runs stay
+        as they were."""
+        document = self._find(document_id)
+        require(self.owner, "document:process", document.team_id)
+        if document.status not in STOPPABLE:
+            raise DocumentError(
+                "conflict", tr("文档状态为 {status}，没有正在进行的处理", status=document.status)
+            )
+        document.status = "failed"
+        document.error = stored("已手动停止处理")
+        document.claim = None
+        document.stage = None
+        document.progress = None
+        document.processed_at = datetime.now(UTC)
+        record(self.session, self.owner, "document:stop", "document", document.id)
         return DocumentOut.model_validate(document)
 
     def add_review_time(self, document_id: uuid.UUID, seconds: int) -> None:
@@ -514,13 +543,25 @@ class DocumentService:
             for d in documents
         ]
 
-    def neighbors(self, document_id: uuid.UUID) -> DocumentNeighbors:
-        """Previous / next on the review page: the adjacent documents awaiting review (done) in list
-        order."""
+    def neighbors(
+        self, document_id: uuid.UUID, filters: DocumentFilter | None = None
+    ) -> DocumentNeighbors:
+        """Previous / next on the review page: the adjacent documents of the list as filtered on
+        the list page, and the next document awaiting review (done) for after a review."""
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
-        previous, following, remaining = self.repo.neighbors(document, ("done",))
-        return DocumentNeighbors(previous=previous, next=following, remaining=remaining)
+        previous, following, position, total = self.repo.adjacent(
+            document, filters or DocumentFilter()
+        )
+        before, after, remaining = self.repo.neighbors(document, ("done",))
+        return DocumentNeighbors(
+            previous=previous,
+            next=following,
+            position=position,
+            total=total,
+            next_to_review=after or before,
+            remaining=remaining,
+        )
 
     def dashboard(self) -> Dashboard:
         """Dashboard: counts per status, processed and reviewed today, processing queue, items

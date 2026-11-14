@@ -114,3 +114,20 @@ def test_workers_exit_when_the_launcher_is_killed(tmp_path):
     process.send_signal(signal.SIGKILL)  # No chance to clean up.
     process.wait(timeout=10)
     assert wait_until(lambda: not any(alive(pid) for pid in workers))
+
+
+def test_a_worker_that_dies_is_started_again(tmp_path):
+    process, _enter = launch(tmp_path)
+    try:
+        before = children_of(tmp_path)
+        os.kill(before[0], signal.SIGKILL)  # As a crash in native OCR code would end it.
+        assert wait_until(lambda: children_of(tmp_path)[0] != before[0])
+        after = children_of(tmp_path)
+        assert alive(after[0]) and after[1] == before[1]
+        log = (tmp_path / "logs" / "worker-read.log").read_text(encoding="utf-8")
+        assert "exited (signal SIGKILL); starting it again" in log
+    finally:
+        assert process.stdin is not None
+        process.stdin.close()
+    assert process.wait(timeout=60) == 0
+    assert wait_until(lambda: not any(alive(pid) for pid in after))

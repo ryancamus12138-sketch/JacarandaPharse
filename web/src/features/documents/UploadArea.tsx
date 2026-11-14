@@ -27,10 +27,12 @@ interface Batch {
   total: number
   done: number
   skipped: number
+  /** Files withdrawn with "Stop uploading" before they were sent. */
+  cancelled: number
   failed: { name: string; reason: string }[]
 }
 
-const EMPTY: Batch = { total: 0, done: 0, skipped: 0, failed: [] }
+const EMPTY: Batch = { total: 0, done: 0, skipped: 0, cancelled: 0, failed: [] }
 
 /**
  * Source folder of the file: when a whole folder is selected the browser reports "trip/hotel/a.pdf"; take
@@ -102,6 +104,16 @@ export function UploadArea() {
     return false // Ant Design's own upload is not used; the queue above handles it.
   }
 
+  /**
+   * Stop uploading: files not yet sent are withdrawn; the few already being sent (at most PARALLEL) finish,
+   * since the server may already have received them.
+   */
+  const stopUploading = () => {
+    const withdrawn = queue.current.length
+    queue.current = []
+    setBatch((b) => ({ ...b, total: b.total - withdrawn, cancelled: b.cancelled + withdrawn }))
+  }
+
   const busy = batch.total > 0 && batch.done < batch.total
   return (
     <>
@@ -150,7 +162,7 @@ export function UploadArea() {
           <Button icon={<FolderOpenOutlined />}>{t('选择整个文件夹')}</Button>
         </Upload>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {t('子文件夹将一并导入，可在列表中按文件夹筛选。如需自动导入某个文件夹，请参阅“系统信息”中的监视文件夹。')}
+          {t('子文件夹将一并导入，可在列表中按文件夹筛选。如需自动导入某个文件夹，请在「设置 → 识别和处理」中设置监视文件夹。')}
         </Typography.Text>
       </Flex>
       {batch.total > 0 && (
@@ -165,6 +177,13 @@ export function UploadArea() {
               ? t('正在上传 {{done}} / {{total}}', { done: batch.done, total: batch.total })
               : t('已上传 {{total}} 个文件，正在排队处理', { total: batch.total })
           }
+          action={
+            busy ? (
+              <Button size="small" onClick={stopUploading}>
+                {t('停止上传')}
+              </Button>
+            ) : undefined
+          }
           description={
             <>
               <Progress
@@ -173,6 +192,7 @@ export function UploadArea() {
                 status={busy ? 'active' : batch.failed.length ? 'exception' : 'success'}
               />
               {batch.skipped > 0 && <div>{t('已跳过 {{skipped}} 个已上传过的文件', { skipped: batch.skipped })}</div>}
+              {batch.cancelled > 0 && <div>{t('已停止上传，{{cancelled}} 个文件未上传', { cancelled: batch.cancelled })}</div>}
               {batch.failed.length > 0 && (
                 <div>
                   {t('{{length}} 个文件上传失败：', { length: batch.failed.length })}

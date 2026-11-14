@@ -5,8 +5,8 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: JacarandaParse 1.0.0\n"
-"POT-Creation-Date: 2026-11-14 10:29+0000\n"
-"PO-Revision-Date: 2026-11-14 10:29+0000\n"
+"POT-Creation-Date: 2026-11-14 11:25+0000\n"
+"PO-Revision-Date: 2026-11-14 11:25+0000\n"
 "Last-Translator: JacarandaParse\n"
 "Language: en\n"
 "Language-Team: English\n"
@@ -739,7 +739,7 @@ msgid "仅备注作者或管理员可删除"
 msgstr "Only the author or an administrator can delete this comment"
 
 #: backend/src/jacara/modules/comments/service.py:114
-#: backend/src/jacara/modules/documents/service.py:1031
+#: backend/src/jacara/modules/documents/service.py:1057
 #: backend/src/jacara/modules/ocr_samples/det.py:246
 #: backend/src/jacara/modules/templates/service.py:1218
 msgid "文档不存在"
@@ -749,49 +749,53 @@ msgstr "Document not found"
 msgid "备注不存在"
 msgstr "Comment not found"
 
-#: backend/src/jacara/modules/documents/schemas.py:249
+#: backend/src/jacara/modules/documents/schemas.py:255
 msgid "模板已修改"
 msgstr "Template changed"
 
-#: backend/src/jacara/modules/documents/schemas.py:250
+#: backend/src/jacara/modules/documents/schemas.py:256
 msgid "模板选择错误"
 msgstr "Wrong template"
 
-#: backend/src/jacara/modules/documents/schemas.py:251
+#: backend/src/jacara/modules/documents/schemas.py:257
 msgid "结果不理想，重新运行"
 msgstr "Poor result; run again"
 
-#: backend/src/jacara/modules/documents/schemas.py:252
+#: backend/src/jacara/modules/documents/schemas.py:258
 msgid "已更换模型或 OCR"
 msgstr "Model or OCR changed"
 
-#: backend/src/jacara/modules/documents/schemas.py:253
+#: backend/src/jacara/modules/documents/schemas.py:259
 msgid "批量重新处理"
 msgstr "Bulk reprocessing"
 
-#: backend/src/jacara/modules/documents/schemas.py:254
+#: backend/src/jacara/modules/documents/schemas.py:260
+msgid "处理时间过长，重新开始"
+msgstr "Took too long; restarted"
+
+#: backend/src/jacara/modules/documents/schemas.py:261
 msgid "其他"
 msgstr "Other"
 
-#: backend/src/jacara/modules/documents/service.py:203
+#: backend/src/jacara/modules/documents/service.py:207
 #, python-brace-format
 msgid "不支持的文件类型：{content_type}。支持图片和 PDF"
 msgstr "Unsupported file type: {content_type}. Images and PDFs are supported"
 
-#: backend/src/jacara/modules/documents/service.py:207
+#: backend/src/jacara/modules/documents/service.py:211
 #, python-brace-format
 msgid "文件超过 {limit} MB"
 msgstr "The file exceeds {limit} MB"
 
-#: backend/src/jacara/modules/documents/service.py:209
+#: backend/src/jacara/modules/documents/service.py:213
 #: backend/src/jacara/modules/hub/service.py:222
 #: backend/src/jacara/modules/templates/service.py:703
 msgid "文件为空"
 msgstr "The file is empty"
 
-#: backend/src/jacara/modules/documents/service.py:218
-#: backend/src/jacara/modules/documents/service.py:865
-#: backend/src/jacara/modules/documents/service.py:894
+#: backend/src/jacara/modules/documents/service.py:222
+#: backend/src/jacara/modules/documents/service.py:891
+#: backend/src/jacara/modules/documents/service.py:920
 #: backend/src/jacara/modules/hub/service.py:405
 #: backend/src/jacara/modules/hub/service.py:421
 #: backend/src/jacara/modules/hub/service.py:461
@@ -803,61 +807,70 @@ msgstr "The file is empty"
 msgid "对象存储暂时不可用，请稍后再试"
 msgstr "Object storage is temporarily unavailable; please try again later"
 
-#: backend/src/jacara/modules/documents/service.py:257
-#: backend/src/jacara/modules/documents/service.py:279
+#: backend/src/jacara/modules/documents/service.py:261
+#: backend/src/jacara/modules/documents/service.py:283
 msgid "此文档未保存原始文件（通过命令行导入），无法处理"
 msgstr "This document has no stored original (imported from the command line) and cannot be processed"
 
-#: backend/src/jacara/modules/documents/service.py:260
+#: backend/src/jacara/modules/documents/service.py:264
 #, python-brace-format
 msgid "文档状态为 {status}，无法重新处理"
 msgstr "The document is {status} and cannot be reprocessed"
 
-#: backend/src/jacara/modules/documents/service.py:266
-#: backend/src/jacara/modules/documents/service.py:335
-#: backend/src/jacara/modules/hub/service.py:517
+#: backend/src/jacara/modules/documents/service.py:270
+#: backend/src/jacara/modules/documents/service.py:341
+#: backend/src/jacara/modules/hub/service.py:520
 msgid "任务队列暂时不可用，请稍后再试"
 msgstr "The task queue is temporarily unavailable; please try again later"
 
-#: backend/src/jacara/modules/documents/service.py:282
+#: backend/src/jacara/modules/documents/service.py:286
 #, python-brace-format
 msgid "文档状态为 {status}，当前无法重新处理"
 msgstr "The document is {status} and cannot be reprocessed now"
 
-#: backend/src/jacara/modules/documents/service.py:286
-#: backend/src/jacara/modules/documents/service.py:357
+#: backend/src/jacara/modules/documents/service.py:290
+#: backend/src/jacara/modules/documents/service.py:383
 msgid "原因为“其他”时，请填写说明"
 msgstr "Reason is \"Other\"; please add a note"
 
-#: backend/src/jacara/modules/documents/service.py:316
+#: backend/src/jacara/modules/documents/service.py:320
 #, python-brace-format
 msgid "{label}：{note}"
 msgstr "{label}: {note}"
 
-#: backend/src/jacara/modules/documents/service.py:345
+#: backend/src/jacara/modules/documents/service.py:353
+#, python-brace-format
+msgid "文档状态为 {status}，没有正在进行的处理"
+msgstr "The document status is {status}; nothing is being processed"
+
+#: backend/src/jacara/modules/documents/service.py:356
+msgid "已手动停止处理"
+msgstr "Stopped manually"
+
+#: backend/src/jacara/modules/documents/service.py:371
 #, python-brace-format
 msgid "文档状态为 {status}，不处于审核阶段"
 msgstr "The document is {status}, not in review"
 
-#: backend/src/jacara/modules/documents/service.py:369
+#: backend/src/jacara/modules/documents/service.py:395
 msgid "正在排队"
 msgstr "Queued"
 
-#: backend/src/jacara/modules/documents/service.py:369
+#: backend/src/jacara/modules/documents/service.py:395
 msgid "正在处理"
 msgstr "Processing"
 
-#: backend/src/jacara/modules/documents/service.py:375
+#: backend/src/jacara/modules/documents/service.py:401
 #, python-brace-format
 msgid "{filename}：{state}"
 msgstr "{filename}: {state}"
 
-#: backend/src/jacara/modules/documents/service.py:388
+#: backend/src/jacara/modules/documents/service.py:414
 #, python-brace-format
 msgid "{name}：{message}"
 msgstr "{name}: {message}"
 
-#: backend/src/jacara/modules/documents/service.py:400
+#: backend/src/jacara/modules/documents/service.py:426
 #: backend/src/jacara/modules/fields/service.py:77
 #: backend/src/jacara/modules/fields/service.py:183
 #: backend/src/jacara/modules/fields/service.py:398
@@ -865,142 +878,142 @@ msgstr "{name}: {message}"
 msgid "文档状态为 {status}，处理完成后方可审核"
 msgstr "The document is {status}; review is possible after processing"
 
-#: backend/src/jacara/modules/documents/service.py:408
+#: backend/src/jacara/modules/documents/service.py:434
 #, python-brace-format
 msgid "沿用第 {run} 轮的审核"
 msgstr "Review carried over from run {run}"
 
-#: backend/src/jacara/modules/documents/service.py:459
+#: backend/src/jacara/modules/documents/service.py:485
 #, python-brace-format
 msgid "{filename}：正在处理，请在处理完成后删除"
 msgstr "{filename}: being processed; delete it after processing"
 
-#: backend/src/jacara/modules/documents/service.py:570
+#: backend/src/jacara/modules/documents/service.py:596
 #, python-brace-format
 msgid "此文档没有第 {viewing} 轮的结果"
 msgstr "This document has no results for run {viewing}"
 
-#: backend/src/jacara/modules/documents/service.py:603
+#: backend/src/jacara/modules/documents/service.py:629
 msgid "抽取结果不存在"
 msgstr "Extraction not found"
 
-#: backend/src/jacara/modules/documents/service.py:606
+#: backend/src/jacara/modules/documents/service.py:632
 msgid "此次抽取未记录发送给模型的文字（在更新前处理）"
 msgstr "This extraction did not record the text sent to the model (processed before the update)"
 
-#: backend/src/jacara/modules/documents/service.py:620
-#: backend/src/jacara/modules/documents/service.py:638
+#: backend/src/jacara/modules/documents/service.py:646
+#: backend/src/jacara/modules/documents/service.py:664
 #, python-brace-format
 msgid "第 {page} 页无抽取结果"
 msgstr "No extraction results on page {page}"
 
-#: backend/src/jacara/modules/documents/service.py:649
+#: backend/src/jacara/modules/documents/service.py:675
 #, python-brace-format
 msgid "文档状态为 {status}，处理完成（done）后方可完成审核"
 msgstr "The document is {status}; the review can be completed once processing is done"
 
-#: backend/src/jacara/modules/documents/service.py:653
+#: backend/src/jacara/modules/documents/service.py:679
 #, python-brace-format
 msgid "尚有 {pending} 个字段待确认"
 msgstr "{pending} fields still need confirmation"
 
-#: backend/src/jacara/modules/documents/service.py:666
+#: backend/src/jacara/modules/documents/service.py:692
 msgid "仅处理完成且未完成审核的文档可跳过"
 msgstr "Only processed documents that are not yet reviewed can be skipped"
 
-#: backend/src/jacara/modules/documents/service.py:704
+#: backend/src/jacara/modules/documents/service.py:730
 #, python-brace-format, python-format
 msgid "{stem}-{day:%Y%m%d}-{n}份.xlsx"
 msgstr "{stem}-{day:%Y%m%d}-{n}docs.xlsx"
 
-#: backend/src/jacara/modules/documents/service.py:710
+#: backend/src/jacara/modules/documents/service.py:736
 #, python-brace-format, python-format
 msgid "jacara-{day:%Y%m%d}-{n}份.xlsx"
 msgstr "jacara-{day:%Y%m%d}-{n}docs.xlsx"
 
-#: backend/src/jacara/modules/documents/service.py:731
+#: backend/src/jacara/modules/documents/service.py:757
 #, python-brace-format, python-format
 msgid "jacara-{day:%Y%m%d}-{n}份.zip"
 msgstr "jacara-{day:%Y%m%d}-{n}docs.zip"
 
-#: backend/src/jacara/modules/documents/service.py:749
-#: backend/src/jacara/modules/documents/service.py:789
+#: backend/src/jacara/modules/documents/service.py:775
+#: backend/src/jacara/modules/documents/service.py:815
 #, python-brace-format, python-format
 msgid "jacara-{day:%Y%m%d}-{n}份"
 msgstr "jacara-{day:%Y%m%d}-{n}docs"
 
-#: backend/src/jacara/modules/documents/service.py:809
+#: backend/src/jacara/modules/documents/service.py:835
 #, python-brace-format, python-format
 msgid "{day:%Y-%m-%d} 导出"
 msgstr "Exported {day:%Y-%m-%d}"
 
-#: backend/src/jacara/modules/documents/service.py:819
+#: backend/src/jacara/modules/documents/service.py:845
 msgid "请至少选择一个文档"
 msgstr "Select at least one document"
 
-#: backend/src/jacara/modules/documents/service.py:821
+#: backend/src/jacara/modules/documents/service.py:847
 #, python-brace-format
 msgid "单次最多导出 {limit} 个文档"
 msgstr "At most {limit} documents per export"
 
-#: backend/src/jacara/modules/documents/service.py:827
+#: backend/src/jacara/modules/documents/service.py:853
 #, python-brace-format
 msgid "文档不存在：{documents}"
 msgstr "Documents not found: {documents}"
 
-#: backend/src/jacara/modules/documents/service.py:834
+#: backend/src/jacara/modules/documents/service.py:860
 #, python-brace-format
 msgid "以下文档尚未处理完成，无法导出：{documents}"
 msgstr "These documents are not processed yet and cannot be exported: {documents}"
 
-#: backend/src/jacara/modules/documents/service.py:861
-#: backend/src/jacara/modules/documents/service.py:881
+#: backend/src/jacara/modules/documents/service.py:887
+#: backend/src/jacara/modules/documents/service.py:907
 msgid "此文档未保存原始文件（通过命令行导入）"
 msgstr "This document has no stored original (imported from the command line)"
 
-#: backend/src/jacara/modules/documents/service.py:874
-#: backend/src/jacara/modules/documents/service.py:968
+#: backend/src/jacara/modules/documents/service.py:900
+#: backend/src/jacara/modules/documents/service.py:994
 msgid "无法打开此文件，文件可能已损坏"
 msgstr "Unable to open this file; it may be damaged"
 
-#: backend/src/jacara/modules/documents/service.py:886
+#: backend/src/jacara/modules/documents/service.py:912
 #, python-brace-format
 msgid "此文档仅有 {page_count} 页，不存在第 {page} 页"
 msgstr "This document has only {page_count} pages; there is no page {page}"
 
-#: backend/src/jacara/modules/documents/service.py:979
+#: backend/src/jacara/modules/documents/service.py:1005
 msgid "OCR 引擎未就绪"
 msgstr "The OCR engine is not ready"
 
-#: backend/src/jacara/modules/documents/service.py:998
+#: backend/src/jacara/modules/documents/service.py:1024
 msgid "模型当前无法读图：请将视觉模型 mmproj-F16.gguf 放入 models/，并重新执行 jacara start"
 msgstr "The model cannot read images: put the vision model mmproj-F16.gguf in models/ and run jacara start again"
 
-#: backend/src/jacara/modules/documents/service.py:1036
+#: backend/src/jacara/modules/documents/service.py:1062
 msgid "后方"
 msgstr "after it"
 
-#: backend/src/jacara/modules/documents/service.py:1037
-#: backend/src/jacara/modules/documents/service.py:1038
-#: backend/src/jacara/modules/documents/service.py:1042
+#: backend/src/jacara/modules/documents/service.py:1063
+#: backend/src/jacara/modules/documents/service.py:1064
+#: backend/src/jacara/modules/documents/service.py:1068
 msgid "右侧"
 msgstr "to the right"
 
-#: backend/src/jacara/modules/documents/service.py:1039
+#: backend/src/jacara/modules/documents/service.py:1065
 msgid "同一行右侧"
 msgstr "to the right on the same line"
 
-#: backend/src/jacara/modules/documents/service.py:1040
-#: backend/src/jacara/modules/documents/service.py:1041
+#: backend/src/jacara/modules/documents/service.py:1066
+#: backend/src/jacara/modules/documents/service.py:1067
 msgid "下方"
 msgstr "below"
 
-#: backend/src/jacara/modules/documents/service.py:1283
+#: backend/src/jacara/modules/documents/service.py:1309
 #, python-brace-format
 msgid "第 {page} 页：{note}"
 msgstr "Page {page}: {note}"
 
-#: backend/src/jacara/modules/documents/service.py:1324
+#: backend/src/jacara/modules/documents/service.py:1350
 msgid "无法打开 PDF 文件，文件可能已损坏"
 msgstr "Unable to open the PDF; it may be damaged"
 
@@ -1420,57 +1433,57 @@ msgstr "Unable to read this dataset from object storage"
 msgid "此数据集有正在运行的评测，请在评测结束后删除"
 msgstr "An evaluation is running on this dataset; delete it afterwards"
 
-#: backend/src/jacara/modules/hub/service.py:506
+#: backend/src/jacara/modules/hub/service.py:509
 #, python-brace-format
 msgid "此数据集没有 {split} 划分"
 msgstr "This dataset has no {split} split"
 
-#: backend/src/jacara/modules/hub/service.py:515
+#: backend/src/jacara/modules/hub/service.py:518
 msgid "两侧为同一模型，无需对比"
 msgstr "Both sides are the same model; nothing to compare"
 
-#: backend/src/jacara/modules/hub/service.py:545
+#: backend/src/jacara/modules/hub/service.py:548
 msgid "无法连接任务队列（Valkey），评测未开始"
 msgstr "Unable to reach the task queue (Valkey); not started"
 
-#: backend/src/jacara/modules/hub/service.py:548
+#: backend/src/jacara/modules/hub/service.py:551
 msgid "无法连接任务队列（Valkey），请确认 jacara start 正在运行"
 msgstr "Unable to reach the task queue (Valkey); make sure jacara start is running"
 
-#: backend/src/jacara/modules/hub/service.py:557
+#: backend/src/jacara/modules/hub/service.py:560
 msgid "（已删除）"
 msgstr "(deleted)"
 
-#: backend/src/jacara/modules/hub/service.py:583
+#: backend/src/jacara/modules/hub/service.py:586
 msgid "评测不存在"
 msgstr "No such evaluation"
 
-#: backend/src/jacara/modules/hub/service.py:594
+#: backend/src/jacara/modules/hub/service.py:597
 msgid "此次评测尚无逐条结果"
 msgstr "This evaluation has no per-item results yet"
 
-#: backend/src/jacara/modules/hub/service.py:598
+#: backend/src/jacara/modules/hub/service.py:601
 msgid "无法从对象存储读取逐条结果"
 msgstr "Unable to read per-item results from object storage"
 
-#: backend/src/jacara/modules/hub/service.py:599
+#: backend/src/jacara/modules/hub/service.py:602
 #, python-brace-format
 msgid "OCR评测-{run}.jsonl"
 msgstr "ocr-eval-{run}.jsonl"
 
-#: backend/src/jacara/modules/hub/service.py:610
+#: backend/src/jacara/modules/hub/service.py:613
 msgid "当前使用"
 msgstr "Current"
 
-#: backend/src/jacara/modules/hub/service.py:612
+#: backend/src/jacara/modules/hub/service.py:615
 msgid "RapidOCR 内置模型"
 msgstr "RapidOCR built-in model"
 
-#: backend/src/jacara/modules/hub/service.py:615
+#: backend/src/jacara/modules/hub/service.py:618
 msgid "请选择模型库中的模型和版本"
 msgstr "Choose a model and version from the library"
 
-#: backend/src/jacara/modules/hub/service.py:621
+#: backend/src/jacara/modules/hub/service.py:624
 #, python-brace-format
 msgid "{name} 是{kind}，此数据集需对比{wanted}"
 msgstr "{name} is a {kind}; this dataset compares {wanted}"
@@ -2013,7 +2026,7 @@ msgstr "Changed by a person (an error; use backfill)"
 
 #: backend/src/jacara/modules/ocr_samples/service.py:613
 #: backend/src/jacara/modules/ocr_samples/service.py:692
-#: backend/src/jacara/pipeline/process.py:100
+#: backend/src/jacara/pipeline/process.py:105
 msgid "无原始文件"
 msgstr "No original file"
 
@@ -2675,33 +2688,33 @@ msgstr "Form field"
 msgid "交接文件版本为 {found}，仅支持 {expected}"
 msgstr "Handoff file version is {found}; only {expected} is supported"
 
-#: backend/src/jacara/pipeline/process.py:172
+#: backend/src/jacara/pipeline/process.py:179
 msgid "保存结果"
 msgstr "Saving results"
 
-#: backend/src/jacara/pipeline/process.py:228
-#: backend/src/jacara/pipeline/process.py:273
+#: backend/src/jacara/pipeline/process.py:247
+#: backend/src/jacara/pipeline/process.py:296
 #: backend/src/jacara/pipeline/run.py:315
 msgid "文字识别"
 msgstr "Recognizing text"
 
-#: backend/src/jacara/pipeline/process.py:283
+#: backend/src/jacara/pipeline/process.py:308
 msgid "文字识别完成，排队等待模型"
 msgstr "Text read; waiting for the model"
 
-#: backend/src/jacara/pipeline/process.py:431
+#: backend/src/jacara/pipeline/process.py:484
 msgid "准备处理"
 msgstr "Preparing"
 
-#: backend/src/jacara/pipeline/process.py:449
+#: backend/src/jacara/pipeline/process.py:503
 msgid "处理过程中 worker 被关闭，请重新处理"
 msgstr "The worker stopped during processing; reprocess the document"
 
-#: backend/src/jacara/pipeline/process.py:464
+#: backend/src/jacara/pipeline/process.py:519
 msgid "无法从对象存储读取原始文件"
 msgstr "Unable to read the original file from object storage"
 
-#: backend/src/jacara/pipeline/process.py:465
+#: backend/src/jacara/pipeline/process.py:520
 #, python-brace-format
 msgid "处理时发生意外错误（{kind}），详情请查看 worker 日志"
 msgstr "Unexpected error during processing ({kind}); see the worker log"
@@ -3246,7 +3259,7 @@ msgstr "the context length of the model server"
 msgid "模型输出过长，达到模型服务的上下文长度后被截断。可调大上下文长度（jacara serve --context）后重试。"
 msgstr "The model's answer was cut off at the model server's context length. Increase it (jacara serve --context) and retry."
 
-#: backend/src/jacara/plugins/model_backends/server.py:51
+#: backend/src/jacara/plugins/model_backends/server.py:56
 msgid "未找到 llama-server。在 Mac 上请先运行：brew install llama.cpp"
 msgstr "llama-server not found. On a Mac run: brew install llama.cpp"
 

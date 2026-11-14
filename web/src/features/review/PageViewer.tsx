@@ -23,6 +23,8 @@ import { useTranslation } from 'react-i18next'
 const ZOOMS = [0.5, 0.75, 1, 1.5, 2, 3]
 const PAD = 4 // Boxes slightly larger than the text so they do not cover it.
 const FRAME_PADDING = 16
+/** Below this viewer width the tool buttons with names (about 580 px) no longer fit on one line. */
+const COMPACT_WIDTH = 640
 
 interface Props {
   documentId: string
@@ -102,6 +104,19 @@ export function PageViewer({
   const { t } = useTranslation()
   const image = usePageImage(documentId, page)
   const [zoom, setZoom] = useState(1)
+  // Narrow viewer (the image column shrinks on smaller screens): tool buttons show icons only, with their
+  // names in tooltips, so the tools stay on one line.
+  const toolbar = useRef<HTMLDivElement>(null)
+  const [compact, setCompact] = useState(false)
+  useEffect(() => {
+    const element = toolbar.current
+    if (!element || typeof ResizeObserver === 'undefined') {
+      return
+    }
+    const observer = new ResizeObserver(([entry]) => setCompact(entry.contentRect.width < COMPACT_WIDTH))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
   // Natural pixel size of the image. Evidence coordinates refer to it, and the SVG uses it as its coordinate
   // system.
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null)
@@ -225,15 +240,9 @@ export function PageViewer({
 
   return (
     <Flex vertical gap={8} style={{ height: '100%' }}>
-      <Flex justify="space-between" align="center" wrap gap={8}>
-        <Typography.Text type="secondary" style={{ flex: '1 1 200px', minWidth: 0 }}>
-          {drawOn
-            ? t('拖动绘制新框，或移动、缩放橙色框')
-            : showOcr
-            ? t('点击文字块填入右侧选中的字段；按住 Shift 或 ⌘/Ctrl 可多选')
-            : t('{{length}} 个值已找到出处', { length: withBox.length })}
-        </Typography.Text>
-        <Flex gap={4} align="center" wrap>
+      {/* Tools first, the hint after them on the same line: the hint no longer takes a line of its own. */}
+      <Flex align="center" gap={8} ref={toolbar}>
+        <Flex gap={4} align="center" wrap style={{ flex: 'none', maxWidth: '100%' }}>
           {extra}
           <Tooltip
             title={
@@ -248,8 +257,9 @@ export function PageViewer({
               type={showOcr ? 'primary' : 'default'}
               onClick={onToggleOcr}
               disabled={!ocr?.available}
+              aria-label={t('原文文字')}
             >
-              {t('原文文字')}
+              {!compact && t('原文文字')}
             </Button>
           </Tooltip>
           {onToggleStructure && (
@@ -266,8 +276,9 @@ export function PageViewer({
                 type={showStructure ? 'primary' : 'default'}
                 onClick={onToggleStructure}
                 disabled={!structure?.available}
+                aria-label={t('版面结构')}
               >
-                {t('版面结构')}
+                {!compact && t('版面结构')}
               </Button>
             </Tooltip>
           )}
@@ -278,14 +289,17 @@ export function PageViewer({
                 icon={<SelectOutlined />}
                 type={drawOn ? 'primary' : 'default'}
                 onClick={onToggleDraw}
+                aria-label={t('框选')}
               >
-                {t('框选')}
+                {!compact && t('框选')}
               </Button>
             </Tooltip>
           )}
-          <Button size="small" icon={<ColumnHeightOutlined />} onClick={fitPage}>
-            {t('整页')}
-          </Button>
+          <Tooltip title={t('显示整页')}>
+            <Button size="small" icon={<ColumnHeightOutlined />} onClick={fitPage} aria-label={t('整页')}>
+              {!compact && t('整页')}
+            </Button>
+          </Tooltip>
           <Button
             size="small"
             icon={<ZoomOutOutlined />}
@@ -307,6 +321,17 @@ export function PageViewer({
             disabled={zoom >= ZOOMS[ZOOMS.length - 1]}
           />
         </Flex>
+        <Typography.Text
+          type="secondary"
+          ellipsis={{ tooltip: true }}
+          style={{ flex: '1 1 0', minWidth: 0, textAlign: 'right', fontSize: 12 }}
+        >
+          {drawOn
+            ? t('拖动绘制新框，或移动、缩放橙色框')
+            : showOcr
+            ? t('点击文字块填入右侧选中的字段；按住 Shift 或 ⌘/Ctrl 可多选')
+            : t('{{length}} 个值已找到出处', { length: withBox.length })}
+        </Typography.Text>
       </Flex>
 
       <div

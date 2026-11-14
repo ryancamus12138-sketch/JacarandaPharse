@@ -253,6 +253,41 @@ class DocumentRepository:
         count = self.session.scalar(select(func.count()).select_from(Document).where(*same))
         return preceding, following, count or 0
 
+    def adjacent(
+        self, document: Document, filters: DocumentFilter
+    ) -> tuple[uuid.UUID | None, uuid.UUID | None, int | None, int]:
+        """Previous and next document of the list with these filters (list order), this document's
+        1-based position in it (None when it does not match the filters) and the list length.
+
+        Works from this document's place in the order, so it stays usable after the document
+        leaves the filtered list (for example once reviewed)."""
+        listed = [Document.team_id == document.team_id, *self._conditions(filters)]
+        later = or_(
+            Document.created_at < document.created_at,
+            and_(Document.created_at == document.created_at, Document.id > document.id),
+        )
+        others = [*listed, Document.id != document.id]
+        following = self.session.scalar(
+            select(Document.id).where(*others, later).order_by(*ORDER).limit(1)
+        )
+        preceding = self.session.scalar(
+            select(Document.id)
+            .where(*others, ~later)
+            .order_by(Document.created_at.asc(), Document.id.desc())
+            .limit(1)
+        )
+        total = self.session.scalar(select(func.count()).select_from(Document).where(*listed)) or 0
+        matches = self.session.scalar(
+            select(func.count()).select_from(Document).where(*listed, Document.id == document.id)
+        )
+        position = None
+        if matches:
+            ahead = self.session.scalar(
+                select(func.count()).select_from(Document).where(*others, ~later)
+            )
+            position = (ahead or 0) + 1
+        return preceding, following, position, total
+
     def status_counts(self, team_id: uuid.UUID) -> dict[str, int]:
         query = (
             select(Document.status, func.count())

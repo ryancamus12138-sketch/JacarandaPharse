@@ -3,6 +3,7 @@ import {
   DeleteOutlined,
   FolderOutlined,
   MessageOutlined,
+  PauseCircleOutlined,
   ReloadOutlined,
   SearchOutlined,
 } from '@ant-design/icons'
@@ -27,12 +28,15 @@ import {
 } from 'antd'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import type { ListState } from './listState'
 import { ApiError } from '../../api/client'
 import {
   deleteDocuments,
   listDocuments,
   listFolders,
   processDocument,
+  reprocessDocument,
+  stopDocument,
 } from '../../api/documents'
 import { listTemplates } from '../../api/templates'
 import type { DocumentFilters, DocumentStatus, DocumentSummary } from '../../api/types'
@@ -48,17 +52,12 @@ import { t } from '../../i18n'
 
 const PAGE_SIZE = 20
 const POLL_MS = 3000 // Refresh every 3 seconds while files are queued or processing.
-const STUCK_MS = 60_000 // Queued for over a minute without starting: usually no worker is running or the queue lost the task.
-
 /**
- * Whether "Retry" is available: failed documents, or documents queued too long.
- * The backend accepts both; workers claim by status, so requeueing never processes a document twice.
+ * Whether "Retry" is available: failed documents. Queued and running documents have "Restart" and "Stop"
+ * instead; workers claim by status, so requeueing never processes a document twice.
  */
-function canRetry(d: DocumentSummary, now: number): boolean {
-  if (d.status === 'failed') {
-    return true
-  }
-  return d.status === 'uploaded' && now - new Date(d.created_at).getTime() > STUCK_MS
+function canRetry(d: DocumentSummary): boolean {
+  return d.status === 'failed'
 }
 
 const STATUS_OPTIONS: { value: DocumentStatus; label: string }[] = [
@@ -158,6 +157,21 @@ export function DocumentListPage() {
     onSettled: () => void queryClient.invalidateQueries({ queryKey: ['documents'] }),
   })
 
+  const stop = useMutation({
+    mutationFn: stopDocument,
+    onSuccess: (document) => void message.success(t('已停止处理 {{filename}}', { filename: document.filename })),
+    onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: ['documents'] }),
+  })
+
+  /** Restart a queued or running document at once with the same settings (a new run). */
+  const restart = useMutation({
+    mutationFn: (id: string) => reprocessDocument(id, { reason: 'restart', note: '' }),
+    onSuccess: (document) => void message.success(t('{{filename}} 已重新开始处理', { filename: document.filename })),
+    onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: ['documents'] }),
+  })
+
   const remove = useMutation({
     mutationFn: deleteDocuments,
     onSuccess: ({ deleted, skipped }, ids) => {
@@ -211,7 +225,7 @@ export function DocumentListPage() {
           {/* Only processed documents have results to view. */}
           <Typography.Text ellipsis style={{ minWidth: 0 }}>
             {d.status === 'done' || d.status === 'reviewed' ? (
-              <Link to={`/documents/${d.id}`}>{filename}</Link>
+              <Link to={`/documents/${d.id}`} state={{ list: params.toString() } satisfies ListState}>{filename}</Link>
             ) : (
               filename
             )}
@@ -294,10 +308,36 @@ export function DocumentListPage() {
     {
       title: t('操作'),
       key: 'actions',
-      width: 170,
+      width: 300,
       render: (_, d) => (
-        <Flex gap={4}>
-          {can('document:process') && canRetry(d, documents.dataUpdatedAt) && (
+        <Flex gap={4} wrap>
+          {can('document:process') && IN_PROGRESS.includes(d.status) && (
+            <>
+              <Popconfirm
+                title={t('重新开始处理「{{filename}}」？', { filename: d.filename })}
+                description={t('当前处理将立即停止，并按相同设置从头重新处理。')}
+                okText={t('重新开始')}
+                cancelText={t('取消')}
+                onConfirm={() => restart.mutate(d.id)}
+              >
+                <Button size="small" icon={<ReloadOutlined />} loading={restart.isPending && restart.variables === d.id}>
+                  {t('重新开始')}
+                </Button>
+              </Popconfirm>
+              <Popconfirm
+                title={t('停止处理「{{filename}}」？', { filename: d.filename })}
+                description={t('停止后文档标记为处理失败，之前的结果保持不变，可随时重新处理。')}
+                okText={t('停止')}
+                cancelText={t('取消')}
+                onConfirm={() => stop.mutate(d.id)}
+              >
+                <Button size="small" icon={<PauseCircleOutlined />} loading={stop.isPending && stop.variables === d.id}>
+                  {t('停止')}
+                </Button>
+              </Popconfirm>
+            </>
+          )}
+          {can('document:process') && canRetry(d) && (
             <Button
               size="small"
               icon={<ReloadOutlined />}

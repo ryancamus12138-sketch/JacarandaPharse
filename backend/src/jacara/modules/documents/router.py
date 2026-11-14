@@ -135,11 +135,7 @@ def upload_document(
         raise _http_error(err) from err
 
 
-@router.get("", summary="文档列表")
-def list_documents(
-    service: Service,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    offset: Annotated[int, Query(ge=0)] = 0,
+def list_filters(
     status_: Annotated[
         list[str] | None, Query(alias="status", description="状态，可以写多个")
     ] = None,
@@ -160,16 +156,16 @@ def list_documents(
     folder: Annotated[
         str | None, Query(max_length=255, description="批量导入的文件夹（含下面的子文件夹）")
     ] = None,
-) -> DocumentPage:
-    """Ordered by upload time descending. limit is the page size, offset the number of rows to skip
-    (pagination).
+) -> DocumentFilter:
+    """Document list filters from the query string, shared by the list and by previous / next on
+    the review page so both walk the same list.
 
         Filters:
     `?status=done&status=failed&template=receipt&date_from=2026-11-01&q=costco&pending=true`.
         Search field values: `?value_q=044031900111&field=invoice_no` (without field, all fields
     are searched).
         Dates use the time zone of this machine."""
-    filters = DocumentFilter(
+    return DocumentFilter(
         statuses=tuple(status_ or ()),
         template=template or None,
         since=day_start(date_from) if date_from else None,
@@ -181,6 +177,20 @@ def list_documents(
         skipped=skipped,
         folder=folder or None,
     )
+
+
+ListFilters = Annotated[DocumentFilter, Depends(list_filters)]
+
+
+@router.get("", summary="文档列表")
+def list_documents(
+    service: Service,
+    filters: ListFilters,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> DocumentPage:
+    """Ordered by upload time descending. limit is the page size, offset the number of rows to skip
+    (pagination). Filters: see list_filters."""
     return service.page(limit, offset, filters)
 
 
@@ -326,11 +336,14 @@ def get_document(
 
 
 @router.get("/{document_id}/neighbors", summary="上一份、下一份")
-def document_neighbors(document_id: uuid.UUID, service: Service) -> DocumentNeighbors:
-    """The previous and next documents awaiting review in list order (upload time descending), for
-    moving straight to the next document after a review."""
+def document_neighbors(
+    document_id: uuid.UUID, service: Service, filters: ListFilters
+) -> DocumentNeighbors:
+    """Paging on the review page: the previous and next documents of the list (same filters as the
+    list, upload time descending, any status) and this document's position in it; plus the next
+    document awaiting review, opened after a review is completed."""
     try:
-        return service.neighbors(document_id)
+        return service.neighbors(document_id, filters)
     except DocumentError as err:
         raise _http_error(err) from err
 
@@ -547,6 +560,16 @@ def process_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
     202 means accepted for processing, not completed."""
     try:
         return service.process(document_id)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/{document_id}/stop", summary="停止处理")
+def stop_document(document_id: uuid.UUID, service: Service) -> DocumentOut:
+    """Stop processing a queued or running document; it becomes failed and can be reprocessed.
+    Reprocessing a running document (POST /reprocess) restarts it instead."""
+    try:
+        return service.stop(document_id)
     except DocumentError as err:
         raise _http_error(err) from err
 

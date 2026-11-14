@@ -85,22 +85,40 @@ def test_day_start_is_local_midnight():
 # ---- Previous / next ----
 
 
-def neighbors(client, docs, name):
-    data = client.get(f"/api/v1/documents/{docs[name]}/neighbors").json()
-    back = {v: k for k, v in docs.items()}
+def neighbors(client, docs, name, query=""):
+    data = client.get(f"/api/v1/documents/{docs[name]}/neighbors?{query}").json()
+    back = {str(v): k for k, v in docs.items()}
     return (
-        back.get(uuid.UUID(data["previous"])) if data["previous"] else None,
-        back.get(uuid.UUID(data["next"])) if data["next"] else None,
+        back.get(data["previous"]),
+        back.get(data["next"]),
+        data["position"],
+        data["total"],
+        back.get(data["next_to_review"]),
         data["remaining"],
     )
 
 
-def test_previous_and_next_only_count_documents_to_review(client, docs):
-    assert neighbors(client, docs, "a") == (None, "b", 2)
-    assert neighbors(client, docs, "b") == ("a", "d", 2)  # Skips the reviewed c.
-    assert neighbors(client, docs, "d") == ("b", None, 2)
-    # This one is already reviewed: neighbors still follow list order, and 3 documents await review.
-    assert neighbors(client, docs, "c") == ("b", "d", 3)
+def test_previous_and_next_page_through_the_whole_list(client, docs):
+    # Any status, in list order: a b c d e.
+    assert neighbors(client, docs, "a")[:4] == (None, "b", 1, 5)
+    assert neighbors(client, docs, "c")[:4] == ("b", "d", 3, 5)  # Reviewed documents included.
+    assert neighbors(client, docs, "e")[:4] == ("d", None, 5, 5)  # Failed documents included.
+
+
+def test_previous_and_next_follow_the_list_filters(client, docs):
+    assert neighbors(client, docs, "b", "status=done")[:4] == ("a", "d", 2, 3)
+    assert neighbors(client, docs, "d", "status=done&status=failed")[:4] == ("b", "e", 3, 4)
+    # c is not in this list (for example reviewed meanwhile): its place in the order still works.
+    assert neighbors(client, docs, "c", "status=done")[:4] == ("b", "d", None, 3)
+    assert neighbors(client, docs, "a", "q=zzz")[:4] == (None, None, None, 0)
+
+
+def test_next_to_review_only_counts_documents_to_review(client, docs):
+    assert neighbors(client, docs, "a")[4:] == ("b", 2)
+    assert neighbors(client, docs, "b")[4:] == ("d", 2)  # Skips the reviewed c.
+    assert neighbors(client, docs, "d")[4:] == ("b", 2)  # Last one: falls back to the previous.
+    # This one is already reviewed: still follows list order, and 3 documents await review.
+    assert neighbors(client, docs, "c")[4:] == ("d", 3)
 
 
 # ---- Dashboard ----

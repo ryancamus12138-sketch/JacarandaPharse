@@ -39,9 +39,12 @@ export function listDocuments(
   return api<DocumentPage>(`/documents?${query}`)
 }
 
-/** Previous and next documents awaiting review (in list order). */
-export function getNeighbors(id: string): Promise<DocumentNeighbors> {
-  return api<DocumentNeighbors>(`/documents/${id}/neighbors`)
+/**
+ * Previous and next documents of the list, and the next document awaiting review. list is the list page's
+ * query string (its filters), so paging walks the list the user came from.
+ */
+export function getNeighbors(id: string, list = ''): Promise<DocumentNeighbors> {
+  return api<DocumentNeighbors>(`/documents/${id}/neighbors${list ? `?${list}` : ''}`)
 }
 
 /** Dashboard: statistics, processing queue, items needing attention. */
@@ -72,6 +75,14 @@ export function listFolders(): Promise<FolderCount[]> {
 /** Requeue (retry after failure). */
 export function processDocument(id: string): Promise<DocumentSummary> {
   return api<DocumentSummary>(`/documents/${id}/process`, { method: 'POST' })
+}
+
+/**
+ * Stop processing a queued or running document. It becomes failed ("stopped manually") and can be
+ * reprocessed; the worker gives the document up within about a second.
+ */
+export function stopDocument(id: string): Promise<DocumentSummary> {
+  return api<DocumentSummary>(`/documents/${id}/stop`, { method: 'POST' })
 }
 
 /** Document details: fields, evidence and rule results of every page. */

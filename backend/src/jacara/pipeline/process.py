@@ -56,6 +56,11 @@ log = logging.getLogger(__name__)
 Outcome = Literal["done", "failed", "skipped"]
 
 
+class Superseded(Exception):
+    """The user stopped or restarted processing of this document while this run was working on it.
+    The run ends without writing anything; the document is already in the state the user chose."""
+
+
 def _lessons_for(
     pipeline: Pipeline,
     factory: sessionmaker[Session] | None,
@@ -126,6 +131,7 @@ def _extract(
     pages: list[OcrPage],
     pipeline: Pipeline,
     factory: sessionmaker[Session] | None,
+    claim: str | None = None,
 ) -> tuple[list[DocumentReport], int, dict[str, object]]:
     """Everything after OCR: document splitting, template selection, extraction, alignment,
     cross-checking. Returns (reports, run number, data needed for storing)."""
@@ -148,7 +154,7 @@ def _extract(
             path,
             name=job.filename,
             template=template,
-            progress=lambda stage, percent: _report(document_id, stage, percent, factory),
+            progress=lambda stage, percent: _report(document_id, stage, percent, factory, claim),
             split=split,
             vision=vision,
             history=history,
@@ -168,10 +174,15 @@ def _save(
     timings: dict[str, object],
     factory: sessionmaker[Session] | None,
     snapshot: str | None = None,
+    claim: str | None = None,
 ) -> None:
-    _report(document_id, stored("保存结果"), 98, factory)
+    _report(document_id, stored("保存结果"), 98, factory, claim)
     with session_scope(factory) as session:
-        document = session.get_one(Document, document_id)
+        # Locked until commit (PostgreSQL FOR UPDATE; SQLite has a single writer anyway), so a stop
+        # request cannot slip in between this check and saving.
+        document = session.get_one(Document, document_id, with_for_update=True)
+        if claim is not None and document.claim != claim:
+            raise Superseded
         add_extractions(
             session,
             document,
@@ -191,11 +202,18 @@ def _save(
     log.info("完成 %s：%d 张单据", document_id, len(reports))
 
 
-def _fail(document_id: uuid.UUID, err: Exception, factory: sessionmaker[Session] | None) -> None:
+def _fail(
+    document_id: uuid.UUID,
+    err: Exception,
+    factory: sessionmaker[Session] | None,
+    claim: str | None = None,
+) -> None:
     # The full traceback goes to the worker log.
     log.exception("处理失败 %s", document_id, exc_info=err)
     with session_scope(factory) as session:
-        document = session.get_one(Document, document_id)
+        document = session.get(Document, document_id, with_for_update=True)
+        if document is None or (claim is not None and document.claim != claim):
+            return  # Deleted, stopped or restarted meanwhile: the error belongs to an old run.
         document.status = "failed"
         document.error = describe_error(err)
         _finish(document)
@@ -217,7 +235,8 @@ def process_document(
 
         Returns a result and never raises: on error the cause is written to the database and the
     status becomes failed."""
-    if not _claim(document_id, factory):
+    claim = _claim(document_id, factory)
+    if claim is None:
         # Already processed, being processed, or the document does not exist. Also reached when a
         # task is delivered twice.
         log.info("跳过 %s：状态不是 uploaded", document_id)
@@ -225,19 +244,22 @@ def process_document(
     try:
         job = _job(document_id, factory)
         with _original(job, storage) as path:
-            _report(document_id, stored("文字识别"), 5, factory)
+            _report(document_id, stored("文字识别"), 5, factory, claim)
             started = time.perf_counter()
             pages = pipeline.read(path, job.pdf_read)
             read_ms = _ms(started)
             started = time.perf_counter()
-            reports, run, extra = _extract(document_id, job, path, pages, pipeline, factory)
+            reports, run, extra = _extract(document_id, job, path, pages, pipeline, factory, claim)
             extract_ms = _ms(started)
         timings = {"read_ms": read_ms, "wait_ms": 0, "extract_ms": extract_ms, "split": False}
         snapshot = save_snapshot(storage, document_id, run, pages)
-        _save(document_id, reports, run, extra, timings, factory, snapshot)
+        _save(document_id, reports, run, extra, timings, factory, snapshot, claim)
         return "done"
+    except Superseded:
+        log.info("停止 %s：已由用户停止或重新处理", document_id)
+        return "skipped"
     except Exception as err:
-        _fail(document_id, err, factory)
+        _fail(document_id, err, factory, claim)
         return "failed"
 
 
@@ -263,20 +285,23 @@ def read_document(
 
         After the hand-off, the OCR stage immediately takes the next document; while the model
     stage extracts this one, the next is already being read."""
-    if not _claim(document_id, factory):
+    claim = _claim(document_id, factory)
+    if claim is None:
         log.info("跳过 %s：状态不是 uploaded", document_id)
         return "skipped"
     attempt = uuid.uuid4().hex
     try:
         job = _job(document_id, factory)
         with _original(job, storage) as path:
-            _report(document_id, stored("文字识别"), 5, factory)
+            _report(document_id, stored("文字识别"), 5, factory, claim)
             started = time.perf_counter()
             pages = pipeline.read(path, job.pdf_read)
             read_ms = _ms(started)
         storage.put(handoff_key(document_id, attempt), dump_pages(pages), "application/json")
         with session_scope(factory) as session:
-            document = session.get_one(Document, document_id)
+            document = session.get_one(Document, document_id, with_for_update=True)
+            if document.claim != claim:
+                raise Superseded
             # attempt: the model stage accepts only this hand-off (tasks from before a reprocess are
             # stale).
             document.timings = {"attempt": attempt, "read_ms": read_ms, "handed_at": time.time()}
@@ -284,9 +309,13 @@ def read_document(
             document.progress = 10
         send(document_id, attempt)
         return "read"
+    except Superseded:
+        _drop(storage, document_id, attempt)
+        log.info("停止 %s：已由用户停止或重新处理", document_id)
+        return "skipped"
     except Exception as err:
         _drop(storage, document_id, attempt)
-        _fail(document_id, err, factory)
+        _fail(document_id, err, factory, claim)
         return "failed"
 
 
@@ -304,6 +333,8 @@ def extract_document(
         document = session.get(Document, document_id)
         timings = dict(document.timings or {}) if document is not None else {}
         current = document is not None and document.status == "processing"
+        # The OCR stage's claim carries over to this stage.
+        claim = document.claim if document is not None else None
     if not current or timings.get("attempt") != attempt:
         # Document deleted, reprocessed or marked failed meanwhile: this task is stale.
         log.info("跳过 %s：不是这一次交过来的", document_id)
@@ -316,7 +347,7 @@ def extract_document(
         pages = load_handoff(storage.get(handoff_key(document_id, attempt)))
         with _original(job, storage) as path:
             started = time.perf_counter()
-            reports, run, extra = _extract(document_id, job, path, pages, pipeline, factory)
+            reports, run, extra = _extract(document_id, job, path, pages, pipeline, factory, claim)
             extract_ms = _ms(started)
         done = {
             "read_ms": timings.get("read_ms"),
@@ -325,10 +356,13 @@ def extract_document(
             "split": True,
         }
         snapshot = save_snapshot(storage, document_id, run, pages)
-        _save(document_id, reports, run, extra, done, factory, snapshot)
+        _save(document_id, reports, run, extra, done, factory, snapshot, claim)
         return "done"
+    except Superseded:
+        log.info("停止 %s：已由用户停止或重新处理", document_id)
+        return "skipped"
     except Exception as err:
-        _fail(document_id, err, factory)
+        _fail(document_id, err, factory, claim)
         return "failed"
     finally:
         _drop(storage, document_id, attempt)
@@ -401,37 +435,57 @@ def next_run(session: Session, document: Document) -> int:
 
 
 def _report(
-    document_id: uuid.UUID, stage: str, percent: int, factory: sessionmaker[Session] | None
+    document_id: uuid.UUID,
+    stage: str,
+    percent: int,
+    factory: sessionmaker[Session] | None,
+    claim: str | None = None,
 ) -> None:
     """Write progress to the database (its own short transaction, committed immediately so the
-    dashboard and lists see it)."""
+    dashboard and lists see it).
+
+    With a claim, the write happens only while the document is still held by that claim;
+    otherwise Superseded is raised. Progress is reported about once a second while the model
+    writes, so a stopped run notices within a second and abandons its request to the model
+    server."""
+    conditions = [Document.id == document_id]
+    if claim is not None:
+        conditions.append(Document.claim == claim)
     with session_scope(factory) as session:
-        session.execute(
+        written = session.scalar(
             update(Document)
-            .where(Document.id == document_id)
+            .where(*conditions)
             .values(stage=stage, progress=max(0, min(100, percent)))
+            .returning(Document.id)
         )
+    if claim is not None and written is None:
+        raise Superseded
 
 
 def _finish(document: Document) -> None:
     """Processing finished (success or failure): clear progress and record the time."""
     document.stage = None
     document.progress = None
+    document.claim = None
     document.processed_at = datetime.now(UTC)
 
 
-def _claim(document_id: uuid.UUID, factory: sessionmaker[Session] | None) -> bool:
-    """Change the status from uploaded to processing.
+def _claim(document_id: uuid.UUID, factory: sessionmaker[Session] | None) -> str | None:
+    """Change the status from uploaded to processing and return this run's claim token (None when
+    the document was not waiting).
 
     A single UPDATE both checks and changes, so two workers never claim the same document."""
+    claim = uuid.uuid4().hex
     with session_scope(factory) as session:
         claimed = session.scalar(
             update(Document)
             .where(Document.id == document_id, Document.status == "uploaded")
-            .values(status="processing", error=None, stage=stored("准备处理"), progress=0)
+            .values(
+                status="processing", error=None, stage=stored("准备处理"), progress=0, claim=claim
+            )
             .returning(Document.id)
         )
-    return claimed is not None
+    return claim if claimed is not None else None
 
 
 def reset_interrupted(factory: sessionmaker[Session] | None = None) -> int:
@@ -449,6 +503,7 @@ def reset_interrupted(factory: sessionmaker[Session] | None = None) -> int:
                 error=stored("处理过程中 worker 被关闭，请重新处理"),
                 stage=None,
                 progress=None,
+                claim=None,
                 processed_at=func.now(),
             )
             .returning(Document.id)
