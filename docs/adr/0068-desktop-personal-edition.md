@@ -619,6 +619,8 @@ Hugging Face 上的文件 SHA-256 一致：
   - 测试本身的假设：权限位 0o600 只在 POSIX 上检查（Windows 靠用户文件夹的访问控制列表）；数据文件夹搬回之前
     先关闭数据库（Windows 不能删除打开着的文件，接口本来就这样做）；macOS 和 Windows 的文件名不区分大小写，
     测试里的 `Models` 文件夹就是数据文件夹里的 `models`。
+- 第二次运行时 Windows 上 `licenses.py` 找不到 `npx`：Windows 上它是 `npx.cmd`，`CreateProcess` 不按裸名字找 `.cmd`，
+  改为先用 `shutil.which` 找到程序再运行，并按 UTF-8 读取输出。
 - **macOS 的 OpenCV 从源码构建**：PyPI 上 `opencv-python-headless` 的 macOS wheel（4.9 到 5.0 都是）带的 FFmpeg
   是用 `--enable-gpl` 构建的：`cv2` 加载 `libavcodec`，`libavcodec` 链接 `libx264`、`libx265`（GPL-2.0 及以上），
   4.13.0.92 还带 `librubberband`、`libvidstab`、`libpostproc`。项目页说"All wheels ship with FFmpeg licensed under
@@ -631,7 +633,10 @@ Hugging Face 上的文件 SHA-256 一致：
   `WITH_AVIF=OFF`（AVIF 只能用构建机上的库）。在 Linux 上试构建时，不加这个开关的 `cv2` 链接了系统的
   libjpeg、libpng、libtiff、libwebp。安装后检查 `cv2.getBuildInformation()` 的 Video I/O 中没有 FFmpeg，
   且 `cv2` 只链接系统库（macOS：`/System/Library`、`/usr/lib`）。之后的步骤不再同步环境（`uv run --no-sync`），
-  否则 uv 会装回 PyPI 的 wheel。构建好的 wheel 按 `opencv.lock` 的内容缓存。Windows 的 wheel 只带 OpenCV 自己构建的 LGPL 版 FFmpeg 插件
+  否则 uv 会装回 PyPI 的 wheel。构建好的 wheel 按 `opencv.lock` 的内容缓存。macOS 上用
+  `MACOSX_DEPLOYMENT_TARGET`（CMake 据此设 `CMAKE_OSX_DEPLOYMENT_TARGET`）把最低系统版本定为
+  `opencv.lock` 的 `macos_deployment_target`，它必须等于 `tauri.conf.json` 的最低版本（脚本检查）；不设时按构建机的系统
+  版本编译，第二次运行时 `check_bundle.py` 查出 `cv2` 要求 macOS 15.0。Windows 的 wheel 只带 OpenCV 自己构建的 LGPL 版 FFmpeg 插件
   （`opencv_videoio_ffmpeg*.dll`，内嵌许可字符串为"LGPL version 2.1 or later"），照常使用。
 - 不支持 Intel Mac：GitHub 已停用最后一个 Intel Mac 标准镜像（`macos-13`），只剩 `macos-15-intel` 维持到 2027 年秋；
   Python 也已把 Intel Mac 降为二级支持。Intel Mac 没有 Metal 加速的大模型推理，9B 模型速度也难以接受。

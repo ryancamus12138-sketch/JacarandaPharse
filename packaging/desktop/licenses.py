@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -79,7 +80,21 @@ def fail(message: str) -> None:
 
 
 def run(*command: str, cwd: Path = ROOT) -> str:
-    done = subprocess.run(command, cwd=cwd, capture_output=True, text=True, check=False)  # noqa: S603
+    # The program is looked up first: on Windows npx is npx.cmd, which CreateProcess does not find
+    # by its bare name. The tools write UTF-8 whatever the system's code page.
+    program = shutil.which(command[0])
+    if program is None:
+        fail(f"{command[0]} was not found")
+        return ""
+    done = subprocess.run(  # noqa: S603
+        [program, *command[1:]],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
     if done.returncode != 0:
         fail(f"{' '.join(command)} failed:\n{done.stderr.strip() or done.stdout.strip()}")
     return done.stdout

@@ -14,6 +14,10 @@ in its cache. With --install the wheel replaces the PyPI wheel
 in the project environment; later steps must run with `uv run --no-sync` (or UV_NO_SYNC=1), or uv
 puts the PyPI wheel back.
 
+On macOS the build targets macos_deployment_target from opencv.lock (MACOSX_DEPLOYMENT_TARGET,
+which CMake uses as CMAKE_OSX_DEPLOYMENT_TARGET), which must be the app's minimum macOS version in
+tauri.conf.json.
+
 Checks: the version is the one in uv.lock, the clone is at the locked commit, the installed cv2
 does not report FFmpeg under Video I/O in cv2.getBuildInformation(), and its binaries link only
 system libraries (macOS: /System/Library and /usr/lib; Linux, for checking the script: the C and C++
@@ -23,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -35,6 +40,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 BUILD = ROOT / "build" / "desktop"
 LOCK = HERE / "opencv.lock"
+TAURI_CONF = ROOT / "desktop" / "src-tauri" / "tauri.conf.json"
 
 SYSTEM_PREFIXES = ("/System/Library/", "/usr/lib/")
 """macOS: libraries every Mac has."""
@@ -86,6 +92,8 @@ def build(spec: dict) -> Path:
         fail(f"tag {spec['tag']} is at {head}, opencv.lock says {spec['commit']}")
     env = dict(os.environ)
     env.update(ENABLE_HEADLESS="1", CMAKE_ARGS=" ".join(spec["cmake_args"]))
+    if sys.platform == "darwin":
+        env["MACOSX_DEPLOYMENT_TARGET"] = spec["macos_deployment_target"]
     env.pop("ENABLE_CONTRIB", None)
     wheels.mkdir(parents=True, exist_ok=True)
     run("uv", "build", "--wheel", "--out-dir", str(wheels), str(source), env=env)
@@ -150,6 +158,12 @@ def main() -> None:
     spec = tomllib.loads(LOCK.read_text("utf-8"))
     if spec.get("version") != 1:
         fail("unknown opencv.lock format")
+    minimum = json.loads(TAURI_CONF.read_text("utf-8"))["bundle"]["macOS"]["minimumSystemVersion"]
+    if spec["macos_deployment_target"] != minimum:
+        fail(
+            f"opencv.lock targets macOS {spec['macos_deployment_target']}, "
+            f"tauri.conf.json says {minimum}"
+        )
     wanted = locked_version(spec["package"])
     if wanted != spec["package_version"]:
         fail(f"opencv.lock builds {spec['package_version']}, uv.lock has {wanted}")

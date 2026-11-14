@@ -215,6 +215,9 @@ def test_stop_asks_start_like_ctrl_c(monkeypatch, tmp_path, capsys):
 
     monkeypatch.setattr(cli, "RUN_FILE", run_file)
     monkeypatch.setattr(os, "kill", fake_kill)
+    # On Windows _alive() asks the system instead of sending signal 0; the fake process is
+    # known only here.
+    monkeypatch.setattr(cli, "_alive", lambda pid: pid in alive)
     assert cli.main(["stop"]) == 0
     assert sent == [(12345, signal.SIGINT)]
     assert not run_file.exists()

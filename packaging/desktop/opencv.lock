@@ -21,6 +21,11 @@ license = "Apache-2.0"
 # instead of linking whatever the build machine has installed (Homebrew on the macOS runners);
 # AVIF would still come from the build machine, so it is left out. build_opencv.py checks that cv2
 # then links only system libraries.
+# macOS: the oldest system the build runs on. CMake takes it from MACOSX_DEPLOYMENT_TARGET; without
+# it the build targets the system of the build machine (macOS 15 on the runners). Must be
+# bundle.macOS.minimumSystemVersion in desktop/src-tauri/tauri.conf.json (build_opencv.py checks).
+macos_deployment_target = "14.0"
+
 cmake_args = [
     "-DWITH_FFMPEG=OFF",
     "-DWITH_GSTREAMER=OFF",
