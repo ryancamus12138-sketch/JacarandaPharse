@@ -35,7 +35,7 @@ Valkey、SeaweedFS）、uv 和 llama.cpp，并在终端执行 `jacara setup`、`
 | 文件存储 | 本地文件夹 | Gitea `STORAGE_TYPE=local` |
 | 任务队列 | Huey（MIT），SQLite 存储 | 支持 SQLite 存储、线程工作者、重试 |
 | 大模型服务 | 随安装包附带 llama.cpp 官方构建的 `llama-server` | MIT 许可；官方发布 macOS arm64、Windows CPU/Vulkan 构建 |
-| 数据位置 | Tauri `appLocalDataDir` | macOS `~/Library/Application Support/<标识符>`；Windows `%LOCALAPPDATA%\<标识符>` |
+| 数据位置 | 系统的本地应用数据文件夹下的 `JacarandaParse`（不用标识符命名）；可在设置中把数据文件夹移到其他磁盘（4.1 节） | macOS `~/Library/Application Support/JacarandaParse`；Windows `%LOCALAPPDATA%\JacarandaParse`；以程序名命名同 Electron `userData` 的默认做法；移动参照 Docker Desktop 的"Disk image location"和 Zotero 的"Data Directory Location" |
 | 本机安全 | 随机端口 + 每次启动的随机令牌 + Host 检查 + Origin 检查 | Jupyter 令牌机制；MCP 规范防 DNS 重绑定要求；OWASP |
 | 支持平台 | macOS（Apple 芯片）、Windows 10/11 x64 | GitHub 已停用 Intel Mac 标准运行器；Python 已将 Intel Mac 降为二级支持 |
 | 安装包 | macOS `.dmg`；Windows NSIS `-setup.exe`（按用户安装，无需管理员） | Tauri 安装包文档 |
@@ -69,6 +69,7 @@ JacarandaParse（Tauri 主程序，Rust）
      ├─ 网页和 API（uvicorn，在本进程内运行）
      ├─ jacara-backend worker --stage read      ← OCR 工位（Huey 消费者）
      ├─ jacara-backend worker --stage extract   ← 模型工位（Huey 消费者）
+     ├─ jacara-backend watch                    ← 监视文件夹（设置了才启动，与 `jacara start` 相同）
      └─ llama-server                             ← 大模型服务
 ```
 
@@ -77,9 +78,15 @@ JacarandaParse（Tauri 主程序，Rust）
 **启动顺序**
 
 1. Tauri 用单实例插件保证只运行一个程序；再次双击时聚焦已有窗口。
-2. Tauri 启动 `jacara-backend desktop`，通过环境变量传入数据目录、日志目录、资源目录。
+2. Tauri 启动 `jacara-backend desktop`，通过环境变量传入数据目录（`JACARA_HOME`）、日志目录（`JACARA_LOG_DIR`）、
+   网页目录（`JACARA_WEB_DIR`），并设置 `JACARA_WATCH_STDIN=1`：后端只在设置了它时才在标准输入关闭后退出
+   （从终端手动运行时标准输入是终端，不受影响）。
 3. 后端在 `127.0.0.1` 上选取空闲端口（向系统申请端口 0），生成本次启动的随机令牌，执行数据库迁移，
-   将中断的文档标记为失败（沿用 `reset_interrupted`），启动两个工位和模型服务。
+   将中断的文档标记为失败（沿用 `reset_interrupted`），启动两个工位、模型服务和（设置了时）监视文件夹，
+   并把所有"排队中"的文档重新放进队列（Huey 取出任务后才执行，进程崩溃时手上的任务会丢失；重复的任务在领取时跳过）。
+   之后由后端监管子进程：自己退出的子进程自动重新启动，并把退出原因写进它的日志；启动后 1 秒内就退出算启动失败，
+   依次等 1、2、3 秒重试，连续失败超过 3 次不再启动（supervisord 的 `autorestart`、`startsecs`、`startretries`）。
+   OCR 工位重新启动后，再把"排队中"的文档放回队列一次。
 4. 后端就绪后，在标准输出打印一行 `JACARA_READY http://127.0.0.1:<端口>/desktop/enter?token=<令牌>`。
 5. Tauri 读到这一行后，让窗口打开该地址（第 5 节）。启动期间窗口显示"正在启动"页面。
 
@@ -92,7 +99,8 @@ JacarandaParse（Tauri 主程序，Rust）
   - **Windows**：后端把所有子进程放进一个设置了 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的作业对象。按微软文档，
     最后一个作业句柄关闭时，系统会结束作业中的全部进程；用 `CreateProcess` 创建的子进程默认也在作业中。
     这样即使后端被强制结束，`llama-server` 也不会残留。
-  - **macOS**：后端把子进程编号写入数据目录下的 `run.json`（沿用 `.run/` 的做法）；下次启动时先清理上次残留的进程。
+  - **macOS**：后端把子进程编号写入数据目录下的 `.run/desktop.json`；下次启动时先清理上次残留的进程（只结束命令行
+    仍与记录相符的进程，避免误伤复用了同一编号的其他程序）。
 - 打包后 `sys.executable` 指向打包程序本身，不再是 Python 解释器。现在用 `[sys.executable, "-m", "jacara.cli", ...]`
   启动子进程的地方，改为调用打包程序的子命令（`jacara-backend worker ...`）。
 
@@ -156,7 +164,8 @@ JacarandaParse（Tauri 主程序，Rust）
   （见 `structure/engines.py` 的说明），违反规则 10。**构建脚本检查打包结果中 `rapid_layout` 目录只有
   `layout_cdla.onnx`，出现其他权重文件即构建失败。**
 - 表格模型 SLANet-plus（Apache 2.0，约 7 MB）：现在要求用户自己下载。桌面版改为随安装包附带，构建时按 README 中已有
-  的 SHA-256 校验。
+  的 SHA-256 校验。后端先找数据目录的 `models/table/slanet-plus.onnx`（用户自己放的优先），找不到再用程序资源目录
+  （PyInstaller 的 `sys._MEIPASS`）中附带的那份；「设置 → 模型」里显示为「随程序附带」。
 
 ### 3.6 网页
 
@@ -164,14 +173,21 @@ JacarandaParse（Tauri 主程序，Rust）
 
 ## 4. 数据目录
 
-- 根目录使用 Tauri 的 `appLocalDataDir`：
-  - macOS：`~/Library/Application Support/<标识符>/`
-  - Windows：`%LOCALAPPDATA%\<标识符>\`
-- 日志使用 Tauri 的 `appLogDir`：macOS `~/Library/Logs/<标识符>/`，Windows `%LOCALAPPDATA%\<标识符>\logs\`。
-- **标识符**：Tauri 要求反向域名格式，只能含字母、数字、连字符和点，且在所有应用中唯一。作者没有自己的域名，
-  采用托管平台前缀 `io.github.<用户名>.<应用名>`（Flathub 对托管在 GitHub 上的应用规定的做法）。暂定
-  `io.github.ryancamus12138-sketch.jacarandaparse`（与发布用的 GitHub 账户对应）。**标识符发布后不能再改**，否则旧用户的
-  数据目录找不到。
+- 根目录是系统的本地应用数据文件夹下的 `JacarandaParse`（Tauri 的 `localDataDir` + 程序名），用户看到的是程序名，
+  不是标识符：
+  - macOS：`~/Library/Application Support/JacarandaParse/`
+  - Windows：`%LOCALAPPDATA%\JacarandaParse\`
+  这与 Electron 的默认做法相同：`userData` 是"`appData` 目录加上程序名"，日志在 macOS 的 `~/Library/Logs/<程序名>`；
+  VS Code（`Code`）、Slack 等桌面程序的数据文件夹都是程序名。Windows 用 Local 而不是 Roaming：数据库、文件和模型
+  有几个 GB，不应随漫游配置同步。
+- 日志：macOS `~/Library/Logs/JacarandaParse/`，Windows `%LOCALAPPDATA%\JacarandaParse\logs\`。
+  Tauri 自带的 `appLocalDataDir` / `appLogDir` 以标识符命名，因此不用；外壳算出上面的路径，经 `JACARA_HOME`、
+  `JACARA_LOG_DIR` 传给后台。
+- **标识符**：Tauri 要求反向域名格式，只能含字母、数字、连字符和点，且在所有应用中唯一（用作系统里的 bundle ID 和
+  网页内核数据文件夹的路径）；Apple 也要求 bundle ID 用反向域名格式。它不再决定数据文件夹的名字，但仍出现在
+  网页内核的缓存文件夹（macOS `~/Library/WebKit/<标识符>/`、`~/Library/Caches/<标识符>/`，Windows WebView2 的
+  `EBWebView` 文件夹）和系统的程序信息里。**标识符发布后不能再改**：改了系统会当成另一个程序，网页内核里保存的
+  数据（例如界面语言选择）就找不到了。定为 `io.github.ryancamus12138-sketch.jacarandaparse`（"已确定"第 2 条）。
 - 目录内容：
 
   | 路径 | 内容 |
@@ -180,14 +196,38 @@ JacarandaParse（Tauri 主程序，Rust）
   | `queue.db` | 任务队列 |
   | `files/` | 上传的原始文件、OCR 样本、导出文件等（原对象存储中的内容） |
   | `models/` | 模型库和 `selected.json`（原项目下的 `models/`） |
-  | `settings.json` | 设置页保存的设置（原 `data/settings.json`） |
-  | `backups/` | 备份包 |
-  | `run.json` | 运行中的进程编号（原 `.run/`） |
+  | `data/settings.json` | 设置页保存的设置（与项目下的位置相同） |
+  | `backups/` | 手动完整备份（`jacara-<时间>.tar`） |
+  | `backups/auto/` | 自动备份（`jacara-<时间>.db`，只含数据库，13.5 节） |
+  | `before-restore-<时间>/` | 恢复备份前移开的原数据，程序不删除（第 6 节"备份和恢复"） |
+  | `data-location.json` | 只在起始文件夹中：数据文件夹被移走后记录新位置（4.1 节） |
+  | `.run/desktop.json` | 运行中的进程编号 |
+  | `logs/` | 各进程的日志（桌面版由 `JACARA_LOG_DIR` 改到上面的日志文件夹） |
 
 - 现在 `core/config.py` 中有 12 处、其他文件中有 13 处用 `PROJECT_ROOT` 拼接路径。其中运行数据（模型、设置、`.run`）
   的路径改为用 `JACARA_HOME`。
   `PROJECT_ROOT` 只保留给随程序分发的只读文件。服务器方式下 `JACARA_HOME` 默认等于项目根目录，行为不变。
 - 卸载程序不删除数据目录。README 写明数据目录位置，以及需要彻底删除时如何手动删除。
+
+### 4.1 移动数据文件夹
+
+磁盘空间不足时，用户可以在「设置 → 数据和备份 → 更改位置…」把数据文件夹移到其他磁盘，也可以「改回默认位置」。
+参照 Docker Desktop 设置中的"Disk image location"（可以把磁盘映像移到别处；目标已有映像时询问）和 Zotero 的
+"Data Directory Location"（自定义位置记在设置里，程序启动时据此打开数据）。
+
+- **起始文件夹不变**：Tauri 传入的 `JACARA_HOME`（第 4 节的 `JacarandaParse` 文件夹）始终是起始文件夹。移动后在其中写
+  `data-location.json`（`{"path": "<新位置>"}`），启动程序读到它就把 `JACARA_HOME` 换成新位置，起始文件夹本身记在
+  `JACARA_DEFAULT_HOME`。改回默认位置时删除这个文件。
+- **目标**：所选文件夹中新建 `JacarandaParse` 文件夹，它必须不存在或为空。不能是当前数据文件夹本身、它里面的文件夹或
+  包含它的文件夹；可用空间至少是数据大小的 1.05 倍。不建议放在网络位置或网盘同步文件夹：SQLite 的 WAL 模式要求所有
+  进程在同一台计算机上，不能用于网络文件系统（SQLite 文档；Zotero 对数据目录有同样的提醒），界面上说明这一点。
+- **步骤**：停止后台进程并关闭数据库 → 把 WAL 合并进数据库（`PRAGMA wal_checkpoint(TRUNCATE)`）→ 逐个复制文件和
+  文件夹（包括空文件夹），复制时计算 SHA-256，写完后重新读一遍核对 → 全部一致后才写 `data-location.json`、切换
+  `JACARA_HOME`，再删除原位置的数据 → 重新启动后台。复制或核对失败时删除不完整的副本，数据留在原处，什么都不改。
+  进程记录 `.run/desktop.json` 在停止后台时删除，不会留在原位置。
+- **找不到数据**：启动时 `data-location.json` 指向的位置没有数据库（移动硬盘没接上，或同一盘符换成了另一块磁盘），
+  **不会在那里新建空的数据库**。服务照常启动，但除健康检查、作业状态和"数据位置"三个接口外一律返回 503，网页显示
+  「找不到数据文件夹」，提供「重试」（接上硬盘后）和「改用默认位置」（打开起始文件夹中的数据，原来的文件夹不删除）。
 
 ## 5. 本机安全
 
@@ -214,7 +254,9 @@ JacarandaParse（Tauri 主程序，Rust）
 | 位置 | 改动 |
 |---|---|
 | 设置 → 个人 | 个人模式下隐藏"账号"卡片（用户名、团队、角色、权限、修改密码），只保留头像和昵称 |
-| 设置 → 数据和备份 | 去掉命令行步骤，改为"立即备份""从备份恢复""打开备份文件夹"按钮（见下） |
+| 设置 → 数据和备份 | 去掉命令行步骤，改为"立即备份"（可选保存位置、可选包含模型文件）、备份列表和"恢复"、"从其他备份文件恢复…"、"打开备份文件夹"；"数据文件夹"卡片显示位置和大小，有"打开数据文件夹""更改位置…""改回默认位置"（4.1 节）；"自动备份"卡片（13.5 节）（见下） |
+| 设置 → 识别和处理 | 监视文件夹可以设多个，每个单独选模板；桌面版用系统对话框选择文件夹（见下） |
+| 设置 → 识别和处理、模型 | 桌面版有"重新启动后台"按钮，不必退出程序就能让新设置和新模型生效（见下） |
 | 设置 → 模型 | 首次启动向导（见下）；Windows 增加"计算设备：自动 / CPU / 显卡（Vulkan）" |
 | 设置 → 关于和诊断 | 显示版本、署名（NOTICE 内容）、许可、第三方许可清单、数据目录和日志目录，"打开数据文件夹"按钮 |
 | 全站提示 | 18 个文件中约 40 处提到 `jacara start`、`docker compose`、`brew install` 等命令。桌面版改为界面操作的说法，例如"重新启动 JacarandaParse 后生效" |
@@ -222,11 +264,39 @@ JacarandaParse（Tauri 主程序，Rust）
 **备份和恢复**
 
 - 沿用 ADR 0054 的备份格式（数据库各表的 JSON 行 + 全部文件，打包为 `.tar`，与数据库种类无关），所以桌面版的备份
-  和服务器版的备份可以互相恢复。
-- 备份：后端暂停两个工位，执行备份，写入 `<数据目录>/backups/`，再恢复工位。
-- 恢复：现有规则是"只能恢复到空环境"。桌面版的做法是：先把当前的 `jacara.db`、`queue.db`、`files/` 移到
-  `<数据目录>/before-restore-<时间>/`（不删除），在空环境中恢复并逐项校验；校验失败则移回原数据。
-- "打开数据文件夹"由后端调用系统命令完成（macOS `open`，Windows `os.startfile`），不需要 Tauri 的插件。
+  和服务器版的备份可以互相恢复。清单 `manifest.json` 增加可选的 `extras`：`extra/settings.json`（设置页的设置）、
+  `extra/selected.json`（使用中的模型选择）、`extra/models.json`（使用中的模型清单：路径、字节数、SHA-256），勾选
+  "包含模型文件"时还有 `extra/models/...`。每项记 SHA-256，核对备份包时一并核对；旧版本读取时忽略 `extras`。
+- **作业**：备份、恢复、移动数据文件夹、重新启动后台都作为"作业"在服务进程的后台线程中进行，同一时间只有一个。
+  网页每 0.5 秒读 `GET /api/v1/desktop/job` 显示进度，作业期间不能关闭对话框。作业期间：备份和重新启动只拒绝修改
+  （可以浏览）；恢复和移动拒绝全部请求。被拒绝的请求返回 503 和 `Retry-After`，网页在此期间刷新时显示"正在进行数据
+  操作"并在完成后自动打开。
+- **备份**：暂停两个工位和监视进程（模型服务不停），写入所选位置（默认 `<数据目录>/backups/`），核对备份包，再恢复。
+  同一秒内的两次备份不会互相覆盖（第二个文件名加 `-2`）。
+- **恢复**：现有规则是"只能恢复到空环境"。桌面版先停止后台，把当前的 `jacara.db`、`queue.db`、`files/`、设置和模型
+  选择移到 `<数据目录>/before-restore-<时间>/`（不删除），在空环境中恢复，再逐项核对；任何一步失败都删除恢复了一半的
+  数据并移回原数据，然后重新启动后台。备份中没有、本机也没有的模型列出来，提示重新下载或导入。
+  恢复自动备份（`.db`，只含数据库）时文件保持原样；备份之后删除的文件在核对中列为提醒，不算恢复失败。
+  比本程序新的版本做的备份不恢复，提示先安装新版本。
+- "打开数据文件夹""打开备份文件夹"由后端调用系统命令完成（macOS `open`，Windows `os.startfile`），不需要 Tauri 的插件。
+- **选择文件夹和文件**：网页拿不到本机路径，桌面版由后端打开系统对话框：macOS 用 `osascript` 的 `choose folder` /
+  `choose file`，Windows 用 PowerShell 的 `FolderBrowserDialog` / `OpenFileDialog`（置顶窗口作为所有者，避免对话框
+  藏在程序窗口后面），Linux 用 zenity。没有对话框程序时提示直接输入完整路径，每处都可以手动输入。
+
+**多个监视文件夹**
+
+- 设置 `JACARA_WATCH_FOLDERS`：列表，每项是 `{"path": 完整路径, "template": 模板}`，模板的选项与上传时相同
+  （自动判断、我的模板、抽取所有键值对）。保存时检查：文件夹存在、是完整路径、不重复、不互相包含；模板存在且未归档。
+- 以前的单个文件夹 `JACARA_WATCH_DIR` / `JACARA_WATCH_TEMPLATE` 仍然读取（.env 或设置页），作为列表的一项；在页面上
+  保存列表后改用列表，旧的两项从设置页文件中删除。
+- 一个监视进程监视全部文件夹（每个文件夹一个 `Watcher`，每 5 秒扫描一次）；"关于"页每个文件夹一项检查。
+
+**重新启动后台**
+
+- 后台进程（两个工位、监视进程、模型服务）只在启动时读取设置和模型。桌面版的设置页和模型页在需要时显示"重新启动
+  后台"：停止全部子进程，清除服务进程中缓存的数据库连接、队列、OCR 和版面模型，把处理到一半的文档重新排队，再按当前
+  设置启动。不需要退出程序。
+- 只由服务进程自己读取的设置（自动备份的开关和份数）每次使用时重新读取，保存后立即生效，不提示重启（设置项的 `live`）。
 
 **模型为什么不放进安装包**
 
@@ -339,11 +409,20 @@ Hugging Face 上的文件 SHA-256 一致：
 
 **在 Tauri 窗口中需要单独处理的浏览器行为**
 
-- **下载**：现在的导出用 Blob 加 `<a download>` 保存。Windows 的 WebView2 支持这种下载；macOS 的 WKWebView
-  需要 Tauri 的下载事件（`DownloadEvent::Requested` 可以指定保存位置）处理。**Blob 地址的下载在 macOS 上必须实机
-  验证**；如果不支持，桌面版改为由后端直接把文件写入系统"下载"文件夹（用 `platformdirs` 取得路径，它已是现有依赖）。
-- **拖放上传**：Tauri 默认拦截文件拖放；按 Tauri 文档，要在 Windows 上使用 HTML5 拖放，需关闭 `dragDropEnabled`。
-- **外部链接**：Hugging Face、GitHub 等外部链接在系统浏览器中打开，不在程序窗口中打开。
+- **下载**（已实现，不依赖网页内核）：macOS 的 WKWebView 不处理 `<a download>`，除非程序自己接管下载
+  （tauri-apps/tauri#4633）。桌面版因此由后端保存：网页请求文件时带 `X-Jacara-Save: downloads`，后端的
+  `SaveToDownloads` 中间件把附件响应边接收边写入系统"下载"文件夹（`platformdirs.user_downloads_path()`；Windows 上
+  是可被用户移动过的已知文件夹 FOLDERID_Downloads），写完前用隐藏的临时文件名，重名时加" (1)"" (2)"（与浏览器
+  相同），再回答保存位置；网页里生成的文件（审计日志 CSV）发给 `POST /api/v1/desktop/downloads` 保存。网页随后提示
+  "已保存到'下载'文件夹"，并可"在文件夹中显示"（`open -R` / `explorer /select,`，只允许"下载"文件夹里的文件）。
+  这样 Tauri 不需要 `on_download`，两种内核行为一致。
+- **拖放上传**：Tauri 默认拦截文件拖放，网页收不到 HTML5 的拖放事件；**窗口配置必须设 `dragDropEnabled: false`**
+  （react-dropzone 的 Tauri 说明；Windows 上不关闭则无法使用 HTML5 拖放）。
+- **"选择整个文件夹"**：macOS 上 wry 的 `runOpenPanelWithParameters` 按 `allowsDirectories` 调用
+  `setCanChooseDirectories`，`<input webkitdirectory>` 可以选文件夹；Windows 的 WebView2 是 Chromium 内核，原生支持。
+  第 5 步在两种内核上实测。
+- **外部链接**（已实现）：桌面版拦截指向其他网站的链接，由后端用系统默认浏览器打开（Python 的 `webbrowser`，只接受
+  http 和 https），不在程序窗口中打开。
 - **网页引擎差异**：macOS 上是 Safari 的内核，Windows 上是 Edge 的内核。前端要在两者上各完整检查一遍。
 
 ## 7. 打包
@@ -359,8 +438,19 @@ Hugging Face 上的文件 SHA-256 一致：
 
 - 单文件夹整体作为 Tauri 资源（`bundle.resources`）打包，由 Rust 代码直接启动。Tauri 的 `externalBin` 只适合单个
   可执行文件，不适合单文件夹。
-- 桌面版不需要的依赖不打包：`celery`、`redis`（Valkey 客户端）、`boto3`、`psycopg`。在 `pyproject.toml` 中把它们移到
-  可选依赖组 `server`，服务器方式安装时带上。**这样 LGPL 许可的 `psycopg` 不会出现在安装包中。**
+- 桌面版不需要的依赖不打包：`celery`、`kombu`、`redis`（Valkey 客户端）、`boto3`、`psycopg`，在 spec 的 `excludes`
+  中排除（它们在代码里都只在服务器方式的分支中按需导入）。**这样 LGPL 许可的 `psycopg` 不会出现在安装包中。**
+- 构建配置：`packaging/desktop/jacara.spec`，入口 `packaging/desktop/jacara_desktop.py`，构建工具在依赖组 `desktop`
+  （`uv run --group desktop pyinstaller packaging/desktop/jacara.spec`）。PyInstaller 只跟随 import 收集代码，程序
+  按文件读取的内容在 spec 中逐项列出，缺一项就构建失败：起步模板（`templates/**/*.toml`）、界面翻译（`.mo`）、
+  数据库迁移、RapidOCR 的模型和配置、rapid-layout 的 `layout_cdla.onnx`（出现其他权重即失败，第 3.5 节）、
+  rapid-table 的配置、校验过 SHA-256 的表格模型、运行时用 `importlib.metadata` 读取版本的包的元数据；按名字加载的
+  模块（uvicorn 的 `jacara.app:app` 和协议实现、Alembic、Huey）列为隐藏导入。
+- 数据库迁移放在程序包内（`jacara/migrations`），后端按包的位置找到它们，不依赖当前文件夹；开发时
+  `uv run alembic ...` 仍通过项目根目录的 `alembic.ini`。
+- 冒烟测试：`packaging/desktop/smoke.py` 从无关的文件夹、空数据目录启动打包结果，检查迁移、翻译、起步模板、
+  附带的表格模型、PDF 通过 OCR、监视文件夹导入、保存到"下载"文件夹、关闭标准输入后退出。2026-11-15 在 Linux
+  （aarch64）上构建并全部通过（打包结果约 407 MB）；macOS 和 Windows 上在第 5 步的自动构建中运行。
 - PyInstaller 不能跨平台构建，macOS 包在 macOS 上构建，Windows 包在 Windows 上构建。
 - 说明：PyInstaller 打包的是 `.pyc` 字节码，有心人可以还原出接近源码的内容。源码不公开主要靠"不发布源码"，
   不靠打包工具。若以后需要更强的保护，再评估 Nuitka。
@@ -379,8 +469,8 @@ Hugging Face 上的文件 SHA-256 一致：
 - GitHub Actions，两台运行器：`macos-15`（Apple 芯片）和 `windows-latest`。不用 `macos-14`：GitHub 已于
   2026 年 11 月 2 日停用该镜像。
 - 使用 Tauri 官方的 `tauri-apps/tauri-action` 构建并创建草稿发布，人工检查后再正式发布。
-- 构建步骤：安装依赖 → 构建网页 → PyInstaller 打包后端 → 下载并校验 llama.cpp 和表格模型 → 生成许可清单 →
-  检查 AGPL 权重和签名 → Tauri 打包 → 计算 SHA-256。
+- 构建步骤：安装依赖 → 构建网页 → 下载并校验 llama.cpp 和表格模型 → PyInstaller 打包后端 → 运行
+  `packaging/desktop/smoke.py` → 生成许可清单 → 检查 AGPL 权重和签名 → Tauri 打包 → 计算 SHA-256。
 - 后端测试也在 Windows 上运行一遍（现有代码只在 macOS 上运行过，进程管理、路径、信号处理需要验证）。
 - 不支持 Intel Mac：GitHub 已停用最后一个 Intel Mac 标准镜像（`macos-13`），只剩 `macos-15-intel` 维持到 2027 年秋；
   Python 也已把 Intel Mac 降为二级支持。Intel Mac 没有 Metal 加速的大模型推理，9B 模型速度也难以接受。
@@ -498,8 +588,8 @@ llama-server。安装包经过压缩，下载体积会更小。准确数字以�
 | 1 | 后端可切换：`JACARA_HOME`、三项运行方式设置、`LocalStorage`、Huey 队列、SQLite 连接设置、迁移批量模式 | 全部测试在 SQLite + 本地存储 + Huey 下通过；空 SQLite 上执行全部迁移后与模型定义一致；Docker 方式不受影响 |
 | 2 | `jacara desktop` 子命令：随机端口、令牌、Host 和 Origin 检查、进程管理、就绪输出 | 在 Mac 上从源码运行，正常启动和退出；强制结束父进程后没有残留进程；带错误 Host 或外站 Origin 的请求被拒绝 |
 | 3 | 界面改动和模型下载（第 6 节） | Safari 内核和 Edge 内核下各完整走一遍：上传、识别、审核、导出、备份、恢复、首次启动向导；下载中途断网再恢复能续传；篡改文件后校验失败 |
-| 4 | PyInstaller 打包后端，附带 llama.cpp 和模型文件，生成许可清单 | 打包结果在没有安装 Python 的 Mac 上运行；AGPL 权重检查和许可检查生效 |
-| 5 | Tauri 外壳、`.dmg`、Windows 安装包、GitHub Actions | 在全新的 macOS 用户账户和全新的 Windows 虚拟机上安装、放行、首次启动、下载模型、处理样例单据、导出、退出后无残留进程、升级安装保留数据、卸载 |
+| 4 | PyInstaller 打包后端，附带 llama.cpp 和模型文件，生成许可清单 | 打包结果在没有安装 Python 的 Mac 上运行；`packaging/desktop/smoke.py` 全部通过；AGPL 权重检查和许可检查生效 |
+| 5 | Tauri 外壳、`.dmg`、Windows 安装包、GitHub Actions | 在全新的 macOS 用户账户和全新的 Windows 虚拟机上安装、放行、首次启动、下载模型、处理样例单据、导出（文件出现在"下载"文件夹）、拖放上传、选择整个文件夹上传、外部链接在系统浏览器中打开、退出后无残留进程、升级安装保留数据、卸载 |
 | 6 | `NOTICE`、README、放行说明配图、`release.yml` 改为只发布安装包和 `latest.json` | 公开仓库中不含源码；README 中的每个步骤都按实际界面截图核对 |
 | 7 | 升级和备份（第 13 节）：升级前备份、降级保护、程序内更新、自动备份、从备份恢复 | 用上一版本建的数据升级到新版本无损；迁移失败能还原；装回旧版本时拒绝打开；在另一台电脑上从备份完整恢复 |
 
@@ -562,9 +652,14 @@ llama-server。安装包经过压缩，下载体积会更小。准确数字以�
 - **手动完整备份**：设置 → 数据和备份 → "立即备份"。可选择保存位置（例如移动硬盘、网盘同步文件夹）。
   备份另外包含 `settings.json` 和"使用中的模型"清单（文件名和 SHA-256）。
   可勾选"包含模型文件"：默认不勾选，因为模型有 6 GB 以上，而且可以按清单重新下载。
-- **自动备份**：每天自动备份一次数据库，保存在数据目录的 `backups/` 中，保留最近 14 份（参照 Immich 的默认设置：
-  每天一次、保留最近 14 份），可在设置中修改。与 Immich 相同，自动备份只含数据库，不含上传的文件；需要完整保护时用
-  手动完整备份存到另一个磁盘（Immich 建议的 3-2-1 原则：3 份副本、2 种介质、1 份异地）。
+- **自动备份**：每天自动备份一次数据库，保存在数据目录的 `backups/auto/` 中，保留最近 14 份（参照 Immich 的默认设置：
+  每天一次、保留最近 14 份），可在设置中关闭或修改份数（1–365）。与 Immich 相同，自动备份只含数据库，不含上传的文件；
+  需要完整保护时用手动完整备份存到另一个磁盘（Immich 建议的 3-2-1 原则：3 份副本、2 种介质、1 份异地）。
+  - 用 SQLite 的在线备份接口（Python `sqlite3.Connection.backup`）复制，程序运行中也能得到一致的副本；先写
+    `.partial`，完成后改名。
+  - 启动程序启动 1 分钟后检查一次，之后每小时检查一次；距上次自动备份不满 24 小时则跳过，作业进行中或找不到数据
+    文件夹时也跳过。失败时记日志，下一次检查时重试。
+  - 页面上可以从自动备份恢复（只恢复数据库，见第 6 节"备份和恢复"）。
 - **恢复和换电脑**：在新电脑上安装程序，首次启动向导中选择"从备份恢复"，选择备份文件即可。备份中没有模型文件时，
   按"使用中的模型"清单提示下载。
 - **跨版本**：备份记录了数据库迁移版本。旧版本的备份可以恢复到新版本（恢复时先建到备份时的版本，导入数据后再升级，
@@ -573,7 +668,9 @@ llama-server。安装包经过压缩，下载体积会更小。准确数字以�
 ## 已确定
 
 1. 署名：Ryan Camus（`NOTICE`、"关于"页、README）。
-2. 标识符：`io.github.ryancamus12138-sketch.jacarandaparse`。
+2. 数据文件夹以程序名命名（`JacarandaParse`，第 4 节），不含标识符和 GitHub 账户名。标识符定为
+   `io.github.ryancamus12138-sketch.jacarandaparse`（作者没有自己的域名；Flathub 对托管在 GitHub 上的应用的命名规定），
+   发布后不再改。
 3. Windows 显卡加速：自动检测，有可用显卡用 Vulkan，否则用 CPU。
 4. 模型下载：在程序内下载，按 Hugging Face → 魔搭社区 → hf-mirror.com 的顺序自动选择，失败时自动切换并接着下载；
    也可以手动下载后放入文件夹自动检测。
@@ -585,7 +682,9 @@ llama-server。安装包经过压缩，下载体积会更小。准确数字以�
 - Tauri：What is Tauri — https://v2.tauri.app/start/
 - Tauri：Embedding External Binaries（sidecar）— https://v2.tauri.app/develop/sidecar
 - Tauri：Resources — https://v2.tauri.app/develop/resources/
-- Tauri：path API（appLocalDataDir、appLogDir、resourceDir）— https://v2.tauri.app/reference/javascript/api/namespacepath
+- Tauri：path API（localDataDir、appLocalDataDir、appLogDir、resourceDir）— https://v2.tauri.app/reference/javascript/api/namespacepath
+- Electron：`app.getPath`（`userData` 默认是 `appData` 加程序名；macOS 日志在 `~/Library/Logs/<程序名>`）— https://github.com/electron/electron/blob/main/docs/api/app.md
+- Apple：Bundle ID（反向域名格式）— https://developer.apple.com/help/glossary/bundle-id
 - Tauri：Single Instance 插件 — https://v2.tauri.app/plugin/single-instance
 - Tauri：Windows Installer — https://v2.tauri.app/distribute/windows-installer/
 - Tauri：DMG — https://v2.tauri.app/distribute/dmg/
@@ -607,6 +706,12 @@ llama-server。安装包经过压缩，下载体积会更小。准确数字以�
 - GitHub：About releases（单个文件小于 2 GiB）— https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases
 - huggingface_hub：Downloading files（resolve 地址、固定提交、ETag 与 SHA-256）— https://huggingface.co/docs/huggingface_hub/package_reference/file_download
 - MDN：If-Range — https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Range
+- Immich：Backup and Restore（自动数据库备份：每天、保留最近 14 份、不含照片和视频）— https://docs.immich.app/administration/backup-and-restore
+- SQLite：Online Backup API — https://www.sqlite.org/backup.html ；Python `sqlite3.Connection.backup` — https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection.backup
+- SQLite：SQLite Over a Network, Caveats and Considerations — https://sqlite.org/useovernet.html
+- Docker Desktop：Settings（Disk image location：可把磁盘映像移到其他位置）— https://docs.docker.com/desktop/settings-and-maintenance/settings/
+- Zotero：Advanced preferences（Data Directory Location；云同步文件夹和网络驱动器可能导致数据库损坏）— https://www.zotero.org/support/preferences/advanced
+- supervisord：Configuration（autorestart、startsecs、startretries）— https://supervisord.org/configuration.html
 - Tauri：Updater 插件 — https://v2.tauri.app/plugin/updater/
 - Firefox 降级保护说明 — https://its.forsythtech.edu/support/solutions/articles/10000049967
 - Immich：Backup and Restore（自动备份默认值、3-2-1）— https://docs.immich.app/administration/backup-and-restore
@@ -635,3 +740,8 @@ llama-server。安装包经过压缩，下载体积会更小。准确数字以�
 - license-checker-rseidelsohn — https://www.npmjs.com/package/license-checker-rseidelsohn
 - cargo-about — https://embarkstudios.github.io/cargo-about
 - Qwen3.5-9B — https://huggingface.co/Qwen/Qwen3.5-9B ；GGUF — https://huggingface.co/unsloth/Qwen3.5-9B-GGUF
+- Tauri：网页中的下载在 macOS 上不生效 — https://github.com/tauri-apps/tauri/issues/4633
+- react-dropzone：Using with Tauri（`dragDropEnabled`）— https://react-dropzone.js.org/guide/tauri/
+- wry：`runOpenPanelWithParameters`（`setCanChooseDirectories`）— https://github.com/tauri-apps/wry/blob/dev/src/wkwebview/class/wry_web_view_ui_delegate.rs
+- platformdirs — https://pypi.org/project/platformdirs/
+- PyInstaller：Using Spec Files（datas、hiddenimports）— https://pyinstaller.org/en/stable/spec-files.html

@@ -118,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     p_watch = sub.add_parser(
-        "watch", help="监视一个文件夹，放进去的图片和 PDF 自动导入（Ctrl + C 停止）"
+        "watch", help="监视文件夹，放进去的图片和 PDF 自动导入（Ctrl + C 停止）"
     )
     p_watch.add_argument(
         "folder", type=Path, nargs="?", help="要监视的文件夹；不写就用 .env 里的 JACARA_WATCH_DIR"
@@ -1010,16 +1010,13 @@ def _infra_problems(settings: Settings) -> list[tuple[str, str]]:
 def _migration_behind() -> bool:
     """The database revision (alembic_version) differs from the latest migration; run alembic
     upgrade head."""
-    from alembic.config import Config
     from alembic.runtime.migration import MigrationContext
     from alembic.script import ScriptDirectory
 
     from jacara.core.db import get_engine
+    from jacara.core.migrate import alembic_config
 
-    ini = Path("alembic.ini")
-    if not ini.is_file():
-        return False  # Not run from the project root: skip this check.
-    heads = set(ScriptDirectory.from_config(Config(str(ini))).get_heads())
+    heads = set(ScriptDirectory.from_config(alembic_config()).get_heads())
     with get_engine().connect() as connection:
         current = set(MigrationContext.configure(connection).get_current_heads())
     return current != heads
@@ -1065,6 +1062,24 @@ def _backfill_ocr() -> int:
     return 0 if not failed else 1
 
 
+def _follow_launcher() -> None:
+    """When the desktop launcher started this process (JACARA_WATCH_STDIN=1): make its log useful
+    and exit as soon as the launcher is gone (its end of standard input closes)."""
+    import os
+
+    from jacara.desktop import WATCH_STDIN, on_stdin_closed
+
+    if os.environ.get(WATCH_STDIN) != "1":
+        return
+    _log_for_launcher()
+
+    def leave() -> None:
+        print("启动器已退出，随之退出", flush=True)
+        os._exit(0)
+
+    on_stdin_closed(leave)
+
+
 def _log_for_launcher() -> None:
     """Make the log file useful when the desktop launcher runs this process:
     - lines are written as they are printed (a file is otherwise block-buffered, and what is still
@@ -1086,22 +1101,11 @@ def _log_for_launcher() -> None:
 
 
 def _worker(stage: str = "all") -> int:
-    import os
-
-    from jacara.desktop import WATCH_STDIN, on_stdin_closed
     from jacara.worker import run_worker
 
-    if os.environ.get(WATCH_STDIN) == "1":
-        # Started by the desktop launcher, which writes standard output and error to a log file.
-        _log_for_launcher()
-
-        # Exit as soon as the launcher is gone. Documents in progress are marked as interrupted at
-        # the next start.
-        def leave() -> None:
-            print("启动器已退出，后台任务随之退出", flush=True)
-            os._exit(0)
-
-        on_stdin_closed(leave)
+    # Exit with the desktop launcher. Documents in progress are marked as interrupted at the next
+    # start.
+    _follow_launcher()
     names = {"all": "后台任务", "read": "后台任务（OCR 工位）", "extract": "后台任务（模型工位）"}
     print(f"{names[stage]}已启动，等待上传的文件（Ctrl + C 停止）")
     run_worker(stage)  # type: ignore[arg-type]
@@ -1109,11 +1113,14 @@ def _worker(stage: str = "all") -> int:
 
 
 def _watch(args: argparse.Namespace) -> int:
-    """Watch folder: images and PDFs added to the folder are imported automatically. Source files
-    are never modified or deleted."""
+    """Watch folders: images and PDFs added to them are imported automatically. Source files are
+    never modified or deleted. Without a folder argument, every folder of the settings is watched,
+    each with its own template."""
+    import time
+
     from sqlalchemy import select
 
-    from jacara.core.config import get_settings
+    from jacara.core.config import WatchFolder, get_settings
     from jacara.core.db import session_scope
     from jacara.core.owner import PERSONAL_OWNER
     from jacara.core.queue import create_queue
@@ -1123,14 +1130,16 @@ def _watch(args: argparse.Namespace) -> int:
     from jacara.pipeline.segment import SplitError, normalize_split
     from jacara.pipeline.watch import Watcher
 
+    _follow_launcher()
     settings = get_settings()
-    folder = args.folder or settings.jacara_watch_dir
-    if folder is None:
-        print("要监视哪个文件夹？写在命令后面，或者在 .env 里写 JACARA_WATCH_DIR=文件夹路径")
-        return 1
-    folder = folder.expanduser().resolve()
-    if not folder.is_dir():
-        print(f"找不到文件夹：{folder}")
+    if args.folder is not None:
+        folders = [
+            WatchFolder(path=args.folder, template=args.template or settings.jacara_watch_template)
+        ]
+    else:
+        folders = settings.watch_folders()
+    if not folders:
+        print("要监视哪个文件夹？写在命令后面，或者在设置页「识别和处理」中添加监视文件夹")
         return 1
     try:
         split = normalize_split(args.split)
@@ -1149,20 +1158,30 @@ def _watch(args: argparse.Namespace) -> int:
                 print(f"没有叫 {username} 的用户（或者已经停用）")
                 return 1
             owner = owner_of(user)
-    watcher = Watcher(
-        folder,
-        None,
-        get_storage(),
-        create_queue(),
-        owner,
-        template=args.template or settings.jacara_watch_template,
-        split=split,
-    )
-    print(f"监视文件夹：{folder}（放进去的图片和 PDF 会自动导入，不动原文件；Ctrl + C 停止）")
+    watchers: list[Watcher] = []
+    for folder in folders:
+        root = folder.path.expanduser().resolve()
+        if not root.is_dir():
+            print(f"找不到文件夹：{root}（跳过）")
+            continue
+        template = args.template if args.folder is None and args.template else folder.template
+        watchers.append(
+            Watcher(
+                root, None, get_storage(), create_queue(), owner, template=template, split=split
+            )
+        )
+        print(f"监视文件夹：{root}（模板 {template}）")
+    if not watchers:
+        return 1
+    print("放进去的图片和 PDF 会自动导入，不动原文件；Ctrl + C 停止")
     from contextlib import suppress
 
     with suppress(KeyboardInterrupt):
-        watcher.run()
+        while True:
+            for watcher in watchers:
+                for path, result in watcher.scan():
+                    print(f"{result}：{path.relative_to(watcher.root)}", flush=True)
+            time.sleep(5.0)
     return 0
 
 
@@ -1297,10 +1316,11 @@ def _start(args: argparse.Namespace) -> int:
         children.append(subprocess.Popen([*worker, "--stage", "extract"]))  # noqa: S603
     else:
         children.append(subprocess.Popen(worker))  # noqa: S603
-    if settings.jacara_watch_dir is not None:
-        # Watch folder: started only when JACARA_WATCH_DIR is set.
+    if settings.watch_folders():
+        # Watch folders: started only when some are set (settings page or JACARA_WATCH_DIR).
         children.append(subprocess.Popen([sys.executable, "-m", "jacara.cli", "watch"]))
-        print(f"监视文件夹：{settings.jacara_watch_dir}")
+        for folder in settings.watch_folders():
+            print(f"监视文件夹：{folder.path}")
 
     # Record our own and child process ids. jacara stop signals this process first and cleans up
     # children if it is gone.

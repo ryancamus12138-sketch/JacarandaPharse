@@ -38,8 +38,8 @@ function DetExportDialog({ open, onClose }: { open: boolean; onClose: () => void
   }
   const download = useMutation({
     mutationFn: () => downloadDetPages(kind),
-    onSuccess: ({ blob, filename }) => {
-      saveFile(blob, filename)
+    onSuccess: (file) => {
+      void saveFile(file)
       done()
     },
     onError: (err) => void message.error(errorText(err)),

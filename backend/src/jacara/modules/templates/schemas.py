@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from jacara.core.i18n import Rendered
 
@@ -163,7 +163,10 @@ class TemplateOut(BaseModel):
     rules: list[TemplateRuleOut]
     custom_rules: list[CustomRuleIO] = []
     domains: list[str] = []
-    """Domains: invoice, transport, receipt, … (several allowed)."""
+    """Domains: invoice, transport, receipt, … (several allowed). Known domains in their stored form
+    (Chinese key, see DOMAIN_NAMES) whatever language they were written in; others as written."""
+    domain_names: list[str] = []
+    """The domains in the interface language, in the same order (filled in automatically)."""
     countries: list[str] = []
     """Country or region code (CN, AU, …); empty means generic."""
     tags: list[str] = []
@@ -190,6 +193,27 @@ class TemplateOut(BaseModel):
     entities: list[EntityOut] = []
     references: list[ReferenceOut] = []
     workbook: WorkbookOut | None = None
+
+    @model_validator(mode="after")
+    def _domains_for_display(self) -> TemplateOut:
+        """Known domains in one stored form, and their names in the language of this request."""
+        from jacara.core.i18n import language
+        from jacara.templates import canonical_domain, domain_label
+
+        self.domains = list(dict.fromkeys(canonical_domain(d) for d in self.domains))
+        self.domain_names = [domain_label(d, language()) for d in self.domains]
+        if self.category:
+            self.category = canonical_domain(self.category)
+        return self
+
+
+class DomainOut(BaseModel):
+    """A known domain for the tag editor."""
+
+    value: str
+    """Stored form (Chinese name)."""
+    label: str
+    """Name in the interface language."""
 
 
 class RuleInfo(BaseModel):

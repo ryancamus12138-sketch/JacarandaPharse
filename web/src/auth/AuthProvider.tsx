@@ -5,6 +5,7 @@ import { ApiError, setUnauthorizedHandler } from '../api/client'
 import { clearToken, setToken } from '../api/token'
 import type { Me } from '../api/types'
 import { AuthContext, type AuthState } from './context'
+import { setDesktop } from '../desktop'
 import { useTranslation } from 'react-i18next'
 
 /**
@@ -96,7 +97,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
  */
 async function loadMe(): Promise<{ me: Me | null; error: ApiError | null }> {
   try {
-    return { me: await authApi.getMe(), error: null }
+    const me = await authApi.getMe()
+    setDesktop(me.desktop ?? false)
+    return { me, error: null }
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
       return { me: null, error: null }

@@ -17,7 +17,8 @@ from PIL import Image
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from jacara.core.i18n import language, stored, tr
+from jacara.core.advice import pick
+from jacara.core.i18n import N_, language, stored, tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import allowed, require
 from jacara.core.storage import ObjectStorage, StorageError
@@ -73,6 +74,15 @@ from jacara.plugins.extractors.base import split_cell_name
 from jacara.templates import Template
 
 log = logging.getLogger(__name__)
+
+TRAIN_STEP_4 = N_(
+    "4. 训练完成后导出推理模型并转换为 ONNX，在“模型和数据集”页导入（种类选择“OCR 文字识别”），"
+    "再在“设置 → 模型”中选择，执行 jacara stop 和 jacara start 后生效。"
+)
+TRAIN_STEP_4_DESKTOP = N_(
+    "4. 训练完成后导出推理模型并转换为 ONNX，在“模型和数据集”页导入（种类选择“OCR 文字识别”），"
+    "再在“设置 → 模型”中选择，重新启动 JacarandaParse 后生效。"
+)
 
 SETTING = "collect_ocr_samples"
 FORMAT_VERSION = 1
@@ -1446,11 +1456,7 @@ def _readme(
             "3. 使用与系统当前识别模型同系列的配置、字典和预训练权重进行"
             "微调；字典中不存在的字符在训练时会被跳过，建议事先检查。"
         ),
-        tr(
-            "4. 训练完成后导出推理模型并转换为 ONNX，在“模型和数据集”页导"
-            "入（种类选择“OCR 文字识别”），再在“设置 → 模型”中选择，执行 "
-            "jacara stop 和 jacara start 后生效。"
-        ),
+        tr(pick(TRAIN_STEP_4_DESKTOP, TRAIN_STEP_4)),
         "",
         tr(
             "反复依据验证集结果调整训练，会使结果逐渐过拟合验证集；正式验"

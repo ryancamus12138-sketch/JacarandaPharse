@@ -18,10 +18,11 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy.orm import Session
 
 from jacara.core import config
-from jacara.core.config import PAGE_EDITABLE, Settings, get_settings
+from jacara.core.config import PAGE_EDITABLE, Settings, WatchFolder, get_settings
 from jacara.core.i18n import N_, tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import allowed, require
+from jacara.desktop import RUNTIME
 from jacara.modules.app_settings.schemas import Option, SettingItem, SettingsIn, SettingsOut
 from jacara.modules.audit.service import record
 
@@ -39,6 +40,14 @@ class Spec:
     options: list[tuple[str, str]] = field(default_factory=list)
     min: int | None = None
     max: int | None = None
+    section: str = "processing"
+    """Settings page that shows it: processing (Recognition and processing) or data (Data and
+    backups)."""
+    desktop_only: bool = False
+    """Only meaningful in the desktop app (its launcher does the work)."""
+    live: bool = False
+    """Read again on every use by the process that serves the page (the desktop launcher's
+    automatic backup), so a change applies without restarting and does not ask for a restart."""
 
 
 SPECS: dict[str, Spec] = {
@@ -86,9 +95,17 @@ SPECS: dict[str, Spec] = {
     "jacara_learn_mode": Spec(
         N_("从人工修改中学习"),
         N_("示例选择方式"),
-        N_("整理后：仅保留模型导致的错误，合并重复项并去除过期项。切换前请先通过回放对比效果。"),
+        N_(
+            "决定把哪些历史修改给模型看。近期修改较多的：最常被改、最近改过的字段优先，"
+            "每个字段最多 2 条，共最多 8 条。整理后：只用模型自己造成的错误（OCR 认错的字不算），"
+            "同类错误合并计数；模板字段改过后，旧示例不再使用；同一开票方已有 3 份以上"
+            "审核过的单据时，优先用它自己的示例。"
+        ),
         "choice",
-        [("recent", N_("近期修改较多的（默认）")), ("curated", N_("整理后"))],
+        [
+            ("recent", N_("近期修改较多的（默认）")),
+            ("curated", N_("整理后（只用模型的错误）")),
+        ],
     ),
     "jacara_pipeline": Spec(
         N_("后台和导入"),
@@ -96,20 +113,14 @@ SPECS: dict[str, Spec] = {
         N_("OCR 与模型并行运行，批量导入更快；关闭可节省数百 MB 内存。"),
         "bool",
     ),
-    "jacara_watch_dir": Spec(
+    "jacara_watch_folders": Spec(
         N_("后台和导入"),
         N_("监视文件夹"),
         N_(
-            "放入的图片和 PDF 将自动导入，原文件保持不变，重复文件将跳过"
-            "。请填写完整路径；留空则不监视。"
+            "放入这些文件夹（含子文件夹）的图片和 PDF 将自动导入，原文件保持不变，重复文件将跳过。"
+            "每个文件夹可以使用不同的模板。"
         ),
-        "path",
-    ),
-    "jacara_watch_template": Spec(
-        N_("后台和导入"),
-        N_("监视文件夹使用的模板"),
-        N_("我的模板的 id；留空则使用上次上传时选择的模板。"),
-        "text",
+        "watch_folders",
     ),
     "max_upload_mb": Spec(
         N_("后台和导入"),
@@ -119,6 +130,29 @@ SPECS: dict[str, Spec] = {
         min=1,
         max=500,
     ),
+    "jacara_auto_backup": Spec(
+        N_("自动备份"),
+        N_("每天自动备份数据库"),
+        N_(
+            "每天把数据库备份到数据文件夹的 backups/auto/。只含数据库，不含上传的文件；"
+            "需要完整保护时，请定期用「立即备份」存到另一块磁盘。"
+        ),
+        "bool",
+        section="data",
+        desktop_only=True,
+        live=True,
+    ),
+    "jacara_auto_backup_keep": Spec(
+        N_("自动备份"),
+        N_("保留的自动备份份数"),
+        N_("超过这个数目时，删除最早的自动备份。"),
+        "int",
+        min=1,
+        max=365,
+        section="data",
+        desktop_only=True,
+        live=True,
+    ),
     "jacara_api_docs": Spec(
         N_("安全"),
         N_("启用接口文档页 /docs"),
@@ -126,7 +160,10 @@ SPECS: dict[str, Spec] = {
         "bool",
     ),
 }
-if set(SPECS) != set(PAGE_EDITABLE):  # Both sides must change together.
+LEGACY = frozenset({"jacara_watch_dir", "jacara_watch_template"})
+"""Read from the page file as saved before there could be several watch folders; shown and saved as
+jacara_watch_folders (they are dropped from the file when the list is saved)."""
+if set(SPECS) | LEGACY != set(PAGE_EDITABLE):  # Both sides must change together.
     raise RuntimeError("SPECS and config.PAGE_EDITABLE list different settings")
 
 
@@ -144,7 +181,7 @@ def env_locked() -> set[str]:
 
     names = {k.upper() for k in os.environ}
     env_file = Settings.model_config.get("env_file")
-    if isinstance(env_file, str | Path) and Path(env_file).is_file():
+    if config.reads_env_file() and isinstance(env_file, str | Path) and Path(env_file).is_file():
         names |= {k.upper() for k in dotenv_values(env_file)}
     return {key for key in PAGE_EDITABLE if key.upper() in names}
 
@@ -183,7 +220,46 @@ def _check(key: str, value: Any) -> Any:
         return str(path)
     if spec.kind == "text":
         return str(checked).strip() or None
+    if spec.kind == "watch_folders":
+        return _check_watch_folders(spec, checked or [])
     return checked
+
+
+def _check_watch_folders(spec: Spec, folders: list[WatchFolder]) -> list[dict[str, str]]:
+    """Each folder exists and is given by its full path; no folder twice or inside another (its
+    files would be watched twice)."""
+    paths: list[Path] = []
+    for folder in folders:
+        path = folder.path.expanduser()
+        if not path.is_absolute() or not path.is_dir():
+            raise SettingsError(
+                "invalid",
+                tr(
+                    "{label}：找不到文件夹 {folder}，需填写已存在文件夹的完整路径",
+                    label=tr(spec.label),
+                    folder=folder.path,
+                ),
+            )
+        resolved = path.resolve()
+        for other in paths:
+            if (
+                resolved == other
+                or resolved.is_relative_to(other)
+                or other.is_relative_to(resolved)
+            ):
+                raise SettingsError(
+                    "invalid",
+                    tr(
+                        "{label}：{folder} 与另一个监视文件夹重复或互相包含",
+                        label=tr(spec.label),
+                        folder=folder.path,
+                    ),
+                )
+        paths.append(resolved)
+    return [
+        {"path": str(f.path.expanduser()), "template": f.template.strip() or "auto"}
+        for f in folders
+    ]
 
 
 class AppSettingsService:
@@ -198,8 +274,23 @@ class AppSettingsService:
         saved = config.page_settings()
         items = []
         for key, spec in SPECS.items():
+            if effective.jacara_desktop and key.upper() in RUNTIME:
+                continue  # Fixed by the desktop app; nothing to choose.
+            if spec.desktop_only and not effective.jacara_desktop:
+                continue
             value = getattr(effective, key)
             default = Settings.model_fields[key].default
+            source = "env" if key in locked else "page" if key in saved else "default"
+            if spec.kind == "watch_folders":
+                # Includes the single folder of JACARA_WATCH_DIR (.env, or the page before there
+                # were several).
+                value = [
+                    {"path": str(f.path), "template": f.template} for f in effective.watch_folders()
+                ]
+                if LEGACY & set(saved):
+                    source = "page"
+                if "jacara_watch_dir" in locked:
+                    source = "env"
             items.append(
                 SettingItem(
                     key=key,
@@ -209,8 +300,10 @@ class AppSettingsService:
                     kind=spec.kind,  # type: ignore[arg-type]
                     value=str(value) if isinstance(value, Path) else value,
                     default=str(default) if isinstance(default, Path) else default,
-                    source="env" if key in locked else "page" if key in saved else "default",
+                    source=source,  # type: ignore[arg-type]
                     env=key.upper(),
+                    section=spec.section,  # type: ignore[arg-type]
+                    live=spec.live,
                     options=[Option(value=v, label=tr(label)) for v, label in spec.options],
                     min=spec.min,
                     max=spec.max,
@@ -221,6 +314,18 @@ class AppSettingsService:
             can_change="system:manage" in allowed(self.owner),
             restart_needed=_saved_at() > STARTED,
         )
+
+    def _check_template(self, key: str, value: str) -> None:
+        """A template setting takes the values of the upload page: auto, discover, or one of my
+        templates that is not archived."""
+        from jacara.modules.templates.service import TemplateFailure, TemplateService
+
+        try:
+            TemplateService(self.owner, self.session).pick_for_upload(value)
+        except TemplateFailure as err:
+            raise SettingsError(
+                "invalid", tr("{label}：{reason}", label=tr(SPECS[key].label), reason=err.message)
+            ) from err
 
     def update(self, data: SettingsIn) -> SettingsOut:
         require(self.owner, "system:manage")
@@ -244,12 +349,25 @@ class AppSettingsService:
                 changed[key] = None
             else:
                 saved[key] = changed[key] = _check(key, value)
+                if SPECS[key].kind == "template":
+                    self._check_template(key, changed[key])
+                if SPECS[key].kind == "watch_folders":
+                    for folder in changed[key]:
+                        self._check_template(key, folder["template"])
+            if SPECS[key].kind == "watch_folders":
+                # The list replaces the single folder kept from before.
+                for legacy in LEGACY:
+                    if saved.pop(legacy, None) is not None:
+                        changed[legacy] = None
         if not changed:
             return self.get()
         path = config.page_settings_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
-        body = {**saved, "_saved_at": time.time(), "_saved": datetime.now(UTC).isoformat()}
+        # Only changes that the background services read at start ask for a restart.
+        needs_restart = any(not SPECS[k].live for k in changed if k in SPECS)
+        saved_at = time.time() if needs_restart else _saved_at()
+        body = {**saved, "_saved_at": saved_at, "_saved": datetime.now(UTC).isoformat()}
         tmp.write_text(json.dumps(body, ensure_ascii=False, indent=2), "utf-8")
         # Write to a temporary file and rename, so that a power loss never leaves a partially
         # written file.

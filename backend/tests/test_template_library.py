@@ -597,3 +597,28 @@ def test_my_templates_rules_follow_fields_and_countries(client, mine):
         },
     ).json()
     assert general["countries"] == [] and general["rules"] == []
+
+
+def test_domains_are_shown_in_the_interface_language(client, mine):
+    """Known domains are stored under one name whatever language they were typed in, and shown in
+    the language of whoever looks; free-text domains stay as written."""
+    english = {"Accept-Language": "en"}
+    labelled = client.patch(
+        f"/api/v1/templates/{mine}/labels",
+        json={"domains": ["Lodging", "lodging", "住宿", "Receipt", "出差报销"]},
+    ).json()
+    assert labelled["domains"] == ["住宿", "收据", "出差报销"]
+    assert labelled["domain_names"] == ["住宿", "收据", "出差报销"]
+    seen = client.get(f"/api/v1/templates/{mine}", headers=english).json()
+    assert seen["domains"] == ["住宿", "收据", "出差报销"]
+    assert seen["domain_names"] == ["Lodging", "Receipt", "出差报销"]
+    listed = {t["id"]: t for t in client.get("/api/v1/templates", headers=english).json()}
+    assert listed[mine]["domain_names"][0] == "Lodging"
+    # The starter library is shown in the interface language too, with the same stored names.
+    starters = client.get("/api/v1/templates/starters", headers=english).json()
+    receipt = next(s for s in starters if "收据" in s["domains"])
+    assert "Receipt" in receipt["domain_names"]
+    domains = client.get("/api/v1/templates/domains", headers=english).json()
+    assert {"value": "住宿", "label": "Lodging"} in domains
+    assert {"value": "其他", "label": "Other"} in domains
+    assert client.get("/api/v1/templates/domains").json()[0]["label"] == "发票"

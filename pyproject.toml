@@ -22,6 +22,7 @@ dependencies = [
     "openpyxl>=3.1.5",
     "pdfplumber>=0.11.10",
     "pillow>=13.0.0",
+    "platformdirs>=4.14.2",
     "psycopg[binary]>=3.3.8",
     "pydantic-settings>=2.16.2",
     "pypdfium2>=5.14.0",
@@ -47,6 +48,10 @@ dev = [
     "pre-commit>=4.3",
     "pytest>=9.2.0",
     "babel>=2.17",
+]
+# Packaging the desktop app's backend: uv run --group desktop pyinstaller packaging/desktop/jacara.spec
+desktop = [
+    "pyinstaller>=6.22.3",
 ]
 
 [tool.uv]

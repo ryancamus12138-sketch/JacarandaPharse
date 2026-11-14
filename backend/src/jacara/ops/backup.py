@@ -34,6 +34,8 @@ from typing import IO, Any, Protocol
 from sqlalchemy import MetaData, Table, func, select
 from sqlalchemy.engine import Connection, Engine
 
+from jacara.core.i18n import stored, tr
+
 FORMAT = "jacarandaparse.backup.v1"
 VERSION_TABLE = "alembic_version"
 CHUNK = 500
@@ -107,6 +109,10 @@ class Manifest:
     revision: str | None
     tables: dict[str, int] = field(default_factory=dict)
     objects: dict[str, dict[str, Any]] = field(default_factory=dict)
+    extras: dict[str, dict[str, Any]] = field(default_factory=dict)
+    """Files outside the database and storage (desktop app: settings, model files), by their name
+    in the archive under extra/: {"sha256": ..., "size": ...}. Optional; older archives have none
+    and older programs ignore them."""
     format: str = FORMAT
 
     def to_json(self) -> bytes:
@@ -116,13 +122,14 @@ class Manifest:
     def from_json(cls, data: bytes) -> Manifest:
         raw = json.loads(data.decode("utf-8"))
         if raw.get("format") != FORMAT:
-            raise BackupError(f"不认识这个备份包的格式：{raw.get('format')}")
+            raise BackupError(tr("不认识这个备份包的格式：{format}", format=raw.get("format")))
         return cls(
             created_at=raw["created_at"],
             jacara_version=raw["jacara_version"],
             revision=raw.get("revision"),
             tables=dict(raw["tables"]),
             objects=dict(raw["objects"]),
+            extras=dict(raw.get("extras") or {}),
         )
 
 
@@ -157,20 +164,43 @@ def _rows(conn: Connection, table: Table) -> Iterator[bytes]:
         yield json.dumps(line, ensure_ascii=False).encode("utf-8") + b"\n"
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def unique_name(folder: Path, stem: str, suffix: str) -> Path:
+    """folder/stem+suffix, or stem-2, stem-3 ... when that name is taken (two backups within the
+    same second must not replace each other)."""
+    path = folder / f"{stem}{suffix}"
+    n = 1
+    while path.exists() or path.with_name(path.name + ".partial").exists():
+        n += 1
+        path = folder / f"{stem}-{n}{suffix}"
+    return path
+
+
 def backup(
     engine: Engine,
     storage: FileStore,
     out_dir: Path,
     version: str,
     progress: Callable[[str], None] = lambda _: None,
+    extras: Iterable[tuple[str, Path]] = (),
 ) -> Path:
-    """Back up to out_dir/jacara-<timestamp>.tar and return the path.
+    """Back up to out_dir/jacara-<timestamp>.tar and return the path. progress receives stored
+    messages (jacara.core.i18n.stored).
+
+        extras: (name, file) pairs stored as extra/<name> with their sha256 in the manifest; large
+    files (models) are streamed, not read into memory.
 
         Written as .partial and renamed when complete, so a truncated archive is never mistaken
     for a valid one."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    final = out_dir / f"jacara-{stamp}.tar"
+    final = unique_name(out_dir, "jacara-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S"), ".tar")
     partial = final.with_suffix(".tar.partial")
     # PostgreSQL: the whole backup reads from one snapshot, so tables stay consistent even if others
     # write meanwhile.
@@ -185,7 +215,9 @@ def backup(
             data = b"".join(_rows(conn, table))
             manifest.tables[table.name] = data.count(b"\n")
             _add(tar, f"db/{table.name}.jsonl", data)
-            progress(f"表 {table.name}：{manifest.tables[table.name]} 行")
+            progress(
+                stored("表 {table}：{rows} 行", table=table.name, rows=manifest.tables[table.name])
+            )
         keys = sorted(storage.keys())
         for n, key in enumerate(keys, start=1):
             data = storage.get(key)
@@ -196,7 +228,11 @@ def backup(
             }
             _add(tar, f"objects/{key}", data)
             if n % 200 == 0 or n == len(keys):
-                progress(f"文件 {n}/{len(keys)}")
+                progress(stored("文件 {n}/{total}", n=n, total=len(keys)))
+        for name, path in extras:
+            manifest.extras[name] = {"sha256": _sha256(path), "size": path.stat().st_size}
+            tar.add(path, arcname=f"extra/{name}", recursive=False)
+            progress(stored("附加文件 {name}", name=name))
         _add(tar, "manifest.json", manifest.to_json())
     partial.rename(final)
     return final
@@ -209,7 +245,7 @@ def read_manifest(archive: Path) -> Manifest:
     with tarfile.open(archive, "r") as tar:
         member = tar.extractfile("manifest.json")
         if member is None:
-            raise BackupError("备份包里没有 manifest.json")
+            raise BackupError(tr("备份包里没有 manifest.json"))
         return Manifest.from_json(member.read())
 
 
@@ -217,11 +253,11 @@ def check_archive(archive: Path) -> Manifest:
     """Verify before restoring: every table file present with the right row count; every object
     present with the right sha256. Raises otherwise."""
     if not archive.exists():
-        raise BackupError(f"找不到备份包：{archive}")
+        raise BackupError(tr("找不到备份包：{archive}", archive=archive))
     try:
         manifest = read_manifest(archive)
     except (tarfile.TarError, KeyError) as err:
-        raise BackupError(f"备份包打不开或不完整：{err}") from err
+        raise BackupError(tr("备份包打不开或不完整：{err}", err=err)) from err
     problems: list[str] = []
     with tarfile.open(archive, "r") as tar:
         names = set(tar.getnames())
@@ -229,19 +265,31 @@ def check_archive(archive: Path) -> Manifest:
             name = f"db/{table}.jsonl"
             member = tar.extractfile(name) if name in names else None
             if member is None:
-                problems.append(f"少了表 {table}")
+                problems.append(tr("少了表 {table}", table=table))
             elif member.read().count(b"\n") != rows:
-                problems.append(f"表 {table} 行数不对")
+                problems.append(tr("表 {table} 行数不对", table=table))
         for key, info in manifest.objects.items():
             name = f"objects/{key}"
             member = tar.extractfile(name) if name in names else None
             if member is None:
-                problems.append(f"少了文件 {key}")
+                problems.append(tr("少了文件 {key}", key=key))
             elif hashlib.sha256(member.read()).hexdigest() != info["sha256"]:
-                problems.append(f"文件 {key} 内容和备份时不一样")
+                problems.append(tr("文件 {key} 内容和备份时不一样", key=key))
+        for name, info in manifest.extras.items():
+            member = tar.extractfile(f"extra/{name}") if f"extra/{name}" in names else None
+            if member is None:
+                problems.append(tr("少了附加文件 {name}", name=name))
+                continue
+            digest = hashlib.sha256()
+            for block in iter(lambda m=member: m.read(1 << 20), b""):
+                digest.update(block)
+            if digest.hexdigest() != info["sha256"]:
+                problems.append(tr("附加文件 {name} 内容和备份时不一样", name=name))
     if problems:
-        shown = "；".join(problems[:5]) + (f"……共 {len(problems)} 处" if len(problems) > 5 else "")
-        raise BackupError(f"备份包有问题，没有恢复：{shown}")
+        shown = tr("；").join(problems[:5]) + (
+            tr("……共 {count} 处", count=len(problems)) if len(problems) > 5 else ""
+        )
+        raise BackupError(tr("备份包有问题，没有恢复：{shown}", shown=shown))
     return manifest
 
 
@@ -251,7 +299,7 @@ def check_archive(archive: Path) -> Manifest:
 def _member(tar: tarfile.TarFile, name: str) -> IO[bytes]:
     member = tar.extractfile(name)
     if member is None:
-        raise BackupError(f"备份包里少了 {name}")
+        raise BackupError(tr("备份包里少了 {name}", name=name))
     return member
 
 
@@ -259,9 +307,9 @@ def is_empty(conn: Connection, storage: FileStore) -> tuple[bool, str]:
     """Whether the restore target is empty: no rows in any table and no objects in storage."""
     for table in _tables(conn):
         if conn.execute(select(func.count()).select_from(table)).scalar():
-            return False, f"数据库里已经有数据（表 {table.name}）"
+            return False, tr("数据库里已经有数据（表 {table}）", table=table.name)
     if next(iter(storage.keys()), None) is not None:
-        return False, "对象存储里已经有文件"
+        return False, tr("文件存储里已经有文件")
     return True, ""
 
 
@@ -281,14 +329,17 @@ def restore(
     with engine.connect() as conn:
         empty, reason = is_empty(conn, storage)
     if not empty:
-        raise BackupError(f"只能恢复到空的环境：{reason}")
+        raise BackupError(tr("只能恢复到空的环境：{reason}", reason=reason))
     migrate(manifest.revision)
     with engine.begin() as conn, tarfile.open(archive, "r") as tar:
         tables = {t.name: t for t in _tables(conn)}
         missing = [name for name in manifest.tables if name not in tables]
         if missing:
             raise BackupError(
-                f"数据库里没有这几张表：{'、'.join(missing)}（数据库版本和备份时不一样）"
+                tr(
+                    "数据库里没有这几张表：{tables}（数据库版本和备份时不一样）",
+                    tables=tr("、").join(missing),
+                )
             )
         for name, table in tables.items():
             if name not in manifest.tables:
@@ -303,11 +354,18 @@ def restore(
                     batch = []
             if batch:
                 conn.execute(table.insert(), batch)
-            progress(f"表 {name}：{manifest.tables[name]} 行")
+            progress(stored("表 {table}：{rows} 行", table=name, rows=manifest.tables[name]))
         for name, rows in manifest.tables.items():
             got = conn.execute(select(func.count()).select_from(tables[name])).scalar()
             if got != rows:
-                raise BackupError(f"表 {name} 恢复后是 {got} 行，备份里是 {rows} 行")
+                raise BackupError(
+                    tr(
+                        "表 {name} 恢复后是 {got} 行，备份里是 {rows} 行",
+                        name=name,
+                        got=got,
+                        rows=rows,
+                    )
+                )
     keys = list(manifest.objects)
     with tarfile.open(archive, "r") as tar:
         for n, key in enumerate(keys, start=1):
@@ -315,5 +373,5 @@ def restore(
             kind = manifest.objects[key].get("content_type") or "application/octet-stream"
             storage.put(key, data, kind)
             if n % 200 == 0 or n == len(keys):
-                progress(f"文件 {n}/{len(keys)}")
+                progress(stored("文件 {n}/{total}", n=n, total=len(keys)))
     return manifest

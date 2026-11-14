@@ -197,3 +197,16 @@ def test_server_queue_stays_celery(monkeypatch):
     monkeypatch.delenv("JACARA_QUEUE", raising=False)
     get_settings.cache_clear()
     assert isinstance(queue.create_queue(), queue.CeleryQueue)
+
+
+def test_migrations_do_not_depend_on_the_current_folder(home, tmp_path, monkeypatch):
+    """The packaged app starts in any folder: the migrations ship inside the package."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    url = Settings().database_url
+    migrate_to(url, None)
+    engine = create_db_engine(url)
+    with engine.connect() as conn:
+        assert MigrationContext.configure(conn).get_current_revision() is not None
+    engine.dispose()

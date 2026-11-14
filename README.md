@@ -83,7 +83,8 @@ uv run jacara doctor         # 检查 .env、网页和各项服务
 系统信息页能看到模型能不能看图。
 
 批量导入（ADR 0036）：文档页可以一次拖进几百个文件，或者“选择整个文件夹”，列表按文件夹筛选。
-要自动导入一个文件夹，在 `.env` 里写 `JACARA_WATCH_DIR=文件夹路径`，`jacara start` 会一起启动；
+要自动导入文件夹，在「设置 → 识别和处理 → 监视文件夹」里添加（可以设多个，每个单独选模板），
+或在 `.env` 里写 `JACARA_WATCH_FOLDERS`（格式见 `.env.example`），`jacara start` 会一起启动；
 放进去的图片和 PDF 自动导入，不动、不删原文件，内容一样的只导入一次。
 也可以单独运行 `uv run jacara watch 文件夹路径`。
 
@@ -255,7 +256,7 @@ cd web && npm run lint && npm run build
 | `backend/src/jacara/worker.py` | 后台任务入口 |
 | `backend/src/jacara/eval/` | 评测（开发用） |
 | `backend/src/jacara/templates/` | 模板：每种单据抽哪些字段、查哪些规则（.toml） |
-| `backend/migrations/` | 数据库迁移 |
+| `backend/src/jacara/migrations/` | 数据库迁移 |
 | `backend/tests/` | 自动测试 |
 | `web/` | 前端（React + TypeScript），见 [web/README.md](web/README.md) |
 | `deploy/` | 部署 |

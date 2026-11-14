@@ -39,7 +39,13 @@ def personal_mode(monkeypatch, tmp_path):
     from jacara.core import config
 
     monkeypatch.setenv("JACARA_MODE", "personal")
-    for name in ("JACARA_HOME", "JACARA_DATABASE", "JACARA_STORAGE", "JACARA_QUEUE"):
+    for name in (
+        "JACARA_HOME",
+        "JACARA_DATABASE",
+        "JACARA_STORAGE",
+        "JACARA_QUEUE",
+        "JACARA_DESKTOP",
+    ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(config, "page_settings_path", lambda: tmp_path / "page-settings.json")
     get_settings.cache_clear()

@@ -30,7 +30,7 @@ def png(width: int, height: int, color: str = "red", fmt: str = "PNG") -> bytes:
 def test_personal_profile_name_and_avatar(client, storage):
     profile = client.get("/api/v1/auth/profile").json()
     assert profile["mode"] == "personal"
-    assert profile["shown_name"] == "本机用户"
+    assert profile["shown_name"] == "我"
     assert profile["avatar_at"] is None
     assert client.get("/api/v1/auth/profile/avatar").status_code == 404
 
@@ -216,7 +216,7 @@ def test_comments(client, docs, factory):  # noqa: F811
     assert no_page.status_code == 422
     past_end = client.post(url, json={"body": "x", "field_name": "total", "page": 9})
     assert "仅有 1 页" in past_end.json()["detail"]
-    assert on_field["author"] == "本机用户"
+    assert on_field["author"] == "我"
     assert on_field["mine"] is True
     assert client.post(url, json={"body": "   "}).status_code == 422
 
@@ -229,7 +229,7 @@ def test_comments(client, docs, factory):  # noqa: F811
 
     resolved = client.post(f"/api/v1/comments/{on_field['id']}/resolve").json()
     assert resolved["resolved_at"] is not None
-    assert resolved["resolved_by"] == "本机用户"
+    assert resolved["resolved_by"] == "我"
     item = next(d for d in client.get("/api/v1/documents").json()["items"] if d["id"] == str(a))
     assert item["open_comments"] == 1
     reopened = client.post(f"/api/v1/comments/{on_field['id']}/reopen").json()

@@ -23,6 +23,7 @@ from jacara.models import AuthSession, PasswordResetCode, Profile, User
 from jacara.modules.audit.service import record
 from jacara.modules.auth.repository import AuthRepository
 from jacara.modules.auth.schemas import (
+    PERSONAL_NAME,
     CodeReset,
     LoginOut,
     MeOut,
@@ -122,9 +123,10 @@ class AuthService:
         profile = self.session.get(Profile, owner.user_id)
         avatar_at = profile.avatar_at if profile else None
         if settings.jacara_mode == "personal":
-            name = (profile.display_name if profile else None) or tr("本机用户")
+            name = (profile.display_name if profile else None) or tr(PERSONAL_NAME)
             return MeOut(
                 mode="personal",
+                desktop=settings.jacara_desktop,
                 role=PERSONAL_OWNER.role,
                 permissions=can,
                 user=None,
@@ -134,6 +136,7 @@ class AuthService:
         user = self.repo.user(owner.user_id, owner.team_id)
         return MeOut(
             mode="team",
+            desktop=settings.jacara_desktop,
             role=owner.role,
             permissions=can,
             user=UserOut.model_validate(user) if user else None,

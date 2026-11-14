@@ -236,8 +236,9 @@ def test_delete_documents_one_and_many(client, factory, storage, receipt_page):
         session.get_one(Document, uuid.UUID(ids[1])).status = "processing"
     assert len(storage.files) == 2  # The snapshot is deleted too.
 
+    # A document being processed is deleted too (its worker gives it up, see test_stop_processing).
     many = client.post("/api/v1/documents/delete", json={"ids": ids[1:]}).json()
-    assert many["deleted"] == 1 and "正在处理" in many["skipped"][0]
-    assert client.get("/api/v1/documents").json()["total"] == 1
+    assert many == {"deleted": 2, "skipped": []}
+    assert client.get("/api/v1/documents").json()["total"] == 0
     actions = [x["action"] for x in client.get("/api/v1/audit-logs").json()["items"]]
-    assert actions.count("document:delete") == 2
+    assert actions.count("document:delete") == 3

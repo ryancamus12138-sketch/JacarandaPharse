@@ -132,7 +132,7 @@ def test_restore_only_into_an_empty_environment(factory, storage, filled, tmp_pa
         restore(archive, factory.kw["bind"], storage, lambda revision: None)
     engine, _, target = empty()
     target.put("something", b"x", "text/plain")
-    with raises(BackupError, "对象存储里已经有文件"):
+    with raises(BackupError, "文件存储里已经有文件"):
         restore(archive, engine, target, lambda revision: None)
 
 

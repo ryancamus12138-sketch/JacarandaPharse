@@ -64,3 +64,42 @@ def test_env_wins(client, models, monkeypatch):
     client.put("/api/v1/models", json={"model": "models/B-Q8.gguf"})
     found = slots(client)
     assert found["model"]["source"] == "env" and found["model"]["current"] == "models/A-Q4.gguf"
+
+
+def test_a_model_file_that_is_a_link_shows_as_its_list_entry(client, tmp_path, monkeypatch):
+    # The model was downloaded elsewhere and linked into models/ (as when one copy of a 5 GB file
+    # serves two data folders): the current file must still match its entry in the list.
+    home = tmp_path / "home"
+    (home / "models").mkdir(parents=True)
+    elsewhere = tmp_path / "downloads"
+    elsewhere.mkdir()
+    for name in ("Q-Q4.gguf", "mmproj-F16.gguf"):
+        (elsewhere / name).write_bytes(b"x")
+        (home / "models" / name).symlink_to(elsewhere / name)
+    monkeypatch.setattr(config, "PROJECT_ROOT", home)
+    monkeypatch.setattr(service, "model_props", lambda _s: {})
+    found = slots(client)
+    for key in ("model", "mmproj"):
+        assert found[key]["current"] in [f["path"] for f in found[key]["files"]]
+    assert found["model"]["current"] == "models/Q-Q4.gguf"
+
+
+def test_the_table_model_shipped_with_the_program_is_used(client, tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / "models").mkdir(parents=True)
+    program = tmp_path / "program"
+    (program / "models" / "table").mkdir(parents=True)
+    shipped = program / "models" / "table" / "slanet-plus.onnx"
+    shipped.write_bytes(b"x")
+    monkeypatch.setattr(config, "PROJECT_ROOT", home)
+    monkeypatch.setattr(config, "resource_dir", lambda: program)
+    monkeypatch.setattr(service, "model_props", lambda _s: {})
+    assert config.get_settings().table_model() == shipped
+    table = slots(client)["table"]
+    assert table["source"] == "bundled"
+    assert table["current"] in [f["path"] for f in table["files"]]
+    # The user's own copy in the data folder takes precedence.
+    (home / "models" / "table").mkdir()
+    (home / "models" / "table" / "slanet-plus.onnx").write_bytes(b"y")
+    table = slots(client)["table"]
+    assert table["source"] == "auto" and table["current"] == "models/table/slanet-plus.onnx"

@@ -18,7 +18,6 @@ STAGE="$OUT/$NAME"
 # Committed files that make up the runtime distribution.
 INCLUDE=(
   backend/src
-  backend/migrations
   alembic.ini
   compose.yaml
   pyproject.toml

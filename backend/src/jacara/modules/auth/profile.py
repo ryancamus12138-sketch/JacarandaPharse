@@ -17,13 +17,13 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from jacara.core.config import get_settings
-from jacara.core.i18n import N_, tr
+from jacara.core.i18n import tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import GRANTABLE, allowed
 from jacara.core.storage import ObjectStorage
 from jacara.models import Profile, Team, User
 from jacara.modules.audit.service import record
-from jacara.modules.auth.schemas import ProfileOut, ProfileUpdate
+from jacara.modules.auth.schemas import PERSONAL_NAME, ProfileOut, ProfileUpdate
 from jacara.modules.auth.service import AuthError
 
 AVATAR_SIZE = 256
@@ -31,7 +31,6 @@ AVATAR_SIZE = 256
 AVATAR_MAX_BYTES = 5 * 1024 * 1024
 """Maximum uploaded avatar size: 5 MB."""
 AVATAR_FORMATS = {"PNG", "JPEG", "WEBP"}
-PERSONAL_NAME = N_("本机用户")
 
 
 def avatar_key(owner: Owner) -> str:

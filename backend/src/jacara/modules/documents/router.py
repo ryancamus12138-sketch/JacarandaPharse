@@ -43,6 +43,8 @@ from jacara.modules.documents.schemas import (
     ReviewTimeIn,
     SentText,
     SkipIn,
+    StopManyIn,
+    StopManyOut,
 )
 from jacara.modules.documents.service import DocumentError, DocumentService, day_start
 from jacara.modules.fields.schemas import AdoptOut
@@ -196,8 +198,8 @@ def list_documents(
 
 @router.delete("/{document_id}", summary="删除一份文档")
 def delete_document(document_id: uuid.UUID, service: Service) -> DeleteOut:
-    """Delete the original file, results, review records and comments permanently. Documents being
-    processed are not deleted."""
+    """Delete the original file, results, review records and comments permanently. A queued or
+    running document is deleted too; its processing stops and writes nothing."""
     try:
         return service.delete([document_id])
     except DocumentError as err:
@@ -206,10 +208,29 @@ def delete_document(document_id: uuid.UUID, service: Service) -> DeleteOut:
 
 @router.post("/delete", summary="一次删除几份文档")
 def delete_documents(data: DeleteIn, service: Service) -> DeleteOut:
-    """Delete the selected documents. Documents being processed are skipped and listed in
-    skipped."""
+    """Delete the selected documents, queued and running ones included (their processing stops
+    and writes nothing)."""
     try:
         return service.delete(data.ids)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/stop", summary="一次停止几份")
+def stop_documents(data: StopManyIn, service: Service) -> StopManyOut:
+    """Stop the selected queued or running documents; they become failed and can be reprocessed.
+    Documents with nothing in progress are listed in skipped."""
+    try:
+        return service.stop_many(data.ids)
+    except DocumentError as err:
+        raise _http_error(err) from err
+
+
+@router.post("/stop-all", summary="全部停止")
+def stop_all_documents(service: Service) -> StopManyOut:
+    """Stop every queued and running document; they become failed and can be reprocessed."""
+    try:
+        return service.stop_all()
     except DocumentError as err:
         raise _http_error(err) from err
 
@@ -219,7 +240,7 @@ def reprocess_documents(data: ReprocessManyIn, service: Service) -> ReprocessMan
     """Reprocess the selected documents with the same settings (template, document split, vision,
     PDF read mode, reason). Omitted settings: each document's latest template version, the
     previous split, and system defaults for vision and PDF read mode. Documents being processed
-    or still queued are skipped and listed in skipped."""
+    or still queued are restarted."""
     try:
         return service.reprocess_many(data)
     except DocumentError as err:

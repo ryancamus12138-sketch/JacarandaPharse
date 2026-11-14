@@ -6,7 +6,9 @@ import { Link } from 'react-router'
 import { ApiError } from '../../api/client'
 import { chooseModels, getModels, type ModelSlot } from '../../api/models'
 import { useAuth } from '../../auth/useAuth'
+import { useDesktop } from '../../desktop'
 import { formatBytes } from '../../utils/format'
+import { RestartServicesButton } from './RestartServicesButton'
 import { useTranslation } from 'react-i18next'
 import { t } from '../../i18n'
 
@@ -15,6 +17,7 @@ const SOURCE: Record<ModelSlot['source'], { text: string; color: string }> = {
   choice: { get text() { return t('网页设置') }, color: 'purple' },
   auto: { get text() { return t('自动检测') }, color: 'default' },
   builtin: { get text() { return t('RapidOCR 内置') }, color: 'default' },
+  bundled: { get text() { return t('随程序附带') }, color: 'default' },
   none: { get text() { return t('无') }, color: 'warning' },
 }
 
@@ -36,6 +39,7 @@ export function ModelsCard() {
   const { t } = useTranslation()
   const { message } = App.useApp()
   const { can } = useAuth()
+  const desktop = useDesktop()
   const queryClient = useQueryClient()
   const models = useQuery({ queryKey: ['models'], queryFn: getModels })
   const [draft, setDraft] = useState<Partial<Record<ModelSlot['key'], string>>>({})
@@ -44,7 +48,7 @@ export function ModelsCard() {
     onSuccess: (data) => {
       queryClient.setQueryData(['models'], data)
       setDraft({})
-      void message.success(t('已保存。在终端中执行 jacara stop 和 jacara start 后生效'))
+      void message.success(desktop ? t('已保存。点击“重新启动后台”后生效') : t('已保存。在终端中执行 jacara stop 和 jacara start 后生效'))
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
@@ -83,8 +87,11 @@ export function ModelsCard() {
       title: t('来源'),
       width: 130,
       render: (_, s) => (
-        <Tag color={SOURCE[s.source].color} title={s.source === 'env' ? t('在 .env 中修改 {{env}}', { env: s.env }) : undefined}>
-          {SOURCE[s.source].text}
+        <Tag
+          color={SOURCE[s.source].color}
+          title={s.source === 'env' && !desktop ? t('在 .env 中修改 {{env}}', { env: s.env }) : undefined}
+        >
+          {s.source === 'env' && desktop ? t('由启动参数指定') : SOURCE[s.source].text}
         </Tag>
       ),
     },
@@ -96,9 +103,13 @@ export function ModelsCard() {
       loading={models.isPending}
       extra={
         editable && (
-          <Button type="primary" icon={<SwapOutlined />} disabled={!changed} loading={save.isPending} onClick={() => save.mutate()}>
-            {t('保存')}
-          </Button>
+          <Flex gap={8} align="center">
+            {/* Desktop app: models are loaded at start; this applies saved choices now. */}
+            {desktop && <RestartServicesButton inAlert={false} />}
+            <Button type="primary" icon={<SwapOutlined />} disabled={!changed} loading={save.isPending} onClick={() => save.mutate()}>
+              {t('保存')}
+            </Button>
+          </Flex>
         )
       }
     >
@@ -107,12 +118,19 @@ export function ModelsCard() {
           <Alert
             type="warning"
             showIcon
-            title={t('所选大模型与当前运行的模型（{{loaded}}）不一致：需在终端中执行 jacara stop 和 jacara start 后才会切换', { loaded: models.data.loaded })}
+            title={
+              desktop
+                ? t('所选大模型与当前运行的模型（{{loaded}}）不一致：点击“重新启动后台”后切换', { loaded: models.data.loaded })
+                : t('所选大模型与当前运行的模型（{{loaded}}）不一致：需在终端中执行 jacara stop 和 jacara start 后才会切换', { loaded: models.data.loaded })
+            }
           />
         )}
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {t('仅可选择本机已有的模型文件，不会联网下载。推荐通过')}{' '}
-          <Link to="/hub">{t('模型和数据集')}</Link>{' '}{t('导入（导入时校验文件并记录版本），导入的版本会出现在下拉列表中，并标注“（模型库）”。也可手动放置文件：大模型和视觉模型放在 models/，OCR 模型放在 models/ocr/（文件名需包含 det 或 rec，字典为 .txt），表格模型放在 models/table/。.env 中已指定的项优先生效，无法在此修改。修改后需执行 jacara stop 和 jacara start 才会生效。')}
+          <Link to="/hub">{t('模型和数据集')}</Link>{' '}
+          {desktop
+            ? t('导入（导入时校验文件并记录版本），导入的版本会出现在下拉列表中，并标注“（模型库）”。也可手动放置文件：大模型和视觉模型放在数据文件夹的 models/ 中，OCR 模型放在 models/ocr/（文件名需包含 det 或 rec，字典为 .txt），表格模型放在 models/table/。修改后点击“重新启动后台”生效。')
+            : t('导入（导入时校验文件并记录版本），导入的版本会出现在下拉列表中，并标注“（模型库）”。也可手动放置文件：大模型和视觉模型放在 models/，OCR 模型放在 models/ocr/（文件名需包含 det 或 rec，字典为 .txt），表格模型放在 models/table/。.env 中已指定的项优先生效，无法在此修改。修改后需执行 jacara stop 和 jacara start 才会生效。')}
         </Typography.Text>
         <Table rowKey="key" size="small" pagination={false} columns={columns} dataSource={models.data?.slots ?? []} />
       </Flex>

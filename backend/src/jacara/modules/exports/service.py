@@ -17,6 +17,7 @@ from jacara.core.permissions import require
 from jacara.core.storage import ObjectStorage, StorageError
 from jacara.models import Document
 from jacara.modules.audit.service import record
+from jacara.modules.auth.schemas import PERSONAL_NAME
 from jacara.modules.exports.models import Export
 from jacara.modules.exports.repository import ExportRepository
 from jacara.modules.exports.schemas import ExportOut, ExportPage
@@ -85,7 +86,7 @@ class ExportService:
         items = [
             ExportOut.model_validate(e).model_copy(
                 update={
-                    "user_name": names.get(e.user_id, tr("本机用户")),
+                    "user_name": names.get(e.user_id, tr(PERSONAL_NAME)),
                     "available": e.storage_key is not None,
                 }
             )

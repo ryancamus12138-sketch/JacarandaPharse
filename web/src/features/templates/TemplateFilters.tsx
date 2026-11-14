@@ -2,7 +2,7 @@ import { DownOutlined, SearchOutlined, UpOutlined } from '@ant-design/icons'
 import { Button, Flex, Input, Select, Tag, Typography } from 'antd'
 import { useState } from 'react'
 import type { Template } from '../../api/types'
-import { countryName } from './labels'
+import { countryName, domainPairs } from './labels'
 import { domainsOf, type Filters, SOURCE_TEXT, sourceKind } from './filtering'
 import { useTranslation } from 'react-i18next'
 
@@ -91,7 +91,13 @@ export function TemplateFilters({
   const set = (patch: Partial<Filters>) => onChange({ ...value, ...patch })
   const toggle = (list: string[], v: string) =>
     list.includes(v) ? list.filter((x) => x !== v) : [...list, v]
-  const domains = [...counted(templates.flatMap(domainsOf))].map(([v, n]) => ({ value: v, text: v, count: n }))
+  // Grouped by stored form, named in the interface language.
+  const domainNames = new Map(templates.flatMap(domainPairs).map((d) => [d.value, d.label]))
+  const domains = [...counted(templates.flatMap(domainsOf))].map(([v, n]) => ({
+    value: v,
+    text: domainNames.get(v) ?? v,
+    count: n,
+  }))
   const general = templates.filter((tpl) => !(tpl.countries ?? []).length).length
   const countries = [
     ...(general ? [{ value: '', text: t('通用'), count: general }] : []),

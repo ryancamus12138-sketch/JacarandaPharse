@@ -86,8 +86,9 @@ xattr -cr /Applications/JacarandaParse.app
 ## 数据和隐私
 
 - 单据、识别结果和设置都只保存在本机：
-  - macOS：`~/Library/Application Support/io.github.ryancamus12138-sketch.jacarandaparse/`
-  - Windows：`%LOCALAPPDATA%\io.github.ryancamus12138-sketch.jacarandaparse\`
+  - macOS：`~/Library/Application Support/JacarandaParse/`
+  - Windows：`%LOCALAPPDATA%\JacarandaParse\`
+  - 可以在"设置 → 数据和备份"中把它移到其他磁盘，或改回这里。
 - 程序只在两种情况下联网，并且都由你点击后才进行：下载识别模型、检查和下载新版本。程序不收集、不上传任何使用数据。
 - 卸载程序不会删除上面的数据文件夹；如需彻底删除，请手动删除该文件夹。
 

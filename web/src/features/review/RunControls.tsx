@@ -12,6 +12,7 @@ import {
   type ReprocessReason,
 } from '../../api/types'
 import { formatTime } from '../../utils/format'
+import { useDesktop } from '../../desktop'
 import { templateOptions } from '../templates/uploadChoice'
 import {
   PDF_READ_CHOICES,
@@ -79,6 +80,7 @@ function splitChoice(split: string | undefined): { split: string; ranges?: strin
 
 export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
   const { t } = useTranslation()
+  const desktop = useDesktop()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
@@ -188,7 +190,9 @@ export function ReprocessButton({ doc }: { doc: DocumentDetail }) {
               sees
                 ? t('模型默认仅读取 OCR 识别的文字。对照原图（整页图像）读取时，手写、印章、模糊或被笔迹遮挡的文字更准确，但速度较慢。“系统决定”：仅在照片不清晰时对照原图。')
                 : vision.isSuccess
-                  ? t('尚未配置视觉模型，模型仅能读取文字。将 mmproj-F16.gguf 放入 models/ 并重新执行 jacara start 后即可选择（详见系统信息）。')
+                  ? desktop
+                    ? t('尚未配置视觉模型，模型仅能读取文字。在「设置 → 模型」中配置视觉模型并重新启动 JacarandaParse 后即可选择。')
+                    : t('尚未配置视觉模型，模型仅能读取文字。将 mmproj-F16.gguf 放入 models/ 并重新执行 jacara start 后即可选择（详见系统信息）。')
                   : undefined
             }
           >

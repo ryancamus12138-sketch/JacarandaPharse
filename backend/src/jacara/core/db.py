@@ -4,7 +4,7 @@
   time).
 - Application code obtains a session with session_scope(): it commits on normal exit and rolls
   back on error.
-- Schema changes are managed with Alembic (backend/migrations); do not modify the database by
+- Schema changes are managed with Alembic (jacara/migrations); do not modify the database by
   hand."""
 
 from __future__ import annotations

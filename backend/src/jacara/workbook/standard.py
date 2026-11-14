@@ -22,9 +22,11 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
 from jacara.core.i18n import N_, N_c, tr, trc, variants, variants_c
+from jacara.core.i18n import language as ui_language
 from jacara.plugins.validators import ALL_RULES
 from jacara.plugins.validators.base import Rule
 from jacara.plugins.validators.rules import REGIONS
+from jacara.templates import domain_label
 
 FORMAT = "jacarandaparse-template"
 FORMAT_VERSION = 1
@@ -248,12 +250,14 @@ def to_excel(template: dict[str, Any]) -> bytes:
     _setup(info, INFO_HEADERS, [16, 60])
     separator = tr("、")
     languages = _languages(template)
+    domains = template.get("domains") or []
     for key, value in (
         ("format", FORMAT),
         ("format_version", FORMAT_VERSION),
         ("title", template["title"]),
-        ("category", template.get("category", "")),
-        ("domains", separator.join(template.get("domains") or [])),
+        # Known domains in the workbook's language (the interface language, like its headers).
+        ("category", domain_label(template.get("category", ""), ui_language())),
+        ("domains", separator.join(domain_label(d, ui_language()) for d in domains)),
         ("countries", separator.join(template.get("countries") or []) or tr(GENERIC)),
         ("tags", separator.join(template.get("tags") or [])),
         ("description", template.get("description", "")),

@@ -2,9 +2,10 @@ import { FolderOpenOutlined, InboxOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, App, Button, Checkbox, Flex, Input, Progress, Select, Tooltip, Typography, Upload } from 'antd'
 import type { RcFile } from 'antd/es/upload'
-import { useRef, useState } from 'react'
+import { type DragEvent, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { uploadDocument } from '../../api/documents'
+import { filesInFolders } from './folderDrop'
 import { listTemplates } from '../../api/templates'
 import { TemplatePicker } from '../templates/TemplatePicker'
 import { DISCOVER, loadUploadTemplate, saveUploadTemplate } from '../templates/uploadChoice'
@@ -64,7 +65,9 @@ export function UploadArea() {
   // is no longer offered in the web UI).
   const hasOwn = (templates.data ?? []).some((tpl) => tpl.kind === 'mine' && !tpl.archived)
   const chosen = template ?? (templates.isSuccess && !hasOwn ? DISCOVER : undefined)
-  const queue = useRef<{ file: RcFile; folder?: string }[]>([])
+  const queue = useRef<{ file: File; folder?: string }[]>([])
+  /** Names of folders dropped onto the drop area: their placeholder entries in the file list are ignored. */
+  const droppedFolders = useRef(new Set<string>())
   const running = useRef(0)
 
   const pump = () => {
@@ -89,7 +92,7 @@ export function UploadArea() {
     }
   }
 
-  const add = (file: RcFile) => {
+  const enqueue = (file: File, folder: string | undefined) => {
     const wanted = SUFFIXES.some((s) => file.name.toLowerCase().endsWith(s))
     // Other files in the folder (.DS_Store, Word documents) are skipped without errors.
     if (!wanted || file.name.startsWith('.')) return Upload.LIST_IGNORE
@@ -99,9 +102,36 @@ export function UploadArea() {
     }
     // Reset only after the previous batch finished; otherwise keep accumulating.
     setBatch((b) => (b.done === b.total ? { ...EMPTY, total: 1 } : { ...b, total: b.total + 1 }))
-    queue.current.push({ file, folder: folderOf(file, group) })
+    queue.current.push({ file, folder })
     setTimeout(pump)
     return false // Ant Design's own upload is not used; the queue above handles it.
+  }
+
+  const add = (file: RcFile) => {
+    // A dropped folder also arrives as a placeholder "file" with the folder's name (its size depends on the
+    // system); a real file cannot share that name with a folder dropped from the same place.
+    if (!file.webkitRelativePath && droppedFolders.current.has(file.name)) {
+      return Upload.LIST_IGNORE
+    }
+    return enqueue(file, folderOf(file, group))
+  }
+
+  /**
+   * Folders dropped onto the drop area (the drop area itself takes only files): import every file in them, at
+   * every depth, recording each file's folder as "Select whole folder" does. Files dropped together with the
+   * folders are left to the drop area.
+   */
+  const dropFolders = (event: DragEvent<HTMLDivElement>) => {
+    const folders = [...event.dataTransfer.items]
+      .map((item) => item.webkitGetAsEntry())
+      .filter((entry): entry is FileSystemDirectoryEntry => entry !== null && entry.isDirectory)
+    droppedFolders.current = new Set(folders.map((f) => f.name))
+    if (folders.length === 0) return
+    void filesInFolders(folders).then((files) => {
+      for (const { file, folder } of files) {
+        enqueue(file, [group.trim(), folder].filter(Boolean).join('/') || undefined)
+      }
+    })
   }
 
   /**
@@ -142,6 +172,9 @@ export function UploadArea() {
           style={{ width: 280 }}
         />
       </Flex>
+      {/* Capture phase: the folder entries must be read during the drop event; the drop area then gets the
+          event as usual (and its drag-over highlight ends). */}
+      <div onDropCapture={dropFolders}>
       <Upload.Dragger
         accept={ACCEPT}
         multiple
@@ -152,17 +185,18 @@ export function UploadArea() {
         <p className="ant-upload-drag-icon">
           <InboxOutlined />
         </p>
-        <p className="ant-upload-text">{t('将收据、发票拖到此处，或点击选择文件（单次可选择数百个）')}</p>
+        <p className="ant-upload-text">{t('将收据、发票或整个文件夹拖到此处，或点击选择文件（单次可选择数百个）')}</p>
         <p className="ant-upload-hint">
           {t('支持图片（JPG、PNG、WebP、TIFF）和 PDF，单个文件最大 {{MAX_MB}} MB', { MAX_MB })}
         </p>
       </Upload.Dragger>
+      </div>
       <Flex gap={8} align="center" wrap style={{ marginBottom: 16 }}>
         <Upload directory multiple accept={ACCEPT} showUploadList={false} beforeUpload={add}>
           <Button icon={<FolderOpenOutlined />}>{t('选择整个文件夹')}</Button>
         </Upload>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {t('子文件夹将一并导入，可在列表中按文件夹筛选。如需自动导入某个文件夹，请在「设置 → 识别和处理」中设置监视文件夹。')}
+          {t('各层子文件夹中的文件都会导入，并记录所在的文件夹，可在列表中按文件夹筛选。如需自动导入某个文件夹，请在「设置 → 识别和处理」中设置监视文件夹。')}
         </Typography.Text>
       </Flex>
       {batch.total > 0 && (

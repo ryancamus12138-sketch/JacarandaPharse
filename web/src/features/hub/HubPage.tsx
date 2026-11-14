@@ -385,7 +385,7 @@ function ModelsTab({ canManage, datasetNames }: { canManage: boolean; datasetNam
   })
   const download = useMutation({
     mutationFn: ({ name, version }: { name: string; version: number }) => downloadModelVersion(name, version),
-    onSuccess: ({ blob, filename }) => saveFile(blob, filename),
+    onSuccess: (file) => void saveFile(file),
     onError: (err) => void message.error(errorText(err)),
   })
   const data = models.data
@@ -662,7 +662,7 @@ function DatasetsTab({
   const [importing, setImporting] = useState(false)
   const download = useMutation({
     mutationFn: downloadDataset,
-    onSuccess: ({ blob, filename }) => saveFile(blob, filename),
+    onSuccess: (file) => void saveFile(file),
     onError: (err) => void message.error(errorText(err)),
   })
   const remove = useMutation({
@@ -975,7 +975,7 @@ function EvalsTab({ canChange, onNew }: { canChange: boolean; onNew: () => void 
   })
   const download = useMutation({
     mutationFn: downloadEvalLines,
-    onSuccess: ({ blob, filename }) => saveFile(blob, filename),
+    onSuccess: (file) => void saveFile(file),
     onError: (err) => void message.error(errorText(err)),
   })
   const statusTag = (r: EvalRun) =>

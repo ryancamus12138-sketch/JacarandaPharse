@@ -1,7 +1,8 @@
 /** Template tags: domains, countries and regions (or generic), custom tags. */
 
 import { useQuery } from '@tanstack/react-query'
-import { listTemplates } from '../../api/templates'
+import { listDomains, listTemplates } from '../../api/templates'
+import type { Template } from '../../api/types'
 import { t, uiLanguage } from '../../i18n'
 
 /**
@@ -45,10 +46,8 @@ export function countryName(code: string): string {
   }
 }
 
-/** Common domains (others can be typed). */
-// i18n-ignore-next-line: template content (domain values stored in templates)
-export const DOMAIN_SUGGESTIONS = ['发票', '收据', '交通', '住宿', '餐饮', '购物', '医疗', '检验报告', '质检', '物流', '外贸单证', '采购', '办公', '其他']
-
+/** Colors of known domains, by their stored form (the names shown follow the interface language). */
+// i18n-ignore-next-line: stored forms of known domains, not text shown as such
 export const DOMAIN_COLORS: Record<string, string> = {
   发票: 'purple',
   交通: 'blue',
@@ -75,13 +74,26 @@ export function countryOptions() {
 }
 
 
+/** A template's domains with their names in the interface language (stored form → name). */
+export function domainPairs(tpl: Template): { value: string; label: string }[] {
+  const domains = tpl.domains?.length ? tpl.domains : tpl.category ? [tpl.category] : []
+  // The names belong to the domains the server sent; a template whose domains are being edited may differ.
+  const named = tpl.domain_names?.length === domains.length
+  return domains.map((value, i) => ({ value, label: named ? (tpl.domain_names?.[i] ?? value) : value }))
+}
+
 /**
- * Tag suggestions: common domains plus domains and custom tags already used (collected from my templates).
+ * Tag suggestions: known domains (named in the interface language) plus domains and custom tags already used
+ * (collected from my templates).
  */
-export function useLabelVocabulary(): { domains: string[]; tags: string[] } {
+export function useLabelVocabulary(): { domains: { value: string; label: string }[]; tags: string[] } {
   const templates = useQuery({ queryKey: ['templates'], queryFn: listTemplates })
+  const known = useQuery({ queryKey: ['template-domains'], queryFn: listDomains, staleTime: Infinity })
   const mine = (templates.data ?? []).filter((tpl) => tpl.kind === 'mine')
-  const domains = [...new Set([...DOMAIN_SUGGESTIONS, ...mine.flatMap((tpl) => tpl.domains ?? [])])]
-  const tags = [...new Set(mine.flatMap((tpl) => tpl.tags ?? []))].sort((a, b) => a.localeCompare(b, 'zh-CN'))
-  return { domains, tags }
+  const domains = new Map((known.data ?? []).map((d) => [d.value, d.label]))
+  for (const pair of mine.flatMap(domainPairs)) {
+    if (!domains.has(pair.value)) domains.set(pair.value, pair.label)
+  }
+  const tags = [...new Set(mine.flatMap((tpl) => tpl.tags ?? []))].sort((a, b) => a.localeCompare(b, uiLanguage()))
+  return { domains: [...domains].map(([value, label]) => ({ value, label })), tags }
 }

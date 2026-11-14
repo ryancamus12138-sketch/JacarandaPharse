@@ -18,8 +18,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from jacara.core import config
+from jacara.core.advice import pick
 from jacara.core.config import Settings
-from jacara.core.i18n import join_items, render, stored, tr
+from jacara.core.i18n import N_, join_items, render, stored, tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.queue import QueueError, TaskQueue
@@ -31,6 +32,7 @@ from jacara.modules.hub.models import Dataset, OcrEvalRun
 from jacara.modules.hub.registry import HubError, ModelVersion
 from jacara.modules.hub.schemas import (
     RESTART_HINT,
+    RESTART_HINT_DESKTOP,
     CardIn,
     DatasetOut,
     EvalIn,
@@ -44,6 +46,11 @@ from jacara.modules.hub.schemas import (
     UploadOut,
     VersionOut,
 )
+
+EVAL_NOT_QUEUED = N_("无法连接任务队列（Valkey），评测未开始")
+EVAL_NOT_QUEUED_DESKTOP = N_("无法写入任务队列，评测未开始")
+QUEUE_DOWN = N_("无法连接任务队列（Valkey），请确认 jacara start 正在运行")
+QUEUE_DOWN_DESKTOP = N_("无法写入任务队列，请重新启动 JacarandaParse")
 
 UPLOAD_ID = re.compile(r"^[0-9a-f]{32}$")
 STALE_SECONDS = 24 * 3600
@@ -170,7 +177,7 @@ class HubService:
             models=models,
             kinds={key: tr(name) for key, name in registry.KINDS.items()},
             env_locked=self._env_locked(),
-            restart_hint=tr(RESTART_HINT),
+            restart_hint=tr(pick(RESTART_HINT_DESKTOP, RESTART_HINT)),
         )
 
     def _upload_dir(self, upload_id: str) -> Path:
@@ -545,11 +552,9 @@ class HubService:
             self.queue.enqueue_eval(run.id)
         except QueueError as err:
             run.status = "failed"
-            run.error = stored("无法连接任务队列（Valkey），评测未开始")
+            run.error = stored(pick(EVAL_NOT_QUEUED_DESKTOP, EVAL_NOT_QUEUED))
             self.session.commit()
-            raise HubError(
-                "queue", tr("无法连接任务队列（Valkey），请确认 jacara start 正在运行")
-            ) from err
+            raise HubError("queue", tr(pick(QUEUE_DOWN_DESKTOP, QUEUE_DOWN))) from err
         return self._eval_out(run, dataset)
 
     def _eval_out(self, run: OcrEvalRun, dataset: Dataset | None = None) -> EvalOut:

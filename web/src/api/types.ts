@@ -19,6 +19,8 @@ export interface User {
 /** GET /auth/me: current user and permitted operations. */
 export interface Me {
   mode: 'personal' | 'team'
+  /** Served by the desktop app: advice names actions in the app instead of terminal commands. */
+  desktop?: boolean
   role: string
   permissions: string[]
   user: User | null
@@ -643,8 +645,13 @@ export interface Template {
   tables: TemplateTable[]
   rules: TemplateRule[]
   custom_rules?: CustomRule[]
-  /** Domains (invoice, transport, …); several allowed. */
+  /**
+   * Domains (invoice, transport, …); several allowed. Known domains in their stored form whatever language they
+   * were typed in; others as written.
+   */
   domains?: string[]
+  /** The domains in the interface language, in the same order. */
+  domain_names?: string[]
   /** Country or region code (CN, AU, …); empty means generic. */
   countries?: string[]
   /** Custom tags. */

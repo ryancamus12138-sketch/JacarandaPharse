@@ -17,7 +17,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from jacara.core import config
-from jacara.core.config import CHOICES_FILE, Settings, is_mmproj, model_choices
+from jacara.core.config import (
+    CHOICES_FILE,
+    Settings,
+    bundled_table_model,
+    is_mmproj,
+    model_choices,
+)
 from jacara.core.i18n import N_, tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
@@ -65,7 +71,8 @@ class Slot(BaseModel):
     """File in effect (relative path); None: bundled (OCR) or none."""
     source: str
     """env: set in .env (not editable in the web UI); choice: selected in the web UI; auto: detected
-    in models/; builtin: bundled with RapidOCR; none: none."""
+    in models/; builtin: bundled with RapidOCR; bundled: shipped with the program (the table
+    model); none: none."""
     env: str
     files: list[ModelFile]
 
@@ -129,6 +136,17 @@ def candidates(slot: str) -> list[ModelFile]:
         found = _files("ocr/**/*.txt")
     elif slot == "table":
         found = _files("table/**/*.onnx")
+        bundled = bundled_table_model()
+        if bundled is not None and _relative(bundled) not in {f.path for f in found}:
+            stat = bundled.stat()
+            found.append(
+                ModelFile(
+                    path=_relative(bundled) or str(bundled),
+                    name=tr("{name}（随程序附带）", name=bundled.name),
+                    size=stat.st_size,
+                    modified=datetime.fromtimestamp(stat.st_mtime, UTC),
+                )
+            )
     else:
         raise KeyError(slot)
     return found + _hub_files(slot)
@@ -157,12 +175,19 @@ def _hub_files(slot: str) -> list[ModelFile]:
 
 
 def _relative(path: Path | None) -> str | None:
+    """The path as the file lists give it (relative to the data directory), so the current file
+    matches its entry in the list. Compared as written first, then with links resolved: a model
+    file in models/ may be a link to a file elsewhere, and resolving it alone would leave the data
+    directory and show the full path instead of the file."""
     if path is None:
         return None
-    try:
-        return path.resolve().relative_to(config.data_home().resolve()).as_posix()
-    except ValueError:
-        return str(path)
+    home = config.data_home()
+    for candidate, base in ((path.absolute(), home.absolute()), (path.resolve(), home.resolve())):
+        try:
+            return candidate.relative_to(base).as_posix()
+        except ValueError:
+            continue
+    return str(path)
 
 
 class ModelAdminService:
@@ -196,6 +221,8 @@ class ModelAdminService:
             return _relative(path), "choice" if path is not None else "none"
         if path is None:
             return None, "builtin" if slot.startswith("ocr_") else "none"
+        if slot == "table" and path == bundled_table_model():
+            return _relative(path), "bundled"
         return _relative(path), "auto"
 
     def get(self) -> ModelsOut:

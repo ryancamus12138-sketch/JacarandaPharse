@@ -162,8 +162,8 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
   })
   const download = useMutation({
     mutationFn: () => downloadSamples(filters, kind),
-    onSuccess: ({ blob, filename }) => {
-      saveFile(blob, filename)
+    onSuccess: (file) => {
+      void saveFile(file)
       void queryClient.invalidateQueries({ queryKey: ['ocr-exports'] })
       void queryClient.invalidateQueries({ queryKey: ['ocr-groups'] })
       onClose()

@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { useAuth } from '../auth/useAuth'
 import { lastPage, rememberPage, useSettingsSections } from '../features/settings/sections'
+import { DesktopBridge } from './DesktopBridge'
 import { LanguageSwitch } from './LanguageSwitch'
 import { UserAvatar } from './UserAvatar'
 import { useTranslation } from 'react-i18next'
@@ -68,7 +69,7 @@ export function AppLayout() {
   }
 
   const name =
-    me?.shown_name || (me?.user ? me.user.display_name || me.user.username : t('本机用户'))
+    me?.shown_name || (me?.user ? me.user.display_name || me.user.username : t('我'))
   const roleTag = (
     <Tag color={me?.role === 'admin' ? 'purple' : 'default'} style={{ marginInlineEnd: 0 }}>
       {me?.role === 'admin' ? t('管理员') : t('使用者')}
@@ -155,7 +156,8 @@ export function AppLayout() {
               <Typography.Text strong ellipsis style={{ maxWidth: 140 }}>
                 {name}
               </Typography.Text>
-              <span>{roleTag}</span>
+              {/* Personal mode has one user and no roles. */}
+              {me?.mode === 'team' && <span>{roleTag}</span>}
             </Flex>
           </Flex>
           <Menu
@@ -212,6 +214,7 @@ export function AppLayout() {
           </Flex>
         </Layout.Header>
         <Layout.Content style={{ padding: narrow ? 12 : 24 }}>
+          <DesktopBridge />
           <Outlet />
         </Layout.Content>
       </Layout>

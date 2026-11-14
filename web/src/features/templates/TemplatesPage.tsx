@@ -142,7 +142,7 @@ export function TemplatesPage() {
   const exportOne = useMutation({
     mutationFn: ({ t, format }: { t: Template; format: 'xlsx' | 'json' }) =>
       exportTemplate(t.id ?? t.name, format),
-    onSuccess: ({ blob, filename }) => saveFile(blob, filename),
+    onSuccess: (file) => void saveFile(file),
     onError,
   })
   const importJson = useMutation({

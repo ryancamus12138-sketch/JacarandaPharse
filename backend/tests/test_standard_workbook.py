@@ -134,6 +134,20 @@ def test_excel_round_trip_keeps_everything(client, rich, headers):
     assert nights["compute"] == "check_out - check_in"
 
 
+@pytest.mark.parametrize(
+    ("headers", "label", "shown"),
+    [({}, "功能领域", "住宿、出差"), (ENGLISH, "Domains", "Lodging, 出差")],
+)
+def test_known_domains_follow_the_workbook_language(client, rich, headers, label, shown):
+    client.patch(f"/api/v1/templates/{rich['id']}/labels", json={"domains": ["Lodging", "出差"]})
+    exported = client.get(f"/api/v1/templates/{rich['id']}/export", headers=headers).content
+    info = load_workbook(io.BytesIO(exported)).worksheets[0]
+    rows = {row[0].value: row[1].value for row in info.iter_rows(min_row=2)}
+    assert rows[label] == shown
+    imported = client.post("/api/v1/templates/import", json=upload(client, exported)["template"])
+    assert imported.json()["domains"] == ["住宿", "出差"]  # Stored under one name again.
+
+
 def test_missing_optional_columns_take_defaults(client, rich):
     """A workbook without the optional columns and rows (deleted by hand, or written by an earlier
     layout version) imports with their defaults."""

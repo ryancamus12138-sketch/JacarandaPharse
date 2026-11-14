@@ -122,12 +122,13 @@ def docker_up(root: Path) -> Step:
     return Step("数据库等服务", True, "PostgreSQL、Valkey、SeaweedFS 都在运行（只监听本机）")
 
 
-def migrate(root: Path) -> Step:
+def migrate() -> Step:
     from alembic import command
-    from alembic.config import Config
+
+    from jacara.core.migrate import alembic_config
 
     try:
-        command.upgrade(Config(str(root / "alembic.ini")), "head")
+        command.upgrade(alembic_config(), "head")
     except Exception as err:  # Report unreachable databases and migration errors alike.
         # Database errors span several lines; collapse them into one.
         reason = " ".join(str(err).split())[:200]
@@ -191,7 +192,7 @@ def models_ready() -> list[Step]:
 def run_setup(root: Path, docker: bool = True, out: Callable[[str], None] = print) -> int:
     """Run the steps in order; steps depending on a failed required step are skipped. Returns 0 when
     `jacara start` can be run."""
-    os.chdir(root)  # .env, alembic.ini and docker compose are resolved from the project root.
+    os.chdir(root)  # .env and docker compose are resolved from the project root.
     steps: list[Step] = []
 
     def show(step: Step) -> Step:
@@ -206,9 +207,9 @@ def run_setup(root: Path, docker: bool = True, out: Callable[[str], None] = prin
     env = show(ensure_env(root))
     if env.ok and docker:
         if show(docker_up(root)).ok:
-            show(migrate(root))
+            show(migrate())
     elif env.ok:
-        show(migrate(root))
+        show(migrate())
     show(web_ready())
     show(llama_ready())
     for step in models_ready():

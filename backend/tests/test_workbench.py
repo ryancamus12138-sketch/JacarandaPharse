@@ -188,7 +188,7 @@ def test_exports_are_kept_and_can_be_downloaded_again(client, docs, storage, fac
     assert {x["format"] for x in page["items"]} == {"xlsx", "zip"}
     assert older["document_count"] == 2
     assert [d["filename"] for d in older["documents"]] == ["a-costco.jpg", "b-costco.jpg"]
-    assert older["user_name"] == "本机用户" and older["available"]
+    assert older["user_name"] == "我" and older["available"]
 
     again = client.get(f"/api/v1/exports/{older['id']}/file")
     assert again.status_code == 200

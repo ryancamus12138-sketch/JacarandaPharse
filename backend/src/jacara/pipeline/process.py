@@ -61,6 +61,20 @@ class Superseded(Exception):
     The run ends without writing anything; the document is already in the state the user chose."""
 
 
+class DocumentGone(Superseded):
+    """The user deleted the document while this run was working on it. Besides writing nothing, the
+    run removes the OCR snapshot it stored, which nothing refers to."""
+
+
+def _forget_snapshot(storage: ObjectStorage, snapshot: str | None) -> None:
+    if snapshot is None:
+        return
+    try:
+        storage.delete(snapshot)
+    except StorageError:
+        log.warning("OCR 快照 %s 没删掉", snapshot)
+
+
 def _lessons_for(
     pipeline: Pipeline,
     factory: sessionmaker[Session] | None,
@@ -180,7 +194,9 @@ def _save(
     with session_scope(factory) as session:
         # Locked until commit (PostgreSQL FOR UPDATE; SQLite has a single writer anyway), so a stop
         # request cannot slip in between this check and saving.
-        document = session.get_one(Document, document_id, with_for_update=True)
+        document = session.get(Document, document_id, with_for_update=True)
+        if document is None:
+            raise DocumentGone
         if claim is not None and document.claim != claim:
             raise Superseded
         add_extractions(
@@ -241,6 +257,7 @@ def process_document(
         # task is delivered twice.
         log.info("跳过 %s：状态不是 uploaded", document_id)
         return "skipped"
+    snapshot: str | None = None
     try:
         job = _job(document_id, factory)
         with _original(job, storage) as path:
@@ -255,8 +272,10 @@ def process_document(
         snapshot = save_snapshot(storage, document_id, run, pages)
         _save(document_id, reports, run, extra, timings, factory, snapshot, claim)
         return "done"
-    except Superseded:
-        log.info("停止 %s：已由用户停止或重新处理", document_id)
+    except Superseded as stopped:
+        if isinstance(stopped, DocumentGone):
+            _forget_snapshot(storage, snapshot)
+        log.info("停止 %s：已由用户停止、重新处理或删除", document_id)
         return "skipped"
     except Exception as err:
         _fail(document_id, err, factory, claim)
@@ -335,6 +354,7 @@ def extract_document(
         current = document is not None and document.status == "processing"
         # The OCR stage's claim carries over to this stage.
         claim = document.claim if document is not None else None
+    snapshot: str | None = None
     if not current or timings.get("attempt") != attempt:
         # Document deleted, reprocessed or marked failed meanwhile: this task is stale.
         log.info("跳过 %s：不是这一次交过来的", document_id)
@@ -358,8 +378,10 @@ def extract_document(
         snapshot = save_snapshot(storage, document_id, run, pages)
         _save(document_id, reports, run, extra, done, factory, snapshot, claim)
         return "done"
-    except Superseded:
-        log.info("停止 %s：已由用户停止或重新处理", document_id)
+    except Superseded as stopped:
+        if isinstance(stopped, DocumentGone):
+            _forget_snapshot(storage, snapshot)
+        log.info("停止 %s：已由用户停止、重新处理或删除", document_id)
         return "skipped"
     except Exception as err:
         _fail(document_id, err, factory, claim)
@@ -459,7 +481,9 @@ def _report(
             .returning(Document.id)
         )
     if claim is not None and written is None:
-        raise Superseded
+        with session_scope(factory) as session:
+            gone = session.get(Document, document_id) is None
+        raise DocumentGone if gone else Superseded
 
 
 def _finish(document: Document) -> None:

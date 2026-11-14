@@ -40,7 +40,7 @@ export function templateOptions(templates: Template[]) {
   const mine = templates.filter((tpl) => tpl.kind === 'mine' && !tpl.archived && tpl.id)
   const groups = new Map<string, Template[]>()
   for (const tpl of mine) {
-    const key = tpl.domains?.[0] || tpl.category || t('其他')
+    const key = tpl.domain_names?.[0] || tpl.domains?.[0] || tpl.category || t('其他')
     groups.set(key, [...(groups.get(key) ?? []), tpl])
   }
   const label = (tpl: Template) => {
@@ -71,7 +71,7 @@ export function templateOptions(templates: Template[]) {
         value: tpl.id as string,
         label: label(tpl),
         // Search also matches domains, countries and custom tags.
-        search: [label(tpl), ...(tpl.domains ?? []), ...(tpl.tags ?? [])].join(' '),
+        search: [label(tpl), ...(tpl.domain_names ?? tpl.domains ?? []), ...(tpl.tags ?? [])].join(' '),
       })),
     })),
     {
@@ -81,5 +81,22 @@ export function templateOptions(templates: Template[]) {
         { value: DISCOVER, label: t('抽取所有键值对（之后可保存为模板）'), search: t('抽取所有键值对 discover') },
       ],
     },
+  ]
+}
+
+/**
+ * Options for a template setting (the watch folder): "automatic" is always offered, even before there are
+ * templates of one's own (the backend then extracts all key-value pairs).
+ */
+export function settingTemplateOptions(templates: Template[]) {
+  const options = templateOptions(templates)
+  if (options.some((group) => group.title === 'auto')) return options
+  return [
+    {
+      label: t('由系统选择'),
+      title: 'auto',
+      options: [{ value: AUTO, label: t('自动判断（从我的模板中选择最合适的）'), search: t('自动判断 auto 由系统选择') }],
+    },
+    ...options,
   ]
 }

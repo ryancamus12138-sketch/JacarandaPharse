@@ -135,9 +135,33 @@ DOMAIN_NAMES: dict[str, dict[str, str]] = {
     "医疗": {"en": "Medical"},
     "检验报告": {"en": "Lab report"},
     "质检": {"en": "Quality inspection"},
+    "办公": {"en": "Office"},
+    "其他": {"en": "Other"},
 }
-"""Domains used by the starter library (Chinese) → names in other languages. Domains of my templates
-are free text and only translated when they are one of these."""
+"""Known domains (those of the starter library and the suggestions of the tag editor), keyed by
+their Chinese name, → names in other languages. A template stores a known domain under its Chinese
+name and shows it in the interface language; other domains are the user's free text, shown as
+written."""
+
+
+def canonical_domain(domain: str) -> str:
+    """The stored form of a domain: the Chinese key of a known domain written in any language
+    ("Lodging", "lodging", "住宿" → "住宿"); other domains as written."""
+    text = domain.strip()
+    folded = text.casefold()
+    for chinese, names in DOMAIN_NAMES.items():
+        if text == chinese or any(folded == n.casefold() for n in names.values()):
+            return chinese
+    return text
+
+
+def domain_label(domain: str, language: str) -> str:
+    """A domain in the interface language: known domains are translated, others shown as written."""
+    chinese = canonical_domain(domain)
+    names = DOMAIN_NAMES.get(chinese)
+    if names is None:
+        return domain
+    return chinese if language == DEFAULT_LANGUAGE else names.get(language, chinese)
 
 
 PROMPT_LANGUAGES: dict[str, str] = {

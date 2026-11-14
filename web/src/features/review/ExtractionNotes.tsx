@@ -79,7 +79,7 @@ export function ExtractionNotes({
       )}
       {lessons > 0 && (
         <Tooltip
-          title={t('抽取时已向模型提供同一模板此前经人工修改的 {{lessons}} 处示例（易错之处），取值仍以本单据原文为准。可在 .env 中设置 JACARA_LEARN=false 关闭。', { lessons })}
+          title={t('抽取时已向模型提供同一模板此前经人工修改的 {{lessons}} 处示例（易错之处），取值仍以本单据原文为准。可在「设置 → 识别和处理」中关闭“抽取时提供历史修改示例”。', { lessons })}
         >
           <Tag icon={<BulbOutlined />} color="cyan">
             {t('参考了 {{lessons}} 处历史修改', { lessons })}

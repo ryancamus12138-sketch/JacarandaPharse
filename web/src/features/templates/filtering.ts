@@ -30,6 +30,7 @@ export function sourceKind(source: string | undefined): string {
   return (source ?? '').split(':')[0] || 'blank'
 }
 
+/** Stored forms of a template's domains (names in the interface language: domainPairs). */
 export function domainsOf(tpl: Template): string[] {
   return tpl.domains?.length ? tpl.domains : tpl.category ? [tpl.category] : []
 }

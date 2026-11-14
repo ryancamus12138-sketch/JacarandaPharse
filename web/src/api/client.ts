@@ -10,15 +10,22 @@
  */
 
 import { clearToken, getToken } from './token'
+import { isDesktop } from '../desktop'
 import { t, uiLanguage } from '../i18n'
 
 export class ApiError extends Error {
   readonly status: number
+  /** Desktop app, 503: a backup, restore, move or restart is holding requests off for now. */
+  readonly maintenance: boolean
+  /** Desktop app, 503: the data folder in use cannot be found (for example on a drive not connected). */
+  readonly unavailable: string | null
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, details: { maintenance?: boolean; unavailable?: string | null } = {}) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.maintenance = details.maintenance ?? false
+    this.unavailable = details.unavailable ?? null
   }
 }
 
@@ -63,7 +70,7 @@ async function send(path: string, init: ApiInit): Promise<Response> {
     })
   } catch {
     // The request was never sent: the backend is not running or the network is down.
-    throw new ApiError(0, t('无法连接后端。请确认终端中 uv run jacara api 正在运行'))
+    throw new ApiError(0, unreachable())
   }
 
   if (response.status === 401 && token) {
@@ -73,7 +80,7 @@ async function send(path: string, init: ApiInit): Promise<Response> {
     onUnauthorized?.()
   }
   if (!response.ok) {
-    throw new ApiError(response.status, await errorMessage(response))
+    throw await errorFrom(response)
   }
   return response
 }
@@ -97,13 +104,21 @@ export async function apiBlob(path: string, init: ApiInit = {}): Promise<Blob> {
 export interface DownloadedFile {
   blob: Blob
   filename: string
+  /** Desktop app: the service already saved the file here (in the Downloads folder); blob is empty. */
+  savedTo?: string
 }
 
 /**
  * Call a download endpoint (Excel export): besides the content, the file name from Content-Disposition is
- * needed.
+ * needed. In the desktop app the service saves the file to the Downloads folder itself (the system web view
+ * does not save downloads) and answers with where it went.
  */
 export async function apiDownload(path: string, fallbackName: string): Promise<DownloadedFile> {
+  if (isDesktop()) {
+    const response = await send(path, { headers: { 'X-Jacara-Save': 'downloads' } })
+    const saved = (await response.json()) as { name: string; path: string }
+    return { blob: new Blob(), filename: saved.name, savedTo: saved.path }
+  }
   const response = await send(path, {})
   const filename = filenameFrom(response.headers.get('Content-Disposition')) ?? fallbackName
   return { blob: await response.blob(), filename }
@@ -125,22 +140,34 @@ function filenameFrom(header: string | null): string | null {
   return /filename="?([^";]+)"?/i.exec(header)?.[1] ?? null
 }
 
-async function errorMessage(response: Response): Promise<string> {
-  if (response.status === 502 || response.status === 504) {
-    return t('无法连接后端。请确认终端中 uv run jacara api 正在运行')
+async function errorFrom(response: Response): Promise<ApiError> {
+  const status = response.status
+  if (status === 502 || status === 504) {
+    return new ApiError(status, unreachable())
   }
   try {
-    const body = (await response.json()) as { detail?: unknown }
+    const body = (await response.json()) as { detail?: unknown; maintenance?: unknown; unavailable?: unknown }
+    const details = {
+      maintenance: body.maintenance === true,
+      unavailable: typeof body.unavailable === 'string' ? body.unavailable : null,
+    }
     if (typeof body.detail === 'string') {
-      return body.detail
+      return new ApiError(status, body.detail, details)
     }
     if (Array.isArray(body.detail)) {
       // 422: FastAPI validation errors come as a list; use the first entry.
       const first = body.detail[0] as { msg?: string } | undefined
-      return first?.msg ?? t('提交内容的格式不正确')
+      return new ApiError(status, first?.msg ?? t('提交内容的格式不正确'))
     }
   } catch {
     // Not JSON: fall back to the generic message below.
   }
-  return t('请求失败（{{status}}）', { status: response.status })
+  return new ApiError(status, t('请求失败（{{status}}）', { status }))
+}
+
+/** The backend did not answer: in the desktop app its service has stopped; from source, start the API. */
+function unreachable(): string {
+  return isDesktop()
+    ? t('无法连接后台服务。请关闭并重新打开 JacarandaParse')
+    : t('无法连接后端。请确认终端中 uv run jacara api 正在运行')
 }

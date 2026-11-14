@@ -37,6 +37,7 @@ import {
   processDocument,
   reprocessDocument,
   stopDocument,
+  stopDocuments,
 } from '../../api/documents'
 import { listTemplates } from '../../api/templates'
 import type { DocumentFilters, DocumentStatus, DocumentSummary } from '../../api/types'
@@ -109,7 +110,7 @@ function paramsFrom(f: DocumentFilters): URLSearchParams {
 export function DocumentListPage() {
   const { t } = useTranslation()
   const { can } = useAuth()
-  const { message, modal } = App.useApp()
+  const { message } = App.useApp()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   // Selected documents (for export). Kept across pages, so selection can span pages.
@@ -188,6 +189,20 @@ export function DocumentListPage() {
   })
   const canDelete = can('document:delete')
 
+  /** Stop the selected documents that are queued or being processed. */
+  const stopMany = useMutation({
+    mutationFn: stopDocuments,
+    onSuccess: ({ stopped, skipped }) => {
+      void message.success(t('已停止 {{stopped}} 份', { stopped }))
+      for (const reason of skipped) void message.warning(t('未停止：{{reason}}', { reason }))
+    },
+    onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+
   /**
    * Current status of a selected document: from the current page if present, otherwise as recorded when
    * selected.
@@ -195,25 +210,8 @@ export function DocumentListPage() {
   function statusOf(id: string): DocumentStatus | undefined {
     return documents.data?.items.find((d) => d.id === id)?.status ?? pickedRows[id]?.status
   }
+  /** Selected documents that are queued or being processed (can be stopped). */
   const busyPicked = selected.filter((id) => IN_PROGRESS.includes(statusOf(id) as DocumentStatus))
-
-  /** The selection contains processing or queued documents: do not reprocess; ask to deselect them. */
-  function warnBusy() {
-    const names = busyPicked.map(
-      (id) => documents.data?.items.find((d) => d.id === id)?.filename ?? pickedRows[id]?.filename ?? id,
-    )
-    modal.confirm({
-      title: t('{{length}} 份文档正在处理，无法重新处理', { length: names.length }),
-      content: t('{{names}}{{more}}。请取消勾选后再试。', {
-        names: names.slice(0, 5).join(t('、')),
-        more: names.length > 5 ? t(' 等 {{length}} 份', { length: names.length }) : '',
-      }),
-      okText: t('取消选择这些文档'),
-      cancelText: t('返回'),
-      onOk: () => setSelected((s) => s.filter((id) => !busyPicked.includes(id))),
-    })
-  }
-
 
   const columns: TableProps<DocumentSummary>['columns'] = [
     {
@@ -222,14 +220,21 @@ export function DocumentListPage() {
       ellipsis: true,
       render: (filename: string, d) => (
         <Flex gap={6} align="center" style={{ minWidth: 0 }}>
-          {/* Only processed documents have results to view. */}
-          <Typography.Text ellipsis style={{ minWidth: 0 }}>
-            {d.status === 'done' || d.status === 'reviewed' ? (
-              <Link to={`/documents/${d.id}`} state={{ list: params.toString() } satisfies ListState}>{filename}</Link>
-            ) : (
-              filename
-            )}
-          </Typography.Text>
+          {/* The file name comes first; hovering shows the full path (folder and name). Only processed documents
+              have results to view. */}
+          <Tooltip title={d.folder ? `${d.folder}/${filename}` : undefined}>
+            <Typography.Text
+              ellipsis={d.folder ? true : { tooltip: filename }}
+              // Its full width first (up to 70% next to a folder tag); the folder tag takes what is left.
+              style={{ flex: '0 0 auto', maxWidth: d.folder ? '70%' : '100%' }}
+            >
+              {d.status === 'done' || d.status === 'reviewed' ? (
+                <Link to={`/documents/${d.id}`} state={{ list: params.toString() } satisfies ListState}>{filename}</Link>
+              ) : (
+                filename
+              )}
+            </Typography.Text>
+          </Tooltip>
           {d.skipped_at && (
             <Tooltip title={d.skip_reason ? t('跳过原因：{{skip_reason}}', { skip_reason: d.skip_reason }) : t('审核时已跳过')}>
               <Tag color="orange" style={{ marginInlineEnd: 0 }}>
@@ -251,13 +256,21 @@ export function DocumentListPage() {
             </Tooltip>
           )}
           {d.folder && (
-            <Tooltip title={t('批量导入时所在的文件夹，点击可仅显示此文件夹')}>
+            <Tooltip title={t('批量导入时所在的文件夹：{{folder}}。点击可仅显示此文件夹', { folder: d.folder })}>
               <Tag
                 icon={<FolderOutlined />}
-                style={{ marginInlineEnd: 0, cursor: 'pointer' }}
+                style={{
+                  marginInlineEnd: 0,
+                  cursor: 'pointer',
+                  flex: '0 1 auto',
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
                 onClick={() => setFilters({ folder: d.folder ?? undefined })}
               >
-                {d.folder}
+                {/* Only the innermost folder; the tooltip has the whole path. */}
+                {d.folder.split('/').pop()}
               </Tag>
             </Tooltip>
           )}
@@ -347,10 +360,14 @@ export function DocumentListPage() {
               {t('重试')}
             </Button>
           )}
-          {canDelete && d.status !== 'processing' && (
+          {canDelete && (
             <Popconfirm
               title={t('删除「{{filename}}」？', { filename: d.filename })}
-              description={t('原始文件、处理结果、审核记录和备注将全部删除，且无法恢复。')}
+              description={
+                IN_PROGRESS.includes(d.status)
+                  ? t('处理将立即停止；原始文件、处理结果、审核记录和备注将全部删除，且无法恢复。')
+                  : t('原始文件、处理结果、审核记录和备注将全部删除，且无法恢复。')
+              }
               okText={t('删除')}
               okButtonProps={{ danger: true }}
               cancelText={t('取消')}
@@ -374,8 +391,7 @@ export function DocumentListPage() {
           {can('document:process') && (
             <BatchReprocessButton
               ids={selected}
-              busy={busyPicked.length > 0}
-              onBusy={warnBusy}
+              running={busyPicked.length}
               onDone={(ids) => {
                 setSelected((s) => s.filter((id) => !ids.includes(id)))
                 void queryClient.invalidateQueries({ queryKey: ['documents'] })
@@ -383,10 +399,30 @@ export function DocumentListPage() {
               }}
             />
           )}
+          {can('document:process') && (
+            <Popconfirm
+              title={t('停止选中的 {{length}} 份？', { length: busyPicked.length })}
+              description={t('只停止正在排队或处理的文档。停止后标记为处理失败，之前的结果保持不变，可随时重新处理。')}
+              okText={t('停止')}
+              cancelText={t('取消')}
+              disabled={busyPicked.length === 0}
+              onConfirm={() => stopMany.mutate(busyPicked)}
+            >
+              <Tooltip title={busyPicked.length === 0 ? t('选中的文档中没有正在排队或处理的') : undefined}>
+                <Button icon={<PauseCircleOutlined />} disabled={busyPicked.length === 0} loading={stopMany.isPending}>
+                  {t('停止')}{busyPicked.length > 0 ? t('（{{length}}）', { length: busyPicked.length }) : ''}
+                </Button>
+              </Tooltip>
+            </Popconfirm>
+          )}
           {canDelete && (
             <Popconfirm
               title={t('删除选中的 {{length}} 份？', { length: selected.length })}
-              description={t('原始文件、处理结果、审核记录和备注将全部删除，且无法恢复。正在处理的文档将跳过。')}
+              description={
+                busyPicked.length > 0
+                  ? t('其中 {{running}} 份正在排队或处理，将立即停止。原始文件、处理结果、审核记录和备注将全部删除，且无法恢复。', { running: busyPicked.length })
+                  : t('原始文件、处理结果、审核记录和备注将全部删除，且无法恢复。')
+              }
               okText={t('删除')}
               okButtonProps={{ danger: true }}
               cancelText={t('取消')}
@@ -405,7 +441,7 @@ export function DocumentListPage() {
               </Tooltip>
             </Popconfirm>
           )}
-          <ExportButton ids={selected.filter((id) => statusOf(id) !== 'failed')} type="primary" />
+          <ExportButton ids={selected.filter((id) => EXPORTABLE.includes(statusOf(id) as DocumentStatus))} type="primary" />
           <Button
             icon={<ReloadOutlined />}
             onClick={() => void documents.refetch()}
@@ -564,13 +600,9 @@ export function DocumentListPage() {
               return next
             })
           },
-          preserveSelectedRowKeys: true, // Selections survive switching pages.
-          // Queued and processing documents cannot be selected: no results yet (not exportable), and they
-          // cannot be reprocessed or deleted; failed documents can be reprocessed and deleted.
-          // Documents that started processing after being selected can still be deselected.
-          getCheckboxProps: (d) => ({
-            disabled: !EXPORTABLE.includes(d.status) && d.status !== 'failed' && !selected.includes(d.id),
-          }),
+          // Selections survive switching pages. Every document can be selected: queued and running ones can be
+          // stopped, restarted or deleted together with the others; export takes only those with results.
+          preserveSelectedRowKeys: true,
         }}
         dataSource={documents.data?.items}
         loading={documents.isPending}

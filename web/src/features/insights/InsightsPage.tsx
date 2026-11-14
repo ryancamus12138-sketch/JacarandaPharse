@@ -25,6 +25,7 @@ import { Link } from 'react-router'
 import { ApiError } from '../../api/client'
 import { type Correction, type FieldStat, type KindCount, type TemplateStat, downloadDataset, getCorrections } from '../../api/insights'
 import { useAuth } from '../../auth/useAuth'
+import { useDesktop } from '../../desktop'
 import { saveFile } from '../../utils/download'
 import { formatTime } from '../../utils/format'
 import { StageCell, StageSummary } from './Attribution'
@@ -58,18 +59,21 @@ function Kinds({ kinds }: { kinds: KindCount[] }) {
 /** Export review data: original files, training data, paired evaluation manifest. */
 function DatasetButton({ template }: { template?: string }) {
   const { t } = useTranslation()
+  const desktop = useDesktop()
   const { message } = App.useApp()
   const [sensitive, setSensitive] = useState(false)
   const [files, setFiles] = useState(true)
   const download = useMutation({
     mutationFn: () => downloadDataset({ template, sensitive, files }),
-    onSuccess: ({ blob, filename }) => saveFile(blob, filename),
+    onSuccess: (file) => void saveFile(file),
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
   const content = (
     <Flex vertical gap={8} style={{ maxWidth: 340 }}>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {t('将已完成审核的单据打包为 zip：以人工审核后的值作为标准答案，并附模型原始输出、修改内容及 OCR 文字（train.jsonl），以及可直接用于 jacara eval pairs 的测评清单（pairs.toml）。导出内容属于业务数据，请勿提交到代码仓库。')}
+        {desktop
+          ? t('将已完成审核的单据打包为 zip：以人工审核后的值作为标准答案，并附模型原始输出、修改内容及 OCR 文字（train.jsonl），以及成对测评清单（pairs.toml）。')
+          : t('将已完成审核的单据打包为 zip：以人工审核后的值作为标准答案，并附模型原始输出、修改内容及 OCR 文字（train.jsonl），以及可直接用于 jacara eval pairs 的测评清单（pairs.toml）。导出内容属于业务数据，请勿提交到代码仓库。')}
       </Typography.Text>
       <Checkbox checked={files} onChange={(e) => setFiles(e.target.checked)}>
         {t('包含原文件')}

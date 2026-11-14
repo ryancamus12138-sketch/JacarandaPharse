@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router'
 import { useAuth } from './useAuth'
 import { useTranslation } from 'react-i18next'
+import { DataFolderMissing, MaintenanceWait } from '../components/DesktopScreens'
 
 /**
  * Gate: redirects to login when not logged in and shows an error when the backend is unreachable. Renders its
@@ -19,6 +20,12 @@ export function RequireAuth({ children }: { children: ReactNode }) {
         <Spin size="large" />
       </Flex>
     )
+  }
+  if (error?.unavailable) {
+    return <DataFolderMissing folder={error.unavailable} />
+  }
+  if (error?.maintenance) {
+    return <MaintenanceWait />
   }
   if (error) {
     return (

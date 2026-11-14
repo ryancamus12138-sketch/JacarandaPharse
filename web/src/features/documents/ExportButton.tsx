@@ -45,9 +45,9 @@ export function ExportButton({ ids, type, languages = defaultLanguages(), langua
   const setLanguage = onLanguage ?? setOwn
   const download = useMutation({
     mutationFn: (mode: ExportMode) => exportDocuments(ids, mode, language),
-    onSuccess: ({ blob, filename }) => {
-      saveFile(blob, filename)
-      void message.success(t('已导出 {{filename}}（可在导出记录中重新下载）', { filename }))
+    onSuccess: (file) => {
+      void saveFile(file)
+      void message.success(t('已导出 {{filename}}（可在导出记录中重新下载）', { filename: file.filename }))
       void queryClient.invalidateQueries({ queryKey: ['exports'] })
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),

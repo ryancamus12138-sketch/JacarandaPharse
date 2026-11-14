@@ -17,6 +17,7 @@ from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.models import Comment, Document
 from jacara.modules.audit.service import record
+from jacara.modules.auth.schemas import PERSONAL_NAME
 from jacara.modules.comments.repository import CommentRepository
 from jacara.modules.comments.schemas import CommentIn, CommentOut
 
@@ -132,11 +133,11 @@ class CommentService:
                 page=c.page,
                 field_name=c.field_name,
                 body=c.body,
-                author=names.get(c.user_id, tr("本机用户")),
+                author=names.get(c.user_id, tr(PERSONAL_NAME)),
                 mine=c.user_id == self.owner.user_id,
                 created_at=c.created_at or datetime.now(UTC),
                 resolved_at=c.resolved_at,
-                resolved_by=names.get(c.resolved_by, tr("本机用户")) if c.resolved_by else None,
+                resolved_by=names.get(c.resolved_by, tr(PERSONAL_NAME)) if c.resolved_by else None,
             )
             for c in comments
         ]

@@ -129,7 +129,9 @@ def test_starter_library_follows_the_interface_language(client):
     assert au_zh["language"] == "zh" and au_zh["title"] == "澳洲税务发票"
     assert au["language"] == "en" and au["languages"][0] == "en"
     assert au["title"] == "Australian Tax Invoice" and au["titles"] == {"zh": "澳洲税务发票"}
-    assert au["domains"] == ["Invoice"] and au["basis"][0] == "For: Australian tax invoices."
+    # Domains: one stored name, shown in the interface language.
+    assert au["domains"] == ["发票"] and au["domain_names"] == ["Invoice"]
+    assert au_zh["domain_names"] == ["发票"] and au["basis"][0] == "For: Australian tax invoices."
     seller = next(f for f in au["fields"] if f["name"] == "seller_name")
     assert seller["label"] == "Supplier Name" and seller["names"] == {"zh": "卖方名称"}
     assert seller["description"].startswith("The name") and seller["descriptions"]["zh"]
@@ -142,7 +144,8 @@ def test_template_keeps_its_own_primary_language(client):
         headers=ENGLISH,
     ).json()
     assert created["language"] == "en" and created["title"] == "Australian Tax Invoice"
-    assert created["domains"] == ["Invoice"]
+    # Known domains are stored under one name and shown in the reader's language.
+    assert created["domains"] == ["发票"] and created["domain_names"] == ["Invoice"]
     # Read from the Chinese interface: still an English template, Chinese one switch away.
     shown = client.get(f"/api/v1/templates/{created['id']}").json()
     assert shown["language"] == "en" and shown["titles"]["zh"] == "澳洲税务发票"
@@ -172,6 +175,7 @@ def test_template_keeps_its_own_primary_language(client):
     assert exported["language"] == "en" and exported["titles"] == {"zh": "澳洲税务发票"}
     imported = client.post("/api/v1/templates/import", json=exported).json()
     assert imported["language"] == "en" and imported["descriptions"] == shown["descriptions"]
+    assert exported["domains"] == ["Invoice"] and imported["domains"] == ["发票"]
     item = next(f for f in imported["fields"] if f["name"] == "seller_name")
     assert item["names"] == {"zh": "卖方名称"} and item["descriptions"]["zh"]
 

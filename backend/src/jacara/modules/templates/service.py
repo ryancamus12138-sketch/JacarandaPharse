@@ -68,8 +68,10 @@ from jacara.templates import (
     Template,
     TemplateError,
     TemplateField,
+    canonical_domain,
     clean_countries,
     clean_labels,
+    domain_label,
     from_definition,
     infer_countries,
     load_starter,
@@ -574,7 +576,9 @@ class TemplateService:
     ) -> None:
         where = tr("模板「{title}」", title=found.title)
         try:
-            found.domains = list(clean_labels(domains, where, tr("功能领域"), 10))
+            # Known domains are stored under one name whatever language they were typed in.
+            cleaned = clean_labels(domains, where, tr("功能领域"), 10)
+            found.domains = list(dict.fromkeys(canonical_domain(d) for d in cleaned))
             found.countries = list(clean_countries(countries, where))
             found.tags = list(clean_labels(tags, where, tr("自定义标签"), 20))
         except TemplateError as err:
@@ -622,14 +626,15 @@ class TemplateService:
             titles=dict(template.titles),
             language=template.language,
             descriptions=dict(template.descriptions),
-            category=template.category,
+            # Known domains in the template's own language, like the rest of the file.
+            category=domain_label(template.category, template.language),
             description=template.description,
             version=template.version,
             fields=[TemplateFieldIn(**f) for f in definition["fields"]],
             tables=[TemplateTableIn(**t) for t in definition["tables"]],
             rules=definition["rules"],
             custom_rules=[CustomRuleIO(**c) for c in definition.get("custom_rules", [])],
-            domains=list(template.domains),
+            domains=[domain_label(d, template.language) for d in template.domains],
             countries=list(template.countries),
             tags=list(record.tags or ()) if record is not None else [],
             entities=definition["entities"],

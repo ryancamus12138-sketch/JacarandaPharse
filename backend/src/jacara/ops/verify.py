@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
-from jacara.core.i18n import render
+from jacara.core.i18n import N_, render
 from jacara.core.storage import ObjectStorage
 
 
@@ -85,14 +85,14 @@ def verify(factory: sessionmaker[Session], storage: ObjectStorage) -> list[Check
     from jacara.pipeline.current import template_from_version
     from jacara.pipeline.snapshots import load_snapshot
 
-    originals = Check("原始文件（原图、PDF）")
-    reviews = Check("审核记录（每份文档的字段和修改历史）")
-    templates = Check("模板（每一个版本）")
-    samples = Check("OCR 样本小图")
-    snapshots = Check("OCR 快照")
-    exports = Check("导出记录的文件")
-    avatars = Check("头像")
-    datasets = Check("数据集")
+    originals = Check(N_("原始文件（原图、PDF）"))
+    reviews = Check(N_("审核记录（每份文档的字段和修改历史）"))
+    templates = Check(N_("模板（每一个版本）"))
+    samples = Check(N_("OCR 样本小图"))
+    snapshots = Check(N_("OCR 快照"))
+    exports = Check(N_("导出记录的文件"))
+    avatars = Check(N_("头像"))
+    datasets = Check(N_("数据集"))
     with factory() as session:
         documents = session.scalars(
             select(Document).options(

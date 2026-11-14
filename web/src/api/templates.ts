@@ -21,6 +21,17 @@ export interface TemplateSummary {
   kind?: Template['kind']
 }
 
+/** A known domain: stored form and name in the interface language. */
+export interface DomainOption {
+  value: string
+  label: string
+}
+
+/** Known domains for the tag editor (in the interface language). */
+export function listDomains(): Promise<DomainOption[]> {
+  return api<DomainOption[]>('/templates/domains')
+}
+
 /** My templates (non-archived first) + built-in templates. */
 export function listTemplates(): Promise<Template[]> {
   return api<Template[]>('/templates')

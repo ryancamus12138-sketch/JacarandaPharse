@@ -12,11 +12,13 @@ from sqlalchemy.orm import Session
 from jacara.core.deps import get_owner, get_session, get_storage
 from jacara.core.i18n import render
 from jacara.core.owner import Owner
+from jacara.core.permissions import require
 from jacara.core.storage import ObjectStorage
 from jacara.modules.documents.router import XLSX, attachment
 from jacara.modules.templates.schemas import (
     ArchiveIn,
     BoxesIn,
+    DomainOut,
     ExcelAnalysisOut,
     ExcelBuildIn,
     FormulaCheckIn,
@@ -82,6 +84,17 @@ def list_templates(
 def list_starters(service: Service) -> list[TemplateOut]:
     """The nine starter templates. Usable for uploads after "Add to my templates"."""
     return service.starters()
+
+
+@router.get("/domains", summary="常用功能领域")
+def list_domains(owner: Annotated[Owner, Depends(get_owner)]) -> list[DomainOut]:
+    """Known domains for the tag editor: the stored form and the name in the interface language.
+    Templates store a known domain under one name and show it in the language of whoever looks."""
+    from jacara.core.i18n import language
+    from jacara.templates import DOMAIN_NAMES, domain_label
+
+    require(owner, "document:read")
+    return [DomainOut(value=d, label=domain_label(d, language())) for d in DOMAIN_NAMES]
 
 
 @router.get("/rules", summary="可以选的规则")

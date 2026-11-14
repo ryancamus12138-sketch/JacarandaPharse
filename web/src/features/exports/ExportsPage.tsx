@@ -47,7 +47,7 @@ export function ExportsPage() {
   })
   const download = useMutation({
     mutationFn: (r: ExportRecord) => downloadExport(r.id, r.filename),
-    onSuccess: ({ blob, filename }) => saveFile(blob, filename),
+    onSuccess: (file) => void saveFile(file),
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
 

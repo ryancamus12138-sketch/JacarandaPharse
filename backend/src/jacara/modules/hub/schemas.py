@@ -51,6 +51,7 @@ class ModelOut(BaseModel):
 
 
 RESTART_HINT = N_("更换后需执行 jacara stop 和 jacara start 才会生效")
+RESTART_HINT_DESKTOP = N_("更换后需重新启动 JacarandaParse 才会生效")
 """Shown on the models page: model changes take effect after a restart."""
 
 

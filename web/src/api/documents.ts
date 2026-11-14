@@ -282,10 +282,6 @@ export function getPageStructure(id: string, page: number, run?: number): Promis
 }
 
 /**
- * Delete documents (one or several): original files, results, review records and comments are deleted
- * permanently. Documents being processed are skipped.
- */
-/**
  * Settings for bulk reprocessing. null: same as last time for each document; without template: each
  * document's latest template version.
  */
@@ -299,8 +295,8 @@ export interface BatchReprocess {
 }
 
 /**
- * Reprocess the selected documents with the same settings. skipped: documents not processed (being processed,
- * still queued, …).
+ * Reprocess the selected documents with the same settings. Queued and running documents are restarted.
+ * skipped: documents that could not be reprocessed (missing original file, …).
  */
 export function reprocessDocuments(
   ids: string[],
@@ -312,6 +308,20 @@ export function reprocessDocuments(
   })
 }
 
+/** Stop several queued or running documents (see stopDocument). */
+export function stopDocuments(ids: string[]): Promise<{ stopped: number; skipped: string[] }> {
+  return api<{ stopped: number; skipped: string[] }>('/documents/stop', { method: 'POST', json: { ids } })
+}
+
+/** Stop every queued and running document (the processing queue's "Stop all"). */
+export function stopAllDocuments(): Promise<{ stopped: number; skipped: string[] }> {
+  return api<{ stopped: number; skipped: string[] }>('/documents/stop-all', { method: 'POST' })
+}
+
+/**
+ * Delete documents (one or several): original files, results, review records and comments are deleted
+ * permanently. Queued and running documents are deleted too; their processing stops and writes nothing.
+ */
 export function deleteDocuments(ids: string[]): Promise<{ deleted: number; skipped: string[] }> {
   return api<{ deleted: number; skipped: string[] }>('/documents/delete', {
     method: 'POST',

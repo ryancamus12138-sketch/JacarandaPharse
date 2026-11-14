@@ -7,8 +7,9 @@ The desktop app starts this command with JACARA_HOME set to its data directory. 
    127.0.0.1.
 2. Brings the database to the current schema and marks documents interrupted by the last exit as
    failed.
-3. Starts the model server (when a model file is available) and the two pipeline workers, and
-   keeps them running: a child that exits on its own is started again (see Supervisor).
+3. Starts the model server (when a model file is available), the two pipeline workers and, when a
+   watch folder is set, the folder watcher, and keeps them running: a child that exits on its own
+   is started again (see Supervisor).
 4. Serves the API and web pages, and once they answer prints one line to standard output:
    `JACARA_READY http://127.0.0.1:<port>/desktop/enter?token=<token>`; the app opens that address.
 
@@ -67,6 +68,7 @@ POLL_SECONDS = 1.0
 """How often the supervisor checks its children."""
 
 RUNTIME = {
+    "JACARA_DESKTOP": "true",
     "JACARA_MODE": "personal",
     "JACARA_DATABASE": "sqlite",
     "JACARA_STORAGE": "local",
@@ -268,6 +270,8 @@ class Child:
     """Failed starts in a row (exits within START_SECONDS)."""
     retry_at: float | None = None
     given_up: bool = False
+    paused: bool = False
+    """Stopped on purpose for a while (see Supervisor.pause); not restarted meanwhile."""
 
     def start(self) -> None:
         with _log(self.name) as log:
@@ -315,6 +319,23 @@ class Supervisor:
             self.thread.join()
         stop([c.process for c in self.children if c.process is not None])
 
+    def pause(self, which: Callable[[Child], bool]) -> None:
+        """Stop the chosen children and keep them stopped until resume()."""
+        chosen = [c for c in self.children if which(c) and not c.paused]
+        for child in chosen:
+            child.paused = True
+        stop([c.process for c in chosen if c.process is not None])
+
+    def resume(self) -> None:
+        """Start the paused children again."""
+        for child in self.children:
+            if child.paused:
+                child.retry_at = None
+                child.failures = 0
+                child.start()
+                child.paused = False  # After start: the watcher must not see the old process.
+        self.record(self.children)
+
     def _watch(self) -> None:
         while not self.stopping.wait(POLL_SECONDS):
             for child in self.children:
@@ -323,7 +344,7 @@ class Supervisor:
     def check(self, child: Child) -> None:
         """Restart child if it has exited and is due; called once per poll."""
         now = time.monotonic()
-        if child.given_up or child.process is None:
+        if child.given_up or child.paused or child.process is None:
             return
         if child.retry_at is None:
             code = child.process.poll()
@@ -393,8 +414,175 @@ def _log(name: str) -> IO[bytes]:
     return (folder / f"{name}.log").open("ab")
 
 
+AUTO_BACKUP_FIRST = 60.0
+"""Seconds after start-up before the first check for an automatic backup."""
+
+AUTO_BACKUP_EVERY = 3600.0
+"""Seconds between checks; a backup is made when the last one is a day old (ADR 0068 13.5)."""
+
+DAY = 86400.0
+
+
+def resume_interrupted() -> int:
+    """Documents left in processing when the services were restarted on purpose go back to the
+    queue: nothing went wrong with them, so they are processed again rather than marked failed."""
+    from sqlalchemy import update
+
+    from jacara.core.db import session_scope
+    from jacara.models import Document
+
+    with session_scope() as session:
+        ids = session.scalars(
+            update(Document)
+            .where(Document.status == "processing")
+            .values(status="uploaded", stage=None, progress=None, claim=None)
+            .returning(Document.id)
+        ).all()
+    return len(ids)
+
+
+class Services:
+    """The child processes of the desktop app, built from the current settings: started with the
+    app, and stopped, paused or restarted by maintenance jobs (backup, restore, moving the data
+    folder, applying settings) run by the API in this process."""
+
+    def __init__(self, model_port: int, model_key: str) -> None:
+        self.model_port = model_port
+        self.model_key = model_key
+        self.supervisor: Supervisor | None = None
+        self.lock = threading.Lock()
+
+    def children(self) -> list[Child]:
+        from jacara.core.config import get_settings
+
+        settings = get_settings()
+        children: list[Child] = []
+        model = settings.find_model()
+        if model is not None:
+            from jacara.plugins.model_backends.server import server_command, server_env
+
+            try:
+                command = server_command(model, port=self.model_port, mmproj=settings.find_mmproj())
+            except FileNotFoundError as err:
+                print(f"jacara desktop: {err}", file=sys.stderr, flush=True)
+            else:
+                env = {**server_env(), "LLAMA_API_KEY": self.model_key}
+                children.append(Child("model", command, env))
+        stages = ("read", "extract") if settings.jacara_pipeline else ("all",)
+        for stage in stages:
+            children.append(
+                Child(
+                    f"worker-{stage}",
+                    self_command("worker", "--stage", stage),
+                    {**os.environ, WATCH_STDIN: "1"},
+                    watch_stdin=True,
+                    # The stage that takes uploaded documents may have lost the one it was on.
+                    after_restart=requeue_waiting if stage in ("read", "all") else None,
+                )
+            )
+        if settings.watch_folders():
+            # Watch folders (settings page): import what is placed in them, as `jacara start` does.
+            children.append(
+                Child(
+                    "watch",
+                    self_command("watch"),
+                    {**os.environ, WATCH_STDIN: "1"},
+                    watch_stdin=True,
+                )
+            )
+        return children
+
+    def start(self) -> None:
+        with self.lock:
+            if self.supervisor is not None:
+                return
+            self.supervisor = Supervisor(self.children(), _record)
+            self.supervisor.start()
+        # Tasks lost when the last run ended in the middle of one.
+        requeue_waiting()
+
+    def stop(self) -> None:
+        """Stop every child and remove their process record, so that no record is left in a data
+        folder that a restore or move is about to replace."""
+        with self.lock:
+            if self.supervisor is not None:
+                self.supervisor.stop()
+                self.supervisor = None
+            _run_file().unlink(missing_ok=True)
+
+    def pause_workers(self) -> None:
+        """Stop everything that writes to the data (workers, folder watcher); the model server
+        keeps running."""
+        with self.lock:
+            if self.supervisor is not None:
+                self.supervisor.pause(lambda child: child.name != "model")
+
+    def resume_workers(self) -> None:
+        with self.lock:
+            if self.supervisor is not None:
+                self.supervisor.resume()
+        requeue_waiting()
+
+    def restart(self) -> None:
+        """Stop every child, forget what this process opened, and start again from the current
+        settings and data folder."""
+        from jacara.core.runtime import reset_caches
+
+        self.stop()
+        reset_caches()
+        resume_interrupted()
+        self.start()
+
+
+SERVICES: Services | None = None
+"""The services of this desktop app process; None outside `jacara desktop`."""
+
+
+def services() -> Services:
+    if SERVICES is None:
+        raise RuntimeError("not running as the desktop app")
+    return SERVICES
+
+
+def open_data() -> None:
+    """Start on the data folder in JACARA_HOME: stop what a crashed earlier run left behind, bring
+    the database to the current schema, mark interrupted documents, start the services."""
+    from jacara.core.config import get_settings
+    from jacara.core.runtime import reset_caches
+    from jacara.ops.commands import migrate_to
+    from jacara.pipeline.process import reset_interrupted
+
+    reset_caches()
+    stop_previous_run()
+    migrate_to(get_settings().database_url, None)
+    reset_interrupted()
+    services().start()
+
+
+def _auto_backups(stopping: threading.Event) -> None:
+    """Make the daily automatic database backup (ADR 0068 13.5) while the app runs."""
+    from jacara.core.config import get_settings
+    from jacara.core.maintenance import MAINTENANCE
+    from jacara.ops.desktop_data import auto_backup, last_auto_backup
+
+    wait = AUTO_BACKUP_FIRST
+    while not stopping.wait(wait):
+        wait = AUTO_BACKUP_EVERY
+        settings = get_settings()
+        if not settings.jacara_auto_backup or MAINTENANCE.running() or MAINTENANCE.unavailable:
+            continue
+        last = last_auto_backup()
+        if last is not None and time.time() - last < DAY:
+            continue
+        try:
+            auto_backup(settings.jacara_auto_backup_keep)
+        except Exception as err:  # A failed backup is retried at the next check.
+            print(f"jacara desktop: automatic backup failed: {err}", file=sys.stderr, flush=True)
+
+
 def run_desktop() -> int:
     """Run the desktop service until the app closes standard input or a stop signal arrives."""
+    global SERVICES
     if not os.environ.get("JACARA_HOME"):
         print("JACARA_HOME (the data directory) is not set", file=sys.stderr)
         return 2
@@ -408,47 +596,31 @@ def run_desktop() -> int:
     os.environ["MODEL_API_KEY"] = model_key
     os.environ["MODEL_SERVER"] = f"http://127.0.0.1:{model_port}"
 
-    from jacara.core.config import get_settings
+    from jacara.core.maintenance import MAINTENANCE
+    from jacara.ops.desktop_data import DEFAULT_HOME, holds_data, recorded_location
 
-    get_settings.cache_clear()
+    start = Path(os.environ["JACARA_HOME"]).expanduser()
+    os.environ[DEFAULT_HOME] = str(start)
     job = kill_children_with_me()  # noqa: F841  Kept referenced for the lifetime of the process.
-    stop_previous_run()
-    settings = get_settings()
-
-    from jacara.ops.commands import migrate_to
-    from jacara.pipeline.process import reset_interrupted
-
-    migrate_to(settings.database_url, None)
-    reset_interrupted()
-
-    children: list[Child] = []
-    model = settings.find_model()
-    if model is not None:
-        from jacara.plugins.model_backends.server import server_command, server_env
-
-        command = server_command(model, port=model_port, mmproj=settings.find_mmproj())
-        children.append(Child("model", command, {**server_env(), "LLAMA_API_KEY": model_key}))
-    stages = ("read", "extract") if settings.jacara_pipeline else ("all",)
-    for stage in stages:
-        children.append(
-            Child(
-                f"worker-{stage}",
-                self_command("worker", "--stage", stage),
-                {**os.environ, WATCH_STDIN: "1"},
-                watch_stdin=True,
-                # The stage that takes uploaded documents may have lost the one it was on.
-                after_restart=requeue_waiting if stage in ("read", "all") else None,
-            )
-        )
-    supervisor = Supervisor(children, _record)
+    SERVICES = Services(model_port, model_key)
+    stopping = threading.Event()
     try:
-        supervisor.start()
-        # Tasks lost when the last run ended in the middle of one.
-        requeue_waiting()
+        moved = recorded_location(start)
+        if moved is not None and not holds_data(moved):
+            # The data folder was moved to a drive that is not connected: never start an empty
+            # data folder in its place. The page offers to retry or go back to the default place.
+            MAINTENANCE.unavailable = moved
+        else:
+            if moved is not None:
+                os.environ["JACARA_HOME"] = str(moved)
+            open_data()
+        threading.Thread(
+            target=_auto_backups, args=(stopping,), name="auto-backup", daemon=True
+        ).start()
         _serve(token)
     finally:
-        supervisor.stop()
-        _run_file().unlink(missing_ok=True)
+        stopping.set()
+        SERVICES.stop()
     return 0
 
 

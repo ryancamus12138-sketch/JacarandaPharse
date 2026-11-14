@@ -15,7 +15,7 @@ export interface ModelSlot {
   label: string
   current: string | null
   /** env: set in .env; choice: selected in the web UI; auto: detected; builtin: bundled; none: none. */
-  source: 'env' | 'choice' | 'auto' | 'builtin' | 'none'
+  source: 'env' | 'choice' | 'auto' | 'builtin' | 'bundled' | 'none'
   env: string
   files: ModelFile[]
 }

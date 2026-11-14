@@ -4,6 +4,7 @@ import { Alert, Button, Card, Collapse, Descriptions, Flex, List, Typography } f
 import { ApiError } from '../../api/client'
 import { getSystemInfo } from '../../api/system'
 import { useAuth } from '../../auth/useAuth'
+import { useDesktop } from '../../desktop'
 import { useTranslation } from 'react-i18next'
 import { t } from '../../i18n'
 
@@ -21,6 +22,7 @@ const VISION_MODE: Record<string, string> = {
 export function AboutSettings() {
   const { t } = useTranslation()
   const { can } = useAuth()
+  const desktop = useDesktop()
   const info = useQuery({ queryKey: ['system'], queryFn: getSystemInfo })
   const d = info.data
   const admin = can('system:manage')
@@ -95,7 +97,9 @@ export function AboutSettings() {
                     {d.model.sees_images
                       ? t('支持读图（{{value}}）· {{value2}}', { value: d.model.vision_file ?? '', value2: VISION_MODE[d.model.vision_mode ?? 'auto'] ?? d.model.vision_mode })
                       : d.model.vision_file
-                        ? t('已放置 {{vision_file}}，执行 jacara start 重启后生效', { vision_file: d.model.vision_file })
+                        ? desktop
+                          ? t('已放置 {{vision_file}}，重新启动 JacarandaParse 后生效', { vision_file: d.model.vision_file })
+                          : t('已放置 {{vision_file}}，执行 jacara start 重启后生效', { vision_file: d.model.vision_file })
                         : t('没有视觉模型')}
                   </Descriptions.Item>
                   <Descriptions.Item label="OCR">

@@ -14,14 +14,18 @@ from fastapi_offline import FastAPIOffline
 
 from jacara import __version__
 from jacara.core.config import get_settings
+from jacara.core.desktop_files import SaveToDownloads
 from jacara.core.i18n import LanguageMiddleware
 from jacara.core.local_guard import LocalGuard
+from jacara.core.maintenance import MaintenanceGate
 from jacara.core.permissions import PermissionDenied
 from jacara.core.web import mount_web
 from jacara.modules.app_settings.router import router as settings_router
 from jacara.modules.audit.router import router as audit_router
 from jacara.modules.auth.router import auth_router, users_router
 from jacara.modules.comments.router import comments_router, document_comments_router
+from jacara.modules.desktop.router import location_router as desktop_location_router
+from jacara.modules.desktop.router import router as desktop_router
 from jacara.modules.documents.router import dashboard_router
 from jacara.modules.documents.router import router as documents_router
 from jacara.modules.exports.router import router as exports_router
@@ -77,12 +81,18 @@ def create_app() -> FastAPI:
     api.include_router(models_router)
     api.include_router(hub_router)
     api.include_router(settings_router)
+    api.include_router(desktop_router)
+    api.include_router(desktop_location_router)
 
     @api.get("/health", tags=["系统"], summary="服务是否在运行")
     def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
     app.include_router(api)
+    # Desktop app: file answers are saved to Downloads when the page asks (web views do not save).
+    app.add_middleware(SaveToDownloads, enabled=settings.jacara_desktop)
+    # Desktop app: holds off requests while a backup, restore or move runs (core/maintenance).
+    app.add_middleware(MaintenanceGate)
     app.add_middleware(LanguageMiddleware)
     # Added last, so it runs first: refused requests never reach the application. The token is
     # set only by the desktop launcher and is read from the environment, never from .env.

@@ -20,6 +20,7 @@ from typing import Any, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from jacara.core.advice import pick
 from jacara.core.config import get_settings
 from jacara.core.daterange import parse_date_range
 from jacara.core.i18n import N_, nested, render, render_checks, stored, tr, trc
@@ -57,6 +58,7 @@ from jacara.modules.documents.schemas import (
     SentOut,
     SentText,
     SkipIn,
+    StopManyOut,
     StructureCell,
     StructurePair,
     StructureRegion,
@@ -97,6 +99,13 @@ from jacara.templates import Template
 from jacara.workbook.fill import DocRow, fill_workbook
 
 log = logging.getLogger(__name__)
+
+NO_VISION = N_(
+    "模型当前无法读图：请将视觉模型 mmproj-F16.gguf 放入 models/，并重新执行 jacara start"
+)
+NO_VISION_DESKTOP = N_(
+    "模型当前无法读图：请在「设置 → 模型」中配置视觉模型，并重新启动 JacarandaParse"
+)
 
 REPROCESSABLE = {"done", "reviewed", "failed", "uploaded", "processing"}
 """Statuses from which a document can be reprocessed (a new run). A queued or running document is
@@ -364,6 +373,37 @@ class DocumentService:
         record(self.session, self.owner, "document:stop", "document", document.id)
         return DocumentOut.model_validate(document)
 
+    def stop_many(self, ids: list[uuid.UUID]) -> StopManyOut:
+        """Stop the selected documents that are queued or being processed. Others (already
+        finished, failed or missing) are listed in skipped, one line each."""
+        stopped = 0
+        skipped: list[str] = []
+        for document_id in dict.fromkeys(ids):
+            document = self.repo.get(document_id, self.owner.team_id)
+            if document is None:
+                skipped.append(tr("{name}：文档不存在", name=str(document_id)))
+                continue
+            if document.status not in STOPPABLE:
+                skipped.append(tr("{name}：没有正在进行的处理", name=document.filename))
+                continue
+            self.stop(document_id)
+            stopped += 1
+        return StopManyOut(stopped=stopped, skipped=skipped)
+
+    def stop_all(self) -> StopManyOut:
+        """Stop every queued and running document of this team (the "Stop all" button of the
+        processing queue). Each becomes failed ("stopped manually") and can be reprocessed;
+        earlier results stay as they were."""
+        require(self.owner, "document:process", self.owner.team_id)
+        ids = list(
+            self.session.scalars(
+                select(Document.id).where(
+                    Document.team_id == self.owner.team_id, Document.status.in_(STOPPABLE)
+                )
+            )
+        )
+        return self.stop_many(ids) if ids else StopManyOut(stopped=0)
+
     def add_review_time(self, document_id: uuid.UUID, seconds: int) -> None:
         """Add seconds to the review time (reported by the review page; only time with the page open
         and in use)."""
@@ -379,7 +419,8 @@ class DocumentService:
         """Reprocess the selected documents (a new run each) with the same settings (web UI
         defaults: each document's latest template version, system defaults for vision and PDF
         read mode, and the previous split). Documents being processed or still queued are
-        skipped. If the task queue is unreachable, stop immediately and report the error: a
+        restarted: their running worker gives them up (see reprocess). If the task queue is
+        unreachable, stop immediately and report the error: a
         document already set to queued is in the same state as an upload whose queue was
         unreachable and can be retried from the list."""
         if data.reason == "other" and not data.note.strip():
@@ -395,18 +436,7 @@ class DocumentService:
         )
         queued = 0
         skipped: list[str] = []
-        busy = {"uploaded": tr("正在排队"), "processing": tr("正在处理")}
         for document_id in dict.fromkeys(ids):
-            document = self.repo.get(document_id, self.owner.team_id)
-            if document is not None and document.status in busy:
-                skipped.append(
-                    tr(
-                        "{filename}：{state}",
-                        filename=document.filename,
-                        state=busy[document.status],
-                    )
-                )
-                continue
             try:
                 self.reprocess(document_id, choice)
             except DocumentError as err:
@@ -474,8 +504,9 @@ class DocumentService:
         """Delete a document: the original file, the results of every run, review records and
         comments are deleted permanently. The audit log records what was deleted.
 
-                Documents being processed are not deleted (the worker is using them); delete them
-        after processing finishes. Files of earlier exports are not affected."""
+                Queued and running documents are deleted too: the worker holding one notices at its
+        next progress report or when it saves (its claim is gone with the row), writes nothing and
+        removes the OCR snapshot it made. Files of earlier exports are not affected."""
         documents = [self._find(i) for i in dict.fromkeys(ids)]
         for document in documents:
             require(self.owner, "document:delete", document.team_id)
@@ -483,11 +514,6 @@ class DocumentService:
         skipped: list[str] = []
         deleted = 0
         for document in documents:
-            if document.status == "processing":
-                skipped.append(
-                    tr("{filename}：正在处理，请在处理完成后删除", filename=document.filename)
-                )
-                continue
             record(
                 self.session,
                 self.owner,
@@ -1035,10 +1061,7 @@ class DocumentService:
         if self.model is None or not callable(check) or not check():
             raise DocumentError(
                 "unavailable",
-                tr(
-                    "模型当前无法读图：请将视觉模型 mmproj-F16.gguf 放入 models/"
-                    "，并重新执行 jacara start"
-                ),
+                tr(pick(NO_VISION_DESKTOP, NO_VISION)),
             )
         image = self.page_image(document_id, page)
         try:

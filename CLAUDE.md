@@ -72,7 +72,7 @@ backend/src/jacara/
   cli.py        命令行入口（jacara start 一起启动模型、worker、API）
   eval/         评测：sroie.py 读数据集，score.py 打分和指标，run.py 跑流水线、写结果；
                 replay.py 回放（ADR 0053），tables.py 表格明细配对（ADR 0062），ocr.py OCR 模型评测（ADR 0060）
-backend/migrations/   Alembic 数据库迁移
+backend/src/jacara/migrations/   Alembic 数据库迁移
 backend/tests/        自动测试（pytest）
 web/          前端（React + TypeScript + Vite + Ant Design + react-router + TanStack Query）
   vite.config.ts    开发服务器：只监听 127.0.0.1:5173，/api 转发给后端 127.0.0.1:8000

@@ -20,6 +20,7 @@ import { ApiError } from '../../api/client'
 import type { ResetCode, Role, User, UserCreate, UserUpdate } from '../../api/types'
 import { createResetCode, createUser, listPermissions, listUsers, updateUser } from '../../api/users'
 import { useAuth } from '../../auth/useAuth'
+import { useDesktop } from '../../desktop'
 import { formatTime } from '../../utils/format'
 import { ResetCodeModal } from './ResetCodeModal'
 import { UserForm } from './UserForm'
@@ -35,6 +36,7 @@ const SELF_LOCKED = msg('不能修改自己的角色或停用自己，以免无�
 export function UsersPage() {
   const { t } = useTranslation()
   const { me } = useAuth()
+  const desktop = useDesktop()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const [creating, setCreating] = useState(false)
@@ -79,7 +81,11 @@ export function UsersPage() {
       <Result
         status="info"
         title={t('个人模式无需账号')}
-        subTitle={t('多人使用时，请将 .env 中的 JACARA_MODE 改为 team，重启后端，并使用 jacara user add 创建第一个管理员。')}
+        subTitle={
+          desktop
+            ? t('桌面版只供本机一人使用，没有账号和登录。')
+            : t('多人使用时，请将 .env 中的 JACARA_MODE 改为 team，重启后端，并使用 jacara user add 创建第一个管理员。')
+        }
       />
     )
   }

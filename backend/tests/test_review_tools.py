@@ -460,15 +460,17 @@ def test_reprocess_many_with_default_settings(
             document.vision = "always"  # Last time "always show the image" was selected manually.
             ids.append(document.id)
     with session_scope(factory) as session:
-        session.get_one(Document, ids[2]).status = "processing"
+        running = session.get_one(Document, ids[2])
+        running.status, running.claim = "processing", "run-1"
     response = client.post("/api/v1/documents/reprocess", json={"ids": [str(i) for i in ids]})
     assert response.status_code == 202
     body = response.json()
-    assert body["queued"] == 2
-    assert body["skipped"] == ["r2.jpg：正在处理"]
-    assert queue.sent == ids[:2]
+    # The running document is restarted: its worker loses the claim and gives it up.
+    assert body == {"queued": 3, "skipped": []}
+    assert queue.sent == ids
     with session_scope(factory) as session:
-        for document_id in ids[:2]:
+        assert session.get_one(Document, ids[2]).claim is None
+        for document_id in ids:
             document = session.get_one(Document, document_id)
             assert document.status == "uploaded"
             assert document.vision is None  # Back to the system setting.

@@ -81,7 +81,7 @@ def test_docker_missing_gives_a_hint(project, monkeypatch):
 
 def test_run_setup_reports_each_step(project, monkeypatch):
     lines: list[str] = []
-    monkeypatch.setattr(setup, "migrate", lambda root: Step("建表", True, "数据库是最新的"))
+    monkeypatch.setattr(setup, "migrate", lambda: Step("建表", True, "数据库是最新的"))
     monkeypatch.setattr(setup, "llama_ready", lambda: Step("llama-server", True, "找到了"))
     monkeypatch.setattr(setup, "web_ready", lambda: Step("网页", True, "在"))
     monkeypatch.setattr(

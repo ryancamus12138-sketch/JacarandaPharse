@@ -48,7 +48,14 @@ def check_web(settings: Settings) -> Check:
     if index.is_file():
         return Check(tr("网页"), True, tr("已打包（{web_dist}）", web_dist=settings.web_dist))
     return Check(
-        tr("网页"), False, tr("尚未构建，访问 8000 端口只会显示提示页"), "cd web && npm run build"
+        tr("网页"),
+        False,
+        tr("找不到网页文件（{web_dist}）", web_dist=settings.web_dist)
+        if settings.jacara_desktop
+        else tr("尚未构建，访问 8000 端口只会显示提示页"),
+        tr("安装不完整，请重新安装 JacarandaParse")
+        if settings.jacara_desktop
+        else "cd web && npm run build",
     )
 
 
@@ -145,7 +152,9 @@ def check_model(settings: Settings) -> Check:
             "llama-server",
             False,
             _first_line(err),
-            tr("运行 uv run jacara serve --model <模型文件>"),
+            tr("如果还没有模型，请在「设置 → 模型」中配置；否则请重新启动 JacarandaParse")
+            if settings.jacara_desktop
+            else tr("运行 uv run jacara serve --model <模型文件>"),
         )
     if response.status_code != 200:
         return Check(
@@ -159,6 +168,25 @@ def check_model(settings: Settings) -> Check:
     )
 
 
+def check_watch(settings: Settings) -> list[Check]:
+    """Each watch folder still exists (it may have been moved or deleted after it was set)."""
+    checks = []
+    for folder in settings.watch_folders():
+        name = tr("监视文件夹：{name}", name=folder.path.name or str(folder.path))
+        if folder.path.expanduser().is_dir():
+            checks.append(Check(name, True, str(folder.path)))
+        else:
+            checks.append(
+                Check(
+                    name,
+                    False,
+                    tr("找不到文件夹：{folder}", folder=folder.path),
+                    tr("在「设置 → 识别和处理」中重新选择这个监视文件夹，或删除它"),
+                )
+            )
+    return checks
+
+
 CHECKS: tuple[Callable[[Settings], Check], ...] = (
     check_secrets,
     check_web,
@@ -170,7 +198,19 @@ CHECKS: tuple[Callable[[Settings], Check], ...] = (
 
 
 def run_checks(settings: Settings) -> list[Check]:
-    return [check(settings) for check in CHECKS]
+    """The checks that apply to how this instance runs: PostgreSQL, Valkey and S3 only when they
+    are the database, queue and file store in use (the desktop app uses none of them), and the .env
+    secrets only when a .env file is read."""
+    skip: set[Callable[[Settings], Check]] = set()
+    if settings.jacara_database != "postgres":
+        skip.add(check_postgres)
+    if settings.jacara_queue != "celery":
+        skip.add(check_valkey)
+    if settings.jacara_storage != "s3":
+        skip.add(check_s3)
+    if settings.jacara_desktop:
+        skip.add(check_secrets)
+    return [check(settings) for check in CHECKS if check not in skip] + check_watch(settings)
 
 
 def _first_line(err: BaseException) -> str:

@@ -2,12 +2,18 @@ import { useQuery } from '@tanstack/react-query'
 import { Alert, Card, Descriptions, Flex, Typography } from 'antd'
 import { ApiError } from '../../api/client'
 import { getSystemInfo } from '../../api/system'
+import { useDesktop } from '../../desktop'
 import { formatBytes } from '../../utils/format'
+import { DesktopDataSettings } from './DesktopDataSettings'
 import { useTranslation } from 'react-i18next'
 
-/** Settings → Data and backup: data volume, and how to back up and restore. */
+/**
+ * Settings → Data and backup: data volume, and backing up and restoring. The desktop app does this with
+ * buttons (DesktopDataSettings); a deployment from source with the commands shown here.
+ */
 export function DataSettings() {
   const { t } = useTranslation()
+  const desktop = useDesktop()
   const info = useQuery({ queryKey: ['system'], queryFn: getSystemInfo })
   const d = info.data
   return (
@@ -30,6 +36,9 @@ export function DataSettings() {
           </Descriptions>
         )}
       </Card>
+      {desktop ? (
+        <DesktopDataSettings />
+      ) : (
       <Card title={t('备份和恢复')} size="small">
         <Flex vertical gap={8}>
           <Typography.Text>
@@ -52,6 +61,7 @@ export function DataSettings() {
           </Typography.Text>
         </Flex>
       </Card>
+      )}
     </Flex>
   )
 }

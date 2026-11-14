@@ -73,16 +73,29 @@ class ReprocessManyIn(BaseModel):
 
 class ReprocessManyOut(BaseModel):
     queued: int
-    """Number of documents queued."""
+    """Number of documents queued (queued and running ones are restarted)."""
     skipped: list[str] = []
-    """Documents not processed (being processed, still queued, or missing the original file), one
-    line each: file name + reason."""
+    """Documents not processed (missing the original file or the document), one line each: file
+    name + reason."""
 
 
 class DeleteOut(BaseModel):
     deleted: int
     skipped: list[str] = []
-    """Documents not deleted (being processed), one line each: file name + reason."""
+    """Documents not deleted, one line each: file name + reason. Kept for compatibility; queued and
+    running documents are deleted as well."""
+
+
+class StopManyIn(BaseModel):
+    """Stop several documents at once."""
+
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+
+
+class StopManyOut(BaseModel):
+    stopped: int
+    skipped: list[str] = []
+    """Documents not stopped (nothing in progress, or missing), one line each: name + reason."""
 
 
 class FolderOut(BaseModel):

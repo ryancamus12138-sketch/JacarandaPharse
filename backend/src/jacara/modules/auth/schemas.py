@@ -9,7 +9,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from jacara.core.i18n import N_
 from jacara.core.security import MIN_PASSWORD_LENGTH
+
+PERSONAL_NAME = N_("我")
+"""Name of the one user in personal mode until a display name is set: in the sidebar, as the
+author of comments and changes, and in export records."""
 
 RoleName = Literal["admin", "member"]
 """admin: administrator; member: member."""
@@ -99,6 +104,9 @@ class MeOut(BaseModel):
     """Current user. The frontend uses mode to decide whether to show the login page."""
 
     mode: Literal["personal", "team"]
+    desktop: bool = False
+    """Running inside the desktop app: the interface then words advice as actions in the app
+    (restart JacarandaParse) instead of terminal commands."""
     role: str
     permissions: list[str]
     """All operations currently permitted (including those every member has). The frontend uses this
@@ -107,7 +115,7 @@ class MeOut(BaseModel):
     """null in personal mode, which has no user accounts."""
     shown_name: str = ""
     """Name shown in the top-right corner: the display name, otherwise the user name; in personal
-    mode without a display name, "Local user"."""
+    mode without a display name, "Me"."""
     avatar_at: datetime | None = None
     """Time of the last avatar change (also the avatar version); null when there is no avatar."""
 
@@ -126,7 +134,7 @@ class ProfileOut(BaseModel):
     display_name: str
     """Display name (may be empty)."""
     shown_name: str
-    """Effective name: display name → user name → "Local user"."""
+    """Effective name: display name → user name → "Me"."""
     role: str
     team: str
     """Team name. Empty in personal mode."""

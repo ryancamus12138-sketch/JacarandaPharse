@@ -3,7 +3,7 @@
 import { Flex, Select, Tag, Typography } from 'antd'
 import type { CSSProperties, ReactNode } from 'react'
 import type { Template } from '../../api/types'
-import { countryName, countryOptions, DOMAIN_COLORS, GENERAL, useLabelVocabulary } from './labels'
+import { countryName, countryOptions, DOMAIN_COLORS, domainPairs, GENERAL, useLabelVocabulary } from './labels'
 import { useTranslation } from 'react-i18next'
 
 /**
@@ -47,13 +47,15 @@ export function CountrySelect({
  */
 export function LabelTags({ template, custom = true }: { template: Template; custom?: boolean }) {
   const { t } = useTranslation()
-  const domains = template.domains?.length ? template.domains : template.category ? [template.category] : []
   const countries = template.countries ?? []
+  // Names in the interface language: known and used domains first (also right for domains being edited, which
+  // the template's own names do not cover yet).
+  const names = new Map(useLabelVocabulary().domains.map((d) => [d.value, d.label]))
   return (
     <>
-      {domains.map((d) => (
-        <Tag key={`d-${d}`} color={DOMAIN_COLORS[d] ?? 'default'} style={{ marginInlineEnd: 4 }}>
-          {d}
+      {domainPairs(template).map((d) => (
+        <Tag key={`d-${d.value}`} color={DOMAIN_COLORS[d.value] ?? 'default'} style={{ marginInlineEnd: 4 }}>
+          {names.get(d.value) ?? d.label}
         </Tag>
       ))}
       {countries.length === 0 ? (
@@ -108,7 +110,9 @@ export function LabelFields({
           value={domains}
           disabled={disabled}
           placeholder={t('选择或输入后按回车，如“发票”“交通”')}
-          options={vocabulary.domains.map((d) => ({ value: d, label: d }))}
+          // Known domains are shown in the interface language; what is saved is their stored form.
+          options={vocabulary.domains}
+          optionFilterProp="label"
           onChange={(next: string[]) => onChange({ domains: next })}
           style={{ width: '100%' }}
         />,

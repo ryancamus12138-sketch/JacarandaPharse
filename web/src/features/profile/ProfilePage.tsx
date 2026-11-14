@@ -122,13 +122,13 @@ export function ProfilePage() {
               extra={
                 team
                   ? t('在备注和修改记录中向他人显示的名称；未填写时显示用户名 {{value}}', { value: p.username ?? '' })
-                  : t('个人模式下右上角显示的名称；未填写时显示“本机用户”')
+                  : t('显示在左侧栏，也作为备注和修改记录的作者；未填写时显示“我”')
               }
             >
               <Input
                 value={name}
                 maxLength={100}
-                placeholder={team ? (p.username ?? '') : t('本机用户')}
+                placeholder={team ? (p.username ?? '') : t('我')}
                 onChange={(e) => setEdited(e.target.value)}
               />
             </Form.Item>
@@ -144,17 +144,15 @@ export function ProfilePage() {
         </Flex>
       </Card>
 
-      <Card
-        title={t('账号')}
-        extra={
-          team && (
+      {team && (
+        <Card
+          title={t('账号')}
+          extra={
             <Button icon={<KeyOutlined />} onClick={() => setChangingPassword(true)}>
               {t('修改密码')}
             </Button>
-          )
-        }
-      >
-        {team ? (
+          }
+        >
           <Descriptions column={1} size="small">
             <Descriptions.Item label={t('用户名')}>{p.username}</Descriptions.Item>
             <Descriptions.Item label={t('团队')}>{p.team || '—'}</Descriptions.Item>
@@ -179,12 +177,8 @@ export function ProfilePage() {
               {p.member_since ? new Date(p.member_since).toLocaleDateString() : '—'}
             </Descriptions.Item>
           </Descriptions>
-        ) : (
-          <Typography.Text type="secondary">
-            {t('个人模式：在本机使用无需登录，也没有用户名和密码。如需多人使用，请由管理员切换至团队模式。')}
-          </Typography.Text>
-        )}
-      </Card>
+        </Card>
+      )}
       <ChangePassword open={changingPassword} onClose={() => setChangingPassword(false)} />
     </Flex>
   )

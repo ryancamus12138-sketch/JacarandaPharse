@@ -24,7 +24,7 @@ class ExportOut(BaseModel):
     documents: list[ExportedDocument]
     created_at: datetime
     user_name: str = ""
-    """Exporting user (display name, otherwise user name). "Local user" in personal mode."""
+    """Exporting user (display name, otherwise user name). "Me" in personal mode."""
     available: bool = True
     """The file is still available for download."""
 

@@ -11,13 +11,21 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import SecretStr
+from pydantic import BaseModel, SecretStr
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
+
+
+class WatchFolder(BaseModel):
+    """A watch folder and the template for what is imported from it (the choices of the upload
+    page: auto, discover or the id of one of my templates)."""
+
+    path: Path
+    template: str = "auto"
 
 
 class Settings(BaseSettings):
@@ -32,11 +40,13 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Precedence: init arguments → environment variables → .env → settings page → defaults."""
+        """Precedence: init arguments → environment variables → .env → settings page → defaults.
+        The desktop app reads no .env (see reads_env_file)."""
+        dotenv = (dotenv_settings,) if reads_env_file() else ()
         return (
             init_settings,
             env_settings,
-            dotenv_settings,
+            *dotenv,
             PageSettingsSource(settings_cls),
             file_secret_settings,
         )
@@ -53,6 +63,11 @@ class Settings(BaseSettings):
     jacara_queue: Literal["celery", "huey"] = "celery"
     """Background task queue: celery (with Valkey) or huey (stored in queue.db in the data
     directory; no separate service). Mirrors Gitea's [queue] TYPE."""
+
+    jacara_desktop: bool = False
+    """Running inside the desktop app (`jacara desktop` sets it). Advice in messages then names
+    actions in the app, such as restarting JacarandaParse, instead of terminal commands; and no .env
+    file is read, because the app's working folder is not a project folder (see reads_env_file)."""
 
     jacara_api_docs: bool = True
     """Whether to serve the API documentation at /docs. Disable (false) when others use this
@@ -125,9 +140,16 @@ class Settings(BaseSettings):
     jacara_watch_dir: Path | None = None
     """Watch folder: images and PDFs placed in it are imported automatically. Started by `jacara
     start`; not watched when unset."""
-    jacara_watch_template: str | None = None
-    """Template used for watch-folder imports (id of one of my templates). Defaults to the template
-    used last."""
+    jacara_watch_template: str = "auto"
+    """Template used for watch-folder imports, with the values of the upload page: auto (each
+    document picks one of my templates; key-value discovery while there are none), discover, or the
+    id of one of my templates."""
+    jacara_watch_folders: list[WatchFolder] = []
+    """Watch folders set on the settings page, each with its own template (see watch_folders())."""
+    jacara_auto_backup: bool = True
+    """Desktop app: back up the database once a day into backups/auto/ (ADR 0068 13.5)."""
+    jacara_auto_backup_keep: int = 14
+    """Desktop app: automatic database backups kept (Immich's default: 14)."""
     jacara_watch_user: str | None = None
     """Team mode: user name recorded as the uploader of watch-folder imports. Not needed in personal
     mode."""
@@ -186,14 +208,32 @@ class Settings(BaseSettings):
         found = sorted(p for p in (data_home() / "models").glob("*.gguf") if is_mmproj(p))
         return found[0] if len(found) == 1 else None
 
+    def watch_folders(self) -> list[WatchFolder]:
+        """Folders to watch: those set on the settings page, plus JACARA_WATCH_DIR with
+        JACARA_WATCH_TEMPLATE (one folder; kept for .env and the command line)."""
+        found = list(self.jacara_watch_folders)
+        if self.jacara_watch_dir is not None and all(
+            f.path != self.jacara_watch_dir for f in found
+        ):
+            found.insert(
+                0, WatchFolder(path=self.jacara_watch_dir, template=self.jacara_watch_template)
+            )
+        return found
+
     def table_model(self) -> Path | None:
-        """Table structure model file, or None."""
+        """Table structure model file, or None: JACARA_TABLE_MODEL, then the web UI selection, then
+        models/table/slanet-plus.onnx in the data directory, then the copy shipped with the program
+        (bundled_table_model)."""
         path = (
             self.jacara_table_model
             or chosen_file("table")
             or data_home() / "models" / "table" / "slanet-plus.onnx"
         )
-        return path if path.is_file() else None
+        if path.is_file():
+            return path
+        if self.jacara_table_model is None and not model_choices().get("table"):
+            return bundled_table_model()
+        return None
 
     def ocr_models(self) -> dict[str, Path]:
         """Custom OCR model files (detection det, recognition rec, recognition dictionary dict).
@@ -239,6 +279,30 @@ SQLITE_FILE = "jacara.db"
 """SQLite database file in the data directory (JACARA_DATABASE=sqlite)."""
 
 
+def resource_dir() -> Path:
+    """Read-only files shipped with the program: in the packaged app the folder PyInstaller unpacks
+    its bundle into (sys._MEIPASS), otherwise the project root."""
+    import sys
+
+    bundle = getattr(sys, "_MEIPASS", None)
+    return Path(bundle) if bundle else PROJECT_ROOT
+
+
+BUNDLED_TABLE_MODEL = Path("models") / "table" / "slanet-plus.onnx"
+"""Table structure model shipped with the desktop app (SLANet-plus, Apache 2.0), relative to
+resource_dir()."""
+
+
+def bundled_table_model() -> Path | None:
+    """The table structure model shipped with the program, when present. None when the program
+    folder is the data directory (run from source without JACARA_HOME): the file there is the
+    user's own models/table/slanet-plus.onnx."""
+    if resource_dir().resolve() == data_home().resolve():
+        return None
+    path = resource_dir() / BUNDLED_TABLE_MODEL
+    return path if path.is_file() else None
+
+
 def data_home() -> Path:
     """Root directory for data written at run time: models/, data/settings.json, .run/, and in the
     desktop edition the SQLite database, the task queue and stored files.
@@ -264,6 +328,16 @@ def get_settings() -> Settings:
     """Read the settings once and reuse them. Tests that change environment variables must call
     get_settings.cache_clear() first."""
     return Settings()
+
+
+def reads_env_file() -> bool:
+    """Whether settings are read from .env. Not in the desktop app (JACARA_DESKTOP=true): its
+    settings come from the environment set by `jacara desktop` and from the settings page, never
+    from a .env that happens to be in its working folder. Checked in the environment because it
+    decides how the settings themselves are read."""
+    import os
+
+    return os.environ.get("JACARA_DESKTOP", "").lower() != "true"
 
 
 MODEL_KEY_FILE = data_home() / ".run" / "model-key"
@@ -334,6 +408,9 @@ PAGE_EDITABLE = (
     "jacara_pipeline",
     "jacara_watch_dir",
     "jacara_watch_template",
+    "jacara_watch_folders",
+    "jacara_auto_backup",
+    "jacara_auto_backup_keep",
     "max_upload_mb",
     "jacara_api_docs",
 )

@@ -71,7 +71,7 @@ export function AuditLogPage() {
       ]
       const csv = '\ufeff' + rows.map((r) => r.map((c) => cell(String(c))).join(',')).join('\r\n')
       const day = new Date().toISOString().slice(0, 10)
-      saveFile(new Blob([csv], { type: 'text/csv;charset=utf-8' }), t('审计日志-{{day}}.csv', { day }))
+      void saveFile({ blob: new Blob([csv], { type: 'text/csv;charset=utf-8' }), filename: t('审计日志-{{day}}.csv', { day }) })
       if (total > items.length) void message.warning(t('共 {{total}} 条，仅导出了最新的 {{length}} 条，请缩小筛选范围', { total, length: items.length }))
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),

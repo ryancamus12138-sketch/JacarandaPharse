@@ -5,16 +5,19 @@ import {
   CloseCircleOutlined,
   FieldTimeOutlined,
   FileSearchOutlined,
+  PauseCircleOutlined,
 } from '@ant-design/icons'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Alert,
+  App,
   Button,
   Card,
   Col,
   Empty,
   Flex,
   List,
+  Popconfirm,
   Progress,
   Row,
   Statistic,
@@ -26,8 +29,9 @@ import {
 import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { ApiError } from '../../api/client'
-import { getDashboard } from '../../api/documents'
+import { getDashboard, stopAllDocuments } from '../../api/documents'
 import type { DocumentSummary } from '../../api/types'
+import { useAuth } from '../../auth/useAuth'
 import { formatTime } from '../../utils/format'
 import { StatusTag } from '../documents/StatusTag'
 import { useTranslation } from 'react-i18next'
@@ -90,12 +94,45 @@ function StatCard({
 }
 
 /**
+ * "Stop all" of the processing queue: every queued and running document stops and is marked failed, ready to be
+ * reprocessed (the same as each document's "Stop" in the document list).
+ */
+function StopAllButton({ count }: { count: number }) {
+  const { t } = useTranslation()
+  const { message } = App.useApp()
+  const queryClient = useQueryClient()
+  const stop = useMutation({
+    mutationFn: stopAllDocuments,
+    onSuccess: ({ stopped }) => void message.success(t('已停止 {{stopped}} 份', { stopped })),
+    onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+    },
+  })
+  return (
+    <Popconfirm
+      title={t('停止全部 {{count}} 份正在排队或处理的文档？', { count })}
+      description={t('停止后标记为处理失败，之前的结果保持不变，可随时重新处理。')}
+      okText={t('全部停止')}
+      cancelText={t('取消')}
+      onConfirm={() => stop.mutate()}
+    >
+      <Button size="small" icon={<PauseCircleOutlined />} loading={stop.isPending}>
+        {t('全部停止')}
+      </Button>
+    </Popconfirm>
+  )
+}
+
+/**
  * Dashboard (home page): today's work.
  * Statistic cards on top (each opens a filtered document list); below, items needing attention on the left
  * and the processing queue (with progress) on the right.
  */
 export function DashboardPage() {
   const { t } = useTranslation()
+  const { can } = useAuth()
   const dashboard = useQuery({
     queryKey: ['dashboard'],
     queryFn: getDashboard,
@@ -262,7 +299,15 @@ export function DashboardPage() {
           </Card>
         </Col>
         <Col xs={24} lg={10}>
-          <Card title={t('处理队列')} loading={dashboard.isPending}>
+          <Card
+            title={t('处理队列')}
+            loading={dashboard.isPending}
+            extra={
+              can('document:process') && data && data.counts.queued + data.counts.processing > 0 ? (
+                <StopAllButton count={data.counts.queued + data.counts.processing} />
+              ) : undefined
+            }
+          >
             {data && data.queue.length === 0 ? (
               <Empty description={t('队列中没有文件')} />
             ) : (

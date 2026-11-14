@@ -1,6 +1,6 @@
 import { SyncOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { App, Button, Form, Input, Modal, Radio, Select, Tooltip } from 'antd'
+import { Alert, App, Button, Form, Input, Modal, Radio, Select, Tooltip } from 'antd'
 import { useState } from 'react'
 import { ApiError } from '../../api/client'
 import { type BatchReprocess, reprocessDocuments } from '../../api/documents'
@@ -29,14 +29,12 @@ interface Choice {
  */
 export function BatchReprocessButton({
   ids,
-  busy,
-  onBusy,
+  running,
   onDone,
 }: {
   ids: string[]
-  /** The selection contains documents being processed: show a notice instead of the settings. */
-  busy: boolean
-  onBusy: () => void
+  /** How many of them are queued or being processed: their current processing stops and starts over. */
+  running: number
   onDone: (ids: string[]) => void
 }) {
   const { t } = useTranslation()
@@ -77,7 +75,7 @@ export function BatchReprocessButton({
           icon={<SyncOutlined />}
           disabled={ids.length === 0}
           loading={run.isPending}
-          onClick={() => (busy ? onBusy() : setOpen(true))}
+          onClick={() => setOpen(true)}
         >
           {t('重新处理')}{ids.length > 0 ? t('（{{length}}）', { length: ids.length }) : ''}
         </Button>
@@ -92,6 +90,14 @@ export function BatchReprocessButton({
         onOk={() => form.submit()}
         destroyOnHidden
       >
+        {running > 0 && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            title={t('其中 {{running}} 份正在排队或处理：将停止当前处理，按下面的设置从头开始。', { running })}
+          />
+        )}
         <Form
           form={form}
           layout="vertical"

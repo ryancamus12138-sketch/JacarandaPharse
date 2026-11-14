@@ -9,6 +9,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from jacara.core.i18n import render, tr
+from jacara.core.migrate import alembic_config
 from jacara.ops.backup import BackupError, check_archive, restore
 from jacara.ops.verify import Check, verify
 
@@ -24,32 +26,34 @@ DRILL_S3_PORT = 58333
 
 
 def _say(message: str) -> None:
-    print("  " + message, flush=True)
+    """Progress line; stored messages (from backup and restore) are shown translated."""
+    print("  " + render(message), flush=True)
 
 
-def _ini() -> Path:
-    ini = Path("alembic.ini")
-    if not ini.is_file():
-        raise BackupError("请在项目根目录（有 alembic.ini 的地方）运行")
-    return ini
+def _project_root() -> Path:
+    """The restore drill starts its services with docker compose, from the project root."""
+    compose = Path("compose.yaml")
+    if not compose.is_file():
+        raise BackupError("请在项目根目录（有 compose.yaml 的地方）运行")
+    return compose
 
 
 def migrate_to(url: str, revision: str | None) -> None:
     """Bring this database's schema to revision (None or head means latest). Call only when all
     tables are empty."""
     from alembic import command
-    from alembic.config import Config
     from alembic.runtime.migration import MigrationContext
     from alembic.script import ScriptDirectory
     from alembic.util import CommandError
     from sqlalchemy import create_engine
 
-    config = Config(str(_ini()))
-    config.attributes["url"] = url
+    config = alembic_config(url)
     target = revision or "head"
     script = ScriptDirectory.from_config(config)
     if target != "head" and script.get_revision(target) is None:
-        raise BackupError(f"备份是更新的代码做的（数据库版本 {target}），先把代码更新到那个版本")
+        raise BackupError(
+            tr("备份是更新的程序做的（数据库版本 {target}），请先安装更新的版本", target=target)
+        )
     engine = create_engine(url)
     try:
         with engine.connect() as conn:
@@ -158,7 +162,7 @@ def run_drill(archive: Path, keep: bool) -> int:
     from jacara.core.storage import S3Storage
 
     try:
-        _ini()
+        _project_root()
         manifest = check_archive(archive)
     except BackupError as err:
         print(err)

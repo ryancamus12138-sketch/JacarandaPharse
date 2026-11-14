@@ -11,7 +11,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from jacara.core.i18n import stored
+from jacara.core.advice import pick
+from jacara.core.i18n import N_, stored
+
+NO_SERVER = N_("未找到 llama-server。在 Mac 上请先运行：brew install llama.cpp")
+NO_SERVER_DESKTOP = N_("安装不完整，缺少 llama-server，请重新安装 JacarandaParse")
 
 
 def server_env() -> dict[str, str]:
@@ -52,9 +56,7 @@ def server_command(
         str(bundled) if bundled is not None and bundled.is_file() else shutil.which("llama-server")
     )
     if exe is None:
-        raise FileNotFoundError(
-            stored("未找到 llama-server。在 Mac 上请先运行：brew install llama.cpp")
-        )
+        raise FileNotFoundError(stored(pick(NO_SERVER_DESKTOP, NO_SERVER)))
     return [
         exe,
         "-m", str(model),
