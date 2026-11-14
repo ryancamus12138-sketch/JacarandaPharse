@@ -201,6 +201,7 @@ def test_moving_the_data_folder_and_back(app, home, tmp_path):
     original = app.get(f"/api/v1/documents/{app.get('/api/v1/documents').json()['items'][0]['id']}")
     assert original.status_code == 200
 
+    reset_caches()  # As the move endpoint does: Windows cannot remove an open database file.
     move_data(job("move"), None)  # Back to the app's own place.
     reset_caches()
     assert os.environ["JACARA_HOME"] == str(home) and recorded_location(home) is None

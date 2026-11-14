@@ -7,7 +7,10 @@
 # - On a v* tag: the same, and the installers and their .sha256 files are attached to a draft
 #   release of this repository, to be checked by hand before anything is published.
 #
-# Each build: backend tests on that system → Python, web and shell dependencies → web pages →
+# Backend tests run on both systems as their own job, beside the build, so a test failure does not
+# hide whether the packaging works (and the reverse); the run fails if either fails.
+#
+# Each build: Python, web and shell dependencies → web pages →
 # llama.cpp and the table model (pinned, SHA-256 checked) → licence list (stops on GPL, LGPL, AGPL)
 # → PyInstaller → smoke test of the packaged backend → package checks (model weights, GPL
 # libraries, contents; on macOS minimum system version and ad-hoc signatures) → rustfmt and clippy
@@ -39,6 +42,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - name: Python dependencies
+        run: uv sync --locked
+      - name: Backend tests
+        run: uv run --no-sync pytest
+
   build:
     strategy:
       fail-fast: false
@@ -78,9 +99,6 @@ jobs:
 
       - name: Python dependencies
         run: uv sync --locked --group desktop
-
-      - name: Backend tests
-        run: uv run --no-sync pytest
 
       - name: Cached OpenCV wheel (macOS)
         if: runner.os == 'macOS'

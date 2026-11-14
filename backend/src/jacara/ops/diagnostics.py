@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -182,6 +183,13 @@ def _gigabytes(size: int | None) -> str:
 
 
 def _tidy(text: str) -> str:
-    """The home folder as ~ (it holds the user name)."""
-    home = str(Path.home())
-    return text.replace(home, "~") if home not in ("", "/") else text
+    """The home folder as ~ (it holds the user name), and the rest of such a path with /, so a
+    report reads the same on every system. Windows paths ignore case and may be written with \\
+    or /, so the home folder is matched in both forms and in any case."""
+    home = Path.home()
+    forms = {str(home).rstrip("\\/"), home.as_posix().rstrip("/")} - {""}
+    for form in sorted(forms, key=len, reverse=True):
+        pattern = re.escape(form) + r"(?=[\\/]|\b|$)([\\/][^\s'\"()]*)?"
+        flags = re.IGNORECASE if sys.platform == "win32" else 0
+        text = re.sub(pattern, lambda m: "~" + (m[1] or "").replace("\\", "/"), text, flags=flags)
+    return text

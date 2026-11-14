@@ -600,14 +600,25 @@ Hugging Face 上的文件 SHA-256 一致：
 - 构建步骤：安装依赖 → 构建网页 → 下载并校验 llama.cpp 和表格模型 → PyInstaller 打包后端 → 运行
   `packaging/desktop/smoke.py` → 生成许可清单 → 检查 AGPL 权重和签名 → Tauri 打包 → 计算 SHA-256。
 - 后端测试也在 Windows 上运行一遍（现有代码只在 macOS 上运行过，进程管理、路径、信号处理需要验证）。
-- 实现：`.github/workflows/desktop.yml`。手动运行时只构建，安装包留在工作流的构件中；推送 `v*` 标签时把安装包和
+- 实现：`.github/workflows/desktop.yml`。改动打包相关文件的 PR 和手动运行时只构建，安装包留在工作流的构件中
+  （GitHub 只在工作流文件已经在默认分支上时才能手动运行，所以新的打包改动靠 PR 触发）；推送 `v*` 标签时把安装包和
   `.sha256` 文件放进本仓库的**草稿**发布，人工检查后再发布（改为发布到公开仓库是第 6 步）。每台运行器依次：
   `check_versions.py`（`pyproject.toml`、`web/package.json`、`desktop/package.json`、`Cargo.toml`、
-  `tauri.conf.json` 的版本一致，标签与版本一致）→ `uv sync --locked --group desktop` → 后端测试 →（macOS）从源码构建
+  `tauri.conf.json` 的版本一致，标签与版本一致）→ `uv sync --locked --group desktop` →（macOS）从源码构建
   不含 FFmpeg 的 OpenCV（见下）并运行 `test_opencv_resize.py` → 网页 → `fetch_llama.py`、`fetch_table_model.py` →
   `licenses.py` → PyInstaller → `smoke.py` → `check_bundle.py`（macOS 加 `--sign`）→ `tauri-apps/tauri-action@v1`
   （`projectPath: desktop`，不上传更新清单）→（macOS）`codesign --verify --deep --strict` 检查 `.app` →
-  每个安装包的 SHA-256。
+  每个安装包的 SHA-256。后端测试在两个系统上作为单独的任务与打包并行运行，测试失败不会让打包的问题看不到，
+  反过来也一样；任何一个失败，整次运行都算失败。
+- 第一次运行（PR #33）时 Windows 上的后端测试暴露了几处只在 Windows 上才有的问题，已修正：
+  - `jacara stop` 用 `os.kill(pid, 0)` 判断进程是否还在；Windows 上 `os.kill()` 除控制台信号外一律结束进程
+    （TerminateProcess），改为用 `OpenProcess` 读取退出码（`STILL_ACTIVE` 表示仍在运行）；Windows 没有 `SIGKILL`。
+  - 端口检查用了 `SO_REUSEADDR`：Windows 上它允许绑定到正在使用的端口，检查总是通过；Windows 上改为不加选项
+    直接绑定（Windows Server 2003 起套接字默认不共享）。
+  - 诊断信息把主目录写成 `~`：Windows 路径不区分大小写，可能用 `\` 或 `/`，两种写法都替换，其余部分统一用 `/`。
+  - 测试本身的假设：权限位 0o600 只在 POSIX 上检查（Windows 靠用户文件夹的访问控制列表）；数据文件夹搬回之前
+    先关闭数据库（Windows 不能删除打开着的文件，接口本来就这样做）；macOS 和 Windows 的文件名不区分大小写，
+    测试里的 `Models` 文件夹就是数据文件夹里的 `models`。
 - **macOS 的 OpenCV 从源码构建**：PyPI 上 `opencv-python-headless` 的 macOS wheel（4.9 到 5.0 都是）带的 FFmpeg
   是用 `--enable-gpl` 构建的：`cv2` 加载 `libavcodec`，`libavcodec` 链接 `libx264`、`libx265`（GPL-2.0 及以上），
   4.13.0.92 还带 `librubberband`、`libvidstab`、`libpostproc`。项目页说"All wheels ship with FFmpeg licensed under

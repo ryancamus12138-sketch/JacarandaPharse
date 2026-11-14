@@ -1411,7 +1411,9 @@ def _stop_running() -> int:
     """jacara stop: ask jacara start to shut down (it stops the model and workers), then clean up
     any remaining children.
 
-    Sends SIGINT, equivalent to Ctrl + C, so that start runs its normal shutdown path."""
+    Sends SIGINT, equivalent to Ctrl + C, so that start runs its normal shutdown path. On Windows
+    os.kill() can deliver Ctrl + C only to processes sharing the console, so any other signal there
+    ends the process at once (TerminateProcess) and the children are stopped below."""
     import json
     import os
     import signal
@@ -1446,16 +1448,42 @@ def _stop_running() -> int:
         time.sleep(0.5)
     for pid in left:
         if _alive(pid):
-            os.kill(pid, signal.SIGKILL)
+            # Windows has no SIGKILL; os.kill() ends the process there whatever the signal.
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
     RUN_FILE.unlink(missing_ok=True)
     print(_paint("已经全部停止", _GREEN))
     return 0
 
 
 def _alive(pid: int) -> bool:
-    """Whether the process exists. Signal 0 checks existence without affecting the process."""
+    """Whether the process exists. On POSIX, signal 0 checks existence without affecting the
+    process. On Windows os.kill() with any signal but the console ones ends the process
+    (TerminateProcess), so the process is opened for querying and its exit code read instead:
+    STILL_ACTIVE while it runs."""
     import os
+    import sys
 
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        process_query_limited_information, still_active, access_denied = 0x1000, 259, 5
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+        if not handle:
+            # Exists but may not be opened (another user's process), or does not exist.
+            return ctypes.get_last_error() == access_denied
+        try:
+            code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return True
+            return code.value == still_active
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -1499,14 +1527,19 @@ def _port_free(port: int) -> bool:
     """Whether a local port is free. Checked up front so that a conflict is not discovered only
     after the worker and model have started.
 
-    SO_REUSEADDR: a recently closed service leaves the port in TIME_WAIT for a minute or two
-    (not visible in lsof). llama-server and uvicorn can still bind in that state because they set
-    the same option, so only an active listener counts as in use.
+    SO_REUSEADDR (macOS, Linux): a recently closed service leaves the port in TIME_WAIT for a
+    minute or two (not visible in lsof). llama-server and uvicorn can still bind in that state
+    because they set the same option, so only an active listener counts as in use. On Windows the
+    option means something else: it lets a socket bind to a port another socket is using, so the
+    check would always pass. There a plain bind is used, which fails while the port is in use
+    (sockets are not shareable by default since Windows Server 2003).
     """
     import socket
+    import sys
 
     with socket.socket() as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if sys.platform != "win32":
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind(("127.0.0.1", port))
         except OSError:

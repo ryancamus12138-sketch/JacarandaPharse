@@ -4,6 +4,7 @@ and no database is contacted."""
 from __future__ import annotations
 
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -58,7 +59,10 @@ def test_env_is_created_once_and_private(project):
     step = ensure_env(project)
     env = project / ".env"
     assert step.ok and env.is_file()
-    assert stat.S_IMODE(env.stat().st_mode) == 0o600  # Owner-readable only.
+    if sys.platform != "win32":
+        # Owner-readable only. Windows has no POSIX permission bits (chmod sets only the read-only
+        # flag); there the file is protected by the access control list of the user's folder.
+        assert stat.S_IMODE(env.stat().st_mode) == 0o600
     first = env.read_text("utf-8")
     again = ensure_env(project)
     assert again.ok and "不动" in again.detail

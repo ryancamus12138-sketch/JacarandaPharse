@@ -374,7 +374,9 @@ def test_files_placed_in_the_inbox_are_checked_and_imported(home, server):
 def test_inbox_links_are_copied_and_imported_files_are_not_imported_again(home, server, tmp_path):
     model = locked(server, "Model-Q4.gguf", MODEL)
     manager = Downloads((model,))
-    elsewhere = tmp_path / "Models"
+    # Not "Models": on macOS and Windows file names ignore case, so that would be the models folder
+    # of the data folder (tmp_path) itself.
+    elsewhere = tmp_path / "Downloaded"
     elsewhere.mkdir()
     (elsewhere / "Model-Q4.gguf").write_bytes(MODEL)
     inbox = home / "models" / "inbox"

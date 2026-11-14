@@ -220,7 +220,9 @@
     日志文件夹；外部链接用系统浏览器打开；只运行一个实例；退出时等后端停好（最多 20 秒）。
   - 安装包：macOS `.dmg`（Apple 芯片，macOS 14.0 起，ad-hoc 签名），Windows NSIS `-setup.exe`（按用户安装）。
   - `.github/workflows/desktop.yml`：在 macOS 15 和 Windows 上测试、打包、检查，`v*` 标签时生成草稿发布并附 SHA-256；
-    `packaging/desktop/check_versions.py` 检查各处版本号一致。
+    `packaging/desktop/check_versions.py` 检查各处版本号一致。后端测试在两个系统上作为单独的任务运行。
+  - 修好 Windows 上的问题：`jacara stop` 判断进程是否还在时会结束那个进程（`os.kill(pid, 0)` 在 Windows 上就是
+    结束进程）；端口检查在 Windows 上总是认为端口空闲；诊断信息里 Windows 的主目录没有写成 `~`。
 - 修好：「设置 → 模型」里，模型文件是链接（指向别处的同一个文件）时，「当前使用」显示成完整路径，
   而不是下拉列表里的文件名，刷新后依旧。现在先按原样比较路径，再按解析链接后的路径比较。
 

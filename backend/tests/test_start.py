@@ -149,7 +149,9 @@ def test_start_finds_the_model_by_itself(started, monkeypatch, tmp_path):
     from jacara.core import config
 
     key = config.MODEL_KEY_FILE.read_text(encoding="utf-8")
-    assert len(key) > 20 and config.MODEL_KEY_FILE.stat().st_mode & 0o077 == 0
+    assert len(key) > 20
+    if sys.platform != "win32":  # No POSIX permission bits on Windows (see test_setup.py).
+        assert config.MODEL_KEY_FILE.stat().st_mode & 0o077 == 0
     assert config.model_api_key() == key
 
 
