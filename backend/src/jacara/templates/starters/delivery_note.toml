@@ -9,7 +9,15 @@ title = "送货单"
 titles = { en = "Delivery Note", ar = "إذن التسليم", de = "Lieferschein", es = "Albarán", fr = "Bon de livraison", hi = "डिलीवरी चालान", id = "Surat jalan", it = "Documento di trasporto (DDT)", ja = "納品書", ko = "거래명세서", ms = "Nota penghantaran", nl = "Pakbon", pl = "Dokument dostawy (WZ)", th = "ใบส่งของ", vi = "Phiếu giao hàng", "zh-Hant" = "送貨單" }
 domains = ["物流", "采购"]
 description = "供应商送货、仓库出库时的送货单（发货单、出库单）：单号、日期、订单号、送货和收货单位、每一行的品名、规格、数量、单价、金额，以及签收人。数量 × 单价和金额对不上、每行数量加起来和合计对不上会提醒。"
+descriptions = { en = "Delivery notes issued when suppliers deliver or warehouses dispatch goods (delivery notes, dispatch notes, outbound notes): number, date, order number, sender and recipient, per row the description, specification, quantity, unit price, amount, and the person who signed for receipt. Quantity × unit price not matching the amount, and row quantities not adding up to the total, are reported." }
 rules = ["item_line", "items_sum", "delivery_quantity"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: delivery notes (dispatch notes, outbound notes).",
+  "Fields follow the common elements of delivery notes of Chinese companies: number, date, order number, sender, recipient, delivery address and contact, per row the material code, description, specification and model, unit, quantity, unit price, amount, remarks, plus the deliverer and the person signing for receipt.",
+]
 
 [[fields]]
 name = "document_title"
@@ -17,6 +25,7 @@ label = "单据名称"
 names = { en = "Document Title", ar = "عنوان المستند", de = "Belegart", es = "Tipo de documento", fr = "Titre du document", hi = "दस्तावेज़ का शीर्षक", id = "Jenis dokumen", it = "Tipo documento", ja = "書類名", ko = "문서명", ms = "Jenis dokumen", nl = "Documentsoort", pl = "Rodzaj dokumentu", th = "ชื่อเอกสาร", vi = "Tên chứng từ", "zh-Hant" = "單據標題" }
 type = "string"
 description = "单据上的标题，照抄，如 送货单、发货单、出库单、Delivery Note"
+descriptions = { en = "The title on the document; copy it as written, such as 送货单, 发货单, 出库单, Delivery Note" }
 aliases = ["Delivery Note", "Delivery Order", "D/O"]
 
 [[fields]]
@@ -27,6 +36,7 @@ type = "string"
 required = true
 unique = true
 description = "单据编号，照抄（常印在右上角，红色流水号）"
+descriptions = { en = "The document number; copy it as written (often a red serial number at the top right)" }
 aliases = ["单号", "No.", "NO", "编号", "送货单号", "发货单号", "出库单号", "Delivery No", "D/N No", "DO No"]
 
 [[fields]]
@@ -43,6 +53,7 @@ label = "订单号"
 names = { en = "Order No.", ar = "رقم الطلب", de = "Bestellnummer", es = "N.º de pedido", fr = "N° de commande", hi = "ऑर्डर संख्या", id = "Nomor pesanan", it = "N. ordine", ja = "注文番号", ko = "주문번호", ms = "No. pesanan", nl = "Ordernummer", pl = "Numer zamówienia", th = "เลขที่ใบสั่งซื้อ", vi = "Số đơn hàng", "zh-Hant" = "訂單號碼" }
 type = "string"
 description = "客户的采购订单号、合同号，照抄"
+descriptions = { en = "The customer's purchase order or contract number; copy it as written" }
 aliases = ["订单编号", "采购单号", "合同号", "PO No", "P.O. No", "Order No"]
 
 [[fields]]
@@ -52,6 +63,7 @@ names = { en = "Supplier", ar = "المورد", de = "Lieferant", es = "Proveedo
 type = "string"
 required = true
 description = "发货的公司（供应商），常在标题上面"
+descriptions = { en = "The company sending the goods (the supplier), often above the title" }
 aliases = ["供应商", "供货单位", "发货单位", "Supplier", "From"]
 
 [[fields]]
@@ -76,6 +88,7 @@ names = { en = "Contact", ar = "جهة الاتصال", de = "Ansprechpartner", 
 type = "string"
 sensitive = true
 description = "收货方的联系人和电话，照抄"
+descriptions = { en = "The recipient's contact person and phone number; copy it as written" }
 aliases = ["联系人", "联系电话", "电话", "Contact", "Attn", "Tel"]
 
 [[fields]]
@@ -91,6 +104,7 @@ label = "合计金额"
 names = { en = "Total Amount", ar = "المبلغ الإجمالي", de = "Gesamtbetrag", es = "Importe total", fr = "Montant total", hi = "कुल राशि", id = "Total nilai", it = "Importo totale", ja = "合計金額", ko = "합계금액", ms = "Jumlah keseluruhan", nl = "Totaalbedrag", pl = "Wartość łączna", th = "จำนวนเงินรวม", vi = "Tổng tiền", "zh-Hant" = "合計金額" }
 type = "number"
 description = "金额合计（没有金额的送货单留空）"
+descriptions = { en = "The total amount (leave empty for delivery notes without amounts)" }
 aliases = ["合计", "金额合计", "合计金额", "总金额", "Total", "Total Amount"]
 
 [[fields]]
@@ -106,6 +120,7 @@ label = "签收人"
 names = { en = "Received by", ar = "استلمه", de = "Empfangen von", es = "Recibido por", fr = "Reçu par", hi = "द्वारा प्राप्त", id = "Diterima oleh", it = "Ricevuto da", ja = "受領者", ko = "인수자", ms = "Diterima oleh", nl = "Ontvangen door", pl = "Odebrał", th = "ผู้รับ", vi = "Người nhận", "zh-Hant" = "簽收人" }
 type = "string"
 description = "收货方签字的人，照抄；手写看不清的留空"
+descriptions = { en = "The person who signed for receipt; copy it as written; leave empty if the handwriting is illegible" }
 aliases = ["收货人签字", "签收", "收货人", "Received by", "Signature"]
 
 [[fields]]
@@ -121,6 +136,7 @@ label = "送货明细"
 names = { en = "Items", ar = "البنود", de = "Positionen", es = "Conceptos", fr = "Lignes", hi = "विवरण", id = "Rincian", it = "Righe", ja = "明細", ko = "품목", ms = "Butiran", nl = "Regels", pl = "Pozycje", th = "รายการ", vi = "Hàng hóa, dịch vụ", "zh-Hant" = "明細" }
 required = true
 description = "每一行一种货物。表头、合计行、空行不算一行"
+descriptions = { en = "One row per kind of goods. Headers, total rows and empty rows are not rows" }
 
 [[tables.columns]]
 name = "code"
@@ -135,6 +151,7 @@ label = "品名"
 names = { en = "Description", ar = "الوصف", de = "Bezeichnung", es = "Descripción", fr = "Désignation", hi = "विवरण", id = "Uraian", it = "Descrizione", ja = "内容", ko = "내용", ms = "Perihalan", nl = "Omschrijving", pl = "Nazwa", th = "รายละเอียด", vi = "Tên hàng", "zh-Hant" = "品名" }
 type = "string"
 description = "货物名称，照抄"
+descriptions = { en = "The name of the goods; copy it as written" }
 aliases = ["名称", "品名", "产品名称", "货物名称", "Description", "Item"]
 
 [[tables.columns]]

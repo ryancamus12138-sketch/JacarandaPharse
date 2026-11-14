@@ -13,7 +13,17 @@ titles = { en = "Tax Invoice (Thailand)", th = "ใบกำกับภาษ�
 countries = ["TH"]
 domains = ["发票"]
 description = "泰国的 ใบกำกับภาษี：ใบกำกับภาษี 字样、卖方名称地址和 13 位税号及总店/分店、买方名称地址税号及总店/分店、编号、日期、商品、金额、VAT。税号校验位不对、VAT 不等于 7%、没有 ใบกำกับภาษี 字样、写了买方税号没写分店会提醒。"
+descriptions = { en = "Thai tax invoices (ใบกำกับภาษี): the words ใบกำกับภาษี, seller name, address, 13-digit tax id and head office/branch, buyer name, address, tax id and head office/branch, number, date, goods, amounts, VAT. Invalid tax id check digits, VAT other than 7%, missing ใบกำกับภาษี, and a buyer tax id without a branch are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "th_seller_tax_id", "th_buyer_tax_id", "th_vat_7", "th_title", "th_buyer_branch"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Thai full and abbreviated tax invoices (ใบกำกับภาษีเต็มรูป / อย่างย่อ).",
+  "Basis: Revenue Code section 86/4 (the words ใบกำกับภาษี, name, address and tax id of the issuer, name and address of the buyer, invoice number, goods, VAT shown separately from the value, date); Director-General Notification No. 199 (from 1 Jan 2015: the buyer's tax id and the head office / branch of the seller and buyer); section 86/6 abbreviated tax invoices. VAT 7% (Royal Decree No. 807 B.E. 2569, until 30 Sep 2027).",
+  "Use: issued by Thai VAT registrants; buyers deduct input tax with full tax invoices; expense claims.",
+  "Sources: rd.go.th Director-General Notification No. 199; lookuptax \"Thailand VAT 7% extended, Decree 807\".",
+]
 
 [[fields]]
 name = "document_title"
@@ -21,6 +31,7 @@ label = "单据标题"
 names = { en = "Document Title", th = "ชื่อเอกสาร" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 aliases = ["ชื่อเอกสาร"]
 
 [[fields]]
@@ -31,6 +42,7 @@ type = "string"
 required = true
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 aliases = ["เลขที่"]
 
 [[fields]]
@@ -62,6 +74,7 @@ label = "卖方税号"
 names = { en = "Seller Tax ID", th = "เลขประจำตัวผู้เสียภาษีอากร" }
 type = "string"
 description = "照抄，带上字母和分隔符"
+descriptions = { en = "Copy it as written, with letters and separators" }
 aliases = ["เลขประจำตัวผู้เสียภาษีอากร"]
 
 [[fields]]
@@ -70,6 +83,7 @@ label = "卖方总店 / 分店"
 names = { en = "Seller Head Office / Branch", th = "สำนักงานใหญ่/สาขา" }
 type = "string"
 description = "สำนักงานใหญ่ 或 สาขาที่ 00001，照抄"
+descriptions = { en = "สำนักงานใหญ่ or สาขาที่ 00001; copy it as written" }
 aliases = ["สำนักงานใหญ่/สาขา"]
 
 [[fields]]
@@ -92,6 +106,7 @@ label = "买方税号"
 names = { en = "Buyer Tax ID", th = "เลขประจำตัวผู้เสียภาษีผู้ซื้อ" }
 type = "string"
 description = "照抄；没有就留空"
+descriptions = { en = "Copy it as written; leave empty if absent" }
 aliases = ["เลขประจำตัวผู้เสียภาษีผู้ซื้อ"]
 
 [[fields]]
@@ -128,6 +143,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", th = "รายการ" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -156,4 +172,5 @@ label = "金额"
 names = { en = "Amount", th = "จำนวนเงิน" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["จำนวนเงิน"]

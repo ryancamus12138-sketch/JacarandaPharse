@@ -53,12 +53,13 @@ function write(key: string, value: string): void {
 
 /**
  * Remember the selected language (in this browser only, separately per key, for example per template). When
- * the template lacks the selected language, the first one (Chinese) is used.
+ * nothing was selected or the template lacks the selected language, the first one (the template's primary
+ * language) is used.
  */
 export function useLanguage(key: string, available: string[]): [string, (code: string) => void] {
   const [chosen, setChosen] = useState<Record<string, string>>({})
-  const stored = chosen[key] ?? read(`jacara.language.${key}`) ?? 'zh'
-  const language = available.includes(stored) ? stored : (available[0] ?? 'zh')
+  const stored = chosen[key] ?? read(`jacara.language.${key}`)
+  const language = stored && available.includes(stored) ? stored : (available[0] ?? 'zh')
   const choose = (code: string) => {
     write(`jacara.language.${key}`, code)
     setChosen((old) => ({ ...old, [key]: code }))

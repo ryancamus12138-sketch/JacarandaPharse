@@ -9,7 +9,15 @@ titles = { en = "China Fully Digitalized e-Invoice" }
 domains = ["发票"]
 countries = ["CN"]
 description = "全面数字化的电子发票（增值税专用发票、普通发票）。票面要素按国家税务总局公告 2024 年第 11 号。"
+descriptions = { en = "Fully digital electronic invoices (special VAT invoices and ordinary invoices). Invoice elements follow State Taxation Administration Announcement No. 11 of 2024." }
 rules = ["issue_date_exists", "issue_date_not_future", "cn_invoice_no", "cn_tax_balance", "cn_items_amount", "cn_items_tax", "cn_words", "item_line"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Chinese fully digital e-invoices.",
+  "Field source: State Taxation Administration Announcement No. 11 of 2024 (elements of fully digital invoices)",
+]
 
 [[fields]]
 name = "invoice_title"
@@ -17,6 +25,7 @@ label = "发票名称"
 names = { en = "Invoice Title" }
 type = "string"
 description = "票面最上方的发票名称，例如“电子发票（增值税专用发票）”或“电子发票（普通发票）”"
+descriptions = { en = "The invoice name at the top, for example \"电子发票（增值税专用发票）\" or \"电子发票（普通发票）\"" }
 
 [[fields]]
 name = "invoice_no"
@@ -26,6 +35,7 @@ unique = true
 type = "string"
 required = true
 description = "右上角的发票号码，数电发票是 20 位数字"
+descriptions = { en = "The invoice number at the top right; fully digital invoices have 20 digits" }
 aliases = ["发票号码"]
 
 [[fields]]
@@ -35,6 +45,7 @@ names = { en = "Date of Issue" }
 type = "date"
 required = true
 description = "右上角的开票日期"
+descriptions = { en = "The issue date at the top right" }
 aliases = ["开票日期"]
 
 [[fields]]
@@ -44,6 +55,7 @@ names = { en = "Buyer Name" }
 type = "string"
 required = true
 description = "购买方信息里的名称（单位名称或个人姓名）"
+descriptions = { en = "The name in the buyer information (organization name or personal name)" }
 aliases = ["购买方 名称", "购方名称"]
 
 [[fields]]
@@ -52,6 +64,7 @@ label = "购买方税号"
 names = { en = "Buyer Tax ID" }
 type = "string"
 description = "购买方的统一社会信用代码或纳税人识别号；个人可能没有"
+descriptions = { en = "The buyer's unified social credit code or taxpayer identification number; individuals may have none" }
 aliases = ["统一社会信用代码/纳税人识别号"]
 
 [[fields]]
@@ -61,6 +74,7 @@ names = { en = "Seller Name" }
 type = "string"
 required = true
 description = "销售方信息里的名称"
+descriptions = { en = "The name in the seller information" }
 aliases = ["销售方 名称", "销方名称"]
 
 [[fields]]
@@ -70,6 +84,7 @@ names = { en = "Seller Tax ID" }
 type = "string"
 required = true
 description = "销售方的统一社会信用代码或纳税人识别号"
+descriptions = { en = "The seller's unified social credit code or taxpayer identification number" }
 aliases = ["统一社会信用代码/纳税人识别号"]
 
 [[fields]]
@@ -79,6 +94,7 @@ names = { en = "Total Amount" }
 type = "number"
 required = true
 description = "明细下方“合计”行的金额（不含税）"
+descriptions = { en = "The amount (excluding tax) of the \"合计\" (total) row below the line items" }
 aliases = ["合计 金额"]
 
 [[fields]]
@@ -88,6 +104,7 @@ names = { en = "Total Tax" }
 type = "number"
 required = true
 description = "明细下方“合计”行的税额；免税时可能写“***”，那就留空"
+descriptions = { en = "The tax of the \"合计\" (total) row below the line items; when tax-exempt it may read \"***\", then leave it empty" }
 aliases = ["合计 税额"]
 
 [[fields]]
@@ -97,6 +114,7 @@ names = { en = "Total incl. Tax" }
 type = "number"
 required = true
 description = "价税合计的小写金额（¥ 后面的数字）"
+descriptions = { en = "The total including tax in figures (the number after ¥)" }
 aliases = ["价税合计（小写）", "（小写）"]
 
 [[fields]]
@@ -105,6 +123,7 @@ label = "价税合计（大写）"
 names = { en = "Total incl. Tax (in Words)" }
 type = "string"
 description = "价税合计的中文大写金额，如“壹佰贰拾叁圆肆角伍分”，原样照抄"
+descriptions = { en = "The total including tax in Chinese capital numerals, such as \"壹佰贰拾叁圆肆角伍分\"; copy it as written" }
 aliases = ["价税合计（大写）"]
 
 [[fields]]
@@ -113,6 +132,7 @@ label = "备注"
 names = { en = "Remarks" }
 type = "string"
 description = "备注栏的全部文字"
+descriptions = { en = "All text in the remarks box" }
 
 [[fields]]
 name = "issuer"
@@ -120,6 +140,7 @@ label = "开票人"
 names = { en = "Issued by" }
 type = "string"
 description = "票面最下方的开票人姓名"
+descriptions = { en = "The issuer's name at the bottom of the invoice" }
 aliases = ["开票人"]
 
 [[tables]]
@@ -127,6 +148,7 @@ name = "items"
 label = "项目明细"
 names = { en = "Items" }
 description = "发票中间的明细表，每个项目一行。“合计”行不算明细"
+descriptions = { en = "The line-item table in the middle of the invoice, one row per item. The \"合计\" (total) row is not a line item" }
 required = true
 
 [[tables.columns]]
@@ -135,6 +157,7 @@ label = "项目名称"
 names = { en = "Item Name" }
 type = "string"
 description = "项目名称，常以 *类别* 开头，如 *餐饮服务*餐费，原样照抄"
+descriptions = { en = "The item name, often starting with *category*, such as *餐饮服务*餐费; copy it as written" }
 
 [[tables.columns]]
 name = "spec"
@@ -160,6 +183,7 @@ label = "单价"
 names = { en = "Unit Price" }
 type = "number"
 description = "不含税单价"
+descriptions = { en = "Unit price excluding tax" }
 
 [[tables.columns]]
 name = "amount"
@@ -167,6 +191,7 @@ label = "金额"
 names = { en = "Amount" }
 type = "number"
 description = "这一行不含税的金额"
+descriptions = { en = "The amount of this row excluding tax" }
 
 [[tables.columns]]
 name = "tax_rate"
@@ -174,6 +199,7 @@ label = "税率/征收率"
 names = { en = "Tax Rate" }
 type = "string"
 description = "如 6%、13%、免税"
+descriptions = { en = "Such as 6%, 13%, 免税 (tax-exempt)" }
 
 [[tables.columns]]
 name = "tax"
@@ -181,3 +207,4 @@ label = "税额"
 names = { en = "Tax" }
 type = "number"
 description = "这一行的税额"
+descriptions = { en = "The tax of this row" }

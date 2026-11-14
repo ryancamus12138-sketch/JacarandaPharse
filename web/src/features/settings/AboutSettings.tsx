@@ -102,7 +102,7 @@ export function AboutSettings() {
                     {d.ocr.engine}
                     {d.ocr.version ? ` ${d.ocr.version}` : ''}
                   </Descriptions.Item>
-                  <Descriptions.Item label={t('版面分析')}>{d.structure?.layout ?? t('关闭')}</Descriptions.Item>
+                  <Descriptions.Item label={t('版面分析')}>{d.structure?.layout ?? t('没开')}</Descriptions.Item>
                   <Descriptions.Item label={t('表格结构')}>{d.structure?.table ?? t('没有表格模型，按文字位置划分')}</Descriptions.Item>
                   <Descriptions.Item label={t('监视文件夹')}>{d.watch_dir ?? t('没有设')}</Descriptions.Item>
                 </Descriptions>

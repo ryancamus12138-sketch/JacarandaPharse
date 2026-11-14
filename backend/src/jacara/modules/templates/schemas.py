@@ -35,7 +35,10 @@ class TemplateFieldOut(BaseModel):
     columns)."""
     range_separator: str = " ~ "
     names: dict[str, str] = {}
-    """Names in other languages: language code → name. label is the default name."""
+    """Names in other languages: language code → name. label is in the template's primary
+    language."""
+    descriptions: dict[str, str] = {}
+    """Description in other languages: language code → description."""
 
 
 class TemplateRuleOut(BaseModel):
@@ -53,6 +56,7 @@ class TemplateTableOut(BaseModel):
     required: bool = False
     export: bool = True
     names: dict[str, str] = {}
+    descriptions: dict[str, str] = {}
 
 
 class EntityOut(BaseModel):
@@ -146,8 +150,12 @@ class TemplateOut(BaseModel):
     title: str
     titles: dict[str, str] = {}
     """Template name in other languages."""
+    language: str = "zh"
+    """Primary language: the language of title, description and every label and description."""
+    descriptions: dict[str, str] = {}
+    """Template description in other languages."""
     languages: list[str] = ["zh"]
-    """Available languages; the first is the default."""
+    """Available languages; the first is the primary language."""
     basis: list[str] = []
     """Basis of a starter template: regulations, use cases and sources. Empty for my templates."""
     description: str
@@ -225,6 +233,8 @@ class TemplateFieldIn(BaseModel):
     range_separator: str = Field(default=" ~ ", min_length=1, max_length=10)
     names: dict[str, str] = Field(default={}, max_length=30)
     """Names in other languages: {"en": "Invoice number", "ja": "請求書番号"}."""
+    descriptions: dict[str, str] = Field(default={}, max_length=30)
+    """Description in other languages."""
 
 
 class TemplateTableIn(BaseModel):
@@ -234,6 +244,7 @@ class TemplateTableIn(BaseModel):
     required: bool = False
     export: bool = True
     names: dict[str, str] = Field(default={}, max_length=30)
+    descriptions: dict[str, str] = Field(default={}, max_length=30)
     columns: list[TemplateFieldIn] = Field(min_length=1, max_length=30)
 
 
@@ -243,6 +254,10 @@ class TemplateIn(BaseModel):
     title: str = Field(min_length=1, max_length=100)
     titles: dict[str, str] = Field(default={}, max_length=30)
     """Template name in other languages."""
+    language: str = Field(default="zh", max_length=16)
+    """Primary language of title, description and every label and description."""
+    descriptions: dict[str, str] = Field(default={}, max_length=30)
+    """Template description in other languages."""
     category: str = Field(default="", max_length=32)
     description: str = Field(default="", max_length=2000)
     fields: list[TemplateFieldIn] = Field(min_length=1, max_length=80)
@@ -382,6 +397,12 @@ class TemplateFile(BaseModel):
     format: Literal["jacarandaparse-template"] = TEMPLATE_FILE_FORMAT
     format_version: int = 1
     title: str = Field(min_length=1, max_length=100)
+    titles: dict[str, str] = Field(default={}, max_length=30)
+    """Template name in other languages."""
+    language: str = Field(default="zh", max_length=16)
+    """Primary language of title, description and every label and description."""
+    descriptions: dict[str, str] = Field(default={}, max_length=30)
+    """Template description in other languages."""
     category: str = Field(default="", max_length=32)
     description: str = Field(default="", max_length=2000)
     version: int = 1

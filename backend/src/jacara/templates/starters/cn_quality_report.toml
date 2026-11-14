@@ -17,7 +17,19 @@ titles = { en = "Test Report (China, CMA)" }
 countries = ["CN"]
 domains = ["质检", "检验报告"]
 description = "中国检验检测机构出具的检验检测报告：在通用质检报告的字段上，加了 CMA 资质认定证书编号、检验检测专用章、机构和委托单位地址、样品状态、抽样信息、总页数。资质认定证书编号不是 12 位数字、抽样日期晚于签发日期、单项判定和结论矛盾会提醒。"
+descriptions = { en = "Inspection and testing reports issued by Chinese inspection and testing bodies: the fields of the generic quality report plus the CMA accreditation certificate number, the inspection and testing seal, the addresses of the body and the client, the sample condition, sampling information and the total number of pages. Accreditation numbers that are not 12 digits, sampling dates after the issue date and item verdicts contradicting the conclusion are reported." }
 rules = ["qc_conclusion", "qc_dates", "cn_cma_no", "cn_sampling_dates"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Chinese inspection and testing reports (CMA accreditation).",
+  "On top of the generic \"inspection and testing report\" (ISO/IEC 17025:2017 / GB/T 27025-2019 7.8.2.1), Chinese requirements add:",
+  "- Measures for the Administration of Accreditation of Inspection and Testing Bodies (SAMR Order No. 38), art. 21: reports issuing data or results with evidential effect to the public must bear the accreditation mark (CMA); Guo Ren Shi [2015] No. 49: the mark consists of the CMA logo and a 12-digit accreditation certificate number, stamped or printed on the report cover;",
+  "- Measures for the Supervision and Administration of Inspection and Testing Bodies (SAMR Order No. 39), art. 11: the official seal or inspection and testing seal of the body, issued by an authorized signatory;",
+  "- Accreditation Review Criteria for Inspection and Testing Bodies (2016 edition) 4.5.20 and 4.5.22: name and address of the body, unique report number and identification on each page, client name and address, sample condition, receipt and test dates, approver; for sampling inspections also the sampling date, place, etc.",
+  "Use: reports of product quality supervisory sampling, commissioned tests and type tests, checked in tenders, incoming inspection and market access.",
+]
 
 [[fields]]
 name = "lab_name"
@@ -26,6 +38,7 @@ names = { en = "Laboratory" }
 type = "string"
 required = true
 description = "出报告的检验检测机构、实验室或企业质检部门的名称"
+descriptions = { en = "The name of the inspection and testing body, laboratory or company quality department issuing the report" }
 aliases = ["检验机构", "检测单位", "实验室", "Laboratory", "Testing Laboratory"]
 
 [[fields]]
@@ -43,6 +56,7 @@ label = "报告名称"
 names = { en = "Report Title" }
 type = "string"
 description = "报告标题照抄，如 检验报告、检测报告、出厂检验报告、Certificate of Analysis"
+descriptions = { en = "Copy the report title as written, such as 检验报告, 检测报告, 出厂检验报告, Certificate of Analysis" }
 aliases = ["Test Report", "Certificate of Analysis", "COA"]
 
 [[fields]]
@@ -66,6 +80,7 @@ label = "批号"
 names = { en = "Batch / Lot No." }
 type = "string"
 description = "生产批号、批次、编号，照抄"
+descriptions = { en = "The production batch, lot or serial number; copy it as written" }
 aliases = ["生产批号", "批次", "Batch No", "Lot No", "Lot"]
 
 [[fields]]
@@ -95,6 +110,7 @@ label = "检验类别"
 names = { en = "Type of Inspection" }
 type = "string"
 description = "照抄，如 委托检验、监督抽查、型式检验、出厂检验"
+descriptions = { en = "Copy it as written, such as commissioned test, supervisory sampling, type test, factory test" }
 aliases = ["检验类型", "检测类别", "Test Type"]
 
 [[fields]]
@@ -103,6 +119,7 @@ label = "样品数量"
 names = { en = "Sample Quantity" }
 type = "string"
 description = "照抄，带单位"
+descriptions = { en = "Copy it as written, with the unit" }
 aliases = ["样品数量", "Sample Quantity"]
 
 [[fields]]
@@ -118,6 +135,7 @@ label = "检验日期"
 names = { en = "Test Date" }
 type = "date_range"
 description = "检验、检测开始到结束的日期；只有一天的写成同一天开始和结束"
+descriptions = { en = "The dates from the start to the end of testing; for a single day, use the same start and end date" }
 aliases = ["检验日期", "检测日期", "检测时间", "Test Date", "Date of Test"]
 
 [[fields]]
@@ -126,6 +144,7 @@ label = "检验依据"
 names = { en = "Test Method / Standard" }
 type = "string"
 description = "标准号和名称照抄（如 GB/T 1234-2020），几条用分号连起来"
+descriptions = { en = "Copy the standard number and name as written (such as GB/T 1234-2020); join several with semicolons" }
 aliases = ["检测依据", "检验标准", "判定依据", "Test Method", "Standard"]
 
 [[fields]]
@@ -135,6 +154,7 @@ names = { en = "Conclusion" }
 type = "string"
 required = true
 description = "结论照抄，如 所检项目符合 GB/T xxxx 要求、合格、Pass；不要自己判断"
+descriptions = { en = "Copy the conclusion as written, such as 所检项目符合 GB/T xxxx 要求, conforming, Pass; do not judge it yourself" }
 aliases = ["检测结论", "结论", "Conclusion", "Result"]
 
 [[fields]]
@@ -172,6 +192,7 @@ label = "检测机构地址"
 names = { en = "Laboratory Address" }
 type = "string"
 description = "出报告的检验检测机构的地址，照抄；检验地点和机构地址不同时也写在报告上"
+descriptions = { en = "The address of the inspection and testing body issuing the report; copy it as written; the testing site is also written on the report when it differs from the body's address" }
 aliases = ["地址", "机构地址", "Address"]
 
 [[fields]]
@@ -180,6 +201,7 @@ label = "资质认定证书编号"
 names = { en = "CMA Certificate No." }
 type = "string"
 description = "报告封面 CMA 标志下面的 12 位资质认定证书编号，照抄数字；报告上没有 CMA 标志的留空（企业自己的出厂检验报告可以没有）"
+descriptions = { en = "The 12-digit accreditation certificate number below the CMA mark on the report cover; copy the digits; leave empty if the report has no CMA mark (a company's own factory test report may have none)" }
 aliases = ["CMA", "资质认定", "证书编号"]
 
 [[fields]]
@@ -188,6 +210,7 @@ label = "印章"
 names = { en = "Seal" }
 type = "string"
 description = "报告上盖的章，照抄章上能看清的文字（如 ××检测有限公司 检验检测专用章）；看不到章或看不清的留空，不要猜"
+descriptions = { en = "The seal on the report; copy the legible text on the seal (such as ××检测有限公司 检验检测专用章); leave empty if no seal is visible or it is illegible; do not guess" }
 aliases = ["检验检测专用章", "检验专用章", "公章"]
 
 [[fields]]
@@ -203,6 +226,7 @@ label = "样品状态"
 names = { en = "Sample Condition" }
 type = "string"
 description = "样品的状态描述，照抄（如 完好、无破损、密封完好）"
+descriptions = { en = "The description of the sample condition; copy it as written (such as intact, undamaged, well sealed)" }
 aliases = ["样品状态", "样品描述", "样品性状", "Sample Condition", "Sample Description"]
 
 [[fields]]
@@ -211,6 +235,7 @@ label = "抽样日期"
 names = { en = "Sampling Date" }
 type = "date"
 description = "抽样检验（监督抽查等）才有；委托送检的没有，留空"
+descriptions = { en = "Only for sampling inspections (supervisory sampling, etc.); empty for commissioned tests" }
 aliases = ["抽样日期", "采样日期", "Sampling Date"]
 
 [[fields]]
@@ -219,6 +244,7 @@ label = "抽样地点"
 names = { en = "Sampling Place" }
 type = "string"
 description = "抽样检验才有，照抄"
+descriptions = { en = "Only for sampling inspections; copy it as written" }
 aliases = ["抽样地点", "抽样场所", "采样地点", "Sampling Place"]
 
 [[fields]]
@@ -227,6 +253,7 @@ label = "抽样单位"
 names = { en = "Sampled by" }
 type = "string"
 description = "抽样检验才有：实施抽样的单位，照抄"
+descriptions = { en = "Only for sampling inspections: the organization that took the samples; copy it as written" }
 aliases = ["抽样单位", "抽样机构"]
 
 [[fields]]
@@ -235,6 +262,7 @@ label = "总页数"
 names = { en = "Total Pages" }
 type = "number"
 description = "报告每页标的“第 x 页 共 y 页”里的 y；没写页数的留空"
+descriptions = { en = "The y in \"第 x 页 共 y 页\" (page x of y) on each page of the report; leave empty if no page count is written" }
 aliases = ["共", "页", "Page", "of"]
 
 [[tables]]
@@ -243,6 +271,7 @@ label = "检验项目"
 names = { en = "Test Items" }
 required = true
 description = "每一个检验项目一行。表头、分组标题、备注不算一行"
+descriptions = { en = "One row per test item. Headers, group titles and notes are not rows" }
 
 [[tables.columns]]
 name = "no"
@@ -271,6 +300,7 @@ label = "标准要求"
 names = { en = "Requirement" }
 type = "string"
 description = "技术要求、标准值、限值，照抄（如 ≤0.5、≥95、无异味）"
+descriptions = { en = "The technical requirement, standard value or limit; copy it as written (such as ≤0.5, ≥95, no odor)" }
 aliases = ["技术要求", "标准值", "标准要求", "Specification", "Requirement", "Limit"]
 
 [[tables.columns]]
@@ -279,6 +309,7 @@ label = "检验结果"
 names = { en = "Result" }
 type = "string"
 description = "照抄（数字、未检出、ND、<0.01 都照原样）"
+descriptions = { en = "Copy it as written (numbers, not detected, ND, <0.01 all as shown)" }
 aliases = ["检测结果", "实测值", "结果", "Result", "Test Result"]
 
 [[tables.columns]]
@@ -287,4 +318,5 @@ label = "单项判定"
 names = { en = "Verdict" }
 type = "string"
 description = "照抄：合格、不合格、符合、不符合、Pass、Fail；没有这一列就留空"
+descriptions = { en = "Copy it as written: 合格, 不合格, 符合, 不符合, Pass, Fail; leave empty if this column is absent" }
 aliases = ["单项结论", "判定", "单项判定", "Conclusion", "Pass/Fail"]

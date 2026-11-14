@@ -13,7 +13,17 @@ titles = { en = "Uniform Invoice (Taiwan)", "zh-Hant" = "統一發票" }
 countries = ["TW"]
 domains = ["发票"]
 description = "台湾的统一发票：发票号码（字轨 2 码 + 8 位）、交易日期、卖方和买受人统一编号、品名、数量、单价、金额、销售额、课税别、营业税、总计。统一编号检查码不对、发票号码格式不对、营业税不等于销售额 × 5% 会提醒。"
+descriptions = { en = "Taiwan uniform invoices: invoice number (2-letter track + 8 digits), transaction date, unified business numbers of the seller and buyer, description, quantity, unit price, amount, sales amount, tax type, business tax and total. Invalid unified business number check codes, invalid invoice number formats and business tax other than sales × 5% are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "tw_invoice_no", "tw_seller_ban", "tw_buyer_ban", "tw_tax_5", "net_tax_gross", "item_line"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Taiwan uniform invoices (triplicate, duplicate, cash register, e-invoice certificate copy).",
+  "Basis: Regulations Governing the Use of Uniform Invoices (amended 2024-12-12, in force 2025-01-01) art. 7 (types), art. 9 (track and number, transaction date, description, quantity, unit price, amount, sales, tax type, tax and total; triplicate invoices also show the buyer's name and unified business number); Value-added and Non-value-added Business Tax Act art. 10 (rate 5%). The check code of unified business numbers follows the 2023 amendment of the Ministry of Finance: the sum is divisible by 5. Invoice numbers are a 2-letter track + 8 digits.",
+  "Use: issued by businesses selling goods or services; the deduction copy of a triplicate invoice is used by the buyer to report input tax.",
+  "Sources: Ministry of Finance regulation FL006084, Regulations Governing the Use of Uniform Invoices; Fiscal Information Agency explanation of the revised unified business number check code.",
+]
 
 [[fields]]
 name = "document_title"
@@ -21,6 +31,7 @@ label = "单据标题"
 names = { en = "Document Title", "zh-Hant" = "發票名稱" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 aliases = ["發票名稱"]
 
 [[fields]]
@@ -31,6 +42,7 @@ type = "string"
 required = true
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 aliases = ["發票號碼"]
 
 [[fields]]
@@ -55,6 +67,7 @@ label = "卖方税号"
 names = { en = "Seller Tax ID", "zh-Hant" = "賣方統一編號" }
 type = "string"
 description = "照抄，带上字母和分隔符"
+descriptions = { en = "Copy it as written, with letters and separators" }
 aliases = ["賣方統一編號"]
 
 [[fields]]
@@ -77,6 +90,7 @@ label = "买方税号"
 names = { en = "Buyer Tax ID", "zh-Hant" = "買受人統一編號" }
 type = "string"
 description = "照抄；没有就留空"
+descriptions = { en = "Copy it as written; leave empty if absent" }
 aliases = ["買受人統一編號"]
 
 [[fields]]
@@ -85,6 +99,7 @@ label = "课税别"
 names = { en = "Tax Type", "zh-Hant" = "課稅別" }
 type = "string"
 description = "照抄：應稅、零稅率、免稅"
+descriptions = { en = "Copy it as written: 應稅, 零稅率, 免稅" }
 aliases = ["課稅別"]
 
 [[fields]]
@@ -115,6 +130,7 @@ label = "随机码"
 names = { en = "Random Code", "zh-Hant" = "隨機碼" }
 type = "string"
 description = "电子发票证明联上的 4 位随机码"
+descriptions = { en = "The 4-digit random code on the e-invoice certificate copy" }
 aliases = ["隨機碼"]
 
 [[tables]]
@@ -122,6 +138,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", "zh-Hant" = "品項" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -150,4 +167,5 @@ label = "金额"
 names = { en = "Amount", "zh-Hant" = "金額" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["金額"]

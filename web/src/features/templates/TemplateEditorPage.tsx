@@ -45,6 +45,7 @@ import { LabelFields, LabelTags } from './LabelWidgets'
 import { Tip } from '../../components/Tip'
 import { useTranslation } from 'react-i18next'
 import { msg, t } from '../../i18n'
+import { DEFAULT_LANGUAGE, newTemplateLanguage, untranslated, withLanguage } from './templateLanguage'
 
 
 const STATUS_TEXT: Record<string, [string, string]> = {
@@ -58,8 +59,10 @@ function draftOf(tpl: Template): TemplateIn {
   return {
     title: tpl.title,
     titles: tpl.titles ?? {},
+    language: tpl.language ?? DEFAULT_LANGUAGE,
     category: tpl.category,
     description: tpl.description,
+    descriptions: tpl.descriptions ?? {},
     fields: tpl.fields,
     tables: tpl.tables,
     rules: tpl.rules.map((r) => r.id),
@@ -80,6 +83,7 @@ const BLANK: Template = {
   name: '',
   version: 0,
   get title() { return t('新模板') },
+  get language() { return newTemplateLanguage() },
   description: '',
   category: '',
   kind: 'mine',
@@ -159,12 +163,28 @@ function Editor({ template }: { template: Template }) {
   const [viewing, setViewing] = useState<number | null>(null)
   const [trialDoc, setTrialDoc] = useState<string>()
   const set = (patch: Partial<TemplateIn>) => setDraft((d) => ({ ...d, ...patch }))
-  // Name languages: languages already defined in the template first, then other common languages that can be
-  // added.
-  const [language, setLanguage] = useState('zh')
+  // Primary language: title, description and every name and description are written in it; the model gets
+  // its descriptions, and the review page and exports show its names by default.
+  const primary = draft.language ?? DEFAULT_LANGUAGE
+  // Editing language: the primary language first, then languages already in the template, then other common
+  // languages that can be added.
+  const [language, setLanguage] = useState(primary)
   const editorLanguages = [
-    ...new Set(['zh', ...(template.languages ?? []), ...Object.keys(LANGUAGE_NAMES)]),
+    ...new Set([primary, ...(template.languages ?? []), ...Object.keys(LANGUAGE_NAMES)]),
   ]
+  const changePrimary = (next: string) => {
+    const missing = untranslated(draft, next)
+    setDraft(withLanguage(draft, next))
+    setLanguage(next)
+    if (missing > 0) {
+      void message.warning(
+        t('主语言改成了{{languageName}}。有 {{count}} 处还没有{{languageName}}版本，先保留原来的文字，记得改过来', {
+          languageName: languageName(next),
+          count: missing,
+        }),
+      )
+    }
+  }
   // Field IDs already saved cannot change (new, unsaved fields can).
   const saved = template.id !== null
   const locked = useMemo(
@@ -314,8 +334,8 @@ function Editor({ template }: { template: Template }) {
         )}
         {!readOnly && <StarterFormulas template={template} draft={draft} set={set} />}
         <Descriptions column={{ xs: 1, md: 3 }} size="small">
-          <Descriptions.Item label={language === 'zh' ? t('模板名') : t('模板名（{{languageName}}）', { languageName: languageName(language) })}>
-            {language === 'zh' ? (
+          <Descriptions.Item label={language === primary ? t('模板名') : t('模板名（{{languageName}}）', { languageName: languageName(language) })}>
+            {language === primary ? (
               <Input value={draft.title} disabled={readOnly} onChange={(e) => set({ title: e.target.value })} />
             ) : (
               <Input
@@ -326,11 +346,42 @@ function Editor({ template }: { template: Template }) {
               />
             )}
           </Descriptions.Item>
-          <Descriptions.Item label={t('说明')} span={2}>
-            <Input
-              value={draft.description}
+          <Descriptions.Item
+            label={language === primary ? t('说明') : t('说明（{{languageName}}）', { languageName: languageName(language) })}
+            span={2}
+          >
+            {language === primary ? (
+              <Input
+                value={draft.description}
+                disabled={readOnly}
+                onChange={(e) => set({ description: e.target.value })}
+              />
+            ) : (
+              <Input
+                value={draft.descriptions?.[language] ?? ''}
+                placeholder={draft.description}
+                disabled={readOnly}
+                onChange={(e) => set({ descriptions: { ...draft.descriptions, [language]: e.target.value } })}
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item
+            label={
+              <Tooltip title={t('名称和说明都用这种语言写；审核页、导出默认显示这种语言的名称，给模型的说明也用它')}>
+                {t('主语言')}
+              </Tooltip>
+            }
+          >
+            <Select
+              size="small"
+              aria-label={t('主语言')}
+              value={primary}
               disabled={readOnly}
-              onChange={(e) => set({ description: e.target.value })}
+              options={languageOptions(editorLanguages)}
+              onChange={changePrimary}
+              style={{ minWidth: 150 }}
+              showSearch
+              optionFilterProp="label"
             />
           </Descriptions.Item>
         </Descriptions>
@@ -352,12 +403,12 @@ function Editor({ template }: { template: Template }) {
         size="small"
         extra={
           <Flex align="center" gap={8}>
-            <Tooltip title={t('字段名可以写几种语言：审核页、导出时切换。没写的语言显示中文名。也会告诉模型单据上可能这么写')}>
-              <Typography.Text type="secondary">{t('名称语言')}</Typography.Text>
+            <Tooltip title={t('名称和说明可以写几种语言：审核页、导出、预览时切换。没写的语言显示主语言的。名称也会告诉模型单据上可能这么写')}>
+              <Typography.Text type="secondary">{t('编辑语言')}</Typography.Text>
             </Tooltip>
             <Select
               size="small"
-              aria-label={t('名称语言')}
+              aria-label={t('编辑语言')}
               value={language}
               options={languageOptions(editorLanguages)}
               onChange={setLanguage}
@@ -370,6 +421,7 @@ function Editor({ template }: { template: Template }) {
       >
         <FieldsEditor
           language={language}
+          primary={primary}
           fields={draft.fields}
           onChange={(fields) => set({ fields })}
           locked={locked}
@@ -417,13 +469,13 @@ function Editor({ template }: { template: Template }) {
                 size="small"
                 title={
                   <Flex gap={8} align="center" wrap>
-                    {language === 'zh' ? (
+                    {language === primary ? (
                       <Input
                         value={tbl.label}
                         disabled={readOnly}
                         onChange={(e) => setTable(i, { label: e.target.value })}
-                        style={{ width: 140 }}
-                        addonBefore={t('中文名')}
+                        style={{ width: 200 }}
+                        addonBefore={languageName(primary)}
                       />
                     ) : (
                       <Input
@@ -464,16 +516,29 @@ function Editor({ template }: { template: Template }) {
                   )
                 }
               >
-                <Input.TextArea
-                  value={tbl.description}
-                  disabled={readOnly}
-                  autoSize={{ minRows: 1, maxRows: 3 }}
-                  placeholder={t('给模型的说明：表在单据哪里、哪些行不算（小计、合计……）')}
-                  onChange={(e) => setTable(i, { description: e.target.value })}
-                  style={{ marginBottom: 8 }}
-                />
+                {language === primary ? (
+                  <Input.TextArea
+                    value={tbl.description}
+                    disabled={readOnly}
+                    autoSize={{ minRows: 1, maxRows: 3 }}
+                    placeholder={t('给模型的说明：表在单据哪里、哪些行不算（小计、合计……）')}
+                    onChange={(e) => setTable(i, { description: e.target.value })}
+                    style={{ marginBottom: 8 }}
+                  />
+                ) : (
+                  <Input.TextArea
+                    value={tbl.descriptions?.[language] ?? ''}
+                    disabled={readOnly}
+                    autoSize={{ minRows: 1, maxRows: 3 }}
+                    placeholder={tbl.description}
+                    aria-label={t('说明（{{languageName}}）', { languageName: languageName(language) })}
+                    onChange={(e) => setTable(i, { descriptions: { ...tbl.descriptions, [language]: e.target.value } })}
+                    style={{ marginBottom: 8 }}
+                  />
+                )}
                 <FieldsEditor
                   language={language}
+                  primary={primary}
                   fields={tbl.columns}
                   onChange={(columns) => setTable(i, { columns })}
                   locked={

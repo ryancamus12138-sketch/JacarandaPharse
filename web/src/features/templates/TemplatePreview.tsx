@@ -7,17 +7,24 @@ import { languageName, languageOptions } from '../../utils/languages'
 import { countryName } from './labels'
 import { LabelTags } from './LabelWidgets'
 import { TYPE_OPTIONS } from './templateFields'
+import { DEFAULT_LANGUAGE, textIn } from './templateLanguage'
 import { useTranslation } from 'react-i18next'
 
-const TYPE_TEXT = Object.fromEntries(TYPE_OPTIONS.map((o) => [o.value, o.label]))
+/** Type name in the current interface language (the option labels are read when shown). */
+function typeText(type: string): string {
+  return TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type
+}
 
-function nameIn(label: string, names: Record<string, string> | undefined, language: string): string {
-  return language === 'zh' ? label : (names?.[language] ?? label)
+/** Language shown in the preview and the template's primary language. */
+interface Shown {
+  language: string
+  primary: string
 }
 
 /** Overview of fields (or table columns): name, type, required, aliases, description. */
-function FieldTable({ fields, language }: { fields: TemplateField[]; language: string }) {
+function FieldTable({ fields, shown }: { fields: TemplateField[]; shown: Shown }) {
   const { t } = useTranslation()
+  const { language, primary } = shown
   const columns: TableProps<TemplateField>['columns'] = [
     {
       title: t('名称'),
@@ -25,8 +32,8 @@ function FieldTable({ fields, language }: { fields: TemplateField[]; language: s
       width: 180,
       render: (_, f) => (
         <Flex vertical>
-          <Typography.Text strong>{nameIn(f.label, f.names, language)}</Typography.Text>
-          {language !== 'zh' && <Typography.Text type="secondary" style={{ fontSize: 12 }}>{f.label}</Typography.Text>}
+          <Typography.Text strong>{textIn(f.label, f.names, primary, language)}</Typography.Text>
+          {language !== primary && <Typography.Text type="secondary" style={{ fontSize: 12 }}>{f.label}</Typography.Text>}
         </Flex>
       ),
     },
@@ -36,7 +43,7 @@ function FieldTable({ fields, language }: { fields: TemplateField[]; language: s
       width: 120,
       render: (_, f) => (
         <Flex vertical gap={2}>
-          <span>{TYPE_TEXT[f.type] ?? f.type}</span>
+          <span>{typeText(f.type)}</span>
           {f.compute ? <Typography.Text code style={{ fontSize: 12 }}>{f.compute}</Typography.Text> : null}
         </Flex>
       ),
@@ -67,17 +74,20 @@ function FieldTable({ fields, language }: { fields: TemplateField[]; language: s
     {
       title: t('说明'),
       key: 'description',
-      render: (_, f) => (
-        <Typography.Paragraph ellipsis={{ rows: 2, tooltip: f.description }} style={{ margin: 0 }}>
-          {f.description || '—'}
-        </Typography.Paragraph>
-      ),
+      render: (_, f) => {
+        const description = textIn(f.description, f.descriptions, primary, language)
+        return (
+          <Typography.Paragraph ellipsis={{ rows: 2, tooltip: description }} style={{ margin: 0 }}>
+            {description || '—'}
+          </Typography.Paragraph>
+        )
+      },
     },
   ]
   return <Table size="small" rowKey="name" columns={columns} dataSource={fields} pagination={false} />
 }
 
-function TablesPane({ tables, language }: { tables: TemplateTable[]; language: string }) {
+function TablesPane({ tables, shown }: { tables: TemplateTable[]; shown: Shown }) {
   const { t } = useTranslation()
   if (tables.length === 0) return <Empty description={t('这个模板没有表格')} />
   return (
@@ -85,12 +95,16 @@ function TablesPane({ tables, language }: { tables: TemplateTable[]; language: s
       {tables.map((tbl) => (
         <Flex key={tbl.name} vertical gap={6}>
           <Flex gap={8} align="center" wrap>
-            <Typography.Text strong>{nameIn(tbl.label, tbl.names, language)}</Typography.Text>
+            <Typography.Text strong>{textIn(tbl.label, tbl.names, shown.primary, shown.language)}</Typography.Text>
             <Typography.Text type="secondary">{t('{{length}} 列', { length: tbl.columns.length })}</Typography.Text>
             {tbl.required && <Tag color="red" bordered={false}>{t('至少一行')}</Tag>}
           </Flex>
-          {tbl.description && <Typography.Text type="secondary">{tbl.description}</Typography.Text>}
-          <FieldTable fields={tbl.columns} language={language} />
+          {tbl.description && (
+            <Typography.Text type="secondary">
+              {textIn(tbl.description, tbl.descriptions, shown.primary, shown.language)}
+            </Typography.Text>
+          )}
+          <FieldTable fields={tbl.columns} shown={shown} />
         </Flex>
       ))}
     </Flex>
@@ -119,15 +133,19 @@ export function TemplatePreview({
 }) {
   const { t } = useTranslation()
   const rules = useQuery({ queryKey: ['template-rules'], queryFn: listRules, staleTime: Infinity })
-  const [language, setLanguage] = useState('zh')
+  const [language, setLanguage] = useState<string>()
   if (!template) return null
-  const languages = template.languages?.length ? template.languages : ['zh']
-  const shown = languages.includes(language) ? language : 'zh'
+  const primary = template.language ?? DEFAULT_LANGUAGE
+  const languages = template.languages?.length ? template.languages : [primary]
+  // The primary language unless another one was picked.
+  const shown = language && languages.includes(language) ? language : primary
+  const view: Shown = { language: shown, primary }
   const country = new Map((rules.data ?? []).map((r) => [r.id, r.country]))
   const custom = template.custom_rules ?? []
   const columnCount = template.tables.reduce((n, tbl) => n + tbl.columns.length, 0)
   const notes = basis ?? template.basis ?? []
-  const title = nameIn(template.title, template.titles, shown)
+  const title = textIn(template.title, template.titles, primary, shown)
+  const description = textIn(template.description, template.descriptions, primary, shown)
 
   return (
     <Modal
@@ -138,7 +156,7 @@ export function TemplatePreview({
       title={
         <Flex gap={8} align="center" wrap style={{ paddingRight: 24 }}>
           <span>{title}</span>
-          {shown !== 'zh' && <Typography.Text type="secondary" style={{ fontWeight: 400 }}>{template.title}</Typography.Text>}
+          {shown !== primary && <Typography.Text type="secondary" style={{ fontWeight: 400 }}>{template.title}</Typography.Text>}
           {template.kind === 'mine' && <Tag>{t('第 {{version}} 版', { version: template.version })}</Tag>}
         </Flex>
       }
@@ -166,7 +184,7 @@ export function TemplatePreview({
             </Flex>
           )}
         </Flex>
-        {template.description && <Typography.Paragraph style={{ margin: 0 }}>{template.description}</Typography.Paragraph>}
+        {description && <Typography.Paragraph style={{ margin: 0 }}>{description}</Typography.Paragraph>}
         <Typography.Text type="secondary">
           {t('{{length}} 个字段', { length: template.fields.length })}
           {template.tables.length > 0 ? t(' · {{length}} 张表格（{{columnCount}} 列）', { length: template.tables.length, columnCount }) : ''}
@@ -178,12 +196,12 @@ export function TemplatePreview({
             {
               key: 'fields',
               label: t('字段（{{length}}）', { length: template.fields.length }),
-              children: <FieldTable fields={template.fields} language={shown} />,
+              children: <FieldTable fields={template.fields} shown={view} />,
             },
             {
               key: 'tables',
               label: t('表格（{{length}}）', { length: template.tables.length }),
-              children: <TablesPane tables={template.tables} language={shown} />,
+              children: <TablesPane tables={template.tables} shown={view} />,
             },
             {
               key: 'rules',
@@ -235,9 +253,12 @@ export function TemplatePreview({
               : []),
           ]}
         />
-        {shown !== 'zh' && (
+        {shown !== primary && (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t('名称显示为{{languageName}}；没写这种语言的显示中文名。', { languageName: languageName(shown) })}
+            {t('名称和说明显示为{{languageName}}；没写这种语言的显示主语言（{{primaryName}}）的。', {
+              languageName: languageName(shown),
+              primaryName: languageName(primary),
+            })}
           </Typography.Text>
         )}
       </Flex>

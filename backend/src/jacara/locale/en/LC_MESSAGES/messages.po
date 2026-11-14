@@ -5,8 +5,8 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: JacarandaParse 1.0.0\n"
-"POT-Creation-Date: 2026-11-14 06:04+0000\n"
-"PO-Revision-Date: 2026-11-14 06:04+0000\n"
+"POT-Creation-Date: 2026-11-14 06:33+0000\n"
+"PO-Revision-Date: 2026-11-14 06:33+0000\n"
 "Last-Translator: JacarandaParse\n"
 "Language: en\n"
 "Language-Team: English\n"
@@ -736,7 +736,7 @@ msgstr "Only the author of this comment or an administrator can delete it"
 
 #: backend/src/jacara/modules/comments/service.py:114
 #: backend/src/jacara/modules/documents/service.py:1025
-#: backend/src/jacara/modules/templates/service.py:1186
+#: backend/src/jacara/modules/templates/service.py:1214
 msgid "找不到这个文档"
 msgstr "Document not found"
 
@@ -780,7 +780,7 @@ msgstr "The file exceeds {limit} MB"
 
 #: backend/src/jacara/modules/documents/service.py:208
 #: backend/src/jacara/modules/hub/service.py:222
-#: backend/src/jacara/modules/templates/service.py:675
+#: backend/src/jacara/modules/templates/service.py:703
 msgid "文件是空的"
 msgstr "The file is empty"
 
@@ -793,8 +793,8 @@ msgstr "The file is empty"
 #: backend/src/jacara/modules/ocr_samples/det.py:441
 #: backend/src/jacara/modules/ocr_samples/service.py:410
 #: backend/src/jacara/modules/ocr_samples/service.py:1070
-#: backend/src/jacara/modules/templates/service.py:693
-#: backend/src/jacara/modules/templates/service.py:771
+#: backend/src/jacara/modules/templates/service.py:721
+#: backend/src/jacara/modules/templates/service.py:799
 msgid "对象存储暂时不可用，请稍后再试"
 msgstr "Object storage is temporarily unavailable; please try again later"
 
@@ -2254,10 +2254,6 @@ msgid "错误标签：{tags}"
 msgstr "Error tags: {tags}"
 
 #: backend/src/jacara/modules/ocr_samples/service.py:1318
-msgid "模板"
-msgstr "Template"
-
-#: backend/src/jacara/modules/ocr_samples/service.py:1318
 msgid "分类"
 msgstr "Category"
 
@@ -2267,6 +2263,11 @@ msgstr "Category"
 #: backend/src/jacara/plugins/exporters/excel.py:335
 msgid "来源"
 msgstr "Source"
+
+#: backend/src/jacara/modules/ocr_samples/service.py:1318
+#: backend/src/jacara/templates/__init__.py:993
+msgid "模板"
+msgstr "Template"
 
 #: backend/src/jacara/modules/ocr_samples/service.py:1319
 msgid "## 分布（只报告，不为凑比例挪组）"
@@ -2399,132 +2400,132 @@ msgstr "In the {where} of the document, {side} \"{label}\""
 msgid "在单据{where}"
 msgstr "In the {where} of the document"
 
-#: backend/src/jacara/modules/templates/service.py:355
-#: backend/src/jacara/modules/templates/service.py:1114
+#: backend/src/jacara/modules/templates/service.py:378
+#: backend/src/jacara/modules/templates/service.py:1142
 msgid "这个操作要数据库会话"
 msgstr "This operation requires a database session"
 
-#: backend/src/jacara/modules/templates/service.py:388
+#: backend/src/jacara/modules/templates/service.py:411
 #, python-brace-format
 msgid "没有叫 {row} 的表"
 msgstr "No table named {row}"
 
-#: backend/src/jacara/modules/templates/service.py:428
-#: backend/src/jacara/modules/templates/service.py:1178
+#: backend/src/jacara/modules/templates/service.py:451
+#: backend/src/jacara/modules/templates/service.py:1206
 msgid "找不到这个模板"
 msgstr "Template not found"
 
-#: backend/src/jacara/modules/templates/service.py:452
+#: backend/src/jacara/modules/templates/service.py:475
 #, python-brace-format
 msgid "这个模板没有第 {version} 版"
 msgstr "This template has no version {version}"
 
-#: backend/src/jacara/modules/templates/service.py:462
-#: backend/src/jacara/modules/templates/service.py:724
+#: backend/src/jacara/modules/templates/service.py:485
+#: backend/src/jacara/modules/templates/service.py:752
 #, python-brace-format
 msgid "没有叫 {starter} 的起步模板"
 msgstr "No starter template named {starter}"
 
-#: backend/src/jacara/modules/templates/service.py:471
+#: backend/src/jacara/modules/templates/service.py:495
 msgid "请选择要复制的模板"
 msgstr "Choose the template to copy"
 
-#: backend/src/jacara/modules/templates/service.py:475
+#: backend/src/jacara/modules/templates/service.py:499
 #, python-brace-format
 msgid "{title}（副本）"
 msgstr "{title} (copy)"
 
-#: backend/src/jacara/modules/templates/service.py:487
+#: backend/src/jacara/modules/templates/service.py:511
 msgid "空白模板要先填好内容再保存"
 msgstr "Fill in a blank template before saving it"
 
-#: backend/src/jacara/modules/templates/service.py:489
+#: backend/src/jacara/modules/templates/service.py:513
 msgid "新建"
 msgstr "Created"
 
-#: backend/src/jacara/modules/templates/service.py:551
-#: backend/src/jacara/templates/__init__.py:754
+#: backend/src/jacara/modules/templates/service.py:575
+#: backend/src/jacara/templates/__init__.py:862
 #, python-brace-format
 msgid "模板「{title}」"
 msgstr "Template \"{title}\""
 
-#: backend/src/jacara/modules/templates/service.py:553
-#: backend/src/jacara/templates/__init__.py:861
+#: backend/src/jacara/modules/templates/service.py:577
+#: backend/src/jacara/templates/__init__.py:975
 #: backend/src/jacara/workbook/standard.py:72
 msgid "功能领域"
 msgstr "Domains"
 
-#: backend/src/jacara/modules/templates/service.py:555
+#: backend/src/jacara/modules/templates/service.py:579
 #: backend/src/jacara/workbook/standard.py:74
 msgid "自定义标签"
 msgstr "Custom tags"
 
-#: backend/src/jacara/modules/templates/service.py:654
+#: backend/src/jacara/modules/templates/service.py:682
 #, python-brace-format
 msgid "导入（导出时是第 {version} 版）"
 msgstr "Imported (version {version} at export)"
 
-#: backend/src/jacara/modules/templates/service.py:677
+#: backend/src/jacara/modules/templates/service.py:705
 #, python-brace-format
 msgid "Excel 超过 {limit} MB"
 msgstr "The Excel file exceeds {limit} MB"
 
-#: backend/src/jacara/modules/templates/service.py:737
+#: backend/src/jacara/modules/templates/service.py:765
 #, python-brace-format
 msgid "从 Excel 建：{filename}"
 msgstr "Created from Excel: {filename}"
 
-#: backend/src/jacara/modules/templates/service.py:763
+#: backend/src/jacara/modules/templates/service.py:791
 msgid "找不到上传的 Excel，请重新上传"
 msgstr "The uploaded Excel file cannot be found; upload it again"
 
-#: backend/src/jacara/modules/templates/service.py:776
+#: backend/src/jacara/modules/templates/service.py:804
 msgid "对象存储没有准备好"
 msgstr "Object storage is not ready"
 
-#: backend/src/jacara/modules/templates/service.py:815
+#: backend/src/jacara/modules/templates/service.py:843
 msgid "请选择我的模板，或者\"抽取所有键值对\""
 msgstr "Choose one of my templates, or \"Extract all key-value pairs\""
 
-#: backend/src/jacara/modules/templates/service.py:819
+#: backend/src/jacara/modules/templates/service.py:847
 #, python-brace-format
 msgid "模板「{title}」已经归档了，不能再用来上传"
 msgstr "Template \"{title}\" is archived and can no longer be used for uploads"
 
-#: backend/src/jacara/modules/templates/service.py:827
+#: backend/src/jacara/modules/templates/service.py:855
 msgid "这份文档用的模板已经删除了，请选一个模板再重新处理"
 msgstr "The template used by this document has been deleted; choose a template and reprocess"
 
-#: backend/src/jacara/modules/templates/service.py:866
+#: backend/src/jacara/modules/templates/service.py:894
 msgid "这份文档没有存 OCR 结果（更新前处理的），请先重新处理一次再试跑"
 msgstr "This document has no stored OCR result (processed before an update); reprocess it once before a trial run"
 
-#: backend/src/jacara/modules/templates/service.py:869
+#: backend/src/jacara/modules/templates/service.py:897
 msgid "模型服务没有准备好"
 msgstr "The model server is not ready"
 
-#: backend/src/jacara/modules/templates/service.py:940
+#: backend/src/jacara/modules/templates/service.py:968
 msgid "这份文档不是\"抽取所有键值对\"处理的，不能当样例"
 msgstr "This document was not processed with \"Extract all key-value pairs\" and cannot serve as a sample"
 
-#: backend/src/jacara/modules/templates/service.py:947
+#: backend/src/jacara/modules/templates/service.py:975
 #, python-brace-format
 msgid "样例里没有 {source}"
 msgstr "The sample has no {source}"
 
-#: backend/src/jacara/modules/templates/service.py:959
+#: backend/src/jacara/modules/templates/service.py:987
 msgid "用样例建模板"
 msgstr "Created from a sample"
 
-#: backend/src/jacara/modules/templates/service.py:981
+#: backend/src/jacara/modules/templates/service.py:1009
 msgid "在样例上框选建模板"
 msgstr "Create a template from regions on a sample"
 
-#: backend/src/jacara/modules/templates/service.py:1010
+#: backend/src/jacara/modules/templates/service.py:1038
 msgid "用样例建模板：选中的键值对搬过来，不重新抽取"
 msgstr "Created from a sample: the selected key-value pairs were copied without extracting again"
 
-#: backend/src/jacara/modules/templates/service.py:1188
+#: backend/src/jacara/modules/templates/service.py:1216
 msgid "这份文档还没处理完"
 msgstr "This document has not finished processing"
 
@@ -2560,8 +2561,8 @@ msgid "按公式算：{readable} = {value:g}"
 msgstr "Computed by formula: {readable} = {value:g}"
 
 #: backend/src/jacara/pipeline/compute.py:87
-#: backend/src/jacara/templates/__init__.py:362
-#: backend/src/jacara/templates/__init__.py:977
+#: backend/src/jacara/templates/__init__.py:391
+#: backend/src/jacara/templates/__init__.py:1118
 #, python-brace-format
 msgid "{table}的{column}"
 msgstr "{column} of {table}"
@@ -4715,232 +4716,244 @@ msgstr "Countries and regions"
 msgid "{where}：国家和地区要写两个字母的代码（如 CN、AU），不认识：{codes}"
 msgstr "{where}: countries and regions must be two-letter codes (such as CN, AU); unknown: {codes}"
 
-#: backend/src/jacara/templates/__init__.py:379
+#: backend/src/jacara/templates/__init__.py:408
 #, python-brace-format
 msgid "{label}：{problem}，请核对开始和结束日期"
 msgstr "{label}: {problem}; check the start and end dates"
 
-#: backend/src/jacara/templates/__init__.py:389
+#: backend/src/jacara/templates/__init__.py:418
 #, python-brace-format
 msgid "{label}：结束 {end} 早于开始 {start}"
 msgstr "{label}: end {end} is before start {start}"
 
-#: backend/src/jacara/templates/__init__.py:398
+#: backend/src/jacara/templates/__init__.py:427
 #, python-brace-format
 msgid "{label}拆得开"
 msgstr "{label} can be split"
 
-#: backend/src/jacara/templates/__init__.py:408
+#: backend/src/jacara/templates/__init__.py:437
 #, python-brace-format
 msgid "{label}结束不早于开始"
 msgstr "{label}: end not before start"
 
-#: backend/src/jacara/templates/__init__.py:457
+#: backend/src/jacara/templates/__init__.py:486
 #, python-brace-format
 msgid "{left} 是 {left_value}，{right} 是 {right_value}，不满足 {condition}"
 msgstr "{left} is {left_value} and {right} is {right_value}, which does not satisfy {condition}"
 
-#: backend/src/jacara/templates/__init__.py:672
+#: backend/src/jacara/templates/__init__.py:711
 #, python-brace-format
 msgid "没有叫 {name} 的起步模板，现有：{known}"
 msgstr "No starter template named {name}; available: {known}"
 
-#: backend/src/jacara/templates/__init__.py:679
+#: backend/src/jacara/templates/__init__.py:718
 #, python-brace-format
 msgid "起步模板 {name}.toml 格式不对：{err}"
 msgstr "Starter template {name}.toml has an invalid format: {err}"
 
-#: backend/src/jacara/templates/__init__.py:738
+#: backend/src/jacara/templates/__init__.py:846
 #, python-brace-format
 msgid "没有叫 {name} 的模板，现有：{known}"
 msgstr "No template named {name}; available: {known}"
 
-#: backend/src/jacara/templates/__init__.py:744
+#: backend/src/jacara/templates/__init__.py:852
 #, python-brace-format
 msgid "模板 {name}.toml 格式不对：{err}"
 msgstr "Template {name}.toml has an invalid format: {err}"
 
-#: backend/src/jacara/templates/__init__.py:752
+#: backend/src/jacara/templates/__init__.py:860
 #, python-brace-format
 msgid "模板 {name}"
 msgstr "Template {name}"
 
-#: backend/src/jacara/templates/__init__.py:757
+#: backend/src/jacara/templates/__init__.py:865
 #, python-brace-format
 msgid "{where}：文件里的 name 应该是 {name}"
 msgstr "{where}: name in the file should be {name}"
 
-#: backend/src/jacara/templates/__init__.py:760
+#: backend/src/jacara/templates/__init__.py:868
 #, python-brace-format
 msgid "{where}：version 应该是大于 0 的整数"
 msgstr "{where}: version must be an integer greater than 0"
 
-#: backend/src/jacara/templates/__init__.py:764
+#: backend/src/jacara/templates/__init__.py:872
 #, python-brace-format
 msgid "{where}：至少要有一个字段"
 msgstr "{where}: at least one field is required"
 
-#: backend/src/jacara/templates/__init__.py:772
+#: backend/src/jacara/templates/__init__.py:880
 #, python-brace-format
 msgid "{where}：第 {i} 张表的 name 只能用小写英文字母、数字和下划线"
 msgstr "{where}: the name of table {i} may only contain lowercase letters, digits and underscores"
 
-#: backend/src/jacara/templates/__init__.py:778
+#: backend/src/jacara/templates/__init__.py:886
 #, python-brace-format
 msgid "{where}：表 {table_name} 和别的字段或表重名了"
 msgstr "{where}: table {table_name} has the same name as another field or table"
 
-#: backend/src/jacara/templates/__init__.py:785
+#: backend/src/jacara/templates/__init__.py:893
 #, python-brace-format
 msgid "{where} 的表 {table_name}"
 msgstr "table {table_name} of {where}"
 
-#: backend/src/jacara/templates/__init__.py:789
+#: backend/src/jacara/templates/__init__.py:897
 #, python-brace-format
 msgid "{where}：表 {table_name} 至少要有一列"
 msgstr "{where}: table {table_name} needs at least one column"
 
-#: backend/src/jacara/templates/__init__.py:794
+#: backend/src/jacara/templates/__init__.py:902
 #, python-brace-format
 msgid "{where}：表 {table_name} 的列不能叫 row（留给行号用）"
 msgstr "{where}: a column of table {table_name} cannot be named row (reserved for row numbers)"
 
-#: backend/src/jacara/templates/__init__.py:808
+#: backend/src/jacara/templates/__init__.py:916
+#: backend/src/jacara/templates/__init__.py:921
 #, python-brace-format
 msgid "表 {table_name}"
 msgstr "table {table_name}"
 
-#: backend/src/jacara/templates/__init__.py:818
+#: backend/src/jacara/templates/__init__.py:932
 #, python-brace-format
 msgid "{where}：没有编号为 {rule_id} 的规则，现有：{known}"
 msgstr "{where}: no rule with id {rule_id}; available: {known}"
 
-#: backend/src/jacara/templates/__init__.py:859
+#: backend/src/jacara/templates/__init__.py:973
 #, python-brace-format
 msgid "{where}：region 写得不对"
 msgstr "{where}: invalid region"
 
-#: backend/src/jacara/templates/__init__.py:877
+#: backend/src/jacara/templates/__init__.py:991
 #: backend/src/jacara/workbook/standard.py:70
 msgid "模板名"
 msgstr "Template name"
 
-#: backend/src/jacara/templates/__init__.py:884
+#: backend/src/jacara/templates/__init__.py:1000
 #, python-brace-format
 msgid "第 {i} 条"
 msgstr "rule {i}"
 
-#: backend/src/jacara/templates/__init__.py:886
+#: backend/src/jacara/templates/__init__.py:1002
 #, python-brace-format
 msgid "{where}：自定义规则「{name}」：{err}"
 msgstr "{where}: custom rule \"{name}\": {err}"
 
-#: backend/src/jacara/templates/__init__.py:899
+#: backend/src/jacara/templates/__init__.py:1014
+#, python-brace-format
+msgid "{where}：主语言「{language}」不对，应该像 zh、en、ja、zh-Hant"
+msgstr "{where}: primary language \"{language}\" is invalid; it should look like zh, en, ja, zh-Hant"
+
+#: backend/src/jacara/templates/__init__.py:1031
 #, python-brace-format
 msgid "{where}：{what}的别的语言名字要写成 {{ en = \"...\", ja = \"...\" }}"
 msgstr "{where}: names of {what} in other languages must be written as {{ en = \"...\", ja = \"...\" }}"
 
-#: backend/src/jacara/templates/__init__.py:909
+#: backend/src/jacara/templates/__init__.py:1041
 #, python-brace-format
 msgid "{where}：{what}的语言代码「{lang}」不对，应该像 en、ja、zh-Hant"
 msgstr "{where}: language code \"{lang}\" of {what} is invalid; it should look like en, ja, zh-Hant"
 
-#: backend/src/jacara/templates/__init__.py:917
+#: backend/src/jacara/templates/__init__.py:1049
 #, python-brace-format
 msgid "{where}：{what}的 {lang} 名字应该是文字"
 msgstr "{where}: the {lang} name of {what} must be text"
 
-#: backend/src/jacara/templates/__init__.py:923
+#: backend/src/jacara/templates/__init__.py:1055
+#, python-brace-format
+msgid "{where}：{what}的 {lang} 说明太长了（最多 2000 个字）"
+msgstr "{where}: the {lang} description of {what} is too long (at most 2000 characters)"
+
+#: backend/src/jacara/templates/__init__.py:1064
 #, python-brace-format
 msgid "{where}：{what}的 {lang} 名字太长了（最多 200 个字）"
 msgstr "{where}: the {lang} name of {what} is too long (at most 200 characters)"
 
-#: backend/src/jacara/templates/__init__.py:938
+#: backend/src/jacara/templates/__init__.py:1079
 #, python-brace-format
 msgid "{where}：custom_rules 应该是一个列表"
 msgstr "{where}: custom_rules must be a list"
 
-#: backend/src/jacara/templates/__init__.py:942
+#: backend/src/jacara/templates/__init__.py:1083
 #, python-brace-format
 msgid "{where}：第 {i} 条自定义规则写得不对"
 msgstr "{where}: custom rule {i} is invalid"
 
-#: backend/src/jacara/templates/__init__.py:945
+#: backend/src/jacara/templates/__init__.py:1086
 #, python-brace-format
 msgid "{where}：第 {i} 条自定义规则没写条件"
 msgstr "{where}: custom rule {i} has no condition"
 
-#: backend/src/jacara/templates/__init__.py:950
+#: backend/src/jacara/templates/__init__.py:1091
 #, python-brace-format
 msgid "{where}：第 {i} 条自定义规则的 severity 只能是 error 或 warning"
 msgstr "{where}: the severity of custom rule {i} must be error or warning"
 
-#: backend/src/jacara/templates/__init__.py:959
+#: backend/src/jacara/templates/__init__.py:1100
 #, python-brace-format
 msgid "{where}：第 {i} 条自定义规则的 per_row 不是这个模板里的表"
 msgstr "{where}: per_row of custom rule {i} is not a table of this template"
 
-#: backend/src/jacara/templates/__init__.py:989
+#: backend/src/jacara/templates/__init__.py:1130
 #, python-brace-format
 msgid "{where}：「{label}」的公式：{err}"
 msgstr "{where}: formula of \"{label}\": {err}"
 
-#: backend/src/jacara/templates/__init__.py:996
+#: backend/src/jacara/templates/__init__.py:1137
 #, python-brace-format
 msgid "{where}：「{label}」的公式不能用别的计算字段（只能用单据上抽的）"
 msgstr "{where}: the formula of \"{label}\" cannot use other computed fields (only fields extracted from the document)"
 
-#: backend/src/jacara/templates/__init__.py:1004
+#: backend/src/jacara/templates/__init__.py:1145
 #, python-brace-format
 msgid "{where}：{err}"
 msgstr "{where}: {err}"
 
-#: backend/src/jacara/templates/__init__.py:1015
+#: backend/src/jacara/templates/__init__.py:1156
 #, python-brace-format
 msgid "{where}：第 {i} 个字段的 name 只能用小写英文字母、数字和下划线"
 msgstr "{where}: the name of field {i} may only contain lowercase letters, digits and underscores"
 
-#: backend/src/jacara/templates/__init__.py:1023
+#: backend/src/jacara/templates/__init__.py:1164
 #, python-brace-format
 msgid "{where}：字段 {field_name} 的 type 只能是 string、number、date、date_range"
 msgstr "{where}: the type of field {field_name} must be string, number, date or date_range"
 
-#: backend/src/jacara/templates/__init__.py:1030
+#: backend/src/jacara/templates/__init__.py:1171
 #, python-brace-format
 msgid "{where}：字段 {field_name} 重复了"
 msgstr "{where}: field {field_name} is duplicated"
 
-#: backend/src/jacara/templates/__init__.py:1036
+#: backend/src/jacara/templates/__init__.py:1177
 #, python-brace-format
 msgid "{where}：字段 {field_name} 的 aliases 应该是文字列表"
 msgstr "{where}: aliases of field {field_name} must be a list of text"
 
-#: backend/src/jacara/templates/__init__.py:1046
+#: backend/src/jacara/templates/__init__.py:1187
 #, python-brace-format
 msgid "{where}：字段 {field_name} 的 options 应该是文字列表"
 msgstr "{where}: options of field {field_name} must be a list of text"
 
-#: backend/src/jacara/templates/__init__.py:1055
+#: backend/src/jacara/templates/__init__.py:1196
 #, python-brace-format
 msgid "{where}：字段 {field_name} 的 compute 应该是一条公式"
 msgstr "{where}: compute of field {field_name} must be a formula"
 
-#: backend/src/jacara/templates/__init__.py:1063
+#: backend/src/jacara/templates/__init__.py:1204
 #, python-brace-format
 msgid "{where}：字段 {field_name} 有公式，type 要是 number"
 msgstr "{where}: field {field_name} has a formula, so its type must be number"
 
-#: backend/src/jacara/templates/__init__.py:1072
+#: backend/src/jacara/templates/__init__.py:1213
 #, python-brace-format
 msgid "{where}：字段 {field_name} 的 range_export 只能是 normalized、original、columns"
 msgstr "{where}: range_export of field {field_name} must be normalized, original or columns"
 
-#: backend/src/jacara/templates/__init__.py:1082
+#: backend/src/jacara/templates/__init__.py:1223
 #, python-brace-format
 msgid "{where}：字段 {field_name} 的分隔符要写 1～10 个字"
 msgstr "{where}: the separator of field {field_name} must have 1 to 10 characters"
 
-#: backend/src/jacara/templates/__init__.py:1106
+#: backend/src/jacara/templates/__init__.py:1247
+#: backend/src/jacara/templates/__init__.py:1252
 #, python-brace-format
 msgid "字段 {field_name}"
 msgstr "field {field_name}"

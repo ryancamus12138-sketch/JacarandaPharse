@@ -563,8 +563,10 @@ export interface TemplateField {
   range_export?: RangeExport
   /** Separator between start and end in the uniform format; " ~ " by default. */
   range_separator?: string
-  /** Names in other languages: language code → name. label is the default name. */
+  /** Names in other languages: language code → name. label is in the template's primary language. */
   names?: Record<string, string>
+  /** Description in other languages: language code → description. */
+  descriptions?: Record<string, string>
 }
 
 export interface TemplateTable {
@@ -576,6 +578,8 @@ export interface TemplateTable {
   columns: TemplateField[]
   /** Table name in other languages. */
   names?: Record<string, string>
+  /** Table description in other languages. */
+  descriptions?: Record<string, string>
 }
 
 export interface TemplateRule {
@@ -612,7 +616,11 @@ export interface Template {
   title: string
   /** Template name in other languages. */
   titles?: Record<string, string>
-  /** Available languages; the first is the default. */
+  /** Primary language: the language of title, description and every label and description. */
+  language?: string
+  /** Template description in other languages. */
+  descriptions?: Record<string, string>
+  /** Available languages; the first is the primary language. */
   languages?: string[]
   /** Basis of a starter template: regulations, use cases, sources. */
   basis?: string[]
@@ -730,6 +738,9 @@ export interface ExcelAnalysis {
 export interface TemplateIn {
   title: string
   titles?: Record<string, string>
+  /** Primary language; "zh" when absent. */
+  language?: string
+  descriptions?: Record<string, string>
   category: string
   description: string
   fields: TemplateField[]

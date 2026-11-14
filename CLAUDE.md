@@ -228,7 +228,10 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
   后端返回给网页的文字写 `tr('中文')`，worker 写进数据库、之后再显示的说明写 `stored('中文')`，
   改完按 ADR 0065 跑 `pybabel extract` / `update`，在 `backend/src/jacara/locale/en/LC_MESSAGES/messages.po` 填英文，
   再 `pybabel compile`（`.po`、`.mo` 都提交），`backend/tests/test_i18n.py` 会检查有没有漏。
-  模板内容（字段名、模板名）、命令行输出、提示词、认中文的正则不翻译。
+  模板内容（字段名、模板名）、命令行输出、提示词、认中文的正则不走这套翻译。
+- 模板有主语言（ADR 0066）：`label`、`title`、`description` 是主语言的，别的语言放 `names`、`titles`、`descriptions`。
+  起步模板 `.toml` 用中文写，每处 `description` 后面跟 `descriptions = { en = "..." }`，开头的依据注释对应 `[basis]` 的 `en`；
+  改中文说明时英文一起改，`backend/tests/test_i18n_api.py` 会检查。
 - 不提交 `.env`、数据集、模型文件、`node_modules/`、`web/dist/`。密钥只放在 `.env`。要提交 `web/package-lock.json`。
 - 前端调用后端只通过 `web/src/api/`，页面里不直接写 `fetch`。按钮显不显示看 `/auth/me` 的 `permissions`，但真正的权限检查在后端。
 - **npm 命令只在 `web/` 里运行。** 根目录不应该有 `package.json`、`package-lock.json`、`node_modules/`，

@@ -235,7 +235,8 @@ def export_documents(
     service: Service,
     ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
     lang: Annotated[
-        str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
+        str | None,
+        Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用模板的主语言"),
     ] = None,
 ) -> Response:
     """Export several documents to one Excel workbook: a summary sheet with one row per document,
@@ -254,7 +255,8 @@ def export_documents_csv(
     service: Service,
     ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
     lang: Annotated[
-        str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
+        str | None,
+        Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用模板的主语言"),
     ] = None,
 ) -> Response:
     """Export CSV (UTF-8) with the same content as the Excel summary: one row per document.
@@ -274,7 +276,8 @@ def export_documents_json(
     service: Service,
     ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
     lang: Annotated[
-        str | None, Query(max_length=16, description="字段名（labels）用哪种语言；不写用中文")
+        str | None,
+        Query(max_length=16, description="字段名（labels）用哪种语言；不写用模板的主语言"),
     ] = None,
 ) -> Response:
     """Export JSON (UTF-8) for other programs: document → each sub-document → fields, tables, labels
@@ -293,7 +296,8 @@ def export_documents_zip(
     service: Service,
     ids: Annotated[list[uuid.UUID], Query(description="要导出的文档 id，可以写多个")],
     lang: Annotated[
-        str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
+        str | None,
+        Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用模板的主语言"),
     ] = None,
 ) -> Response:
     """One Excel workbook per document, packed into a zip that extracts to a folder.
@@ -480,7 +484,8 @@ def export_document(
     document_id: uuid.UUID,
     service: Service,
     lang: Annotated[
-        str | None, Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用中文")
+        str | None,
+        Query(max_length=16, description="列名用哪种语言：zh、en、ja……；不写用模板的主语言"),
     ] = None,
 ) -> Response:
     """Export one document to Excel. Cells contain post-review values; edited cells are blue and

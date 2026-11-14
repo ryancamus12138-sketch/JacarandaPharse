@@ -19,7 +19,7 @@ from typing import Any, NamedTuple
 
 from sqlalchemy.orm import Session
 
-from jacara.core.i18n import render, stored, tr
+from jacara.core.i18n import language, render, stored, tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.storage import ObjectStorage, StorageError
@@ -63,6 +63,7 @@ from jacara.plugins.extractors.base import AUTO, DISCOVER
 from jacara.plugins.validators import ALL_RULES, REGIONS
 from jacara.plugins.validators.rules import RULES
 from jacara.templates import (
+    DEFAULT_LANGUAGE,
     STARTERS,
     Template,
     TemplateError,
@@ -72,6 +73,7 @@ from jacara.templates import (
     from_definition,
     infer_countries,
     load_starter,
+    load_starter_in,
     load_template,
     template_names,
 )
@@ -111,6 +113,8 @@ def to_out(t: Template, kind: TemplateKind = "builtin") -> TemplateOut:
         version=t.version,
         title=t.title,
         titles=dict(t.titles),
+        language=t.language,
+        descriptions=dict(t.descriptions),
         languages=list(t.languages),
         basis=list(t.basis),
         description=t.description,
@@ -135,6 +139,7 @@ def to_out(t: Template, kind: TemplateKind = "builtin") -> TemplateOut:
                 required=tb.required,
                 export=tb.export,
                 names=dict(tb.names),
+                descriptions=dict(tb.descriptions),
             )
             for tb in t.tables
         ],
@@ -194,6 +199,7 @@ def _field(f: TemplateField) -> TemplateFieldOut:
         range_export=f.range_export,
         range_separator=f.range_separator,
         names=dict(f.names),
+        descriptions=dict(f.descriptions),
     )
 
 
@@ -276,8 +282,9 @@ def _field_dump(f: TemplateFieldIn) -> dict[str, Any]:
     if f.type != "date_range":
         data.pop("range_export", None)
         data.pop("range_separator", None)
-    if not data.get("names"):
-        data.pop("names", None)
+    for key in ("names", "descriptions"):
+        if not data.get(key):
+            data.pop(key, None)
     return data
 
 
@@ -305,14 +312,30 @@ def definition_of(data: TemplateIn) -> dict[str, Any]:
     """Editor submission → definition stored in the database (same structure as .toml)."""
     fields = [_field_dump(f) for f in data.fields]
     tables = [
-        {**t.model_dump(), "columns": [_field_dump(c) for c in t.columns]} for t in data.tables
+        _without_empty({**t.model_dump(), "columns": [_field_dump(c) for c in t.columns]})
+        for t in data.tables
     ]
     return {
         "fields": fields,
         "tables": tables,
         "rules": runnable_rules(data.rules, {"fields": fields, "tables": tables}, data.countries),
         "custom_rules": [c.model_dump() for c in data.custom_rules],
+        **_languages_of(data),
+    }
+
+
+def _without_empty(table: dict[str, Any]) -> dict[str, Any]:
+    """Table names and descriptions in other languages are written only when there are some."""
+    return {k: v for k, v in table.items() if k not in ("names", "descriptions") or v}
+
+
+def _languages_of(data: TemplateIn | TemplateFile) -> dict[str, Any]:
+    """Template-level language entries of a definition: only those that are set, so templates in
+    the default language without translations keep their previous definition."""
+    return {
         **({"titles": data.titles} if data.titles else {}),
+        **({"descriptions": data.descriptions} if data.descriptions else {}),
+        **({"language": data.language} if data.language != DEFAULT_LANGUAGE else {}),
     }
 
 
@@ -373,7 +396,7 @@ class TemplateService:
 
     def starters(self) -> list[TemplateOut]:
         require(self.owner, "document:read")
-        return [to_out(load_starter(name), "starter") for name in STARTERS]
+        return [to_out(load_starter_in(name, language()), "starter") for name in STARTERS]
 
     def formula_check(self, data: FormulaCheckIn) -> FormulaCheckOut:
         """Validate a formula or rule condition from the editor."""
@@ -437,7 +460,7 @@ class TemplateService:
                 }
             )
         if name in STARTERS:
-            return to_out(load_starter(name), "starter")
+            return to_out(load_starter_in(name, language()), "starter")
         try:
             return to_out(load_template(name))
         except TemplateError as err:
@@ -461,7 +484,8 @@ class TemplateService:
                 raise TemplateFailure(
                     "invalid", tr("没有叫 {starter} 的起步模板", starter=data.starter)
                 )
-            base = load_starter(data.starter)
+            # The copy starts in the interface language; its primary language can be changed later.
+            base = load_starter_in(data.starter, language())
             source = f"starter:{data.starter}"
             title = data.title or base.title
             category, description, definition = base.category, base.description, base.definition()
@@ -574,7 +598,7 @@ class TemplateService:
             found = self._find(template_id)
             return self._template(found, self.repo.latest(found))
         if name in STARTERS:
-            return load_starter(name)
+            return load_starter_in(name, language())
         try:
             return load_template(name)
         except TemplateError as err:
@@ -595,6 +619,9 @@ class TemplateService:
                 workbook_file = None
         return TemplateFile(
             title=template.title,
+            titles=dict(template.titles),
+            language=template.language,
+            descriptions=dict(template.descriptions),
             category=template.category,
             description=template.description,
             version=template.version,
@@ -644,6 +671,7 @@ class TemplateService:
             "entities": data.entities,
             "references": data.references,
             "workbook": workbook,
+            **_languages_of(data),
         }
         found = self._new(
             data.title.strip(),
@@ -728,6 +756,9 @@ class TemplateService:
             definition = build_definition(data, filename, key, sheets, choice.starter)
         except (BuildError, WorkbookError) as err:
             raise TemplateFailure("invalid", str(err)) from err
+        # Starts in the interface language, like copies of starter templates.
+        if language() != DEFAULT_LANGUAGE:
+            definition = {**definition, "language": language()}
         found = self._new(
             choice.title.strip(),
             choice.category.strip(),

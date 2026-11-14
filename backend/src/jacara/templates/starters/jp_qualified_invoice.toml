@@ -13,7 +13,17 @@ titles = { en = "Qualified Invoice (Japan)", ja = "適格請求書（インボ�
 countries = ["JP"]
 domains = ["发票"]
 description = "日本的適格請求書（インボイス）和適格簡易請求書：发行事业者名称和登録番号（T+13 位）、交易日期、内容（轻减税率对象要标出）、按税率（10%、8%）分开的对价合计和消费税额、收件方名称。登録番号格式不对、各税率的消费税额和对价对不上会提醒。"
+descriptions = { en = "Japanese qualified invoices (インボイス) and qualified simplified invoices: issuer name and registration number (T + 13 digits), transaction date, contents (marking items subject to the reduced rate), consideration totals and consumption tax per rate (10%, 8%), recipient name. Invalid registration numbers and consumption tax not matching the consideration per rate are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "jp_registration_no", "jp_tax_per_rate", "jp_rates", "item_line"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Japanese qualified invoices (適格請求書) / qualified simplified invoices (適格簡易請求書).",
+  "Basis: Consumption Tax Act art. 57-4 para. 1 (six required items of a qualified invoice) and para. 2 (qualified simplified invoices: retail, restaurants, taxis, etc., recipient name may be omitted); Enforcement Order art. 70-10 (consumption tax is rounded once per rate per invoice). In force since 2023-10-01. Registration number: T + 13 digits (the corporate number for corporations). Rates: standard 10%, reduced 8% (food and beverages, newspapers).",
+  "Use: Japanese businesses must keep qualified invoices to deduct input consumption tax (仕入税額控除) for payments between companies and expense claims.",
+  "Sources: National Tax Agency \"Guide to the qualified invoice retention method\"; Yayoi explanation of registration numbers; National Tax Agency corporate number check digit.",
+]
 
 [[fields]]
 name = "document_title"
@@ -21,6 +31,7 @@ label = "单据标题"
 names = { en = "Document Title", ja = "書類名" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 aliases = ["書類名"]
 
 [[fields]]
@@ -30,6 +41,7 @@ names = { en = "Invoice No.", ja = "請求書番号" }
 type = "string"
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 aliases = ["請求書番号"]
 
 [[fields]]
@@ -46,6 +58,7 @@ label = "交易日期"
 names = { en = "Date of Supply", ja = "取引年月日" }
 type = "date"
 description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+descriptions = { en = "The date of supply of goods or services; leave empty if it equals the issue date or is not given" }
 aliases = ["取引年月日"]
 
 [[fields]]
@@ -63,6 +76,7 @@ names = { en = "Registration No.", ja = "登録番号" }
 type = "string"
 required = true
 description = "T 加 13 位数字，照抄"
+descriptions = { en = "T followed by 13 digits; copy it as written" }
 aliases = ["登録番号", "T番号", "インボイス番号"]
 
 [[fields]]
@@ -85,6 +99,7 @@ label = "10% 对象金额"
 names = { en = "10% Taxable Amount", ja = "10%対象" }
 type = "number"
 description = "10% 对象の合計（税抜か税込か、単据上の書き方のまま）"
+descriptions = { en = "The total of items subject to 10% (excluding or including tax, as written on the document)" }
 aliases = ["10%対象"]
 
 [[fields]]
@@ -100,6 +115,7 @@ label = "8% 对象金额"
 names = { en = "8% Taxable Amount", ja = "8%対象" }
 type = "number"
 description = "軽減税率 8% 对象の合計"
+descriptions = { en = "The total of items subject to the reduced 8% rate" }
 aliases = ["8%対象"]
 
 [[fields]]
@@ -130,6 +146,7 @@ label = "轻减税率标记说明"
 names = { en = "Reduced-rate Note", ja = "軽減税率対象の表示" }
 type = "string"
 description = "「※は軽減税率対象」这类说明照抄"
+descriptions = { en = "Copy notes such as 「※は軽減税率対象」 as written" }
 aliases = ["軽減税率対象の表示"]
 
 [[tables]]
@@ -137,6 +154,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", ja = "明細" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -165,6 +183,7 @@ label = "金额"
 names = { en = "Amount", ja = "金額" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["金額"]
 
 [[tables.columns]]

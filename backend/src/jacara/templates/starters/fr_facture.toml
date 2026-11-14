@@ -15,7 +15,17 @@ titles = { en = "Invoice (France)", fr = "Facture" }
 countries = ["FR"]
 domains = ["发票"]
 description = "法国的 facture：卖方名称地址 SIREN 和 TVA 号、买方名称地址 SIREN 和 TVA 号、发票号、日期、交付日期和地址、业务性质、品名数量、不含税单价、各税率的税额、付款条件和逾期罚则。SIREN 校验位、TVA 号的校验码不对、税率不是 20/10/5.5/2.1% 会提醒。"
+descriptions = { en = "French invoices (facture): seller name, address, SIREN and VAT number, buyer name, address, SIREN and VAT number, invoice number, date, delivery date and address, nature of the transaction, description and quantity, unit price excluding tax, tax per rate, payment terms and late payment penalties. Invalid SIREN check digits or VAT number check codes, and rates other than 20/10/5.5/2.1%, are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "fr_seller_siren", "fr_seller_tva", "fr_rates"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: French invoices (facture, B2B).",
+  "Basis: CGI art. 242 nonies A (mandatory mentions: unique sequential number, date, names and addresses, VAT numbers of the seller and buyer, description and quantity, delivery date, unit price excluding tax, rate and amount of VAT per rate, exemption mentions); Commercial Code L441-9 (SIREN, payment terms, late payment penalties, flat 40 € compensation); decree 2022-1299 adds four mentions (client SIREN, delivery address, nature of the operations, option to pay VAT on debits), applying with the e-invoicing reform (from 2026-09-01 for large and medium companies). VAT rates 20 / 10 / 5.5 / 2.1 %.",
+  "Use: invoicing between French businesses, deductible VAT, expense claims.",
+  "Sources: legifiscal \"Factures : 4 nouvelles mentions obligatoires\"; comparatif-facture-electronique.fr (updated 2026-08).",
+]
 
 [[fields]]
 name = "document_title"
@@ -23,6 +33,7 @@ label = "单据标题"
 names = { en = "Document Title", fr = "Titre" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 aliases = ["Titre"]
 
 [[fields]]
@@ -33,6 +44,7 @@ type = "string"
 required = true
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 aliases = ["Numéro de facture"]
 
 [[fields]]
@@ -49,6 +61,7 @@ label = "交易日期"
 names = { en = "Date of Supply", fr = "Date de livraison" }
 type = "date"
 description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+descriptions = { en = "The date of supply of goods or services; leave empty if it equals the issue date or is not given" }
 aliases = ["Date de livraison"]
 
 [[fields]]
@@ -107,6 +120,7 @@ label = "买方税号"
 names = { en = "Buyer Tax ID", fr = "N° TVA du client" }
 type = "string"
 description = "照抄；没有就留空"
+descriptions = { en = "Copy it as written; leave empty if absent" }
 aliases = ["N° TVA du client"]
 
 [[fields]]
@@ -122,6 +136,7 @@ label = "业务性质"
 names = { en = "Nature of Operations", fr = "Nature des opérations" }
 type = "string"
 description = "livraison de biens / prestation de services / mixte，照抄"
+descriptions = { en = "livraison de biens / prestation de services / mixte; copy it as written" }
 aliases = ["Nature des opérations"]
 
 [[fields]]
@@ -130,6 +145,7 @@ label = "按开票缴 TVA 声明"
 names = { en = "VAT on Debits Option", fr = "Option pour le paiement de la TVA d'après les débits" }
 type = "string"
 description = "option pour le paiement de la taxe d'après les débits，照抄"
+descriptions = { en = "option pour le paiement de la taxe d'après les débits; copy it as written" }
 aliases = ["Option pour le paiement de la TVA d'après les débits"]
 
 [[fields]]
@@ -173,6 +189,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", fr = "Lignes" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -201,6 +218,7 @@ label = "金额"
 names = { en = "Amount", fr = "Montant HT" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["Montant HT"]
 
 [[tables.columns]]

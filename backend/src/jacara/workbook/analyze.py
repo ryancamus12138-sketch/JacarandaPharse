@@ -34,9 +34,9 @@ from openpyxl import load_workbook
 from openpyxl.utils import column_index_from_string, range_boundaries
 from openpyxl.worksheet.worksheet import Worksheet
 
-from jacara.core.i18n import tr
+from jacara.core.i18n import language, tr
 from jacara.core.textvalue import parse_date
-from jacara.templates import STARTERS, TemplateField, load_starter
+from jacara.templates import STARTERS, TemplateField, load_starter_in
 from jacara.templates.extras import normalize
 
 MAX_ROWS = 2000
@@ -143,7 +143,7 @@ def analyze(data: bytes, filename: str) -> Analysis:
         filename=filename,
         sheets=sheets,
         starter=starter or "",
-        starter_title=load_starter(starter).title if starter else "",
+        starter_title=load_starter_in(starter, language()).title if starter else "",
     )
 
 
@@ -475,13 +475,16 @@ def _guess_lookups(data: list[SheetGuess]) -> None:
 
 
 def _starter_fields(name: str) -> list[TemplateField]:
-    t = load_starter(name)
+    """Fields and table columns of a starter template, in the interface language (the template built
+    from the workbook starts in it, so the descriptions carried over are in it too)."""
+    t = load_starter_in(name, language())
     return list(t.fields) + [c for table in t.tables for c in table.columns]
 
 
 def _match(field_: TemplateField, header: str) -> bool:
     wanted = normalize(header)
-    return wanted in {normalize(field_.label), *(normalize(a) for a in field_.aliases)}
+    written = [field_.label, *(name for _, name in field_.names), *field_.aliases]
+    return wanted in {normalize(w) for w in written}
 
 
 def _match_starter(sheets: list[SheetGuess]) -> str | None:

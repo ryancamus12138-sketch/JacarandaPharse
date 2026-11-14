@@ -197,15 +197,16 @@ export type ExportMode = 'separate' | 'summary' | 'csv' | 'json'
  * workbook according to mode.
  */
 /**
- * language: language of column headers; omitted or zh means Chinese; columns without a name in that language
- * stay in Chinese.
+ * language: language of column headers; omitted means each template's primary language; columns without a
+ * name in that language keep their primary language name.
  */
 export function exportDocuments(
   ids: string[],
   mode: ExportMode,
   language?: string,
 ): Promise<DownloadedFile> {
-  const lang = language && language !== 'zh' ? language : null
+  // Sent even for Chinese: the template's primary language may be another one.
+  const lang = language || null
   if (mode === 'csv' || mode === 'json') {
     const query = new URLSearchParams()
     for (const id of ids) query.append('ids', id)

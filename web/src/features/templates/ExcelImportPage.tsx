@@ -397,7 +397,7 @@ function SheetCard({
       ),
     },
     {
-      title: t('中文名'),
+      title: t('名称'),
       dataIndex: 'label',
       width: 140,
       render: (label: string, c, k) =>

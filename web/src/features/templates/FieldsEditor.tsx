@@ -18,12 +18,15 @@ export function FieldsEditor({
   readOnly,
   scope,
   language = 'zh',
+  primary = 'zh',
 }: {
   /**
-   * Language of the names being edited: zh edits label; other languages edit the corresponding entry in
-   * names.
+   * Language of the names and descriptions being edited: the primary language edits label and description;
+   * other languages edit the corresponding entries in names and descriptions.
    */
   language?: string
+  /** The template's primary language. */
+  primary?: string
   fields: TemplateField[]
   onChange: (fields: TemplateField[]) => void
   locked: Set<string>
@@ -45,10 +48,12 @@ export function FieldsEditor({
   }
   const duplicate = (name: string) => fields.filter((f) => f.name === name).length > 1
 
-  const other = language !== 'zh'
+  const other = language !== primary
   const columns: TableProps<TemplateField>['columns'] = [
     {
-      title: other ? t('{{languageName}} 名称', { languageName: languageName(language) }) : t('中文名'),
+      title: other
+        ? t('{{languageName}} 名称', { languageName: languageName(language) })
+        : t('{{languageName}} 名称（主语言）', { languageName: languageName(language) }),
       dataIndex: 'label',
       width: 150,
       render: (_, f, i) =>
@@ -263,17 +268,29 @@ export function FieldsEditor({
       ),
     },
     {
-      title: t('给模型的说明'),
+      title: other
+        ? t('说明（{{languageName}}）', { languageName: languageName(language) })
+        : t('给模型的说明'),
       dataIndex: 'description',
-      render: (_, f, i) => (
-        <Input.TextArea
-          value={f.description}
-          disabled={readOnly}
-          autoSize={{ minRows: 1, maxRows: 4 }}
-          placeholder={t('在单据哪里、长什么样、别和什么搞混')}
-          onChange={(e) => update(i, { description: e.target.value })}
-        />
-      ),
+      render: (_, f, i) =>
+        other ? (
+          // Other languages are for reading (previews); the model gets the primary language description.
+          <Input.TextArea
+            value={f.descriptions?.[language] ?? ''}
+            disabled={readOnly}
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            placeholder={f.description}
+            onChange={(e) => update(i, { descriptions: { ...f.descriptions, [language]: e.target.value } })}
+          />
+        ) : (
+          <Input.TextArea
+            value={f.description}
+            disabled={readOnly}
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            placeholder={t('在单据哪里、长什么样、别和什么搞混')}
+            onChange={(e) => update(i, { description: e.target.value })}
+          />
+        ),
     },
     ...(readOnly
       ? []

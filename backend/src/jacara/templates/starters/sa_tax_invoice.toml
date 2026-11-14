@@ -13,7 +13,17 @@ titles = { en = "Tax Invoice (Saudi Arabia)", ar = "فاتورة ضريبية" }
 countries = ["SA"]
 domains = ["发票"]
 description = "沙特的税务发票：卖方和买方的名称地址和 15 位 VAT 号、发票号、日期、供货日期、描述、数量、单价、应税额、税率、VAT、含税总额。VAT 号不是 15 位、VAT 不等于 15% 会提醒。"
+descriptions = { en = "Saudi tax invoices: names, addresses and 15-digit VAT numbers of the seller and buyer, invoice number, date, date of supply, description, quantity, unit price, taxable amount, rate, VAT, total including VAT. VAT numbers that are not 15 digits and VAT other than 15% are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "sa_vat_no", "sa_vat_15"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Saudi tax invoices (B2B) / simplified tax invoices (B2C, QR code required), ZATCA FATOORA e-invoices.",
+  "Basis: VAT Implementing Regulations art. 53; E-Invoicing Regulation (ZATCA): standard tax invoices show names, addresses and VAT numbers of the seller and buyer, sequential number, date, date of supply, description, quantity, unit price, taxable amount, rate and tax, total including tax; simplified tax invoices show the seller name and VAT number, date, description, total including tax, VAT amount and a QR code. VAT 15% (since 2020-07). Arabic is required.",
+  "Use: issued by Saudi businesses; buyers deduct input tax; expense claims.",
+  "Sources: invoicedataextraction \"Saudi Arabia VAT invoice requirements\"; ZATCA Simplified guide.",
+]
 
 [[fields]]
 name = "document_title"
@@ -21,6 +31,7 @@ label = "单据标题"
 names = { en = "Document Title", ar = "عنوان المستند" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 aliases = ["عنوان المستند"]
 
 [[fields]]
@@ -31,6 +42,7 @@ type = "string"
 required = true
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 aliases = ["رقم الفاتورة"]
 
 [[fields]]
@@ -47,6 +59,7 @@ label = "交易日期"
 names = { en = "Date of Supply", ar = "تاريخ التوريد" }
 type = "date"
 description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+descriptions = { en = "The date of supply of goods or services; leave empty if it equals the issue date or is not given" }
 aliases = ["تاريخ التوريد"]
 
 [[fields]]
@@ -119,6 +132,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", ar = "البنود" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -147,6 +161,7 @@ label = "金额"
 names = { en = "Amount", ar = "المبلغ" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["المبلغ"]
 
 [[tables.columns]]

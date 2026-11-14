@@ -116,10 +116,28 @@ LANGUAGE = re.compile(r"^[a-z]{2,3}(-[A-Z][a-z]{3}|-[A-Z]{2})?$")
 """Language code (short BCP 47): zh, en, ja, ko, de, zh-Hant, …"""
 
 DEFAULT_LANGUAGE = "zh"
-"""Language of label: starter templates are written in Chinese."""
+"""Primary language of templates that do not set one: starter templates are written in Chinese."""
 
 Names = tuple[tuple[str, str], ...]
-"""Names in other languages: ((language code, name), ...). label itself is the default language."""
+"""Texts in other languages: ((language code, text), ...). label, title and description themselves
+are in the template's primary language."""
+
+DOMAIN_NAMES: dict[str, dict[str, str]] = {
+    "发票": {"en": "Invoice"},
+    "收据": {"en": "Receipt"},
+    "购物": {"en": "Shopping"},
+    "餐饮": {"en": "Dining"},
+    "住宿": {"en": "Lodging"},
+    "交通": {"en": "Transport"},
+    "物流": {"en": "Logistics"},
+    "外贸单证": {"en": "Trade documents"},
+    "采购": {"en": "Procurement"},
+    "医疗": {"en": "Medical"},
+    "检验报告": {"en": "Lab report"},
+    "质检": {"en": "Quality inspection"},
+}
+"""Domains used by the starter library (Chinese) → names in other languages. Domains of my templates
+are free text and only translated when they are one of these."""
 
 
 PROMPT_LANGUAGES: dict[str, str] = {
@@ -181,6 +199,9 @@ class TemplateField:
     names: Names = ()
     """Names in other languages (English, local languages): switchable on the review page and in
     exports; also tells the model how the document may label it."""
+    descriptions: Names = ()
+    """Description in other languages (shown in previews; the primary language one is given to the
+    model)."""
 
     def label_in(self, language: str | None) -> str:
         return name_in(self.label, self.names, language)
@@ -224,6 +245,8 @@ class TemplateTable:
     export: bool = True
     names: Names = ()
     """Table name in other languages."""
+    descriptions: Names = ()
+    """Table description in other languages."""
 
     def label_in(self, language: str | None) -> str:
         return name_in(self.label, self.names, language)
@@ -302,18 +325,24 @@ class Template:
     """Domains (invoice, transport, receipt, lodging, …); several allowed."""
     titles: Names = ()
     """Template name in other languages."""
+    language: str = DEFAULT_LANGUAGE
+    """Primary language: the language of title, description and every label and description.
+    Chosen per template; starter templates are written in Chinese and switched with
+    with_language()."""
+    descriptions: Names = ()
+    """Template description in other languages."""
     basis: tuple[str, ...] = ()
     """Basis of a starter template: regulations, use cases and sources (from the comment at the top
     of the template file), shown in the preview."""
 
     @property
     def languages(self) -> tuple[str, ...]:
-        """Switchable languages: the default language (Chinese) first, then in the order given in
-        the template."""
+        """Switchable languages: the primary language first, then in the order given in the
+        template."""
         groups: list[Names] = [self.titles, *(f.names for f in self.fields)]
         for t in self.tables:
             groups += [t.names, *(c.names for c in t.columns)]
-        found = dict.fromkeys([DEFAULT_LANGUAGE])
+        found = dict.fromkeys([self.language])
         for names in groups:
             found.update(dict.fromkeys(lang for lang, _ in names))
         return tuple(found)
@@ -558,6 +587,7 @@ class Template:
                     "export": t.export,
                     "columns": [_field_dict(c) for c in t.columns],
                     **({"names": dict(t.names)} if t.names else {}),
+                    **({"descriptions": dict(t.descriptions)} if t.descriptions else {}),
                 }
                 for t in self.tables
             ],
@@ -567,6 +597,8 @@ class Template:
             "workbook": workbook_dict(self.workbook) if self.workbook else None,
             "custom_rules": [c.as_dict() for c in self.custom_rules],
             **({"titles": dict(self.titles)} if self.titles else {}),
+            **({"descriptions": dict(self.descriptions)} if self.descriptions else {}),
+            **({"language": self.language} if self.language != DEFAULT_LANGUAGE else {}),
         }
 
 
@@ -601,6 +633,7 @@ def _field_dict(f: TemplateField) -> dict[str, Any]:
         "compute": f.compute,
         "unique": f.unique,
         **({"names": dict(f.names)} if f.names else {}),
+        **({"descriptions": dict(f.descriptions)} if f.descriptions else {}),
         **(
             {"range_export": f.range_export, "range_separator": f.range_separator}
             if f.type == "date_range"
@@ -664,9 +697,15 @@ STARTERS = (
 """Starter library, in display order."""
 
 
-@cache
 def load_starter(name: str) -> Template:
-    """Load a starter template (a .toml file in starters/)."""
+    """Load a starter template (a .toml file in starters/) as written: in Chinese."""
+    return load_starter_in(name, DEFAULT_LANGUAGE)
+
+
+@cache
+def load_starter_in(name: str, language: str) -> Template:
+    """Load a starter template with language as its primary language (see with_language). The
+    notes at the top of the file come from its [basis] table for languages other than Chinese."""
     if name not in STARTERS:
         raise TemplateError(
             stored("没有叫 {name} 的起步模板，现有：{known}", name=name, known=join_items(STARTERS))
@@ -679,7 +718,76 @@ def load_starter(name: str) -> Template:
             stored("起步模板 {name}.toml 格式不对：{err}", name=name, err=err)
         ) from err
     text = path.read_text(encoding="utf-8")
-    return replace(parse_template(raw, name), enforce_required=True, basis=header_notes(text))
+    translated_basis = raw.pop("basis", {})
+    basis = (
+        header_notes(text)
+        if language == DEFAULT_LANGUAGE
+        else tuple(translated_basis.get(language) or header_notes(text))
+    )
+    return replace(
+        parse_template(with_language(raw, language), name), enforce_required=True, basis=basis
+    )
+
+
+def with_language(raw: dict[str, Any], language: str) -> dict[str, Any]:
+    """A template definition (as read from a file or stored) with language as its primary
+    language. Every text that has a version in that language moves into label, title or
+    description, and the previous primary text moves into names, titles or descriptions under the
+    previous primary language, so nothing is lost and switching back restores the original. Texts
+    without a version in that language stay as they are. Domains in DOMAIN_NAMES are translated."""
+    previous = raw.get("language") or DEFAULT_LANGUAGE
+    if language == previous:
+        return raw
+    out = dict(raw)
+    _swap(out, "title", "titles", previous, language)
+    _swap(out, "description", "descriptions", previous, language)
+    out["fields"] = [_swap_field(f, previous, language) for f in raw.get("fields", [])]
+    out["tables"] = [
+        {
+            **_swap_field(t, previous, language),
+            "columns": [_swap_field(c, previous, language) for c in t.get("columns", [])],
+        }
+        for t in raw.get("tables", [])
+    ]
+    if "domains" in raw:
+        out["domains"] = [domain_in(d, previous, language) for d in raw["domains"]]
+    if "category" in raw:
+        out["category"] = domain_in(raw["category"], previous, language)
+    out["language"] = language
+    return out
+
+
+def domain_in(domain: str, previous: str, language: str) -> str:
+    """A domain written in the previous language, in language; unchanged when DOMAIN_NAMES does
+    not know it."""
+    for chinese, names in DOMAIN_NAMES.items():
+        written = chinese if previous == DEFAULT_LANGUAGE else names.get(previous)
+        if written == domain:
+            return chinese if language == DEFAULT_LANGUAGE else names.get(language, domain)
+    return domain
+
+
+def _swap_field(item: dict[str, Any], previous: str, language: str) -> dict[str, Any]:
+    out = dict(item)
+    _swap(out, "label", "names", previous, language)
+    _swap(out, "description", "descriptions", previous, language)
+    return out
+
+
+def _swap(item: dict[str, Any], key: str, others_key: str, previous: str, language: str) -> None:
+    """Move others_key[language] into key and key into others_key[previous] (in place)."""
+    others = dict(item.get(others_key) or {})
+    text = others.pop(language, None)
+    if not text:
+        return
+    current = item.get(key)
+    if current:
+        others[previous] = current
+    item[key] = text
+    if others:
+        item[others_key] = others
+    else:
+        item.pop(others_key, None)
 
 
 def header_notes(text: str) -> tuple[str, ...]:
@@ -807,6 +915,12 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
                 names=_names(
                     item.get("names"), where, stored("表 {table_name}", table_name=table_name)
                 ),
+                descriptions=_names(
+                    item.get("descriptions"),
+                    where,
+                    stored("表 {table_name}", table_name=table_name),
+                    description=True,
+                ),
             )
         )
 
@@ -875,6 +989,8 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
         workbook=workbook,
         custom_rules=_custom_rules(raw.get("custom_rules"), tables, where),
         titles=_names(raw.get("titles"), where, stored("模板名")),
+        language=_language(raw.get("language"), where),
+        descriptions=_names(raw.get("descriptions"), where, stored("模板"), description=True),
     )
     _check_formulas(template, where)
     for i, custom in enumerate(template.custom_rules, start=1):
@@ -888,9 +1004,25 @@ def parse_template(raw: dict[str, Any], name: str, *, check_name: bool = True) -
     return template
 
 
-def _names(value: object, where: str, what: str) -> Names:
-    """{language code: name} → ((code, name), ...). Empty names are dropped; invalid codes and
-    lengths are reported."""
+def _language(value: object, where: str) -> str:
+    """Primary language of a template; absent means the default (Chinese)."""
+    if value is None or value == "":
+        return DEFAULT_LANGUAGE
+    if not isinstance(value, str) or not LANGUAGE.match(value):
+        raise TemplateError(
+            stored(
+                "{where}：主语言「{language}」不对，应该像 zh、en、ja、zh-Hant",
+                where=where,
+                language=value,
+            )
+        )
+    return value
+
+
+def _names(value: object, where: str, what: str, *, description: bool = False) -> Names:
+    """{language code: text} → ((code, text), ...). Empty texts are dropped; invalid codes and
+    lengths are reported. description: the texts are descriptions (up to 2000 characters) rather
+    than names (up to 200)."""
     if value is None:
         return ()
     if not isinstance(value, dict):
@@ -917,7 +1049,16 @@ def _names(value: object, where: str, what: str) -> Names:
                 stored("{where}：{what}的 {lang} 名字应该是文字", where=where, what=what, lang=lang)
             )
         text = text.strip()
-        if len(text) > 200:
+        if description and len(text) > 2000:
+            raise TemplateError(
+                stored(
+                    "{where}：{what}的 {lang} 说明太长了（最多 2000 个字）",
+                    where=where,
+                    what=what,
+                    lang=lang,
+                )
+            )
+        if not description and len(text) > 200:
             raise TemplateError(
                 stored(
                     "{where}：{what}的 {lang} 名字太长了（最多 200 个字）",
@@ -1104,6 +1245,12 @@ def _fields(items: list[dict[str, Any]], where: str) -> list[TemplateField]:
                 range_separator=separator,
                 names=_names(
                     item.get("names"), where, stored("字段 {field_name}", field_name=field_name)
+                ),
+                descriptions=_names(
+                    item.get("descriptions"),
+                    where,
+                    stored("字段 {field_name}", field_name=field_name),
+                    description=True,
                 ),
             )
         )

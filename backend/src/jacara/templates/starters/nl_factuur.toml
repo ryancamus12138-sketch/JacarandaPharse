@@ -14,7 +14,17 @@ titles = { en = "Invoice (Netherlands)", nl = "Factuur" }
 countries = ["NL"]
 domains = ["发票"]
 description = "荷兰的 factuur：发票日期和唯一编号、卖方名称地址、btw-id 和 KvK 号、买方名称地址（和 btw-id）、描述、交付日期、各税率的净额、税率和税额、总额。btw-id 校验不对、税率不是 21/9/0%、超过 € 100 缺发票号或买方会提醒。"
+descriptions = { en = "Dutch invoices (factuur): invoice date and unique number, seller name and address, btw-id and KvK number, buyer name and address (and btw-id), description, delivery date, net amount per rate, rate and tax, total. Invalid btw-id checks, rates other than 21/9/0%, and amounts above € 100 without the invoice number or buyer are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "nl_btw_id", "nl_rates", "nl_full_over_100"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Dutch invoices / simplified invoices (factuur / vereenvoudigde factuur).",
+  "Basis: VAT Act 1968 (Wet op de omzetbelasting) art. 35a (invoice requirements: invoice date, unique number, name and address, VAT id, customer name and address, description, delivery date, amount per rate, VAT rate and VAT amount, total); simplified invoices up to € 100 including VAT; Chamber of Commerce (KvK) number required (Trade Register Decree 2008 art. 50). VAT rates 21 % / 9 % / 0 %. VAT id NL + 9 digits + B + 2 digits.",
+  "Use: invoicing between Dutch businesses, input VAT (voorbelasting) deduction, expense claims.",
+  "Source: deonlinerekenmachine.nl \"Factuur eisen Belastingdienst 2026\".",
+]
 
 [[fields]]
 name = "document_title"
@@ -22,6 +32,7 @@ label = "单据标题"
 names = { en = "Document Title", nl = "Documentsoort" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 aliases = ["Documentsoort"]
 
 [[fields]]
@@ -31,6 +42,7 @@ names = { en = "Invoice No.", nl = "Factuurnummer" }
 type = "string"
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 aliases = ["Factuurnummer"]
 
 [[fields]]
@@ -47,6 +59,7 @@ label = "交易日期"
 names = { en = "Date of Supply", nl = "Leverdatum" }
 type = "date"
 description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+descriptions = { en = "The date of supply of goods or services; leave empty if it equals the issue date or is not given" }
 aliases = ["Leverdatum"]
 
 [[fields]]
@@ -70,6 +83,7 @@ label = "卖方税号"
 names = { en = "Seller Tax ID", nl = "Btw-id" }
 type = "string"
 description = "照抄，带上字母和分隔符"
+descriptions = { en = "Copy it as written, with letters and separators" }
 aliases = ["Btw-id"]
 
 [[fields]]
@@ -99,6 +113,7 @@ label = "买方税号"
 names = { en = "Buyer Tax ID", nl = "Btw-id afnemer" }
 type = "string"
 description = "照抄；没有就留空"
+descriptions = { en = "Copy it as written; leave empty if absent" }
 aliases = ["Btw-id afnemer"]
 
 [[fields]]
@@ -128,6 +143,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", nl = "Regels" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -156,6 +172,7 @@ label = "金额"
 names = { en = "Amount", nl = "Bedrag" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["Bedrag"]
 
 [[tables.columns]]

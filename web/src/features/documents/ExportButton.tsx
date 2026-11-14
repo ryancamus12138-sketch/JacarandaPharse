@@ -6,13 +6,17 @@ import { type ExportMode, exportDocuments } from '../../api/documents'
 import { saveFile } from '../../utils/download'
 import { languageName, useLanguage } from '../../utils/languages'
 import { useTranslation } from 'react-i18next'
+import { uiLanguage } from '../../i18n'
 
 const MAX_EXPORT = 100 // Same as the backend: at most 100 documents per export.
 
 interface Props {
   ids: string[]
   type?: ButtonProps['type']
-  /** Languages available for column headers; the first is Chinese. Defaults to Chinese and English. */
+  /**
+   * Languages available for column headers; the first is the default (the template's primary language).
+   * Defaults to the interface language, then the other of Chinese and English.
+   */
   languages?: string[]
   /**
    * Language controlled by the parent (the review page shares it with field names, so selecting English also
@@ -22,7 +26,9 @@ interface Props {
   onLanguage?: (code: string) => void
 }
 
-const DEFAULT_LANGUAGES = ['zh', 'en']
+function defaultLanguages(): string[] {
+  return uiLanguage() === 'en' ? ['en', 'zh'] : ['zh', 'en']
+}
 
 /**
  * Export button.
@@ -30,7 +36,7 @@ const DEFAULT_LANGUAGES = ['zh', 'en']
  * - Several documents: the main button downloads a zip (one workbook per document); the arrow next to it
  *   offers "summary in one workbook".
  */
-export function ExportButton({ ids, type, languages = DEFAULT_LANGUAGES, language: shown, onLanguage }: Props) {
+export function ExportButton({ ids, type, languages = defaultLanguages(), language: shown, onLanguage }: Props) {
   const { t } = useTranslation()
   const { message } = App.useApp()
   const queryClient = useQueryClient()

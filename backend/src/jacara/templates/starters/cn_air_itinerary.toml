@@ -11,7 +11,16 @@ titles = { en = "Air Itinerary e-Invoice (China)" }
 domains = ["交通", "发票"]
 countries = ["CN"]
 description = "电子发票（航空运输电子客票行程单）。票面要素按国家税务总局 中国民用航空局公告 2024 年第 9 号。"
+descriptions = { en = "Electronic invoice (air transport e-ticket itinerary). Invoice elements follow Announcement No. 9 of 2024 of the State Taxation Administration and the Civil Aviation Administration of China." }
 rules = ["total_positive", "issue_date_exists", "issue_date_not_future", "cn_invoice_no", "air_total", "air_vat"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: air transport e-ticket itineraries.",
+  "Field source: Announcement No. 9 of 2024 of the State Taxation Administration and the Civil Aviation Administration of China (basic contents of the ticket);",
+  "Version 2 adds the other items on the ticket (endorsements, GP number, fare class, valid from / until, free baggage, insurance, verification code, sales outlet code, invoice status, original invoice number, notices) and checks the \"VAT amount\" according to Announcement No. 39 of 2019.",
+]
 
 [[fields]]
 name = "invoice_no"
@@ -21,6 +30,7 @@ unique = true
 type = "string"
 required = true
 description = "“发票号码”后面的 20 位数字"
+descriptions = { en = "The 20 digits after \"发票号码\" (invoice number)" }
 aliases = ["发票号码"]
 
 [[fields]]
@@ -29,6 +39,7 @@ label = "开票状态"
 names = { en = "Issuing Status" }
 type = "string"
 description = "开票状态，原样照抄（例如是否已退票、改签）；没有就留空"
+descriptions = { en = "The invoice status, copied as written (for example whether the ticket was refunded or changed); leave empty if absent" }
 aliases = ["开票状态"]
 
 [[fields]]
@@ -37,6 +48,7 @@ label = "国内国际标识"
 names = { en = "Domestic / International" }
 type = "string"
 description = "国内或国际 / 港澳台航线的标识，原样照抄"
+descriptions = { en = "The domestic or international / Hong Kong, Macao and Taiwan route mark; copy it as written" }
 aliases = ["国内国际标识"]
 
 [[fields]]
@@ -45,6 +57,7 @@ label = "GP单号"
 names = { en = "GP No." }
 type = "string"
 description = "政府采购机票（公务卡）的 GP 单号；不是公务票就留空"
+descriptions = { en = "The GP number of a government procurement ticket (official card); leave empty for non-official tickets" }
 aliases = ["GP单号"]
 
 [[fields]]
@@ -61,6 +74,7 @@ label = "有效身份证件号码"
 names = { en = "ID Document No." }
 type = "string"
 description = "旅客的身份证件号码，可能有部分被遮住，原样照抄"
+descriptions = { en = "The passenger's identity document number, possibly partly masked; copy it as written" }
 aliases = ["有效身份证件号码"]
 sensitive = true
 
@@ -70,6 +84,7 @@ label = "签注"
 names = { en = "Endorsements / Restrictions" }
 type = "string"
 description = "“签注”栏的文字（例如不得签转、退改收费），原样照抄"
+descriptions = { en = "The text of the \"签注\" (endorsements) box (for example non-endorsable, change and refund fees); copy it as written" }
 aliases = ["签注"]
 
 [[fields]]
@@ -78,6 +93,7 @@ label = "票价"
 names = { en = "Fare" }
 type = "number"
 description = "票价金额"
+descriptions = { en = "The fare" }
 aliases = ["票价"]
 
 [[fields]]
@@ -93,6 +109,7 @@ label = "增值税税率"
 names = { en = "VAT Rate" }
 type = "string"
 description = "增值税税率，如 9%"
+descriptions = { en = "The VAT rate, such as 9%" }
 aliases = ["增值税税率"]
 
 [[fields]]
@@ -108,6 +125,7 @@ label = "民航发展基金"
 names = { en = "CAAC Development Fund" }
 type = "number"
 description = "民航发展基金（政府性基金，不算增值税）"
+descriptions = { en = "The civil aviation development fund (a government fund, not subject to VAT)" }
 aliases = ["民航发展基金"]
 
 [[fields]]
@@ -123,6 +141,7 @@ label = "保险费"
 names = { en = "Insurance" }
 type = "number"
 description = "保险费；没有买保险就留空"
+descriptions = { en = "Insurance premium; leave empty if no insurance was bought" }
 aliases = ["保险费"]
 
 [[fields]]
@@ -132,6 +151,7 @@ names = { en = "Total" }
 type = "number"
 required = true
 description = "“合计”金额"
+descriptions = { en = "The \"合计\" (total) amount" }
 aliases = ["合计"]
 
 [[fields]]
@@ -141,6 +161,7 @@ names = { en = "E-ticket No." }
 type = "string"
 required = true
 description = "电子客票号码，一般是 13 位数字（前 3 位是航空公司代码）"
+descriptions = { en = "The e-ticket number, usually 13 digits (the first 3 are the airline code)" }
 aliases = ["电子客票号码"]
 
 [[fields]]
@@ -163,6 +184,7 @@ label = "填开单位"
 names = { en = "Issued by" }
 type = "string"
 description = "填开单位（航空公司或销售代理）的名称"
+descriptions = { en = "The name of the issuer (airline or sales agent)" }
 aliases = ["填开单位"]
 
 [[fields]]
@@ -179,6 +201,7 @@ label = "原发票号码"
 names = { en = "Original Invoice No." }
 type = "string"
 description = "改签、退票重开时票面上的原发票号码；没有就留空"
+descriptions = { en = "The original invoice number shown when the ticket was changed or refunded and reissued; leave empty if absent" }
 aliases = ["原发票号码"]
 
 [[fields]]
@@ -194,6 +217,7 @@ label = "购买方税号"
 names = { en = "Buyer Tax ID" }
 type = "string"
 description = "购买方统一社会信用代码或纳税人识别号；个人购票可能是空的"
+descriptions = { en = "The buyer's unified social credit code or taxpayer identification number; may be empty for tickets bought by individuals" }
 aliases = ["统一社会信用代码/纳税人识别号", "统一社会信用代码"]
 
 [[fields]]
@@ -202,6 +226,7 @@ label = "提示信息"
 names = { en = "Notice" }
 type = "string"
 description = "票面上的提示信息，原样照抄；没有就留空"
+descriptions = { en = "The notice printed on the ticket, copied as written; leave empty if absent" }
 aliases = ["提示信息"]
 
 [[tables]]
@@ -209,6 +234,7 @@ name = "segments"
 label = "航段"
 names = { en = "Flight Segments" }
 description = "行程表，每个航段一行（从哪里到哪里那一行）。票面上没有航班的空行不算"
+descriptions = { en = "The itinerary, one row per flight segment (the from–to row). Empty rows without a flight on the ticket do not count" }
 required = true
 
 [[tables.columns]]
@@ -217,6 +243,7 @@ label = "出发地"
 names = { en = "From" }
 type = "string"
 description = "“自”一栏的城市或机场"
+descriptions = { en = "The city or airport in the \"自\" (from) column" }
 aliases = ["自"]
 
 [[tables.columns]]
@@ -225,6 +252,7 @@ label = "到达地"
 names = { en = "To" }
 type = "string"
 description = "“至”一栏的城市或机场"
+descriptions = { en = "The city or airport in the \"至\" (to) column" }
 aliases = ["至"]
 
 [[tables.columns]]

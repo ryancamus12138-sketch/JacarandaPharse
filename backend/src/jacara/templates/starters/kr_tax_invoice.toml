@@ -13,7 +13,17 @@ titles = { en = "Tax Invoice (Korea)", ko = "세금계산서" }
 countries = ["KR"]
 domains = ["发票"]
 description = "韩国的세금계산서：公급자和公급받는자的登录号码（10 位）、商号、地址、作成日期、供应价额、附加税额、品目。登录号码校验位不对、附加税不等于供应价额 × 10% 会提醒。"
+descriptions = { en = "Korean tax invoices (세금계산서): registration numbers (10 digits), trade names and addresses of the supplier (공급자) and recipient (공급받는자), date of issue, supply value, VAT and items. Invalid registration number check digits and VAT other than supply value × 10% are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "kr_seller_no", "kr_buyer_no", "kr_vat_10", "net_tax_gross", "item_line"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Korean tax invoices (세금계산서 / 전자세금계산서).",
+  "Basis: VAT Act art. 32 (required items: supplier registration number and name, recipient registration number, supply value and VAT, date of issue); Enforcement Decree art. 67 (additional items: address, business type and item, goods, unit price and quantity, date of supply); art. 30 rate 10%; art. 39: input tax is not deductible if required items are missing or untrue. 10-digit business registration number with a check digit.",
+  "Use: issued in transactions between Korean businesses; the buyer uses it to deduct input tax. Corporations and individuals above a certain size must issue electronic tax invoices.",
+  "Sources: watax.kr \"Required items of tax invoices\"; business registration number check algorithm.",
+]
 
 [[fields]]
 name = "document_title"
@@ -21,6 +31,7 @@ label = "单据标题"
 names = { en = "Document Title", ko = "문서명" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 aliases = ["문서명"]
 
 [[fields]]
@@ -30,6 +41,7 @@ names = { en = "Approval No.", ko = "승인번호" }
 type = "string"
 unique = true
 description = "电子税金计算书的 승인번호（24 位），照抄"
+descriptions = { en = "The approval number (승인번호, 24 digits) of the electronic tax invoice; copy it as written" }
 aliases = ["승인번호"]
 
 [[fields]]
@@ -38,6 +50,7 @@ label = "发票号码"
 names = { en = "Invoice No.", ko = "일련번호" }
 type = "string"
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 aliases = ["일련번호"]
 
 [[fields]]
@@ -54,6 +67,7 @@ label = "交易日期"
 names = { en = "Date of Supply", ko = "공급연월일" }
 type = "date"
 description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+descriptions = { en = "The date of supply of goods or services; leave empty if it equals the issue date or is not given" }
 aliases = ["공급연월일"]
 
 [[fields]]
@@ -63,6 +77,7 @@ names = { en = "Seller Tax ID", ko = "공급자 등록번호" }
 type = "string"
 required = true
 description = "照抄，带上字母和分隔符"
+descriptions = { en = "Copy it as written, with letters and separators" }
 aliases = ["공급자 등록번호"]
 
 [[fields]]
@@ -101,6 +116,7 @@ names = { en = "Buyer Tax ID", ko = "공급받는자 등록번호" }
 type = "string"
 required = true
 description = "照抄；没有就留空"
+descriptions = { en = "Copy it as written; leave empty if absent" }
 aliases = ["공급받는자 등록번호"]
 
 [[fields]]
@@ -146,6 +162,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", ko = "품목" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -174,6 +191,7 @@ label = "金额"
 names = { en = "Amount", ko = "공급가액" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["공급가액"]
 
 [[tables.columns]]

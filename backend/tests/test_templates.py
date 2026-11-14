@@ -143,6 +143,7 @@ def test_templates_api(client):
         "range_export": "normalized",
         "range_separator": " ~ ",
         "names": {},
+        "descriptions": {},
     }
     change = next(r for r in receipt["rules"] if r["id"] == "change")
     assert change["title"] == "现金 − 总额 = 找零"

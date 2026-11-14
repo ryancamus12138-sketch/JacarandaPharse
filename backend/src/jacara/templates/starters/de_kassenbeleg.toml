@@ -13,7 +13,17 @@ titles = { en = "Till Receipt (Germany)", de = "Kassenbeleg" }
 countries = ["DE"]
 domains = ["收据", "购物"]
 description = "德国收银小票：商家名称地址、日期、交易开始和结束时间、品名数量、交易号、金额、税率和税额，以及 TSE 信息（收银系统序列号、安全模块序列号、校验值、签名计数器）。缺 TSE 信息、税率不是 19/7/0%、开始时间晚于结束时间会提醒。"
+descriptions = { en = "German cash register receipts: merchant name and address, date, transaction start and end times, description and quantity, transaction number, amounts, rates and tax, and TSE information (cash register serial number, security module serial number, check value, signature counter). Missing TSE information, rates other than 19/7/0%, and a start time after the end time are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "de_kassenbeleg", "de_kasse_times", "de_rates"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: German cash register receipts (Kassenbeleg; electronic recording systems with TSE).",
+  "Basis: §146a AO (obligation to issue receipts), §6 KassenSichV: name and address, date of the receipt and the times the transaction began and ended, quantity and type, transaction number, consideration and tax amount with the tax rate, serial numbers of the recording system and the security module, check value and sequential signature counter.",
+  "Use: receipts printed by cash registers of German shops and restaurants; TSE information is checked in business trip expense claims and tax audits.",
+  "Source: gesetze-im-internet.de § 6 KassenSichV.",
+]
 
 [[fields]]
 name = "seller_name"
@@ -44,6 +54,7 @@ label = "交易开始时间"
 names = { en = "Start of Transaction", de = "Vorgangsbeginn" }
 type = "string"
 description = "照抄，如 14:03:12"
+descriptions = { en = "Copy it as written, such as 14:03:12" }
 aliases = ["Vorgangsbeginn"]
 
 [[fields]]
@@ -96,6 +107,7 @@ label = "TSE 校验值"
 names = { en = "TSE Signature", de = "Prüfwert" }
 type = "string"
 description = "很长的一串，照抄能认出的部分"
+descriptions = { en = "A long string; copy the recognizable part" }
 aliases = ["Prüfwert"]
 
 [[fields]]
@@ -110,6 +122,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", de = "Positionen" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -131,6 +144,7 @@ label = "金额"
 names = { en = "Amount", de = "Betrag" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["Betrag"]
 
 [[tables.columns]]
