@@ -1,5 +1,7 @@
 """Desktop launcher (`jacara desktop`): starts everything in a fresh data directory, answers only
-with the launch token, and leaves no process behind when the app goes away."""
+with the launch token, and leaves no process behind when the app goes away. Runs on every system
+the app ships for: on Windows the launcher keeps its workers in a job object instead of relying on
+POSIX process groups and signals, and that is what these tests check there."""
 
 from __future__ import annotations
 
@@ -20,10 +22,12 @@ from jacara.desktop import READY, WATCH_STDIN
 
 from .test_backup import png
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX process checks")
-
 
 def alive(pid: int) -> bool:
+    if sys.platform == "win32":
+        from jacara.cli import _alive
+
+        return _alive(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -57,8 +61,16 @@ def launch(home: Path, **extra: str) -> tuple[subprocess.Popen[str], str]:
     env[WATCH_STDIN] = "1"
     env["JACARA_LOG_DIR"] = str(home / "logs")
     env.update(extra)
-    process = subprocess.Popen(
-        [sys.executable, "-m", "jacara.cli", "desktop"],
+    python = sys.executable
+    if sys.platform == "win32":
+        # A virtual environment's python.exe on Windows is a launcher that starts the base
+        # interpreter as a child process, so killing it would not end the app itself. Start the
+        # interpreter directly, as the packaged app is one process, with this environment's
+        # import path.
+        python = getattr(sys, "_base_executable", sys.executable)
+        env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p)
+    process = subprocess.Popen(  # noqa: S603  This interpreter, fixed arguments.
+        [python, "-m", "jacara.cli", "desktop"],
         env=env,
         # Started from the data folder, not the project root, as the packaged app is.
         cwd=home,
@@ -116,7 +128,7 @@ def test_launcher_serves_with_token_and_stops_when_stdin_closes(tmp_path):
 def test_workers_exit_when_the_launcher_is_killed(tmp_path):
     process, _enter = launch(tmp_path)
     workers = children_of(tmp_path)
-    process.send_signal(signal.SIGKILL)  # No chance to clean up.
+    process.kill()  # No chance to clean up: SIGKILL, or TerminateProcess on Windows.
     process.wait(timeout=10)
     assert wait_until(lambda: not any(alive(pid) for pid in workers))
 
@@ -125,12 +137,17 @@ def test_a_worker_that_dies_is_started_again(tmp_path):
     process, _enter = launch(tmp_path)
     try:
         before = children_of(tmp_path)
-        os.kill(before[0], signal.SIGKILL)  # As a crash in native OCR code would end it.
+        # As a crash in native OCR code would end it. Windows has no SIGKILL; os.kill() ends the
+        # process there (TerminateProcess) with the signal number as its exit code.
+        os.kill(before[0], getattr(signal, "SIGKILL", signal.SIGTERM))
         assert wait_until(lambda: children_of(tmp_path)[0] != before[0])
         after = children_of(tmp_path)
         assert alive(after[0]) and after[1] == before[1]
         log = (tmp_path / "logs" / "worker-read.log").read_text(encoding="utf-8")
-        assert "exited (signal SIGKILL); starting it again" in log
+        if sys.platform == "win32":
+            assert f"exited (exit code {int(signal.SIGTERM)}); starting it again" in log
+        else:
+            assert "exited (signal SIGKILL); starting it again" in log
     finally:
         assert process.stdin is not None
         process.stdin.close()

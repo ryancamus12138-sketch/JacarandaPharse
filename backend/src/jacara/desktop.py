@@ -162,18 +162,41 @@ def kill_children_with_me() -> Any:
     job_object_extended_limit_information = 9
     job_object_limit_kill_on_job_close = 0x2000
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    # Every argument and result type is declared: without argtypes ctypes passes a Python int as
+    # a C int, and handles are pointer-sized. GetCurrentProcess() returns the pseudo handle -1,
+    # which as a HANDLE is 0xFFFFFFFFFFFFFFFF and does not fit a C int.
+    kernel32.CreateJobObjectW.argtypes = (wintypes.LPVOID, wintypes.LPCWSTR)
     kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.SetInformationJobObject.argtypes = (
+        wintypes.HANDLE,
+        ctypes.c_int,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+    )
+    kernel32.SetInformationJobObject.restype = wintypes.BOOL
+    kernel32.GetCurrentProcess.argtypes = ()
     kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+
+    def failed(step: str) -> None:
+        # The app still runs; only the clean-up of child processes after a crash is lost.
+        error = ctypes.get_last_error()
+        print(f"jacara desktop: {step} failed (Windows error {error})", file=sys.stderr, flush=True)
+
     job = kernel32.CreateJobObjectW(None, None)
     if not job:
+        failed("CreateJobObjectW")
         return None
     limits = ExtendedLimits()
     limits.BasicLimitInformation.LimitFlags = job_object_limit_kill_on_job_close
     if not kernel32.SetInformationJobObject(
         job, job_object_extended_limit_information, ctypes.byref(limits), ctypes.sizeof(limits)
     ):
+        failed("SetInformationJobObject")
         return None
     if not kernel32.AssignProcessToJobObject(job, kernel32.GetCurrentProcess()):
+        failed("AssignProcessToJobObject")
         return None
     return job
 

@@ -629,6 +629,18 @@ Hugging Face 上的文件 SHA-256 一致：
     Python 用系统代码页（如 cp1252、cp936）写管道里的标准输出和标准错误、读写子进程的文本，而外壳按 UTF-8 读后端的
     输出，测试在各系统上也都是 UTF-8 模式（CI 设了 `PYTHONUTF8=1`，macOS 和 Linux 本来就是 UTF-8）。
   - 外壳读后端输出时，遇到不是 UTF-8 的行改为用替换字符显示；原来会结束读取，被当成后端已经停止。
+- 第五次运行时冒烟测试显示了真正的原因：`kill_children_with_me()`（把后端放进 Windows 作业对象，后端结束时系统结束
+  它启动的所有进程）调用 Windows 接口时没有声明参数类型。ctypes 把 Python 整数当作 C 的 int 传，而
+  `GetCurrentProcess()` 返回的伪句柄 -1 作为 HANDLE 是 0xFFFFFFFFFFFFFFFF，放不进 int，后端在 Windows 上一启动就崩溃。
+  已为用到的每个接口声明参数和返回类型；某一步失败时写一行原因到标准错误（程序照常运行，只是少了崩溃后清理子进程
+  的保障）。
+- 这个错误没有被测试发现，是因为 `test_desktop_launcher.py`（真正启动 `jacara desktop`、检查就绪、关闭标准输入后
+  退出、后端被结束后 worker 也结束、worker 崩溃后重启、监视文件夹、备份、搬数据文件夹）整个文件在 Windows 上跳过了。
+  已改为在 Windows 上也运行：检查进程是否还在用 `_alive()`；结束进程用 `Popen.kill()`（Windows 上是
+  TerminateProcess）；Windows 的虚拟环境里 `python.exe` 是另起基础解释器的启动器，结束它并不结束应用本身，所以在
+  Windows 上直接用基础解释器启动，并传入同样的导入路径。worker 被结束后重启的日志在 Windows 上是退出码 15
+  （`os.kill` 的信号号），在 POSIX 上是 SIGKILL。仍只在 POSIX 上运行的测试只剩按信号判断退出原因
+  （`test_desktop_supervisor.py`）和 KleidiCV 的内存保护检查（`test_opencv_resize.py`，用 POSIX 的 `mprotect`）。
 - **macOS 的 OpenCV 从源码构建**：PyPI 上 `opencv-python-headless` 的 macOS wheel（4.9 到 5.0 都是）带的 FFmpeg
   是用 `--enable-gpl` 构建的：`cv2` 加载 `libavcodec`，`libavcodec` 链接 `libx264`、`libx265`（GPL-2.0 及以上），
   4.13.0.92 还带 `librubberband`、`libvidstab`、`libpostproc`。项目页说"All wheels ship with FFmpeg licensed under
