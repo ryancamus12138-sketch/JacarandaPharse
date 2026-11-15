@@ -612,13 +612,18 @@ Hugging Face 上的文件 SHA-256 一致：
   反过来也一样；任何一个失败，整次运行都算失败。
 - 第一次运行（PR #33）时 Windows 上的后端测试暴露了几处只在 Windows 上才有的问题，已修正：
   - `jacara stop` 用 `os.kill(pid, 0)` 判断进程是否还在；Windows 上 `os.kill()` 除控制台信号外一律结束进程
-    （TerminateProcess），改为用 `OpenProcess` 读取退出码（`STILL_ACTIVE` 表示仍在运行）；Windows 没有 `SIGKILL`。
+    （TerminateProcess），改为用 `OpenProcess`（SYNCHRONIZE 权限）打开进程、对句柄做超时为 0 的
+    `WaitForSingleObject`：进程结束时句柄变为有信号。最初用的是读退出码是否为 `STILL_ACTIVE`，按 Windows 规范检查时
+    改掉了：259 也是合法的退出码，`GetExitCodeProcess` 的文档明确提醒不要据此判断进程仍在运行。Windows 没有
+    `SIGKILL`。
   - 端口检查用了 `SO_REUSEADDR`：Windows 上它允许绑定到正在使用的端口，检查总是通过；Windows 上改为不加选项
     直接绑定（Windows Server 2003 起套接字默认不共享）。
   - 诊断信息把主目录写成 `~`：Windows 路径不区分大小写，可能用 `\` 或 `/`，两种写法都替换，其余部分统一用 `/`。
   - 测试本身的假设：权限位 0o600 只在 POSIX 上检查（Windows 靠用户文件夹的访问控制列表）；数据文件夹搬回之前
     先关闭数据库（Windows 不能删除打开着的文件，接口本来就这样做）；macOS 和 Windows 的文件名不区分大小写，
     测试里的 `Models` 文件夹就是数据文件夹里的 `models`。
+- 第九次运行时打包检查在 Windows 上把 `llama-server-impl.dll` 当成程序运行（"llama-server*" 也匹配到它，
+  WinError 193）。打包检查和 spec 改为按准确的程序名查找（Windows 上 `llama-server.exe`）。
 - 第二次运行时 Windows 上 `licenses.py` 找不到 `npx`：Windows 上它是 `npx.cmd`，`CreateProcess` 不按裸名字找 `.cmd`，
   改为先用 `shutil.which` 找到程序再运行，并按 UTF-8 读取输出。
 - 第四次运行时 Windows 上打包好的后端启动约 2 秒就退出，冒烟测试没有显示原因。按根本原因处理：

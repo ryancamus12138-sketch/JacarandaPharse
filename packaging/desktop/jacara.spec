@@ -21,6 +21,7 @@
 # ruff: noqa: F821  SPECPATH, Analysis, PYZ, EXE and COLLECT are provided by PyInstaller.
 
 import hashlib
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
@@ -86,7 +87,8 @@ datas.append((str(TABLE_MODEL), "models/table"))
 
 # ---- llama.cpp ----
 llama = BUILD / "llama"
-servers = sorted(llama.glob("*/llama-server*"))
+# The program by its exact name (the Windows builds also hold llama-server-impl.dll).
+servers = sorted(llama.glob("*/llama-server.exe" if sys.platform == "win32" else "*/llama-server"))
 if not servers:
     fail(f"no llama.cpp build in {llama}: run packaging/desktop/fetch_llama.py first")
 for variant in sorted(p for p in llama.iterdir() if p.is_dir()):

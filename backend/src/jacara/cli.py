@@ -1466,8 +1466,10 @@ def _stop_running() -> int:
 def _alive(pid: int) -> bool:
     """Whether the process exists. On POSIX, signal 0 checks existence without affecting the
     process. On Windows os.kill() with any signal but the console ones ends the process
-    (TerminateProcess), so the process is opened for querying and its exit code read instead:
-    STILL_ACTIVE while it runs."""
+    (TerminateProcess), so the process is opened with SYNCHRONIZE access and its handle tested
+    with a zero-timeout wait: a process handle is signalled when the process ends. The exit code
+    (GetExitCodeProcess) is not used: STILL_ACTIVE (259) is also a valid exit code, which
+    Microsoft's documentation warns against reading as "still running"."""
     import os
     import sys
 
@@ -1475,23 +1477,26 @@ def _alive(pid: int) -> bool:
         import ctypes
         from ctypes import wintypes
 
-        process_query_limited_information, still_active, access_denied = 0x1000, 259, 5
+        synchronize, access_denied = 0x00100000, 5
+        wait_object_0 = 0x0
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel32.OpenProcess.restype = wintypes.HANDLE
         kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
-        kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
         kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
-        handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+        handle = kernel32.OpenProcess(synchronize, False, pid)
         if not handle:
-            # Exists but may not be opened (another user's process), or does not exist.
+            # Exists but may not be opened (another user's process), or does not exist
+            # (ERROR_INVALID_PARAMETER).
             return ctypes.get_last_error() == access_denied
         try:
-            code = wintypes.DWORD()
-            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
-                return True
-            return code.value == still_active
+            result = kernel32.WaitForSingleObject(handle, 0)
         finally:
             kernel32.CloseHandle(handle)
+        # WAIT_OBJECT_0: ended. WAIT_TIMEOUT: running. WAIT_FAILED: unknown, treated as running
+        # so that jacara stop does not leave it behind.
+        return result != wait_object_0
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

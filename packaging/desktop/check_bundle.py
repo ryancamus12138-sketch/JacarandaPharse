@@ -96,7 +96,10 @@ def check_files(bundle: Path) -> None:
     ):
         if not path.is_file():
             problem(f"missing: {path.relative_to(bundle)}")
-    servers = sorted((data / "llama").glob("*/llama-server*"))
+    # The program by its exact name: the Windows builds also hold llama-server-impl.dll, which
+    # "llama-server*" would match and which cannot be run.
+    program_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
+    servers = sorted((data / "llama").glob(f"*/{program_name}"))
     if not servers:
         problem("missing: llama/<variant>/llama-server")
     for server in servers:
