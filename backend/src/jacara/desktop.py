@@ -99,21 +99,89 @@ def free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+STDIN_POLL_SECONDS = 0.5
+"""Windows: how often the standard input pipe is checked (see _wait_for_stdin_windows)."""
+
+
+def _wait_for_stdin_posix() -> None:
+    """Return when standard input reaches end of file.
+
+    The file descriptor is read, not sys.stdin.buffer: this thread waits in read() for the whole
+    life of the process, and a BufferedReader holds its lock while it waits. When the interpreter
+    then shuts down for another reason (the main thread returns or raises), it cannot take that
+    lock and aborts with "Fatal Python error: _enter_buffered_busy", which turns any exit into a
+    crash. os.read takes no lock."""
+    try:
+        descriptor = sys.stdin.fileno()
+        while os.read(descriptor, 4096):
+            pass
+    except (OSError, ValueError):
+        pass
+
+
+def _wait_for_stdin_windows() -> bool:
+    """Return True when the standard input pipe has been closed by the other end; False when
+    standard input is not a pipe and cannot be watched.
+
+    No read is left waiting on the pipe. Standard input is a synchronous handle, and Windows
+    serialises all I/O on such a handle: while one thread waits in ReadFile, any other operation
+    on the handle waits too. The C runtime of a DLL being loaded queries the standard handles while
+    it starts, so a waiting read made the first `import numpy` in a background process hang for
+    good (seen in the packaged watch-folder process; Raymond Chen, "Don't let more than one process
+    try to read from stdin at the same time", and CPython issue 34780 describe the mechanism).
+    Instead the pipe is checked with PeekNamedPipe, which returns at once, every
+    STDIN_POLL_SECONDS; anything written to it is read without waiting, and ERROR_BROKEN_PIPE means
+    the parent closed its end or exited."""
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    error_broken_pipe, error_pipe_not_connected = 109, 233
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    peek = kernel32.PeekNamedPipe
+    peek.argtypes = (
+        wintypes.HANDLE,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    peek.restype = wintypes.BOOL
+    try:
+        descriptor = sys.stdin.fileno()
+        handle = msvcrt.get_osfhandle(descriptor)
+    except (OSError, ValueError):
+        return True  # No standard input at all: nothing to wait for.
+    available = wintypes.DWORD()
+    while True:
+        if not peek(handle, None, 0, None, ctypes.byref(available), None):
+            error = ctypes.get_last_error()
+            if error in (error_broken_pipe, error_pipe_not_connected):
+                return True
+            print(
+                f"jacara desktop: standard input cannot be watched (Windows error {error})",
+                file=sys.stderr,
+                flush=True,
+            )
+            return False
+        if available.value:
+            os.read(descriptor, available.value)  # Data is there: this read does not wait.
+        else:
+            time.sleep(STDIN_POLL_SECONDS)
+
+
 def on_stdin_closed(action: Callable[[], None]) -> None:
     """Call action once standard input reaches end of file (the parent closed its end or exited)."""
 
     def watch() -> None:
-        # The file descriptor is read, not sys.stdin.buffer: this thread waits in read() for the
-        # whole life of the process, and a BufferedReader holds its lock while it waits. When the
-        # interpreter then shuts down for another reason (the main thread returns or raises), it
-        # cannot take that lock and aborts with "Fatal Python error: _enter_buffered_busy", which
-        # turns any exit into a crash (SIGABRT, or 0xC0000005 on Windows). os.read takes no lock.
-        try:
-            descriptor = sys.stdin.fileno()
-            while os.read(descriptor, 4096):
-                pass
-        except (OSError, ValueError):
-            pass
+        if sys.platform == "win32":
+            if not _wait_for_stdin_windows():
+                return
+        else:
+            _wait_for_stdin_posix()
         action()
 
     threading.Thread(target=watch, name="stdin-watch", daemon=True).start()

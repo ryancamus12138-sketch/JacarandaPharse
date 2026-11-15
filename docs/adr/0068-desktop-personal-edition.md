@@ -648,6 +648,19 @@ Hugging Face 上的文件 SHA-256 一致：
   关闭时拿不到这个锁就中止，任何退出都变成崩溃（Linux 上 SIGABRT，Windows 上 0xC0000005）。在 Linux 上也能复现
   （10 次 10 次）。改为读文件描述符（`os.read`，不经过有锁的缓冲对象），并加了测试：进程在标准输入仍打开时正常退出，
   退出码为 0、没有 Fatal Python error（改之前这个测试失败）。
+- 第七、八次运行时 Windows 冒烟测试卡在"监视文件夹导入"：监视进程不输出也不退出。冒烟测试打开
+  `JACARA_STACK_DUMP_SECONDS`（各后台进程每隔这么多秒用 faulthandler 把所有线程的调用栈写进日志；不设置时不开）后，
+  日志显示监视进程的主线程停在第一次扫描时的 `import numpy`（加载 `_multiarray_umath` 扩展模块），另一个线程是等在
+  标准输入上的读取。原因是 Windows 的同步句柄上的 I/O 是串行的：一个线程在标准输入管道上的 ReadFile 一直等着，
+  其他线程对这个句柄的任何操作也要等；新加载的 DLL 的 C 运行库启动时会查询标准句柄，于是一直等下去（Raymond Chen，
+  "Don't let more than one process try to read from stdin at the same time"；CPython issue 34780 是 Python 自己启动时
+  因为同样原因卡住）。这对后端主进程同样成立：只要在监视线程开始之后才第一次加载某个 DLL（例如第一次渲染 PDF
+  页面时的 pdfium），就会卡住。修改：Windows 上不再在标准输入上留一个等着的读取，改为每 0.5 秒用 `PeekNamedPipe`
+  检查一次管道（立即返回；有数据就读走，不会等；`ERROR_BROKEN_PIPE` 表示另一端已关闭或已退出）；标准输入不是管道时
+  写一行原因到标准错误、不再监视。macOS 和 Linux 没有这个限制，仍然直接读。新加测试：监视标准输入之后再加载
+  numpy、onnxruntime、pypdfium2 必须在限定时间内完成；关闭标准输入后进程在 10 秒内按预期退出。
+  （同一套监视文件夹测试从源码运行时在 Windows 上通过了，原因没有完全查清，可能与导入顺序有关；打包后的程序是
+  用户实际运行的，以冒烟测试为准。）
 - **macOS 的 OpenCV 从源码构建**：PyPI 上 `opencv-python-headless` 的 macOS wheel（4.9 到 5.0 都是）带的 FFmpeg
   是用 `--enable-gpl` 构建的：`cv2` 加载 `libavcodec`，`libavcodec` 链接 `libx264`、`libx265`（GPL-2.0 及以上），
   4.13.0.92 还带 `librubberband`、`libvidstab`、`libpostproc`。项目页说"All wheels ship with FFmpeg licensed under

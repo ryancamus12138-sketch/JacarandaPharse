@@ -347,3 +347,58 @@ def test_a_process_watching_stdin_exits_cleanly_while_stdin_is_open():
             process.stdin.close()
         assert exit_code == 0 and out.strip() == "done", err
         assert "Fatal Python error" not in err
+
+
+def run_with_open_stdin(code: str, timeout: float = 120) -> tuple[int, str, str]:
+    """Run code in a fresh interpreter whose standard input is a pipe that stays open."""
+    process = subprocess.Popen(  # noqa: S603  This interpreter, fixed arguments.
+        [sys.executable, "-c", code],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert process.stdin and process.stdout and process.stderr
+    try:
+        exit_code = process.wait(timeout=timeout)
+        return exit_code, process.stdout.read(), process.stderr.read()
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+        pytest.fail(f"still running after {timeout} s: {process.stderr.read()}")
+    finally:
+        process.stdin.close()
+
+
+def test_native_libraries_load_while_stdin_is_watched():
+    """Loading a DLL must not wait for the stdin watch. On Windows a read left waiting on the
+    synchronous stdin pipe made every other operation on that handle wait, including the queries
+    the C runtime of a DLL makes while it starts: the packaged watch-folder process hung in its
+    first `import numpy`."""
+    code = (
+        "import sys, time\n"
+        "from jacara.desktop import on_stdin_closed\n"
+        "assert 'numpy' not in sys.modules and 'onnxruntime' not in sys.modules\n"
+        "on_stdin_closed(lambda: None)\n"
+        "time.sleep(1)\n"
+        "import numpy, onnxruntime, pypdfium2\n"
+        "print('done')\n"
+    )
+    exit_code, out, err = run_with_open_stdin(code)
+    assert exit_code == 0 and out.strip() == "done", err
+
+
+def test_closing_stdin_is_noticed():
+    code = (
+        "import os, time\n"
+        "from jacara.desktop import on_stdin_closed\n"
+        "on_stdin_closed(lambda: os._exit(7))\n"
+        "time.sleep(60)\n"
+    )
+    process = subprocess.Popen(  # noqa: S603  This interpreter, fixed arguments.
+        [sys.executable, "-c", code], stdin=subprocess.PIPE
+    )
+    assert process.stdin is not None
+    time.sleep(1)
+    process.stdin.close()
+    assert process.wait(timeout=10) == 7
