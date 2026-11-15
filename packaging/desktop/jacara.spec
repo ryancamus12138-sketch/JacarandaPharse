@@ -139,9 +139,10 @@ pyz = PYZ(a.pure)
 # pipes, and for subprocess text: the desktop shell reads the backend's output as UTF-8, and the
 # tests run in UTF-8 mode on every system (PYTHONUTF8=1 in CI; macOS and Linux default to UTF-8).
 # A packaged program does not read PYTHON* environment variables, so the mode is set here, as the
-# PyInstaller manual's "Specifying Python Interpreter Options" shows. No effect on macOS, where
-# the locale is UTF-8 already.
-options = [("X utf8_mode=1", None, "OPTION")]
+# PyInstaller manual's "Specifying Python Interpreter Options" shows: the bootloader reads the
+# X-option "utf8" (or "utf8=1"), the same name as Python's -X utf8; any other spelling is ignored
+# without a warning. The diagnostics report the mode, and the smoke test checks it.
+options = [("X utf8", None, "OPTION")]
 
 exe = EXE(
     pyz,

@@ -44,7 +44,9 @@ def report(info: SystemInfo, settings: Settings) -> str:
         f"OS: {_os_name()}",
         f"CPU: {platform.machine()}, {os.cpu_count() or '?'} logical cores",
         f"Memory: {_gigabytes(_memory())}",
-        f"Python: {platform.python_version()} ({platform.python_implementation()})",
+        f"Python: {platform.python_version()} ({platform.python_implementation()}, "
+        f"UTF-8 mode {'on' if sys.flags.utf8_mode else 'off'}, "
+        f"output encoding {getattr(sys.stdout, 'encoding', None) or 'none'})",
         f"Data folder: {data_home()} ({_gigabytes(_free(data_home()))} free)",
     ]
     if info.desktop is not None:

@@ -103,8 +103,14 @@ def on_stdin_closed(action: Callable[[], None]) -> None:
     """Call action once standard input reaches end of file (the parent closed its end or exited)."""
 
     def watch() -> None:
+        # The file descriptor is read, not sys.stdin.buffer: this thread waits in read() for the
+        # whole life of the process, and a BufferedReader holds its lock while it waits. When the
+        # interpreter then shuts down for another reason (the main thread returns or raises), it
+        # cannot take that lock and aborts with "Fatal Python error: _enter_buffered_busy", which
+        # turns any exit into a crash (SIGABRT, or 0xC0000005 on Windows). os.read takes no lock.
         try:
-            while sys.stdin.buffer.read(4096):
+            descriptor = sys.stdin.fileno()
+            while os.read(descriptor, 4096):
                 pass
         except (OSError, ValueError):
             pass

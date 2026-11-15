@@ -317,3 +317,33 @@ def test_several_watch_folders_are_watched(tmp_path):
         assert process.stdin is not None
         process.stdin.close()
     assert process.wait(timeout=60) == 0
+
+
+def test_a_process_watching_stdin_exits_cleanly_while_stdin_is_open():
+    """The stdin watch thread must not turn a normal exit into a crash. A daemon thread waiting in
+    sys.stdin.buffer.read() holds the reader's lock, and interpreter shutdown then aborts with
+    "Fatal Python error: _enter_buffered_busy" (SIGABRT; 0xC0000005 on Windows)."""
+    code = (
+        "import time\n"
+        "from jacara.desktop import on_stdin_closed\n"
+        "on_stdin_closed(lambda: None)\n"
+        "time.sleep(0.5)\n"
+        "print('done')\n"
+    )
+    for _ in range(5):
+        process = subprocess.Popen(  # noqa: S603  This interpreter, fixed arguments.
+            [sys.executable, "-c", code],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert process.stdin and process.stdout and process.stderr
+        try:
+            # Standard input stays open until the process has ended (communicate() would close it).
+            exit_code = process.wait(timeout=60)
+            out, err = process.stdout.read(), process.stderr.read()
+        finally:
+            process.stdin.close()
+        assert exit_code == 0 and out.strip() == "done", err
+        assert "Fatal Python error" not in err

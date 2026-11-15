@@ -143,6 +143,9 @@ def main() -> None:
             "shipped llama-server runs (diagnostics)",
         )
         check(str(home) not in report, "diagnostics write the home folder as ~")
+        # The packaged program runs in UTF-8 mode (jacara.spec) on every system; without it the
+        # backend and its workers write their output in the system code page on Windows.
+        check("UTF-8 mode on" in report, "Python runs in UTF-8 mode")
         setup = client.get("/api/v1/setup").json()
         listed = [f["filename"] for f in setup["files"]]
         wanted = ["Qwen3.5-9B-Q4_K_M.gguf", "mmproj-F16.gguf"]

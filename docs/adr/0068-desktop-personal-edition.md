@@ -624,8 +624,10 @@ Hugging Face 上的文件 SHA-256 一致：
 - 第四次运行时 Windows 上打包好的后端启动约 2 秒就退出，冒烟测试没有显示原因。按根本原因处理：
   - 冒烟测试改为像外壳一样在线程里一直读后端的输出（Windows 的管道只能存几 KB，没人读时后端会卡在下一行输出上），
     任何一项失败都打印后端的输出和日志文件，以后在构建机上失败也能从构建日志看到原因。
-  - 打包好的程序打开 Python 的 UTF-8 模式（PEP 540，spec 里的 `X utf8_mode=1`，PyInstaller 手册
-    "Specifying Python Interpreter Options"）。打包好的程序不读 `PYTHONUTF8` 等环境变量；没有这个设置时，Windows 上的
+  - 打包好的程序打开 Python 的 UTF-8 模式（PEP 540，spec 里的 `X utf8`，PyInstaller 手册
+    "Specifying Python Interpreter Options"；第一次误写成 `X utf8_mode=1`，引导程序只认 `utf8` / `utf8=1`，
+    别的写法不报错也不生效，第六次运行时 worker 仍以 cp1252 输出而崩溃才发现。现在诊断信息写出 UTF-8 模式和输出编码，
+    冒烟测试检查"UTF-8 mode on"，在 macOS 和 Windows 的构建机上都能确认设置真的生效）。打包好的程序不读 `PYTHONUTF8` 等环境变量；没有这个设置时，Windows 上的
     Python 用系统代码页（如 cp1252、cp936）写管道里的标准输出和标准错误、读写子进程的文本，而外壳按 UTF-8 读后端的
     输出，测试在各系统上也都是 UTF-8 模式（CI 设了 `PYTHONUTF8=1`，macOS 和 Linux 本来就是 UTF-8）。
   - 外壳读后端输出时，遇到不是 UTF-8 的行改为用替换字符显示；原来会结束读取，被当成后端已经停止。
@@ -641,6 +643,11 @@ Hugging Face 上的文件 SHA-256 一致：
   Windows 上直接用基础解释器启动，并传入同样的导入路径。worker 被结束后重启的日志在 Windows 上是退出码 15
   （`os.kill` 的信号号），在 POSIX 上是 SIGKILL。仍只在 POSIX 上运行的测试只剩按信号判断退出原因
   （`test_desktop_supervisor.py`）和 KleidiCV 的内存保护检查（`test_opencv_resize.py`，用 POSIX 的 `mprotect`）。
+- 第六次运行时 Windows 的 worker 日志还显示 "Fatal Python error: _enter_buffered_busy"：监视标准输入的守护线程一直
+  等在 `sys.stdin.buffer.read()` 里，持有 BufferedReader 的锁；进程因为别的原因退出时（主线程返回或出错），解释器
+  关闭时拿不到这个锁就中止，任何退出都变成崩溃（Linux 上 SIGABRT，Windows 上 0xC0000005）。在 Linux 上也能复现
+  （10 次 10 次）。改为读文件描述符（`os.read`，不经过有锁的缓冲对象），并加了测试：进程在标准输入仍打开时正常退出，
+  退出码为 0、没有 Fatal Python error（改之前这个测试失败）。
 - **macOS 的 OpenCV 从源码构建**：PyPI 上 `opencv-python-headless` 的 macOS wheel（4.9 到 5.0 都是）带的 FFmpeg
   是用 `--enable-gpl` 构建的：`cv2` 加载 `libavcodec`，`libavcodec` 链接 `libx264`、`libx265`（GPL-2.0 及以上），
   4.13.0.92 还带 `librubberband`、`libvidstab`、`libpostproc`。项目页说"All wheels ship with FFmpeg licensed under
