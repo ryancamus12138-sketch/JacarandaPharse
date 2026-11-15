@@ -1,4 +1,4 @@
-"""v3 第 3 批（ADR 0038）：自动判断用哪个模板、让模型看原图。"""
+"""Automatic template selection and showing the page image to the model."""
 
 from __future__ import annotations
 
@@ -51,17 +51,18 @@ def test_model_choice_wins_and_zero_means_none():
 
     result = classify(HOTEL_TEXT, auto, chooser)
     assert result.picked is None and result.reason == "这是一张手写便条" and result.by == "model"
-    # 交给模型的是按关键字排好的：酒店账单排第一
+    # Candidates passed to the model are ranked by keywords: the hotel bill comes first.
     assert asked[0][0].startswith(load_starter("hotel_folio").title)
     out = classify(HOTEL_TEXT, auto, lambda text, options: (1, "酒店退房账单"))
     assert out.picked is not None and out.picked.template.name == "hotel_folio"
     assert out.to_json()["picked"]["title"] == out.picked.template.title
-    # 模型答了不存在的编号：按关键字
+    # The model answered a nonexistent index: fall back to keywords.
     assert classify(HOTEL_TEXT, auto, lambda t, o: (9, "?")).by == "keywords"
 
 
 class ChoosingBackend(SchemaBackend):
-    """会选模板的假模型：选第 choice 个；能不能看图由 vision 决定。记下收到的消息。"""
+    """Fake model that selects templates: picks choice; vision decides whether it can see images.
+    Records received messages."""
 
     def __init__(self, values, choice: int, vision: bool = False) -> None:
         super().__init__(values)
@@ -101,11 +102,12 @@ def test_upload_with_auto_picks_a_template_per_document(client, factory, storage
     assert extraction["classified"]["picked"]["template_id"] == hotel["id"]
     assert extraction["classified"]["by"] == "model"
     assert extraction["template_title"] == hotel["title"]
-    # 模板页：自动判断选中的也算"用过"
+    # Templates page: templates picked by automatic selection count as used.
     listed = {t["id"]: t for t in client.get("/api/v1/templates").json()}
     assert listed[hotel["id"]]["used"] == 1
 
-    # 重新处理不写模板：再自动判断一次；下一次上传默认也是自动判断
+    # Reprocessing without a template re-runs automatic selection; the next upload also defaults to
+    # automatic.
     redo = client.post(
         f"/api/v1/documents/{document['id']}/reprocess", json={"reason": "bad_result"}
     )
@@ -137,7 +139,7 @@ def blurry_page():
 
 def test_when_to_look_at_the_picture():
     clear = hotel_pages()[0]
-    assert weak_ocr(clear) is not None  # 只有 3 块字
+    assert weak_ocr(clear) is not None  # Only 3 text blocks.
     good = make_page(*(make_line(f"line {n}", 0, n * 20, 100, n * 20 + 10) for n in range(8)))
     assert weak_ocr(good) is None
     assert "平均置信度" in (weak_ocr(blurry_page()) or "")
@@ -154,7 +156,7 @@ def test_model_looks_at_the_picture_when_ocr_is_weak(client, factory, storage, m
         "/api/v1/templates", json={"source": "starter", "starter": "hotel_folio"}
     ).json()["id"]
     document = upload_file(client, template=template_id, split="one")
-    # 模型在图上看清了账单号是 F-100（OCR 认成了 F-1OO）
+    # The model read the bill number F-100 clearly from the image (OCR read F-1OO).
     backend = ChoosingBackend(HOTEL, choice=1, vision=True)
     pipeline = Pipeline(ocr=None, extractor=LlmExtractor(backend), vision="auto")  # type: ignore[arg-type]
     monkeypatch.setattr(pipeline, "read", lambda _path, _how=None: [blurry_page()])
@@ -169,9 +171,9 @@ def test_model_looks_at_the_picture_when_ocr_is_weak(client, factory, storage, m
     assert extraction["prompt_version"].endswith("+vision")
     folio = next(v for v in extraction["values"] if v["name"] == "folio_no")
     assert folio["status"] == "seen" and folio["current_value"] == "F-100"
-    assert folio["needs_review"] and "看原图读的" in folio["note"]
+    assert folio["needs_review"] and "读取自原图" in folio["note"]
 
-    # 模型服务没有视觉模型：不给图
+    # Model server without a vision projector: no images sent.
     backend = ChoosingBackend(HOTEL, choice=1, vision=False)
     pipeline = Pipeline(ocr=None, extractor=LlmExtractor(backend), vision="auto")  # type: ignore[arg-type]
     monkeypatch.setattr(pipeline, "read", lambda _path, _how=None: [blurry_page()])
@@ -208,7 +210,7 @@ def test_mmproj_is_not_taken_for_the_model(tmp_path, monkeypatch):
     assert settings.find_mmproj() == models / "mmproj-F16.gguf"
 
 
-# ---------- 核对出处：24 小时制的时间、少认了小数点的数字 ----------
+# ---------- Evidence checks: 24-hour times, numbers with a missed decimal point ----------
 
 from jacara.plugins.aligners import BlockAligner  # noqa: E402
 from jacara.plugins.aligners.text_match import time_pattern  # noqa: E402
@@ -230,8 +232,8 @@ def test_time_in_12_hour_clock_matches_24_hour_value():
 
 
 def scanned_receipt():
-    """照着一张扫描的小票写的：找零 1.00 被手写的圈盖住了小数点，OCR 读成 100；
-    圈里手写的 9.00 和它在同一高度。"""
+    """Based on a scanned receipt: a handwritten circle covers the decimal point of the change 1.00,
+    which OCR reads as 100; the handwritten 9.00 in the circle is at the same height."""
     return make_page(
         make_line("Date:", 10, 100, 80, 120),
         make_line("25/12/2018 8:13:39 PM", 150, 100, 400, 120),
@@ -254,7 +256,8 @@ def test_time_and_dotless_change_are_found():
         ExtractedField(
             "time", "string", "20:13:39", blocks=(number_of(structure, "25/12/2018 8:13:39 PM"),)
         ),
-        # 模型说找零在手写的 9.00 那块（说错了块），抄的原文是 100、理解成 1（ADR 0040）
+        # The model places the change in the handwritten 9.00 block (wrong block), copies 100 and
+        # interprets it as 1.
         ExtractedField("change", "number", 1.0, blocks=(number_of(structure, "9.00"),), text="100"),
     )
     result = ExtractionResult(fields, "{}", "m", "b", "v", 0)
@@ -265,7 +268,7 @@ def test_time_and_dotless_change_are_found():
     assert "小数点" in change.note
 
 
-# ---------- 审核时"让模型看这块" ----------
+# ---------- "Ask the model about this region" during review ----------
 
 
 class LookingBackend:
@@ -359,8 +362,8 @@ def test_extra_blocks_and_quoted_dates():
 
 
 def test_discovered_date_copied_from_the_page_is_found():
-    """键值对发现：模型把单个日期照抄原文（August 3 , 2014）还标成 date：
-    换成 2014-08-03，按日期核对。"""
+    """Key-value discovery: the model copies a single date verbatim (August 3 , 2014) and labels it
+    date; it is converted to 2014-08-03 and verified as a date."""
     from jacara.plugins.extractors import LlmExtractor
 
     page = make_page(
@@ -420,7 +423,7 @@ def test_cross_check_value_against_the_quoted_text():
 
 
 def test_new_format_is_kept_and_flagged_not_dropped():
-    """系统没见过的写法：值照样留着，标黄让人看一眼（ADR 0040）。"""
+    """Notations unknown to the system: the value is kept and flagged for a look."""
     page = make_page(make_line("Paid on the third of August, twenty fourteen", 10, 10, 400, 30))
     structure = analyze_page(page)
     field = ExtractedField(
@@ -429,4 +432,4 @@ def test_new_format_is_kept_and_flagged_not_dropped():
     result = ExtractionResult((field,), "{}", "m", "b", "v", 0)
     [paid] = BlockAligner().align(page, result, structure)
     assert paid.status == "fuzzy" and paid.needs_review and paid.field.value == "2014-08-03"
-    assert "读不出日期" in paid.note
+    assert "无法读取日期" in paid.note

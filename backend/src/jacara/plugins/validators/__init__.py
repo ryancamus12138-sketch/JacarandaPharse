@@ -1,4 +1,5 @@
-"""规则校验插件。目前只有按规则清单检查的校验器；有第二种时再加登记表。"""
+"""Rule validation plugins. Currently only the rule-list validator; a registry will be added with a
+second one."""
 
 from jacara.plugins.validators.base import (
     Issue,

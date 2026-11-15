@@ -1,31 +1,38 @@
-"""成对测评（ADR 0042，开发用）：同一张单据的照片和 PDF，比较几种读法的字段准确率。
+"""Paired evaluation (development only): compare field accuracy of several reading strategies on a
+photo and a PDF of the same document.
 
-清单（TOML，放在 data/eval/ 下，data/ 不进 Git，真实单据不会进仓库）：
+Manifest (TOML, under data/eval/; data/ is not tracked by Git, so real documents never enter the
+repository):
 
     [[doc]]
     id = "lab-1"
     template = "lab_report"
-    pdf = "../samples/化验单.pdf"
-    photo = "../samples/化验单（拍照）.jpg"   # 不写：PDF 画成无损 PNG 当照片（受控对照）
+    pdf = "../samples/lab-report.pdf"
+    photo = "../samples/lab-report-photo.jpg"   # optional: defaults to a lossless PNG render of
+the PDF (controlled comparison)
     [doc.truth]
-    patient_name = "王小明"
+    patient_name = "Jane Doe"
     collected_at = "2026-11-10"
 
-几种读法（arm）：
-- A 照片：照片走现在的流程（核对、局部放大都开）。
-- B PDF 只用 OCR：PDF 画成图做 OCR，不和文字层核对。
-- C PDF + 文字层候选：再和文字层、表单字段逐字段核对，不放大。
-- D PDF + 局部放大：C 再加上局部放大再识别（现在默认的做法）。
-- E 旧做法：PDF 只读文字层（2026-11 之前的做法，当基线）。
+Arms:
+- A photo: the photo through the current pipeline (cross-checking and zoomed re-recognition
+  enabled).
+- B PDF, OCR only: the PDF rendered and OCR'd, without cross-checking against the text layer.
+- C PDF + text-layer candidates: additionally cross-checked field by field against the text layer
+  and form fields, without zooming.
+- D PDF + zoomed re-recognition: C plus zoomed re-recognition (the current default).
+- E legacy: the PDF text layer only (behavior before 2026-11; the baseline).
 
-两种"模型"：
-- oracle（不用模型服务）：把标准答案当成模型的回答，看核对这一步会不会把对的值丢掉、
-  误报多少；再把答案全部去掉，看漏读的值能不能在候选里找回来。量的是 OCR、文字层、核对本身。
-- llm（--server）：真的让模型抽，量最终的字段准确率。
+Two kinds of model:
+- oracle (no model server): the ground truth is used as the model answer, measuring whether
+  cross-checking drops correct values and how many false alerts it raises; a second pass removes
+  all answers to measure whether missed values can be recovered from candidates. This measures
+  OCR, the text layer and cross-checking themselves.
+- llm (--server): real model extraction, measuring final field accuracy.
 
-指标：审核前的字段准确率（漏了也算错）、关键字段准确率、标黄比例、"错了却没标黄"的个数、
-每页耗时 P50/P95、A→D 和 B→D 的退化、修复个数、按文档配对重采样的 D−A 差值区间。
-"""
+Metrics: field accuracy before review (missing counts as wrong), key-field accuracy, share of
+flagged values, number of wrong values not flagged, per-page latency P50/P95, regressions A→D and
+B→D, number of fixes, and a document-paired bootstrap interval of D−A."""
 
 from __future__ import annotations
 
@@ -41,6 +48,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from jacara.core.i18n import render
 from jacara.eval.score import same
 from jacara.pipeline.fieldcheck import is_key
 from jacara.plugins.exporters import DocumentReport
@@ -64,7 +72,7 @@ class PairDoc:
     photo: Path | None
     truth: dict[str, str]
     template_file: Path | None = None
-    """我的模板：导出的定义文件（ADR 0044 的数据导出里 templates/*.json）。"""
+    """My templates: definition files exported with the review data (templates/*.json)."""
 
     @property
     def kind(self) -> str:
@@ -105,7 +113,8 @@ def load_manifest(path: Path) -> list[PairDoc]:
 
 
 class OracleExtractor:
-    """把标准答案当成模型的回答（不用模型服务）。drop=True 时一个值都不给，模拟模型全漏了。"""
+    """Use the ground truth as the model answer (no model server). With drop=True no value is given,
+    simulating a model that misses everything."""
 
     name = "oracle"
 
@@ -126,7 +135,7 @@ class OracleExtractor:
             blocks = _blocks_of(structure, spec.type, value) if value is not None else ()
             fields.append(ExtractedField(spec.name, spec.type, value, blocks=blocks))
         names = {s.name for s in specs}
-        for name, raw in self.truth.items():  # 表格里的格子：items.2.amount
+        for name, raw in self.truth.items():  # Table cell: items.2.amount
             if name not in names and "." in name and not self.drop:
                 blocks = _blocks_of(structure, "string", raw)
                 fields.append(ExtractedField(name, "string", raw, blocks=blocks))
@@ -137,9 +146,11 @@ class OracleExtractor:
 
 
 def _blocks_of(structure: Any, type_: str, value: str | float) -> tuple[int, ...]:
-    """像模型一样说出值在哪几个文字块：读到的文字里有这个值的那块（标准答案当回答时用）。
+    """Name the text blocks containing the value, as the model would: blocks whose text contains it
+    (used when the ground truth stands in for the model).
 
-    OCR 读错了的值找不到文字块，就不给编号，和模型照着错字回答时一样交给核对。"""
+        When OCR misread the value, no block contains it and no index is given; cross-checking
+    then handles it, as when the model answers with the misread text."""
     from jacara.core.cjk import plain_cjk
     from jacara.plugins.aligners.text_match import (
         _squash,
@@ -161,7 +172,8 @@ def _blocks_of(structure: Any, type_: str, value: str | float) -> tuple[int, ...
     if type_ == "date":
         from jacara.core.textvalue import parse_date
 
-        # 先找读得出这个日期的块，再按写法找（"INV-20240510" 里也有 20240510）
+        # First find blocks from which this date can be parsed, then search by spelling
+        # ("INV-20240510" also contains 20240510).
         whole_date = next(((n,) for n, t in texts if str(parse_date(t)) == str(value)), ())
         if whole_date:
             return whole_date
@@ -186,9 +198,9 @@ class FieldOutcome:
     right: bool
     flagged: bool
     recovered: bool | None = None
-    """oracle 去掉答案那一轮：候选里有没有标准答案。"""
+    """Pass without answers (oracle): whether the ground truth is among the candidates."""
     value: str | None = None
-    """模型（核对之后）给的值，查错用。"""
+    """Value given by the model (after cross-checking), for error analysis."""
     gold: str = ""
 
 
@@ -221,12 +233,13 @@ def _key(template: Template, name: str) -> bool:
 
 
 def _photo_of(doc: PairDoc, scratch: Path) -> Path:
-    """受控对照：PDF 第一页画成无损 PNG（和 PDF 那条路送进 OCR 的像素一样）。"""
+    """Controlled comparison: the first PDF page rendered as a lossless PNG (the same pixels the PDF
+    path sends to OCR)."""
     if doc.photo is not None:
         return doc.photo
     from jacara.plugins.ocr.loader import page_png
 
-    assert doc.pdf is not None  # noqa: S101  清单里 pdf、photo 至少有一个
+    assert doc.pdf is not None  # noqa: S101  The manifest requires at least one of pdf and photo.
 
     out = scratch / f"{doc.id}.png"
     out.write_bytes(page_png(doc.pdf.read_bytes(), True, 1))
@@ -242,16 +255,17 @@ def run_pairs(
     arms: Sequence[str] = tuple(ARMS),
     learn: dict[str, list[tuple[str, Any]]] | None = None,
 ) -> dict[str, ArmResult]:
-    """每份文档跑几种读法（默认 A～E）。make_pipeline(arm) 返回那种读法用的 Pipeline。
+    """Run the arms (A–E by default) on each document. make_pipeline(arm) returns the Pipeline for
+    that arm.
 
-    learn：导出的审核数据里人改过的例子（模板 → [(文档 id, 例子)]，ADR 0045），
-    给每份文档用别的文档的例子（留一法：不用它自己的）。"""
+        learn: corrected examples from exported review data (template → [(document id,
+    example)]); each document uses examples from other documents only (leave-one-out)."""
     results = {arm: ArmResult(arm) for arm in ARMS}
     for doc in docs:
         template = doc.load()
         for arm in arms:
             if arm != "A" and doc.pdf is None:
-                continue  # 只有图片：只跑 A
+                continue  # Image only: run arm A only.
             pipeline = make_pipeline(arm)
             if learn is not None:
                 others = [
@@ -270,8 +284,8 @@ def run_pairs(
                 started = time.perf_counter()
                 try:
                     reports = pipeline.run(path, template=template, split="one", pdf_read=pdf_read)
-                except Exception as err:  # 一份坏了不影响别的
-                    results[arm].errors.append(f"{doc.id}: {err}")
+                except Exception as err:  # A failure in one document does not affect the others.
+                    results[arm].errors.append(f"{doc.id}: {render(str(err))}")
                     continue
                 pages = max(1, sum((r.last_page or r.page) - r.page + 1 for r in reports))
                 if not drop:
@@ -304,7 +318,8 @@ def run_pairs(
 
 
 def save_part(results: dict[str, ArmResult], path: Path) -> None:
-    """跑了一部分（几份文档、几种读法）的结果先存起来，最后 merge_parts 合并。"""
+    """Store the results of a partial run (some documents, some arms); merge_parts combines them at
+    the end."""
     data = {arm: asdict(r) for arm, r in results.items() if r.fields or r.errors}
     path.write_text(json.dumps(data, ensure_ascii=False), "utf-8")
 
@@ -344,18 +359,19 @@ def per_doc_accuracy(result: ArmResult) -> dict[str, float]:
 def paired_interval(
     a: dict[str, float], b: dict[str, float], rounds: int = 2000, seed: int = 0
 ) -> tuple[float, float, float] | None:
-    """b − a 的平均差，按文档配对重采样：（平均差，单侧 95% 下界，上界）。"""
+    """Mean difference b − a with a document-paired bootstrap: (mean difference, one-sided 95% lower
+    bound, upper bound)."""
     docs = sorted(set(a) & set(b))
     if not docs:
         return None
     diffs = [b[d] - a[d] for d in docs]
-    rng = random.Random(seed)  # noqa: S311  统计重采样，不是加密
+    rng = random.Random(seed)  # noqa: S311  Statistical resampling, not cryptography.
     means = sorted(statistics.fmean(rng.choice(diffs) for _ in diffs) for _ in range(rounds))
     return statistics.fmean(diffs), means[int(0.05 * rounds)], means[int(0.95 * rounds) - 1]
 
 
 def flips(before: ArmResult, after: ArmResult) -> tuple[int, int]:
-    """（之前对、之后错的个数，之前错、之后对的个数）。"""
+    """(Number correct before and wrong after, number wrong before and correct after)."""
     old = {(o.doc, o.name): o.right for o in before.fields}
     worse = better = 0
     for o in after.fields:
@@ -464,7 +480,8 @@ def write_summary(s: dict[str, Any], out_dir: Path) -> Path:
 
 
 def pipeline_factory(ocr: Any, extractor: Any, structure: Any) -> Callable[[str], Any]:
-    """每种读法的 Pipeline：B、E 不核对，C 核对不放大，A、D 核对又放大。"""
+    """Pipeline per arm: B and E without cross-checking, C with cross-checking but no zoom, A and D
+    with both."""
     from jacara.pipeline.run import Pipeline
 
     def make(arm: str) -> Any:

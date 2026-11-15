@@ -5,6 +5,7 @@ import {
   DeleteOutlined,
   HistoryOutlined,
   DownOutlined,
+  EllipsisOutlined,
   LeftOutlined,
   RightOutlined,
   SafetyCertificateOutlined,
@@ -16,6 +17,7 @@ import {
   App,
   Button,
   Card,
+  Dropdown,
   Empty,
   Flex,
   Grid,
@@ -27,9 +29,10 @@ import {
   Spin,
   Tooltip,
   Typography,
+  type MenuProps,
 } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { ApiError } from '../../api/client'
 import {
   adoptPrevious,
@@ -70,8 +73,10 @@ import { useRevise } from './useRevise'
 import { useRows } from './useRows'
 import { Tip } from '../../components/Tip'
 import { ExtractionNotes } from './ExtractionNotes'
+import { useTranslation } from 'react-i18next'
+import { type ListState, listOf } from '../documents/listState'
 
-/** 下一个还在等确认的字段（从 afterId 后面开始找，找到最后再从头找）。 */
+/** Next field awaiting confirmation (searching after afterId and wrapping around). */
 function nextPending(values: FieldValue[], afterId: string | null): string | null {
   const start = values.findIndex((v) => v.id === afterId)
   const ordered = [...values.slice(start + 1), ...values.slice(0, start + 1)]
@@ -84,7 +89,7 @@ function loadSortMode(): SortMode {
   try {
     return localStorage.getItem(SORT_KEY) === 'document' ? 'document' : 'status'
   } catch {
-    return 'status' // 浏览器不让用本地存储（隐私模式等）：用默认的
+    return 'status' // Local storage unavailable (private mode and similar): use the default.
   }
 }
 
@@ -92,11 +97,11 @@ function saveSortMode(mode: SortMode) {
   try {
     localStorage.setItem(SORT_KEY, mode)
   } catch {
-    // 存不了就算了，只是下次打开要重新选
+    // Storage unavailable: ignore; the choice must be made again next time.
   }
 }
 
-/** 在输入框里打字、或者焦点在按钮上（按 Enter 会点按钮）时，不当作快捷键。 */
+/** Not a shortcut while typing in an input or while a button has focus (Enter would click it). */
 function isTyping(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
@@ -105,81 +110,88 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 /**
- * 审核工作台：左边原图和出处框，右边字段。选中字段可以修改或确认，全部处理完再"完成审核"，
- * 然后自动打开下一份待审核的。
+ * Review workspace: page image with evidence boxes on the left, fields on the right. Selected fields can be
+ * edited or confirmed; once all are handled, "Complete review" opens the next document awaiting review.
  */
 export function ReviewPage() {
   const { id = '' } = useParams()
-  // key：换到另一份文档（上一份 / 下一份）时，页码、选中的字段等全部重新开始
+  // key: switching to another document (previous / next) resets page, selected field and everything else.
   return <ReviewWorkspace key={id} id={id} />
 }
 
 function ReviewWorkspace({ id }: { id: string }) {
+  const { t } = useTranslation()
   const { can } = useAuth()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
-  // 原文文字块：工具栏的开关，或者按住 Alt；picked 是按住 Shift / ⌘ 多选的文字块
+  // Source text blocks: toolbar toggle or holding Alt; picked holds blocks multi-selected with Shift / ⌘.
   const [ocrOn, setOcrOn] = useState(false)
   const [altHeld, setAltHeld] = useState(false)
   const [picked, setPicked] = useState<number[]>([])
-  // 开了"自动收集纠错样本"（ADR 0050）：单击的一块原文先核对图中原文再填入
+  // With OCR sample collection enabled, a single clicked source block is first checked against the
+  // transcription before filling.
   const [checking, setChecking] = useState<number | null>(null)
   const [reasonRequest, setReasonRequest] = useState<ReasonRequest | null>(null)
-  // 框选：模式开关、正在画的框、画好了等着用的框
+  // Region selection: mode toggle, box being drawn, drawn box awaiting use.
   const [drawOn, setDrawOn] = useState(false)
   const [draft, setDraft] = useState<Box | null>(null)
   const [drawn, setDrawn] = useState<Box | null>(null)
-  // 字段按单据顺序还是按状态（先红后绿）排；记在这个浏览器里，下次打开还是这样
+  // Fields ordered by document order or by status (red first, green last); remembered in this browser.
   const [sortMode, setSortMode] = useState<SortMode>(loadSortMode)
-  // 窄屏（小于 992 像素）：原图在上、字段在下，上下排；中等宽度时右边窄一点
+  // Narrow screens (below 992 pixels): image above, fields below; at medium widths the right column is
+  // narrower.
   const screens = Grid.useBreakpoint()
   const narrow = screens.lg === false
   const sideWidth = screens.xl === false ? 380 : 440
 
-  // 看第几轮的结果；undefined = 现在用的这一轮
+  // Run to show; undefined = the current run.
   const [run, setRun] = useState<number | undefined>()
   const [savingTemplate, setSavingTemplate] = useState(false)
   const document = useQuery({
     queryKey: ['document', id, run ?? 0],
     queryFn: () => getDocument(id, run),
-    // 重新处理中：每 3 秒看一次，处理完自动换成新结果
+    // While reprocessing: poll every 3 seconds and switch to the new results when done.
     refetchInterval: (q) =>
       q.state.data?.status === 'uploaded' || q.state.data?.status === 'processing' ? 3000 : false,
   })
   const doneOrReviewed = document.data?.status === 'done' || document.data?.status === 'reviewed'
-  // 重新处理中也能看上一轮的结果（只读）
+  // While reprocessing, the previous run's results remain viewable (read-only).
   const ready = doneOrReviewed || (document.data?.extractions.length ?? 0) > 0
   const ocr = useQuery({
     queryKey: ['page-ocr', id, page],
     queryFn: () => getPageOcr(id, page),
     enabled: ready,
-    staleTime: Infinity, // OCR 结果处理完就不会变
+    staleTime: Infinity, // OCR results never change once processed.
   })
-  // 版面结构（区域、表格、标题 → 值）：打开"版面结构"时才取
+  // Layout structure (regions, tables, label → value pairs): fetched only when the layout view is opened.
   const [structureOn, setStructureOn] = useState(false)
   const structure = useQuery({
     queryKey: ['page-structure', id, page, run ?? 0],
     queryFn: () => getPageStructure(id, page, run),
     enabled: ready,
-    staleTime: Infinity, // 处理完就不会变
+    staleTime: Infinity, // Never changes once processed.
   })
   const revise = useRevise(id)
   const comments = useComments(id)
   const rows = useRows(id)
   const confirmMany = useConfirmMany(id)
-  // 上一份、下一份（只算待审核的，按列表顺序）
+  // Previous and next: the documents next to this one in the list it was opened from (same filters, any
+  // status), and the next document awaiting review for after a review.
+  const list = listOf(useLocation().state)
+  const listPath = list ? `/documents?${list}` : '/documents'
   const neighbors = useQuery({
-    queryKey: ['neighbors', id],
-    queryFn: () => getNeighbors(id),
+    queryKey: ['neighbors', id, list],
+    queryFn: () => getNeighbors(id, list),
     enabled: ready,
   })
   const navigate = useNavigate()
   const goTo = (target: string | null | undefined) => {
-    if (target) void navigate(`/documents/${target}`)
+    if (target) void navigate(`/documents/${target}`, { state: { list } satisfies ListState })
   }
+  const toReview = neighbors.data?.next_to_review
   const finish = useMutation({
     mutationFn: () => completeReview(id),
     onSuccess: () => {
@@ -187,13 +199,12 @@ function ReviewWorkspace({ id }: { id: string }) {
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       void queryClient.invalidateQueries({ queryKey: ['neighbors'] })
-      // 审完一份，直接打开下一份；没有了就留在这里
-      const next = neighbors.data?.next ?? neighbors.data?.previous
-      if (next) {
-        void message.success(`已完成审核，打开下一份（还有 ${neighbors.data?.remaining ?? 0} 份）`)
-        goTo(next)
+      // After completing a review, open the next document; stay here if there is none.
+      if (toReview) {
+        void message.success(t('已完成审核，已打开下一份（剩余 {{value}} 份）', { value: neighbors.data?.remaining ?? 0 }))
+        goTo(toReview)
       } else {
-        void message.success('已完成审核。待审核的都审完了')
+        void message.success(t('已完成审核。所有待审核文档均已处理'))
       }
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
@@ -203,15 +214,15 @@ function ReviewWorkspace({ id }: { id: string }) {
     mutationFn: () => deleteDocuments([id]),
     onSuccess: ({ deleted, skipped }) => {
       if (deleted === 0) {
-        void message.warning(skipped[0] ?? '没有删除')
+        void message.warning(skipped[0] ?? t('未删除'))
         return
       }
-      void message.success('已删除')
+      void message.success(t('已删除'))
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      // 删完打开下一份待审核的；没有了就回列表
-      const next = neighbors.data?.next ?? neighbors.data?.previous
-      void navigate(next ? `/documents/${next}` : '/documents')
+      // After deleting, open the next document awaiting review; return to the list if there is none.
+      if (toReview) goTo(toReview)
+      else void navigate(listPath)
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
@@ -219,7 +230,7 @@ function ReviewWorkspace({ id }: { id: string }) {
   const viewingOld =
     document.data !== undefined &&
     (document.data.viewing_run ?? 1) !== (document.data.current_run ?? 1)
-  // 旧的几轮、正在重新处理的：只能看
+  // Earlier runs and documents being reprocessed are read-only.
   const canEdit = can('value:review') && !viewingOld && doneOrReviewed
   const sampleSettings = useQuery({
     queryKey: ['ocr-sample-settings'],
@@ -228,49 +239,57 @@ function ReviewWorkspace({ id }: { id: string }) {
   })
   const collecting = canEdit && sampleSettings.data?.collect === true
   useReviewTimer(id, canEdit && document.data?.status === 'done')
-  // 第 page 页属于哪一张单据（一张单据可以占好几页，ADR 0036）
+  // Document containing page page (a document may span several pages).
   const currentExtraction = coveringExtraction(document.data?.extractions ?? [], page)
-  // 字段名的语言（ADR 0048）：模板写了几种语言就能切换，按模板记住选的
+  // Field name language: switchable among the languages defined in the template; remembered per template.
   const languages = currentExtraction?.languages?.length ? currentExtraction.languages : ['zh']
   const languageKey = `review.${currentExtraction?.template ?? ''}`
   const [language, setLanguage] = useLanguage(languageKey, languages)
   const otherLabels = currentExtraction?.label_sets?.[language]
-  // 字段名用这份文档的模板里的（换了文档、换了轮次、换了语言就换）
+  // Field names come from this document's template (updated when the document, run or language changes).
   setTemplateLabels(
     otherLabels ? { ...currentExtraction?.labels, ...otherLabels } : currentExtraction?.labels,
   )
   const adopt = useMutation({
     mutationFn: () => adoptPrevious(id),
     onSuccess: ({ confirmed, edited }) => {
-      void message.success(`沿用了上一轮的审核：确认 ${confirmed} 个，改正 ${edited} 个`)
+      void message.success(t('已沿用上一轮审核：确认 {{confirmed}} 个，更正 {{edited}} 个', { confirmed, edited }))
       void queryClient.invalidateQueries({ queryKey: ['document', id] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
-  // useMemo：数据没变就还是同一个数组，下面的键盘监听不用每次都重新绑
+  // useMemo: the same array while data is unchanged, so the keyboard listener below is not rebound on every
+  // render.
   const values = useMemo(
     () => orderFields(currentExtraction?.values ?? [], sortMode),
     [currentExtraction, sortMode],
   )
   const showOcr = (ocrOn || altHeld) && canEdit && ocr.data?.available === true
   const selected = values.find((v) => v.id === selectedId) ?? null
-  // 原图上只画这一页的出处框（几页的单据，别的页的框不画在这页上）
+  // Draw only this page's evidence boxes on the image (for multi-page documents, other pages' boxes are
+  // omitted).
   const pageValues = useMemo(
     () =>
       values.filter((v) => (evidenceOf(v)?.page ?? currentExtraction?.page ?? 1) === page),
     [values, currentExtraction, page],
   )
 
-  /** 用这几块原文填进选中的字段。表格的格子填完跳到下一格（一行商品连着点下去）。 */
+  /**
+   * Fill the selected field with these source blocks. For table cells, move to the next cell afterwards (to
+   * fill a row by consecutive clicks).
+   */
   function applyPick(lines: number[]) {
     if (lines.length > 0) {
       applyChange({ action: 'edit', reason: '', source_lines: lines })
     }
   }
 
-  /** 用框选、重新识别并确认过的文字填进选中的字段。transcription：图中原文（收集 OCR 样本时才有）。 */
+  /**
+   * Fill the selected field with text from region selection and re-recognition, confirmed by the reviewer.
+   * transcription: the transcription (only when collecting OCR samples).
+   */
   function applyBox(box: Box, text: string, reason = '', transcription?: string) {
     applyChange({ action: 'edit', reason, value: text, source_box: box, transcription })
   }
@@ -280,7 +299,7 @@ function ReviewWorkspace({ id }: { id: string }) {
       return
     }
     revise.mutate(
-      // 选的是哪一页的原文（几页的单据，ADR 0036）
+      // Page of the selected source text (multi-page documents).
       { valueId: selected.id, change: { ...change, page } },
       {
         onSuccess: () => {
@@ -300,14 +319,18 @@ function ReviewWorkspace({ id }: { id: string }) {
     )
   }
 
-  /** 换了选中的字段：多选到一半的原文、画好还没用的框都作废。null = 取消选中。 */
+  /**
+   * Selected field changed: discard partially multi-selected source text and drawn but unused boxes. null =
+   * deselect.
+   */
   function select(valueId: string | null) {
     setPicked([])
     setChecking(null)
     setDraft(null)
     setDrawn(null)
     setSelectedId(valueId)
-    // 几页的单据：选中的字段出处在别的页，原图翻到那一页
+    // Multi-page documents: if the selected field's evidence is on another page, switch the image to that
+    // page.
     const target = values.find((v) => v.id === valueId)
     const where = target ? evidenceOf(target)?.page : undefined
     if (where && where !== page) setPage(where)
@@ -315,24 +338,24 @@ function ReviewWorkspace({ id }: { id: string }) {
 
   function pickLine(index: number, multi: boolean) {
     if (!selected) {
-      void message.info('先在右边选中要填的字段，再点原图上的文字')
+      void message.info(t('请先在右侧选择要填写的字段，再点击原图中的文字'))
       return
     }
     if (selected.deleted) {
-      void message.info('这一行已经删除了，要改的话先恢复这一行')
+      void message.info(t('此行已删除，如需修改请先恢复'))
       return
     }
     if (multi) {
       setChecking(null)
       setPicked((p) => (p.includes(index) ? p.filter((i) => i !== index) : [...p, index]))
     } else if (collecting && picked.length === 0) {
-      setChecking(index) // 先核对图中原文，回车再填入
+      setChecking(index) // Check the transcription first; Enter fills it in.
     } else {
       applyPick([...picked.filter((i) => i !== index), index])
     }
   }
 
-  /** 确认选中的字段（值是对的），然后跳到下一个等确认的。 */
+  /** Confirm the selected field (its value is correct), then move to the next field awaiting confirmation. */
   function confirmSelected() {
     if (!selected || selected.deleted || revise.isPending) {
       return
@@ -346,10 +369,10 @@ function ReviewWorkspace({ id }: { id: string }) {
 
   function askClear(v: FieldValue, label: string) {
     setReasonRequest({
-      title: `清空「${label}」`,
-      description: '原文里没有这个值。原值会保留在修改历史里。',
-      placeholder: '比如：收据上没有单号',
-      okText: '清空',
+      title: t('清空「{{label}}」', { label }),
+      description: t('原文中没有此值。原值将保留在修改历史中。'),
+      placeholder: t('例如：收据上没有单号'),
+      okText: t('清空'),
       danger: true,
       onOk: (reason) =>
         revise.mutate({ valueId: v.id, change: { action: 'edit', value: null, reason } }),
@@ -362,18 +385,19 @@ function ReviewWorkspace({ id }: { id: string }) {
     }
     rows.mutate(
       { kind: 'add', extractionId: currentExtraction.id, table, after },
-      { onSuccess: (cells) => cells[0] && setSelectedId(cells[0].id) }, // 选中新行第一格，接着点原文填
+      { onSuccess: (cells) => cells[0] && setSelectedId(cells[0].id) }, // Select the first cell of the new row and continue filling from source text.
     )
   }
 
-  // 键盘监听里用最新的这几个函数，又不用每次渲染都重新绑定监听
+  // The keyboard listener uses the latest functions without being rebound on every render.
   const actions = useRef({ applyPick, addRow, askClear, confirmSelected, select })
   useEffect(() => {
     actions.current = { applyPick, addRow, askClear, confirmSelected, select }
   })
 
-  // 在空白处点一下：取消选中，上面的详情收起来。点原图、字段、商品明细、详情本身，
-  // 以及弹出的对话框、菜单、提示（它们挂在页面最外层）都不算
+  // Clicking empty space deselects and collapses the details above. Clicks on the image, fields, line items
+  // and the details panel,
+  // as well as on dialogs, menus and popovers (mounted at the page root), do not count.
   useEffect(() => {
     function onDown(e: PointerEvent) {
       const target = e.target as Element | null
@@ -391,11 +415,11 @@ function ReviewWorkspace({ id }: { id: string }) {
     return () => window.removeEventListener('pointerdown', onDown)
   }, [])
 
-  // 按住 Alt（Mac 上是 Option）时显示原文文字块，松开就收起
+  // Holding Alt (Option on Mac) shows source text blocks; releasing hides them.
   useEffect(() => {
     const down = (e: KeyboardEvent) => e.key === 'Alt' && setAltHeld(true)
     const up = (e: KeyboardEvent) => e.key === 'Alt' && setAltHeld(false)
-    const blur = () => setAltHeld(false) // 按着 Alt 切到别的窗口，回来时不会一直开着
+    const blur = () => setAltHeld(false) // Switching windows while holding Alt does not leave them shown on return.
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
     window.addEventListener('blur', blur)
@@ -406,8 +430,10 @@ function ReviewWorkspace({ id }: { id: string }) {
     }
   }, [])
 
-  // 键盘：↑↓ 切换字段，Enter 确认（多选了原文就是填入），Esc 取消，Delete 清空，
-  // ⌘/Ctrl + Enter 在选中的这一行下面插入一行。审核员一天看几百张，鼠标太慢
+  // Keyboard: ↑↓ switch fields, Enter confirms (or fills multi-selected source text), Esc cancels, Delete
+  // clears,
+  // ⌘/Ctrl + Enter inserts a row below the selected row. Reviewers handle hundreds of documents a day; the
+  // mouse is too slow.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (isTyping(e.target) || values.length === 0 || reasonRequest) {
@@ -420,13 +446,13 @@ function ReviewWorkspace({ id }: { id: string }) {
         e.key === 'ArrowLeft' ||
         e.key === 'ArrowRight'
       ) {
-        // 普通字段一个一个走；商品明细 ↑↓ 按行走（同一列），←→ 在一行里左右走
+        // Regular fields one by one; in line items ↑↓ move by row (same column) and ←→ within a row.
         const next = neighbor(values, selectedId, e.key)
         if (next) {
           e.preventDefault()
           actions.current.select(next)
         } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-          e.preventDefault() // 到头了：不要让整个页面滚动
+          e.preventDefault() // At the boundary: do not scroll the whole page.
         }
       } else if (e.key === 'Escape') {
         if (drawn || draft) {
@@ -468,7 +494,7 @@ function ReviewWorkspace({ id }: { id: string }) {
 
   const back = (
     <Link to="/documents">
-      <Button icon={<ArrowLeftOutlined />}>返回列表</Button>
+      <Button icon={<ArrowLeftOutlined />}>{t('返回列表')}</Button>
     </Link>
   )
 
@@ -482,7 +508,7 @@ function ReviewWorkspace({ id }: { id: string }) {
   if (document.error) {
     const message =
       document.error instanceof ApiError ? document.error.message : String(document.error)
-    return <Result status="warning" title="打不开这个文档" subTitle={message} extra={back} />
+    return <Result status="warning" title={t('无法打开此文档')} subTitle={message} extra={back} />
   }
 
   const doc = document.data
@@ -490,8 +516,8 @@ function ReviewWorkspace({ id }: { id: string }) {
     return (
       <Result
         status="info"
-        title="还没有结果"
-        subTitle="文档处理完（待审核）之后才能在这里看。"
+        title={t('暂无结果')}
+        subTitle={t('文档处理完成（待审核）后方可在此查看。')}
         extra={back}
       />
     )
@@ -510,7 +536,8 @@ function ReviewWorkspace({ id }: { id: string }) {
   }
 
   const pagePending = values.filter((v) => v.pending_review).map((v) => v.id)
-  // 原文一致、规则通过、还没人确认的（"批量确认已验证 + 通过"）
+  // Values matching the source and passing rules that nobody has confirmed yet ("Confirm all verified and
+  // passing").
   const pageVerified = values
     .filter(
       (v) =>
@@ -522,54 +549,104 @@ function ReviewWorkspace({ id }: { id: string }) {
     )
     .map((v) => v.id)
 
-  // "完成审核"按钮：为什么现在不能点
+  // Why "Complete review" is unavailable right now.
   const finishBlocked = !can('document:review')
-    ? '你没有"完成审核"的权限，请找管理员开通'
+    ? t('你没有“完成审核”权限，请联系管理员开通')
     : pendingTotal > 0
-      ? `还有 ${pendingTotal} 个字段等待确认`
+      ? t('尚有 {{pendingTotal}} 个字段待确认', { pendingTotal })
       : null
 
   const discover = doc.extractions.some((e) => e.template === 'discover')
-  const toolbar = (
-    <Flex gap={8} wrap justify="start">
-      <RunSwitcher
-        doc={doc}
-        onChange={(next) => {
-          setRun(next)
-          select(null)
-        }}
-      />
-      {canEdit && (doc.suggestions ?? 0) > 0 && (
+  /** Less frequent actions, kept out of the toolbar so that the review actions stand out. */
+  const moreItems: MenuProps['items'] = [
+    ...(!viewingOld && can('template:manage')
+      ? [
+          {
+            key: 'from-boxes',
+            icon: <AppstoreAddOutlined />,
+            label: t('框选创建模板'),
+            onClick: () => navigate(`/templates/from-boxes/${doc.id}`),
+          },
+        ]
+      : []),
+    ...(can('document:delete') && doc.status !== 'processing'
+      ? [
+          {
+            key: 'delete',
+            icon: <DeleteOutlined />,
+            danger: true,
+            label: t('删除'),
+            onClick: () =>
+              modal.confirm({
+                title: t('删除「{{filename}}」？', { filename: doc.filename }),
+                content: t('原始文件、处理结果、审核记录和备注将全部删除，且无法恢复。删除后将打开下一份。'),
+                okText: t('删除'),
+                okButtonProps: { danger: true },
+                cancelText: t('取消'),
+                onOk: () => remove.mutateAsync(),
+              }),
+          },
+        ]
+      : []),
+  ]
+
+  /**
+   * Review actions: confirm flagged fields, confirm verified fields, complete the review. Next to the title
+   * on wide screens; first in the toolbar on narrow ones.
+   */
+  const reviewActions = (
+    <Flex gap={8} wrap justify="end">
+      {/* Always shown; greyed out when nothing is flagged, with a hover explanation. */}
+      {canEdit && (
         <Popconfirm
-          title={`沿用上一轮的 ${doc.suggestions} 个审核？`}
-          description="上次人审核过、这次值和位置都对得上的字段：一样的直接确认，上次改过的改成上次的值。"
-          okText="沿用"
-          cancelText="取消"
-          onConfirm={() => adopt.mutate()}
+          title={t('确认本单据 {{length}} 个标黄字段均正确？', { length: pagePending.length })}
+          description={t('无需逐个确认。每个字段都会记录一条确认记录，可在修改历史中查看。')}
+          okText={t('全部确认')}
+          cancelText={t('取消')}
+          disabled={pagePending.length === 0}
+          onConfirm={() => confirmMany.mutate(pagePending)}
         >
-          <Button icon={<HistoryOutlined />} loading={adopt.isPending}>
-            采纳上次的确认（{doc.suggestions}）
-          </Button>
+          <Tooltip
+            title={pagePending.length === 0 ? t('本单据已没有待确认的标黄字段') : undefined}
+          >
+            <Button
+              icon={<CheckOutlined />}
+              loading={confirmMany.isPending}
+              disabled={pagePending.length === 0}
+            >
+              {t('全部确认（{{length}}）', { length: pagePending.length })}
+            </Button>
+          </Tooltip>
         </Popconfirm>
       )}
-      {discover && canEdit && can('template:manage') && (
-        <Button type="primary" ghost icon={<AppstoreAddOutlined />} onClick={() => setSavingTemplate(true)}>
-          存成模板
-        </Button>
+      {/*
+       * Green values (matching the source and passing rules) not yet confirmed: confirm them at once, leaving
+       * "reviewed by a person" in the history.
+       */}
+      {canEdit && (
+        <Popconfirm
+          title={t('确认本单据中 {{length}} 个与原文一致且规则检查通过的字段？', { length: pageVerified.length })}
+          description={t('这些字段与原文完全一致且规则检查通过，确认后审核记录中将标记为人工已核对。')}
+          okText={t('确认')}
+          cancelText={t('取消')}
+          disabled={pageVerified.length === 0}
+          onConfirm={() => confirmMany.mutate(pageVerified)}
+        >
+          <Tooltip
+            title={
+              pageVerified.length === 0 ? t('本单据中与原文一致且规则通过的字段均已确认') : undefined
+            }
+          >
+            <Button
+              icon={<SafetyCertificateOutlined />}
+              loading={confirmMany.isPending}
+              disabled={pageVerified.length === 0}
+            >
+              {t('确认无问题字段（{{length}}）', { length: pageVerified.length })}
+            </Button>
+          </Tooltip>
+        </Popconfirm>
       )}
-      {!viewingOld && can('template:manage') && (
-        <Tooltip title="在这份单据的原图上框出要的值，建一个新模板（ADR 0047）">
-          <Button icon={<AppstoreAddOutlined />} onClick={() => navigate(`/templates/from-boxes/${doc.id}`)}>
-            框选建模板
-          </Button>
-        </Tooltip>
-      )}
-      {!viewingOld && can('document:process') && <ReprocessButton doc={doc} />}
-      {doc.status === 'done' && !viewingOld && !doc.skipped_at && can('document:review') && (
-        <SkipButton doc={doc} next={() => goTo(neighbors.data?.next ?? neighbors.data?.previous)} />
-      )}
-      {/* 字段的备注记在这张单据的第一页（几页的单据，翻到哪页都看得到） */}
-      <CommentsButton doc={doc} selected={selected} page={extraction?.page ?? page} />
       {doc.status === 'done' && !viewingOld && (
         <Tooltip title={finishBlocked}>
           <Button
@@ -579,74 +656,56 @@ function ReviewWorkspace({ id }: { id: string }) {
             loading={finish.isPending}
             onClick={() => finish.mutate()}
           >
-            完成审核
+            {t('完成审核')}
           </Button>
         </Tooltip>
       )}
-      {/* 一直显示；没有标黄的（等你确认的）就是灰的，鼠标停上去说明为什么 */}
-      {canEdit && (
+    </Flex>
+  )
+
+  const toolbar = (
+    <Flex gap={8} wrap justify="start">
+      {narrow && reviewActions}
+      <RunSwitcher
+        doc={doc}
+        onChange={(next) => {
+          setRun(next)
+          select(null)
+        }}
+      />
+      {canEdit && (doc.suggestions ?? 0) > 0 && (
         <Popconfirm
-          title={`这张单据 ${pagePending.length} 个标黄的都是对的？`}
-          description="不用一个一个点。每个都会记一条确认记录，可以在修改历史里看到。"
-          okText="全部确认"
-          cancelText="取消"
-          disabled={pagePending.length === 0}
-          onConfirm={() => confirmMany.mutate(pagePending)}
+          title={t('沿用上一轮的 {{suggestions}} 项审核结果？', { suggestions: doc.suggestions })}
+          description={t('适用于上一轮经人工审核、且本轮值与位置均一致的字段：值相同的直接确认，上一轮修改过的改为修改后的值。')}
+          okText={t('沿用')}
+          cancelText={t('取消')}
+          onConfirm={() => adopt.mutate()}
         >
-          <Tooltip
-            title={pagePending.length === 0 ? '这张单据没有标黄（等你确认）的了' : undefined}
-          >
-            <Button
-              icon={<CheckOutlined />}
-              loading={confirmMany.isPending}
-              disabled={pagePending.length === 0}
-            >
-              全部确认（{pagePending.length}）
-            </Button>
-          </Tooltip>
-        </Popconfirm>
-      )}
-      {/* 原文一致、规则也通过的（绿的）还没人点过确认：一次确认掉，审核记录里留下"人看过" */}
-      {canEdit && (
-        <Popconfirm
-          title={`确认这张单据 ${pageVerified.length} 个原文一致、规则通过的字段？`}
-          description="它们和原文完全一致、规则也没问题，确认后审核记录里会留下“人看过”。"
-          okText="确认"
-          cancelText="取消"
-          disabled={pageVerified.length === 0}
-          onConfirm={() => confirmMany.mutate(pageVerified)}
-        >
-          <Tooltip
-            title={
-              pageVerified.length === 0 ? '这张单据原文一致、规则通过的都确认过了' : undefined
-            }
-          >
-            <Button
-              icon={<SafetyCertificateOutlined />}
-              loading={confirmMany.isPending}
-              disabled={pageVerified.length === 0}
-            >
-              确认没问题的（{pageVerified.length}）
-            </Button>
-          </Tooltip>
-        </Popconfirm>
-      )}
-      <ExportButton ids={[doc.id]} languages={languages} language={language} onLanguage={setLanguage} />
-      {can('document:delete') && doc.status !== 'processing' && (
-        <Popconfirm
-          title={`删除「${doc.filename}」？`}
-          description="原始文件、处理结果、审核记录、备注都会删掉，不能恢复。删完打开下一份。"
-          okText="删除"
-          okButtonProps={{ danger: true }}
-          cancelText="取消"
-          onConfirm={() => remove.mutate()}
-        >
-          <Button danger icon={<DeleteOutlined />} loading={remove.isPending}>
-            删除
+          <Button icon={<HistoryOutlined />} loading={adopt.isPending}>
+            {t('沿用上一轮审核（{{suggestions}}）', { suggestions: doc.suggestions })}
           </Button>
         </Popconfirm>
       )}
-      {back}
+      {discover && canEdit && can('template:manage') && (
+        <Button type="primary" ghost icon={<AppstoreAddOutlined />} onClick={() => setSavingTemplate(true)}>
+          {t('保存为模板')}
+        </Button>
+      )}
+      {!viewingOld && can('document:process') && <ReprocessButton doc={doc} />}
+      {doc.status === 'done' && !viewingOld && !doc.skipped_at && can('document:review') && (
+        <SkipButton doc={doc} next={() => goTo(toReview)} />
+      )}
+      {/*
+       * Field comments are recorded on the document's first page (visible from any page of a multi-page
+       * document).
+       */}
+      <CommentsButton doc={doc} selected={selected} page={extraction?.page ?? page} />
+      <ExportButton ids={[doc.id]} languages={languages} language={language} onLanguage={setLanguage} />
+      {moreItems.length > 0 && (
+        <Dropdown menu={{ items: moreItems }} trigger={['click']}>
+          <Button icon={<EllipsisOutlined />}>{t('更多')}</Button>
+        </Dropdown>
+      )}
     </Flex>
   )
 
@@ -654,37 +713,42 @@ function ReviewWorkspace({ id }: { id: string }) {
     <Card
       title={
         <Flex align="center" gap={12} wrap>
+          <Tooltip title={t('返回列表')}>
+            <Link to={listPath} aria-label={t('返回列表')}>
+              <Button type="text" icon={<ArrowLeftOutlined />} />
+            </Link>
+          </Tooltip>
           <Space.Compact>
-            <Tooltip title="上一份待审核的">
+            <Tooltip title={t('上一份')}>
               <Button
                 icon={<LeftOutlined />}
-                aria-label="上一份"
+                aria-label={t('上一份')}
                 disabled={!neighbors.data?.previous}
                 onClick={() => goTo(neighbors.data?.previous)}
               />
             </Tooltip>
-            <Tooltip
-              title={
-                neighbors.data
-                  ? `下一份待审核的（除了这份还有 ${neighbors.data.remaining} 份）`
-                  : '下一份待审核的'
-              }
-            >
+            <Tooltip title={t('下一份')}>
               <Button
                 icon={<RightOutlined />}
-                aria-label="下一份"
+                aria-label={t('下一份')}
                 disabled={!neighbors.data?.next}
                 onClick={() => goTo(neighbors.data?.next)}
               />
             </Tooltip>
           </Space.Compact>
+          {neighbors.data?.position != null && (
+            <Typography.Text type="secondary">
+              {t('第 {{position}} / {{total}} 份', { position: neighbors.data.position, total: neighbors.data.total })}
+            </Typography.Text>
+          )}
           <Typography.Text strong ellipsis style={{ maxWidth: narrow ? 200 : 360 }}>
             {doc.filename}
           </Typography.Text>
           <StatusTag status={doc.status} />
         </Flex>
       }
-      // 按钮多：放到标题下面一行，不和文件名挤在一起
+      extra={narrow ? undefined : reviewActions}
+      // The other actions go on a line below the title instead of crowding the file name.
       styles={{ body: { paddingTop: 16 } }}
     >
       <div style={{ marginBottom: 12 }}>{toolbar}</div>
@@ -694,11 +758,14 @@ function ReviewWorkspace({ id }: { id: string }) {
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          title={doc.status === 'failed' ? '重新处理失败了，下面是上一轮的结果' : '正在重新处理'}
+          title={doc.status === 'failed' ? t('重新处理失败，以下为上一轮结果') : t('正在重新处理')}
           description={
             doc.status === 'failed'
               ? doc.error
-              : `${doc.stage ?? '排队中'}${doc.progress !== null ? `（${doc.progress}%）` : ''}。下面是上一轮的结果，只能查看；处理完会自动换成新结果。`
+              : t('{{stage}}{{progress}}。以下为上一轮结果，仅供查看；处理完成后将自动更新为新结果。', {
+                  stage: doc.stage ?? t('排队中'),
+                  progress: doc.progress !== null ? t('（{{progress}}%）', { progress: doc.progress }) : '',
+                })
           }
         />
       )}
@@ -707,10 +774,10 @@ function ReviewWorkspace({ id }: { id: string }) {
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          title={`这是第 ${doc.viewing_run} 轮的旧结果，只能查看`}
+          title={t('此为第 {{viewing_run}} 轮的历史结果，仅供查看', { viewing_run: doc.viewing_run })}
           action={
             <Button size="small" onClick={() => setRun(undefined)}>
-              回到现在的结果
+              {t('返回当前结果')}
             </Button>
           }
         />
@@ -719,8 +786,8 @@ function ReviewWorkspace({ id }: { id: string }) {
         <Tip
           id="review-discover"
           style={{ marginBottom: 12 }}
-          title="这份没有用模板，抽出了单据上所有的键值对"
-          description='看一下哪些是要的、值对不对，然后点"存成模板"：选字段、起中文名，以后同类单据直接用这个模板。'
+          title={t('本文档未使用模板，已抽取单据上的所有键值对')}
+          description={t('核对所需字段及其值，然后点击“保存为模板”：选择字段并命名，同类单据此后可直接使用该模板。')}
         />
       )}
       {currentExtraction?.source_notes?.map((note) => (
@@ -740,7 +807,7 @@ function ReviewWorkspace({ id }: { id: string }) {
         >
           {drawn && selected && (
             <RegionPanel
-              key={drawn.join(',')} // 换了框，重新识别的结果清空
+              key={drawn.join(',')} // Box changed: clear the re-recognition result.
               documentId={doc.id}
               page={page}
               box={drawn}
@@ -751,7 +818,7 @@ function ReviewWorkspace({ id }: { id: string }) {
               type={selected.type}
               collecting={collecting}
               onUseText={(text, byModel, transcription) =>
-                applyBox(drawn, text, byModel ? '模型看原图读的，人核对过' : '', transcription)
+                applyBox(drawn, text, byModel ? t('由模型读取原图，已经人工核对') : '', transcription)
               }
               onCancel={() => {
                 setDraft(null)
@@ -764,12 +831,12 @@ function ReviewWorkspace({ id }: { id: string }) {
               type="info"
               showIcon
               style={{ marginBottom: 8 }}
-              title="框好了。先在右边选中要填的字段"
+              title={t('已框选。请先在右侧选择要填写的字段')}
             />
           )}
           {checking !== null && selected && (
             <TranscriptionPanel
-              key={checking} // 换了一块原文，输入框重新开始
+              key={checking} // Another source block: restart the input.
               ocrText={ocr.data?.lines[checking]?.text ?? ''}
               label={displayLabel(values, selected)}
               busy={revise.isPending}
@@ -784,9 +851,9 @@ function ReviewWorkspace({ id }: { id: string }) {
               type="info"
               showIcon
               style={{ marginBottom: 8 }}
-              title={`已选 ${picked.length} 块原文：「${picked
+              title={t('已选 {{length}} 块原文：「{{join}}」', { length: picked.length, join: picked
                 .map((i) => ocr.data?.lines[i]?.text ?? '')
-                .join(' ')}」`}
+                .join(' ') })}
               action={
                 <Flex gap={8}>
                   <Button
@@ -795,10 +862,10 @@ function ReviewWorkspace({ id }: { id: string }) {
                     loading={revise.isPending}
                     onClick={() => applyPick(picked)}
                   >
-                    填入「{displayLabel(values, selected)}」（Enter）
+                    {t('填入「{{displayLabel}}」（Enter）', { displayLabel: displayLabel(values, selected) })}
                   </Button>
                   <Button size="small" onClick={() => setPicked([])}>
-                    取消（Esc）
+                    {t('取消（Esc）')}
                   </Button>
                 </Flex>
               }
@@ -830,17 +897,20 @@ function ReviewWorkspace({ id }: { id: string }) {
             draft={draft}
             onDraft={(box) => {
               setDraft(box)
-              setDrawn(null) // 又在拖了：上一个框作废
+              setDrawn(null) // Dragging again: discard the previous box.
             }}
             onDraftDone={setDrawn}
             extra={
               <>
-                {/* 上一项、下一项：和键盘 ↑↓ 一样（商品明细里是上一行、下一行的同一列） */}
-                <Tooltip title="上一项（↑）">
+                {/*
+                 * Previous and next item: same as ↑↓ (in line items, the same column in the previous or next
+                 * row).
+                 */}
+                <Tooltip title={t('上一项（↑）')}>
                   <Button
                     size="small"
                     icon={<UpOutlined />}
-                    aria-label="上一项"
+                    aria-label={t('上一项')}
                     disabled={!neighbor(values, selectedId, 'ArrowUp')}
                     onClick={() => {
                       const prev = neighbor(values, selectedId, 'ArrowUp')
@@ -848,11 +918,11 @@ function ReviewWorkspace({ id }: { id: string }) {
                     }}
                   />
                 </Tooltip>
-                <Tooltip title={selected ? '下一项（↓）' : '从第一项开始（↓）'}>
+                <Tooltip title={selected ? t('下一项（↓）') : t('从第一项开始（↓）')}>
                   <Button
                     size="small"
                     icon={<DownOutlined />}
-                    aria-label="下一项"
+                    aria-label={t('下一项')}
                     disabled={!neighbor(values, selectedId, 'ArrowDown')}
                     onClick={() => {
                       const next = neighbor(values, selectedId, 'ArrowDown')
@@ -861,7 +931,7 @@ function ReviewWorkspace({ id }: { id: string }) {
                   />
                 </Tooltip>
                 {canEdit && (
-                <Tooltip title="选中的字段值是对的（Enter）">
+                <Tooltip title={t('所选字段值正确（Enter）')}>
                   <Button
                     size="small"
                     type={selected?.pending_review ? 'primary' : 'default'}
@@ -870,7 +940,7 @@ function ReviewWorkspace({ id }: { id: string }) {
                     loading={revise.isPending && revise.variables?.change.action === 'confirm'}
                     onClick={confirmSelected}
                   >
-                    确认
+                    {t('确认')}
                   </Button>
                 </Tooltip>
                 )}
@@ -878,7 +948,10 @@ function ReviewWorkspace({ id }: { id: string }) {
             }
           />
         </div>
-        {/* 右边分上下两块：上面是选中字段的详情（固定，不用往下翻），下面是字段和商品明细（自己滚动） */}
+        {/*
+         * The right side has two parts: details of the selected field on top (pinned, no scrolling) and
+         * fields and line items below (scrolling independently).
+         */}
         <Flex
           vertical
           gap={8}
@@ -899,37 +972,38 @@ function ReviewWorkspace({ id }: { id: string }) {
                 onClear={() => askClear(selected, displayLabel(values, selected))}
                 onClose={() => select(null)}
                 onAdjustBox={() => {
-                  // 打开框选，从这个字段现在的框开始：可以直接"重新识别这块"，也可以先拖到对的位置
+                  // Open region mode starting from this field's current box: re-recognize directly, or drag
+                  // it to the right place first.
                   const box = (selected.current_evidence ?? selected.evidence)?.bbox ?? null
                   setPicked([])
                   setDrawOn(true)
                   setDraft(box)
                   setDrawn(box)
                   if (!box) {
-                    void message.info('在左边原图上拖出一个框')
+                    void message.info(t('在左侧原图上拖动框选区域'))
                   }
                 }}
               />
             </div>
           )}
-          {languages.length > 1 && (
-            <Flex align="center" gap={8} style={{ marginBottom: 8 }}>
-              <Typography.Text type="secondary">字段名</Typography.Text>
-              <Select
-                data-keep-selection
-                size="small"
-                aria-label="字段名的语言"
-                value={language}
-                options={languageOptions(languages)}
-                onChange={setLanguage}
-                style={{ minWidth: 140 }}
-              />
-            </Flex>
-          )}
           <div style={{ flex: 1, minHeight: 0, overflow: 'auto', paddingRight: 4 }}>
           {extraction ? (
             <FieldPanel
               extraction={{ ...extraction, values }}
+              headerExtra={
+                languages.length > 1 ? (
+                  <Select
+                    data-keep-selection
+                    size="small"
+                    prefix={t('字段名')}
+                    aria-label={t('字段名的语言')}
+                    value={language}
+                    options={languageOptions(languages)}
+                    onChange={setLanguage}
+                    style={{ minWidth: 150 }}
+                  />
+                ) : undefined
+              }
               sortMode={sortMode}
               comments={openCommentsOnPage(comments.data, extraction.page)}
               onSortMode={(mode) => {
@@ -946,11 +1020,11 @@ function ReviewWorkspace({ id }: { id: string }) {
               onAddRow={addRow}
               onDeleteRow={(table, row) =>
                 setReasonRequest({
-                  title: `删除第 ${row.display} 行`,
+                  title: t('删除第 {{display}} 行', { display: row.display }),
                   description:
-                    '这一行变成灰色、划掉，不算进商品合计，导出时也没有。可以随时恢复。',
-                  placeholder: '比如：这是会员号，不是商品',
-                  okText: '删除',
+                    t('此行将显示为灰色删除线，不计入明细合计，也不会导出；可随时恢复。'),
+                  placeholder: t('例如：此为会员号，不是商品'),
+                  okText: t('删除'),
                   danger: true,
                   onOk: (reason) =>
                     rows.mutate(
@@ -961,16 +1035,16 @@ function ReviewWorkspace({ id }: { id: string }) {
                         index: row.index,
                         reason,
                       },
-                      { onSuccess: () => select(null) }, // 选中的格子可能就在删掉的这一行
+                      { onSuccess: () => select(null) }, // The selected cell may be in the deleted row.
                     ),
                 })
               }
               onRestoreRow={(table, row) =>
                 setReasonRequest({
-                  title: '恢复这一行',
-                  description: '恢复成删除之前的值。',
-                  placeholder: '比如：删错了',
-                  okText: '恢复',
+                  title: t('恢复此行'),
+                  description: t('恢复为删除前的值。'),
+                  placeholder: t('例如：误删'),
+                  okText: t('恢复'),
                   onOk: (reason) =>
                     rows.mutate({
                       kind: 'restore',
@@ -983,7 +1057,7 @@ function ReviewWorkspace({ id }: { id: string }) {
               }
             />
           ) : (
-            <Empty description="这一页没有抽取结果" />
+            <Empty description={t('此页无抽取结果')} />
           )}
           </div>
         </Flex>
@@ -997,14 +1071,15 @@ function ReviewWorkspace({ id }: { id: string }) {
 }
 
 
-/** 第 page 页属于哪一张单据（哪一条抽取记录）。 */
+/** Document (extraction) containing page page. */
 function coveringExtraction(extractions: Extraction[], page: number): Extraction | undefined {
   return extractions.find((e) => e.page <= page && page <= (e.last_page ?? e.page))
 }
 
 /**
- * 翻页（ADR 0036）：一个文件有几张单据时，上面一排是单据（"单据 2 · 第 3–4 页"），
- * 选中的单据有好几页时，下面一排是它的页。只有一张一页的单据就什么都不显示。
+ * Pagination: when a file contains several documents, the upper bar lists documents ("Document 2 · pages
+ * 3–4"); when the selected document has several pages, the lower bar lists its pages. Nothing is shown for a
+ * single one-page document.
  */
 function PageTabs({
   doc,
@@ -1015,10 +1090,11 @@ function PageTabs({
   page: number
   onChange: (page: number) => void
 }) {
+  const { t } = useTranslation()
   const parts = doc.extractions
   const current = coveringExtraction(parts, page)
   const range = (e: Extraction) =>
-    (e.last_page ?? e.page) === e.page ? `第 ${e.page} 页` : `第 ${e.page}–${e.last_page} 页`
+    (e.last_page ?? e.page) === e.page ? t('第 {{page}} 页', { page: e.page }) : t('第 {{page}}–{{last_page}} 页', { page: e.page, last_page: e.last_page })
   const pages = current ? (current.last_page ?? current.page) - current.page + 1 : doc.page_count
   if (parts.length <= 1 && pages <= 1 && doc.page_count <= 1) return null
   return (
@@ -1034,7 +1110,11 @@ function PageTabs({
             const pending = e.values.filter((v) => v.pending_review).length
             return {
               value: e.id,
-              label: `单据 ${i + 1} · ${range(e)}${pending ? `（${pending} 待确认）` : ''}`,
+              label: t('单据 {{n}} · {{range}}{{pending}}', {
+                n: i + 1,
+                range: range(e),
+                pending: pending ? t('（{{pending}} 待确认）', { pending }) : '',
+              }),
             }
           })}
         />
@@ -1045,7 +1125,7 @@ function PageTabs({
           value={page}
           onChange={(value) => onChange(Number(value))}
           options={Array.from({ length: pages }, (_, i) => ({
-            label: `第 ${current.page + i} 页`,
+            label: t('第 {{value}} 页', { value: current.page + i }),
             value: current.page + i,
           }))}
         />
@@ -1055,7 +1135,7 @@ function PageTabs({
           value={page}
           onChange={(value) => onChange(Number(value))}
           options={Array.from({ length: doc.page_count }, (_, i) => ({
-            label: `第 ${i + 1} 页`,
+            label: t('第 {{value}} 页', { value: i + 1 }),
             value: i + 1,
           }))}
         />

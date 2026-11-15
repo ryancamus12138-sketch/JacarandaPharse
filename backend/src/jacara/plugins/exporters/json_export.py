@@ -1,5 +1,5 @@
-"""导出 JSON：给别的程序读。内容和 Excel 一样（审核之后的值，模板里设成不导出的不写），
-结构是嵌套的。
+"""JSON export for other programs. Same content as Excel (post-review values; items set not to
+export are omitted), as a nested structure.
 
     {
       "format": "jacarandaparse.export.v1",
@@ -7,13 +7,13 @@
       "documents": [
         {
           "id": "…", "filename": "receipt.jpg", "status": "reviewed",
-          "units": [                         # 一个文件里的每张单据
+          "units": [                         # every document within the file
             {
               "pages": [1, 1], "template": "receipt", "template_version": 3,
               "fields": {"total": 9.0, "date": "2018-12-25"},
               "tables": {"items": [{"name": "PC", "amount": 9.0}]},
-              "labels": {"total": "总额", "items": "商品明细", "items.amount": "金额"},
-              "needs_review": ["change"],     # 还等人确认的字段
+              "labels": {"total": "Total", "items": "Line items", "items.amount": "Amount"},
+              "needs_review": ["change"],     # fields still awaiting confirmation
               "issues": [{"rule": "…", "message": "…", "fields": ["change"]}]
             }
           ]
@@ -21,8 +21,8 @@
       ]
     }
 
-数字是数字（9.0），日期是 YYYY-MM-DD 文字，日期范围按模板的设置；表格按显示顺序从第 1 行排。
-"""
+Numbers are numbers (9.0), dates are YYYY-MM-DD strings, date ranges follow the template setting;
+tables are listed in display order starting at row 1."""
 
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any
 
+from jacara.core.i18n import render
 from jacara.plugins.exporters.base import DocumentReport
 from jacara.plugins.exporters.excel import _fields, _reasons, cell_value
 from jacara.plugins.extractors.base import split_cell_name
@@ -45,7 +46,7 @@ def _plain(value: object) -> object:
 
 
 def unit_json(report: DocumentReport) -> dict[str, Any]:
-    """一张单据。"""
+    """One document within a file."""
     fields: dict[str, object] = {}
     tables: dict[str, dict[int, dict[str, object]]] = {}
     pending: list[str] = []
@@ -68,7 +69,7 @@ def unit_json(report: DocumentReport) -> dict[str, Any]:
         "labels": dict(report.labels),
         "needs_review": pending,
         "issues": [
-            {"rule": i.rule, "message": i.message, "fields": list(i.fields)}
+            {"rule": i.rule, "message": render(i.message), "fields": list(i.fields)}
             for i in report.checks.issues
         ],
     }
@@ -78,7 +79,8 @@ def to_json(
     documents: Sequence[tuple[dict[str, Any], Sequence[DocumentReport]]],
     exported_at: datetime,
 ) -> bytes:
-    """[(文档的基本信息, 它的每张单据)] → JSON（UTF-8，缩进两格，中文不转义）。"""
+    """[(document metadata, its sub-documents)] → JSON (UTF-8, two-space indent, non-ASCII
+    characters unescaped)."""
     content = {
         "format": FORMAT,
         "exported_at": exported_at.isoformat(timespec="seconds"),

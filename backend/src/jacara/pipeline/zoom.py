@@ -1,8 +1,9 @@
-"""局部放大再识别（ADR 0042）：字段有冲突、可能漏读时，把那一块放大重新画、重新认一次。
+"""Zoomed re-recognition: for conflicting or possibly missed fields, re-render the region enlarged
+and recognize it again.
 
-PDF 按 ZOOM_SCALE 重新渲染这一页（比整页 OCR 时清楚得多）；图片用原图（整页 OCR 时可能被缩小过）。
-结果只当作一个候选，不会自己替换掉值。
-"""
+PDF pages are re-rendered at ZOOM_SCALE (much sharper than for full-page OCR); images use the
+original (full-page OCR may have downscaled it). The result is only a candidate and never
+replaces the value automatically."""
 
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from jacara.core.i18n import stored
 from jacara.pipeline.pages import local_box
 from jacara.pipeline.region import read_region
 from jacara.plugins.aligners.base import Candidate
@@ -20,12 +22,13 @@ from jacara.plugins.ocr.loader import IMAGE_SUFFIXES, PDF_SCALE, page_png
 log = logging.getLogger(__name__)
 
 ZOOM_SCALE = 5.0
-"""局部放大时 PDF 的渲染倍数：5 × 72 = 360 DPI（整页 OCR 用的是 216 DPI）。"""
+"""PDF render scale for zoomed regions: 5 × 72 = 360 DPI (full-page OCR uses 216 DPI)."""
 
 
 @dataclass
 class Zoom:
-    """一张单据（file 的第 first 页起，几页拼成一页时 starts 是每页的起点）的局部放大再识别。"""
+    """Zoomed re-recognition for one document (starting at page first of file; starts holds the page
+    offsets when pages are stacked)."""
 
     file: Path
     ocr: OcrEngine
@@ -53,17 +56,23 @@ class Zoom:
         return self._pages[index]
 
     def __call__(self, box: Sequence[float]) -> Candidate | None:
-        """长页上 box 这一块再认一次。没认出字返回 None。"""
+        """Recognize box on the tall page again. None if no text is recognized."""
         index, local = local_box(box, self.starts)
         factor = ZOOM_SCALE / PDF_SCALE if self.is_pdf else 1.0
         try:
             text, confidence = read_region(self._png(index), [v * factor for v in local], self.ocr)
-        except Exception:  # 放大再认只是多一个读法：出错（文件读不了、框太小）就当没认出来
+        # Zoomed re-recognition only adds a reading: on errors (unreadable file, box too small)
+        # treat it as nothing recognized.
+        except Exception:
             log.warning("局部放大再识别出错：%s %s", self.file.name, box, exc_info=True)
             return None
         if not text:
             return None
-        where = f"局部放大到 {self.dpi} DPI 再识别" if self.is_pdf else "用原图局部再识别"
+        where = (
+            stored("局部放大至 {dpi} DPI 后识别", dpi=self.dpi)
+            if self.is_pdf
+            else stored("使用原图局部重新识别")
+        )
         x0, y0, x1, y1 = box
         return Candidate(
             "zoom", text, (x0, y0, x1, y1), confidence, note=where, dpi=self.dpi or None

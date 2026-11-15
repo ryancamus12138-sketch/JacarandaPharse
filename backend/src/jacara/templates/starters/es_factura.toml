@@ -14,7 +14,17 @@ titles = { en = "Invoice (Spain)", es = "Factura" }
 countries = ["ES"]
 domains = ["发票"]
 description = "西班牙的 factura：系列和编号、日期、开票方和收票方的名称 NIF 地址、描述、各税率的计税基础、税率和税额、总额。NIF 校验不对、税率不是 21/10/4%、factura simplificada 超过 400 € 会提醒。"
+descriptions = { en = "Spanish invoices (factura): series and number, date, names, NIFs and addresses of the issuer and recipient, description, tax base per rate, rate and tax, total. Invalid NIF checks, rates other than 21/10/4%, and factura simplificada above 400 € are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "es_seller_nif", "es_buyer_nif", "es_rates", "es_simplificada"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Spanish full invoices / simplified invoices (factura completa / factura simplificada).",
+  "Basis: Royal Decree 1619/2012 (Invoicing Regulation) art. 6: number and series, date, name and NIF of the issuer and recipient, address, description, tax base, tax rate, tax amount, date of the transaction if different; art. 4 and 7: simplified invoices up to 400 € (or 3,000 € in retail, hospitality, passenger transport and the other sectors of art. 4.1). VAT 21 / 10 / 4 % (Law 37/1992 art. 90–91). NIF: DNI, NIE and CIF each have their own check.",
+  "Use: invoicing by Spanish businesses, deduction of input VAT (IVA soportado), expense claims.",
+  "Sources: invoicedataextraction \"Spain VAT invoice requirements\"; BOE A-2012-14696.",
+]
 
 [[fields]]
 name = "document_title"
@@ -22,6 +32,7 @@ label = "单据标题"
 names = { en = "Document Title", es = "Tipo de factura" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 aliases = ["Tipo de factura"]
 
 [[fields]]
@@ -39,6 +50,7 @@ type = "string"
 required = true
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 aliases = ["Número de factura"]
 
 [[fields]]
@@ -55,6 +67,7 @@ label = "交易日期"
 names = { en = "Date of Supply", es = "Fecha de operación" }
 type = "date"
 description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+descriptions = { en = "The date of supply of goods or services; leave empty if it equals the issue date or is not given" }
 aliases = ["Fecha de operación"]
 
 [[fields]]
@@ -78,6 +91,7 @@ label = "卖方税号"
 names = { en = "Seller Tax ID", es = "NIF del emisor" }
 type = "string"
 description = "照抄，带上字母和分隔符"
+descriptions = { en = "Copy it as written, with letters and separators" }
 aliases = ["NIF del emisor"]
 
 [[fields]]
@@ -100,6 +114,7 @@ label = "买方税号"
 names = { en = "Buyer Tax ID", es = "NIF del destinatario" }
 type = "string"
 description = "照抄；没有就留空"
+descriptions = { en = "Copy it as written; leave empty if absent" }
 aliases = ["NIF del destinatario"]
 
 [[fields]]
@@ -129,6 +144,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", es = "Conceptos" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -157,6 +173,7 @@ label = "金额"
 names = { en = "Amount", es = "Importe" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["Importe"]
 
 [[tables.columns]]

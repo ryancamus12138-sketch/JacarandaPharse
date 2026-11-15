@@ -1,22 +1,28 @@
-"""命令行入口：`jacara`。
+"""Command-line entry point: `jacara` (run through `uv run`).
 
-uv run jacara --version
-uv run jacara ocr 图片或PDF                      识别文字（PDF 有文字层时直接读取）
-uv run jacara serve --model 模型.gguf            启动本地大模型服务
-uv run jacara extract 图片或PDF                  识别、抽取字段并核对出处（要先启动模型服务）
-uv run jacara templates                          列出所有模板
-uv run jacara doctor                             检查数据库、队列、对象存储、本地模型是否连得上
-uv run jacara start                              一起启动模型、后台任务和 Web 服务，自动打开浏览器
-uv run jacara start --model 模型.gguf            指定模型文件（不写就用 models/ 里唯一的 .gguf）
-uv run jacara stop                               停掉 jacara start 启动的全部（在别的终端也行）
-uv run jacara backfill-ocr                       给更新前处理的文档补上 OCR 结果，不用重新上传
-uv run jacara api                                只启动 Web 服务（开发时加 --reload）
-uv run jacara worker                             只启动后台任务，处理通过 API 上传的文件
-uv run jacara user add 用户名 --role admin        新建用户（团队模式的第一个管理员用它建）
-uv run jacara user add 用户名 --allow value:review    新建使用者，并开通"修改和确认字段"
-uv run jacara user password 用户名                重设密码（只给能操作服务器的人应急用）
-uv run jacara eval download                      下载 SROIE 评测集（开发用，要联网）
-uv run jacara eval sroie --limit 20              在 SROIE 上评测前 20 张（要先启动模型服务）
+Usage:
+  jacara --version
+  jacara ocr FILE                            Recognize text (uses the PDF text layer if present)
+  jacara serve --model MODEL.gguf            Start the local LLM server
+  jacara extract FILE                        Recognize, extract fields, locate evidence
+                                             (requires the model server)
+  jacara templates                           List templates
+  jacara doctor                              Check database, queue, object storage, local model
+  jacara start [--model MODEL.gguf]          Start model, workers and web service; open the
+                                             browser (default model: the only .gguf in models/)
+  jacara stop                                Stop everything started by `jacara start`
+  jacara desktop                             Run all services for the desktop app (data directory:
+                                             JACARA_HOME)
+  jacara backfill-ocr                        Store OCR results for documents processed by
+                                             older versions
+  jacara api [--reload]                      Start the web service only
+  jacara worker                              Start the background worker only
+  jacara user add NAME --role admin          Create a user (first administrator in team mode)
+  jacara user add NAME --allow value:review  Create a member with "edit and confirm values"
+  jacara user password NAME                  Reset a password (server operators only)
+  jacara eval download                       Download the SROIE evaluation set (requires network)
+  jacara eval sroie --limit 20               Evaluate the first 20 SROIE receipts
+                                             (requires the model server)
 """
 
 from __future__ import annotations
@@ -27,9 +33,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from jacara import __version__
+from jacara.core.config import data_home
+from jacara.core.i18n import render
 
 if TYPE_CHECKING:
-    # 只给类型检查用，运行时不导入：jacara --version 不用加载 OCR 和模型相关的库。
+    # Imported for type checking only, so that `jacara --version` does not load OCR and model
+    # libraries.
     import subprocess
 
     from jacara.core.config import Settings
@@ -86,6 +95,13 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("templates", help="列出所有模板（backend/src/jacara/templates/*.toml）")
 
     sub.add_parser("doctor", help="检查数据库、任务队列、对象存储、本地模型是否连得上")
+    p_setup = sub.add_parser(
+        "setup",
+        help="第一次安装：生成 .env、启动数据库等、建表、检查模型（可以重复运行）",
+    )
+    p_setup.add_argument(
+        "--no-docker", action="store_true", help="不启动 Docker（数据库等已经用别的办法跑起来了）"
+    )
 
     p_api = sub.add_parser("api", help="启动 Web 服务（API 和接口文档）")
     p_api.add_argument("--port", type=int, default=8000, help="端口，默认 8000")
@@ -98,11 +114,11 @@ def main(argv: list[str] | None = None) -> int:
         "--stage",
         choices=["all", "read", "extract"],
         default="all",
-        help="做哪一段（ADR 0051）：all 从头做到尾（默认）；read 只认字；extract 只调模型抽取",
+        help="做哪一段：all 从头做到尾（默认）；read 只认字；extract 只调模型抽取",
     )
 
     p_watch = sub.add_parser(
-        "watch", help="监视一个文件夹，放进去的图片和 PDF 自动导入（Ctrl + C 停止）"
+        "watch", help="监视文件夹，放进去的图片和 PDF 自动导入（Ctrl + C 停止）"
     )
     p_watch.add_argument(
         "folder", type=Path, nargs="?", help="要监视的文件夹；不写就用 .env 里的 JACARA_WATCH_DIR"
@@ -125,6 +141,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_start.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     sub.add_parser("stop", help="停掉 jacara start 启动的全部（模型、后台任务、Web 服务）")
+    sub.add_parser(
+        "desktop",
+        help="桌面版使用：以 JACARA_HOME 为数据目录启动全部服务（由桌面程序调用）",
+    )
     p_backup = sub.add_parser(
         "backup", help="备份：数据库和对象存储里的文件打进一个包（先 jacara stop）"
     )
@@ -150,9 +170,7 @@ def main(argv: list[str] | None = None) -> int:
     p_sroie.add_argument("--limit", type=int, help="只评前 N 张，先少量试跑")
     p_sroie.add_argument("--out", type=Path, default=Path("results/eval"), help="结果放在哪里")
     p_sroie.add_argument("--server", default="http://127.0.0.1:8080", help="模型服务地址")
-    p_pairs = eval_sub.add_parser(
-        "pairs", help="成对测评：同一张单据的照片和 PDF，比较几种读法（ADR 0042）"
-    )
+    p_pairs = eval_sub.add_parser("pairs", help="成对测评：同一张单据的照片和 PDF，比较几种读法")
     p_pairs.add_argument(
         "--manifest", type=Path, default=Path("data/eval/pairs.toml"), help="成对样本清单"
     )
@@ -169,12 +187,12 @@ def main(argv: list[str] | None = None) -> int:
     p_pairs.add_argument(
         "--learn",
         type=Path,
-        help="导出的审核数据里的 train.jsonl：用别的单据人改过的例子（ADR 0045），看能不能少错",
+        help="导出的审核数据里的 train.jsonl：用别的单据人改过的例子，看能不能少错",
     )
 
     p_replay = eval_sub.add_parser(
         "replay",
-        help="回放：审核完成的单据用当时的 OCR 快照换一种设置再抽，和人审核过的值比（ADR 0053）",
+        help="回放：审核完成的单据用当时的 OCR 快照换一种设置再抽，和人审核过的值比",
     )
     p_replay.add_argument(
         "--b", required=True, help="要试的一边：模型服务地址，例如 http://127.0.0.1:8080"
@@ -184,9 +202,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_replay.add_argument("--a-label", help="A 边叫什么（写进结果），默认按设置生成")
     p_replay.add_argument("--b-label", help="B 边叫什么")
-    learn_help = (
-        "带上以前人改过的例子：recent（默认，最近改得多的）或 curated（整理过的，ADR 0055）"
-    )
+    learn_help = "带上以前人改过的例子：recent（默认，最近改得多的）或 curated（整理过的）"
     p_replay.add_argument(
         "--a-learn",
         nargs="?",
@@ -218,7 +234,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_ocr_eval = eval_sub.add_parser(
         "ocr",
-        help="OCR 模型评测：在数据集上比较两个识别（或检测）模型（ADR 0060）",
+        help="OCR 模型评测：在数据集上比较两个识别（或检测）模型",
     )
     source = p_ocr_eval.add_mutually_exclusive_group(required=True)
     source.add_argument(
@@ -248,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
         "--out", type=Path, default=Path("results/eval"), help="结果放在哪里（只在本机）"
     )
 
-    p_models = sub.add_parser("models", help="模型库（ADR 0059）：离线导入权重、列出版本")
+    p_models = sub.add_parser("models", help="模型库：离线导入权重、列出版本")
     models_sub = p_models.add_subparsers(dest="models_command", required=True)
     models_sub.add_parser("list", help="列出模型库里的模型和版本")
     p_import = models_sub.add_parser(
@@ -288,6 +304,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "doctor":
         return _doctor()
+    if args.command == "setup":
+        from jacara.core.config import PROJECT_ROOT
+        from jacara.ops.setup import run_setup
+
+        return run_setup(PROJECT_ROOT, docker=not args.no_docker)
     if args.command == "templates":
         return _templates()
     if args.command == "api":
@@ -302,6 +323,10 @@ def main(argv: list[str] | None = None) -> int:
         return _backup_commands(args)
     if args.command == "stop":
         return _stop_running()
+    if args.command == "desktop":
+        from jacara.desktop import run_desktop
+
+        return run_desktop()
     if args.command == "backfill-ocr":
         return _backfill_ocr()
     if args.command == "user":
@@ -341,7 +366,7 @@ def _ocr(args: argparse.Namespace) -> int:
     try:
         engine = create_ocr_engine(config)
     except ValueError as err:
-        print(err)
+        print(render(str(err)))
         return 1
 
     from jacara.plugins.ocr.loader import UnsupportedFileError, load_pages
@@ -349,7 +374,7 @@ def _ocr(args: argparse.Namespace) -> int:
     try:
         pages = load_pages(image, engine)
     except UnsupportedFileError as err:
-        print(err)
+        print(render(str(err)))
         return 1
 
     for number, page in enumerate(pages, start=1):
@@ -357,7 +382,7 @@ def _ocr(args: argparse.Namespace) -> int:
             print(f"\n===== 第 {number} / {len(pages)} 页 =====")
         size = f"{page.width}×{page.height}"
         print(f"图片 {size} · 识别出 {len(page.lines)} 行 · 用时 {page.duration_ms} 毫秒")
-        print("模型：" + " · ".join(f"{k}={v}" for k, v in page.models.items()) + "\n")
+        print("模型：" + " · ".join(f"{k}={render(v)}" for k, v in page.models.items()) + "\n")
         for i, line in enumerate(page.lines, start=1):
             x0, y0, x1, y1 = (round(v) for v in line.bbox)
             print(f"{i:>3}. [{line.confidence:.2f}] ({x0},{y0})-({x1},{y1})  {line.text}")
@@ -383,7 +408,7 @@ def _serve(args: argparse.Namespace) -> int:
     try:
         return run_server(model, port=args.port, context=args.context, mmproj=mmproj)
     except FileNotFoundError as err:
-        print(err)
+        print(render(str(err)))
         return 1
 
 
@@ -404,7 +429,7 @@ def _extract(args: argparse.Namespace) -> int:
     try:
         template = load_template(args.template)
     except TemplateError as err:
-        print(err)
+        print(render(str(err)))
         return 1
 
     from jacara.core.config import model_api_key
@@ -419,7 +444,7 @@ def _extract(args: argparse.Namespace) -> int:
     try:
         pages = pipeline.read(path)
     except UnsupportedFileError as err:
-        print(err)
+        print(render(str(err)))
         return 1
     images = page_images(path) if pipeline.needs_images() else [None] * len(pages)
 
@@ -430,10 +455,10 @@ def _extract(args: argparse.Namespace) -> int:
         judge = getattr(pipeline.extractor, "continues", None)
         parts = segments(pages, normalize_split(args.split), judge)
     except SplitError as err:
-        print(err)
+        print(render(str(err)))
         return 1
     except (ModelBackendError, ExtractionError) as err:
-        print(err)
+        print(render(str(err)))
         return 1
     reports = []
     for n, (first, last) in enumerate(parts, start=1):
@@ -441,7 +466,7 @@ def _extract(args: argparse.Namespace) -> int:
             where = f"第 {first} 页" if first == last else f"第 {first}–{last} 页"
             print(f"\n===== 第 {n} / {len(parts)} 张单据（{where}）=====")
         for page in pages[first - 1 : last]:
-            how = page.models.get("note") or page.models.get("source", "OCR 识别")
+            how = render(page.models.get("note") or page.models.get("source", "OCR 识别"))
             print(f"读取：{how} · {len(page.lines)} 块文字 · 用时 {page.duration_ms} 毫秒")
         if args.show_prompt:
             stacked = stack_pages(pages[first - 1 : last])
@@ -465,7 +490,7 @@ def _extract(args: argparse.Namespace) -> int:
                 template.name,
             )
         except (ModelBackendError, ExtractionError) as err:
-            print(err)
+            print(render(str(err)))
             return 1
         _print_report(report)
         reports.append(report)
@@ -501,7 +526,7 @@ def _save(path: Path, reports: list[DocumentReport]) -> int:
 
 
 def _print_report(report: DocumentReport) -> None:
-    """把一页的结果打印出来：每个字段的值、出处、需要确认的原因，以及规则校验。"""
+    """Print the result of one page: values, evidence, review reasons and rule checks."""
     result, aligned, checks = report.extraction, report.aligned, report.checks
     print(f"抽取：模型 {result.model} · 提示词 {result.prompt_version}", end="")
     print(f" · 用时 {result.duration_ms} 毫秒\n")
@@ -530,15 +555,15 @@ def _print_report(report: DocumentReport) -> None:
             where = f"第 {a.evidence.row} 行 · 置信度 {a.evidence.confidence:.2f}"
             print(f"{indent}{where} · 位置 ({x0},{y0})-({x1},{y1})")
         if a.needs_review:
-            print(_paint(f"{indent}需要确认：{a.note}", color))
+            print(_paint(f"{indent}需要确认：{render(a.note)}", color))
         for issue in checks.issues:
             if name in issue.fields:
-                print(_paint(f"{indent}规则不通过：{issue.title}", color))
+                print(_paint(f"{indent}规则不通过：{render(issue.title)}", color))
 
     print("\n规则校验")
     for issue in checks.issues:
         mark, color = ("✗", _RED) if issue.severity == "error" else ("!", _YELLOW)
-        print(_paint(f"  {mark} {issue.title}：{issue.message}", color))
+        print(_paint(f"  {mark} {render(issue.title)}：{render(issue.message)}", color))
     summary = f"  {len(checks.passed)} 条通过，{len(checks.issues)} 条不通过"
     if checks.skipped:
         summary += f"，{len(checks.skipped)} 条因缺字段跳过"
@@ -555,7 +580,7 @@ def _templates() -> int:
         try:
             t = load_template(name)
         except TemplateError as err:
-            print(_paint(f"✗ {err}", _RED))
+            print(_paint(f"✗ {render(str(err))}", _RED))
             continue
         labels = "、".join(f.label for f in t.fields)
         print(f"{t.name}  第 {t.version} 版  {t.title}")
@@ -563,7 +588,7 @@ def _templates() -> int:
         for table in t.tables:
             columns = "、".join(c.label for c in table.columns)
             print(f"  表格 {table.label}：{columns}")
-        print(f"  {len(t.rules)} 条规则：{'、'.join(r.title for r in t.rules)}")
+        print(f"  {len(t.rules)} 条规则：{'、'.join(render(r.title) or r.title for r in t.rules)}")
     return 0
 
 
@@ -586,7 +611,7 @@ def _doctor() -> int:
 
 
 def _ask_password() -> str | None:
-    """输入两次密码。getpass 输入时屏幕上不显示，也不会留在终端历史里。"""
+    """Prompt for a password twice. getpass does not echo and leaves no shell history."""
     from getpass import getpass
 
     from jacara.core.security import MIN_PASSWORD_LENGTH
@@ -646,7 +671,7 @@ def _user(args: argparse.Namespace) -> int:
         print(f"输入不对：{err.errors()[0]['msg']}")
         return 1
     except AuthError as err:
-        print(err.message)
+        print(render(err.message))
         return 1
     except OperationalError:
         print("连不上数据库。运行 docker compose up -d 启动，再用 uv run jacara doctor 检查")
@@ -783,7 +808,7 @@ def _eval_replay(args: argparse.Namespace) -> int:
 
 
 def _model_ref(text: str) -> dict[str, object]:
-    """current、builtin，或 名字@v版本号（版本号前的 v 可以不写）。"""
+    """Parse a model reference: current, builtin, or NAME@vVERSION (the leading v is optional)."""
     import re
 
     if text in ("current", "builtin"):
@@ -807,7 +832,7 @@ def _eval_ocr(args: argparse.Namespace) -> int:
     try:
         refs = [ModelRef.model_validate(_model_ref(x)) for x in (args.a, args.b)]
     except ValueError as err:
-        print(err)
+        print(render(str(err)))
         return 1
     try:
         if args.dataset_file:
@@ -817,10 +842,10 @@ def _eval_ocr(args: argparse.Namespace) -> int:
             data, kind, label = _dataset_bytes(args.dataset)
         parsed = dataset_files.parse(data, kind)
         task = "rec" if kind == "ocr_rec" else "det"
-        # "现在用的"、模型库版本按和网页同一套代码解析
+        # Resolve "current" and library versions with the same code as the web UI.
         raw = [resolve_arm(get_settings(), n, r, task) for n, r in zip("AB", refs, strict=True)]
     except (HubError, OSError) as err:
-        print(getattr(err, "message", err))
+        print(render(str(getattr(err, "message", err))))
         return 1
     arms = tuple(
         EvalArm(a["name"], a["label"], a["det"], a["rec"], a["dict"], a["sha256"]) for a in raw
@@ -829,7 +854,7 @@ def _eval_ocr(args: argparse.Namespace) -> int:
     try:
         result = run(data, parsed, args.split, (arms[0], arms[1]), default_engine, print)
     except ValueError as err:
-        print(err)
+        print(render(str(err)))
         return 1
     out = args.out / f"ocr-{datetime.now():%Y%m%d-%H%M%S}"
     md = write_result(result, out, label)
@@ -839,7 +864,8 @@ def _eval_ocr(args: argparse.Namespace) -> int:
 
 
 def _dataset_bytes(spec: str) -> tuple[bytes, str, str]:
-    """数据集库里的数据集（命令行看得到所有团队的，和回放一样）：名字，或 名字@版本。"""
+    """Load a dataset from the library by NAME or NAME@VERSION. The CLI can see datasets of all
+    teams."""
     from sqlalchemy import select
 
     from jacara.core.db import get_session_factory
@@ -888,7 +914,7 @@ def _models(args: argparse.Namespace) -> int:
     try:
         version = import_files(args.name, args.kind, args.file, args.dict, meta, args.description)
     except (HubError, OSError) as err:
-        print(f"导入失败：{getattr(err, 'message', err)}")
+        print(f"导入失败：{render(str(getattr(err, 'message', err)))}")
         return 1
     kind = registry.KINDS[version.kind]
     print(f"已导入 {version.name} v{version.version}（{kind}）：{version.path}")
@@ -900,7 +926,8 @@ def _models(args: argparse.Namespace) -> int:
 
 
 class _NoOcr:
-    """回放用 OCR 快照，不认字；真叫到了说明没有快照又没加 --reread。"""
+    """Placeholder OCR engine for replay, which uses OCR snapshots. Being called means a snapshot is
+    missing and --reread was not given."""
 
     name = "none"
 
@@ -932,7 +959,7 @@ def _eval(args: argparse.Namespace) -> int:
     try:
         samples = load_sroie(args.data, args.limit)
     except FileNotFoundError as err:
-        print(err)
+        print(render(str(err)))
         return 1
 
     from jacara.core.config import model_api_key
@@ -963,7 +990,8 @@ def _eval(args: argparse.Namespace) -> int:
 
 
 def _infra_problems(settings: Settings) -> list[tuple[str, str]]:
-    """启动前检查：数据库、任务队列连得上吗？数据库是不是最新版本？返回（问题，怎么解决）。"""
+    """Preflight checks: database and queue reachable, database at the latest revision. Returns
+    (problem, remedy) pairs."""
     from jacara.core.health import check_postgres, check_valkey
 
     docker = "打开 Docker Desktop（open -a Docker），等它启动好，再运行 docker compose up -d"
@@ -980,24 +1008,23 @@ def _infra_problems(settings: Settings) -> list[tuple[str, str]]:
 
 
 def _migration_behind() -> bool:
-    """数据库的版本（alembic_version）和代码里最新的迁移不一样：要先 alembic upgrade head。"""
-    from alembic.config import Config
+    """The database revision (alembic_version) differs from the latest migration; run alembic
+    upgrade head."""
     from alembic.runtime.migration import MigrationContext
     from alembic.script import ScriptDirectory
 
     from jacara.core.db import get_engine
+    from jacara.core.migrate import alembic_config
 
-    ini = Path("alembic.ini")
-    if not ini.is_file():
-        return False  # 不在项目根目录运行：查不了，不拦
-    heads = set(ScriptDirectory.from_config(Config(str(ini))).get_heads())
+    heads = set(ScriptDirectory.from_config(alembic_config()).get_heads())
     with get_engine().connect() as connection:
         current = set(MigrationContext.configure(connection).get_current_heads())
     return current != heads
 
 
 def _web_outdated(dist: Path) -> bool:
-    """web/src 里有文件比打包好的 dist/index.html 新：改了网页代码却没重新 npm run build。"""
+    """Files in web/src are newer than dist/index.html: the frontend was changed without running npm
+    run build."""
     src = dist.parent / "src"
     index = dist / "index.html"
     if not src.is_dir() or not index.is_file():
@@ -1007,7 +1034,8 @@ def _web_outdated(dist: Path) -> bool:
 
 
 def _backfill_ocr() -> int:
-    """jacara backfill-ocr：重新 OCR 原始文件，把结果补进去。抽取的值和审核记录都不动。"""
+    """jacara backfill-ocr: re-run OCR on original files and store the results. Extracted values and
+    review records are not modified."""
     from jacara.core.storage import get_storage
     from jacara.pipeline.backfill import backfill_document, missing_ocr
     from jacara.plugins.ocr import create_ocr_engine
@@ -1026,17 +1054,66 @@ def _backfill_ocr() -> int:
                 document_id, storage=storage, read=lambda path: load_pages(path, engine)
             )
             print(f"  [{n}/{len(ids)}] {document_id}：补了 {pages} 页")
-        except Exception as err:  # 一个出错不影响其他的
+        except Exception as err:  # A failure in one document does not stop the others.
             failed += 1
-            print(_paint(f"  [{n}/{len(ids)}] {document_id}：没补上（{err}）", _RED))
+            print(_paint(f"  [{n}/{len(ids)}] {document_id}：没补上（{render(str(err))}）", _RED))
     print(_paint("完成", _GREEN) if not failed else _paint(f"完成，{failed} 个没补上", _YELLOW))
     print('刷新审核页面，就能用"原文文字"和框选了。')
     return 0 if not failed else 1
 
 
+def _follow_launcher() -> None:
+    """When the desktop launcher started this process (JACARA_WATCH_STDIN=1): make its log useful
+    and exit as soon as the launcher is gone (its end of standard input closes)."""
+    import os
+
+    from jacara.desktop import WATCH_STDIN, on_stdin_closed
+
+    if os.environ.get(WATCH_STDIN) != "1":
+        return
+    _log_for_launcher()
+
+    def leave() -> None:
+        print("启动器已退出，随之退出", flush=True)
+        os._exit(0)
+
+    on_stdin_closed(leave)
+
+
+def _log_for_launcher() -> None:
+    """Make the log file useful when the desktop launcher runs this process:
+    - lines are written as they are printed (a file is otherwise block-buffered, and what is still
+      buffered is lost if the process dies);
+    - a crash in native code (OCR, PDF rendering) writes the Python stack of every thread to the
+      log before the process ends (faulthandler, Python standard library);
+    - log records at INFO and above go to the log with their time."""
+    import faulthandler
+    import logging
+    import os
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(line_buffering=True)
+    faulthandler.enable()
+    # For a process that stops making progress without output or exit: with
+    # JACARA_STACK_DUMP_SECONDS set, the Python stack of every thread is written to the log at that
+    # interval (faulthandler.dump_traceback_later, the standard library's tool for hangs; pytest's
+    # faulthandler_timeout uses it too). Off unless set; the packaging smoke test sets it.
+    every = os.environ.get("JACARA_STACK_DUMP_SECONDS")
+    if every:
+        faulthandler.dump_traceback_later(float(every), repeat=True)
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+
+
 def _worker(stage: str = "all") -> int:
     from jacara.worker import run_worker
 
+    # Exit with the desktop launcher. Documents in progress are marked as interrupted at the next
+    # start.
+    _follow_launcher()
     names = {"all": "后台任务", "read": "后台任务（OCR 工位）", "extract": "后台任务（模型工位）"}
     print(f"{names[stage]}已启动，等待上传的文件（Ctrl + C 停止）")
     run_worker(stage)  # type: ignore[arg-type]
@@ -1044,32 +1121,38 @@ def _worker(stage: str = "all") -> int:
 
 
 def _watch(args: argparse.Namespace) -> int:
-    """监视文件夹：放进去的图片和 PDF 自动导入（ADR 0036）。不动、不删原文件。"""
+    """Watch folders: images and PDFs added to them are imported automatically. Source files are
+    never modified or deleted. Without a folder argument, every folder of the settings is watched,
+    each with its own template."""
+    import time
+
     from sqlalchemy import select
 
-    from jacara.core.config import get_settings
+    from jacara.core.config import WatchFolder, get_settings
     from jacara.core.db import session_scope
     from jacara.core.owner import PERSONAL_OWNER
-    from jacara.core.queue import CeleryQueue
+    from jacara.core.queue import create_queue
     from jacara.core.storage import get_storage
     from jacara.models import User
     from jacara.modules.auth.service import owner_of
     from jacara.pipeline.segment import SplitError, normalize_split
     from jacara.pipeline.watch import Watcher
 
+    _follow_launcher()
     settings = get_settings()
-    folder = args.folder or settings.jacara_watch_dir
-    if folder is None:
-        print("要监视哪个文件夹？写在命令后面，或者在 .env 里写 JACARA_WATCH_DIR=文件夹路径")
-        return 1
-    folder = folder.expanduser().resolve()
-    if not folder.is_dir():
-        print(f"找不到文件夹：{folder}")
+    if args.folder is not None:
+        folders = [
+            WatchFolder(path=args.folder, template=args.template or settings.jacara_watch_template)
+        ]
+    else:
+        folders = settings.watch_folders()
+    if not folders:
+        print("要监视哪个文件夹？写在命令后面，或者在设置页「识别和处理」中添加监视文件夹")
         return 1
     try:
         split = normalize_split(args.split)
     except SplitError as err:
-        print(err)
+        print(render(str(err)))
         return 1
     owner = PERSONAL_OWNER
     if settings.jacara_mode == "team":
@@ -1083,20 +1166,30 @@ def _watch(args: argparse.Namespace) -> int:
                 print(f"没有叫 {username} 的用户（或者已经停用）")
                 return 1
             owner = owner_of(user)
-    watcher = Watcher(
-        folder,
-        None,
-        get_storage(),
-        CeleryQueue(),
-        owner,
-        template=args.template or settings.jacara_watch_template,
-        split=split,
-    )
-    print(f"监视文件夹：{folder}（放进去的图片和 PDF 会自动导入，不动原文件；Ctrl + C 停止）")
+    watchers: list[Watcher] = []
+    for folder in folders:
+        root = folder.path.expanduser().resolve()
+        if not root.is_dir():
+            print(f"找不到文件夹：{root}（跳过）")
+            continue
+        template = args.template if args.folder is None and args.template else folder.template
+        watchers.append(
+            Watcher(
+                root, None, get_storage(), create_queue(), owner, template=template, split=split
+            )
+        )
+        print(f"监视文件夹：{root}（模板 {template}）")
+    if not watchers:
+        return 1
+    print("放进去的图片和 PDF 会自动导入，不动原文件；Ctrl + C 停止")
     from contextlib import suppress
 
     with suppress(KeyboardInterrupt):
-        watcher.run()
+        while True:
+            for watcher in watchers:
+                for path, result in watcher.scan():
+                    print(f"{result}：{path.relative_to(watcher.root)}", flush=True)
+            time.sleep(5.0)
     return 0
 
 
@@ -1105,16 +1198,18 @@ def _api(args: argparse.Namespace) -> int:
 
     print(f"接口文档：http://127.0.0.1:{args.port}/docs（Ctrl + C 停止）")
     print("只启动了 API；日常使用请用 jacara start，开发网页请在 web/ 里 npm run dev")
-    # 只监听本机。reload 模式要传"模块:变量"字符串，uvicorn 才能在改代码后重新导入。
+    # Bind to localhost only. Reload mode requires an import string ("module:attr") so that uvicorn
+    # can re-import after code changes.
     uvicorn.run("jacara.app:app", host="127.0.0.1", port=args.port, reload=args.reload)
     return 0
 
 
 def _start(args: argparse.Namespace) -> int:
-    """日常使用：一个命令启动全部，并打开浏览器。
+    """Start all services with one command and open the browser.
 
-    worker 和大模型是单独的进程，用 subprocess 在后台启动；API 在这个进程里运行。
-    按 Ctrl + C（或在别的终端运行 jacara stop）：这里等它们都退出，不留下"孤儿进程"。
+    The worker and the model server run as separate subprocesses; the API runs in this process.
+    On Ctrl + C (or `jacara stop` from another terminal) this function waits for all children
+    to exit so that no orphan processes remain.
     """
     import json
     import os
@@ -1134,7 +1229,8 @@ def _start(args: argparse.Namespace) -> int:
         print("用 openssl rand -hex 16 生成随机值填进去。")
         return 1
 
-    # 先查自己写错的（模型文件不存在），再查端口：不管系统有没有在运行，结果都一样
+    # Validate our own arguments (missing model file) before checking ports; the result does not
+    # depend on running services.
     model = None if args.no_model else (args.model or settings.find_model())
     if model is not None and not model.exists():
         print(f"找不到模型文件：{model}")
@@ -1143,7 +1239,7 @@ def _start(args: argparse.Namespace) -> int:
     url = f"http://127.0.0.1:{args.port}"
     if not _port_free(args.port):
         if _answers(f"{url}/api/v1/health"):
-            # 已经开着了：再开一个没有意义，直接把网页打开
+            # Already running: just open the browser.
             print(_paint(f"JacarandaParse 已经在运行了：{url}", _GREEN))
             print("要重启的话，先运行 uv run jacara stop，再运行 uv run jacara start。")
             if not args.no_browser:
@@ -1153,7 +1249,8 @@ def _start(args: argparse.Namespace) -> int:
         print(f"运行 lsof -i :{args.port} 看是哪个程序（PID 那一列），再 kill 那个 PID。")
         return 1
 
-    # 数据库和任务队列在 Docker 里：电脑重启后 Docker 没开，这里先说清楚，不要等打开网页才报一堆错
+    # The database and queue run in Docker. Report a stopped Docker here instead of failing later in
+    # the browser.
     problems = _infra_problems(settings)
     if problems:
         for problem, fix in problems:
@@ -1173,7 +1270,8 @@ def _start(args: argparse.Namespace) -> int:
             print("或者加 --no-model 不启动模型。")
             return 1
     if model is None and _port_free(MODEL_PORT):
-        # 没有模型文件、8080 上也没有模型服务：能启动，但上传的文件全都会处理失败
+        # No model file and no model server on port 8080: start anyway, but every upload will fail
+        # to process.
         print(
             _paint(
                 f"提醒：没有模型服务（{MODEL_PORT} 端口没人在用），上传的文件会处理失败。", _YELLOW
@@ -1201,47 +1299,56 @@ def _start(args: argparse.Namespace) -> int:
             mmproj = settings.find_mmproj()
             command = server_command(model, port=MODEL_PORT, mmproj=mmproj)
         except FileNotFoundError as err:
-            print(err)
+            print(render(str(err)))
             return 1
-        # 每次启动生成一个新密钥：本机别的程序（包括浏览器里打开的网页）不知道密钥就用不了模型。
-        # 密钥放在环境变量里传给 llama-server 和 worker，不写在命令行上（ps 能看到命令行）
+        # Generate a new key on every start so that other local programs (including web pages in the
+        # browser) cannot use the model.
+        # Pass the key through environment variables to llama-server and the worker, never on the
+        # command line (visible in ps).
         key = _new_model_key()
         env = {**server_env(), "LLAMA_API_KEY": key}
-        os.environ["MODEL_API_KEY"] = key  # worker 是这里启动的，会继承
-        # 直接启动 llama-server，不经过 jacara serve：停止时 terminate 发给它本人，不会漏掉。
+        os.environ["MODEL_API_KEY"] = key  # Inherited by the worker started below.
+        # Start llama-server directly rather than through jacara serve, so that terminate reaches
+        # the server process itself.
         children.append(subprocess.Popen(command, env=env))  # noqa: S603
         print(f"启动模型服务：{model.name} → http://127.0.0.1:{MODEL_PORT}")
         if mmproj is not None:
             print(f"视觉模型：{mmproj.name}（照片、扫描件 OCR 不可靠时让模型看原图）")
     worker = [sys.executable, "-m", "jacara.cli", "worker"]
     if settings.jacara_pipeline:
-        # 流水线（ADR 0051）：OCR 工位和模型工位各一个进程，同时干活。
-        # 上次中断的先在这里统一标成失败：等两个工位各自起来再做，会误伤另一个已经开始干的活
+        # Pipeline: separate processes for the OCR stage and the model stage, running concurrently.
+        # Interrupted documents are marked as failed here, before either stage starts; doing it
+        # inside each stage could fail work the other stage has already started.
         _reset_interrupted()
         children.append(subprocess.Popen([*worker, "--stage", "read"]))  # noqa: S603
         children.append(subprocess.Popen([*worker, "--stage", "extract"]))  # noqa: S603
     else:
         children.append(subprocess.Popen(worker))  # noqa: S603
-    if settings.jacara_watch_dir is not None:
-        # 监视文件夹（ADR 0036）：.env 里写了 JACARA_WATCH_DIR 才启动
+    if settings.watch_folders():
+        # Watch folders: started only when some are set (settings page or JACARA_WATCH_DIR).
         children.append(subprocess.Popen([sys.executable, "-m", "jacara.cli", "watch"]))
-        print(f"监视文件夹：{settings.jacara_watch_dir}")
+        for folder in settings.watch_folders():
+            print(f"监视文件夹：{folder.path}")
 
-    # 记下自己和子进程的进程号：jacara stop 先请这里停，万一这里已经没了，也能把子进程收拾掉
+    # Record our own and child process ids. jacara stop signals this process first and cleans up
+    # children if it is gone.
     RUN_FILE.parent.mkdir(exist_ok=True)
     run = {"main": os.getpid(), "children": [c.pid for c in children]}
     RUN_FILE.write_text(json.dumps(run), encoding="utf-8")
-    # 收到 SIGTERM（kill、关机）也走 Ctrl + C 的路：uvicorn 停下后会把信号再发一次，
-    # 默认处理是立刻结束进程，下面 finally 里停模型和 worker 的代码就跑不到，留下孤儿进程。
+    # Route SIGTERM (kill, shutdown) through the Ctrl + C path. uvicorn re-raises the signal after
+    # shutting down;
+    # the default handler would exit immediately and skip the finally block below, leaving orphan
+    # processes.
     previous = signal.signal(signal.SIGTERM, _interrupt)
     print(f"打开 {url}（Ctrl + C 或 uv run jacara stop 全部停止）")
     if not args.no_browser:
-        # 等 Web 服务起来再开浏览器；模型可能还要十几秒才加载完，上传的文件会排队等它
+        # Open the browser once the web service is up. The model may need several more seconds to
+        # load; uploads queue until it is ready.
         threading.Timer(2.0, webbrowser.open, [url]).start()
     try:
         uvicorn.run("jacara.app:app", host="127.0.0.1", port=args.port)
     except KeyboardInterrupt:
-        pass  # Ctrl + C 或 jacara stop：正常停止
+        pass  # Ctrl + C or jacara stop: normal shutdown.
     finally:
         _stop(children)
         RUN_FILE.unlink(missing_ok=True)
@@ -1254,7 +1361,8 @@ def _reset_interrupted() -> None:
 
     try:
         count = reset_interrupted()
-    except Exception as err:  # 数据库还没起来：worker 处理时自然会报，这里不挡启动
+    # Database not ready yet: the worker reports it when processing; do not block startup.
+    except Exception as err:
         print(_paint(f"提醒：没能检查上次中断的文档（{err}）", _YELLOW))
         return
     if count:
@@ -1262,7 +1370,8 @@ def _reset_interrupted() -> None:
 
 
 def _new_model_key() -> str:
-    """生成模型服务的密钥，写进 .run/model-key（只有自己能读），命令行抽取也从这里读。"""
+    """Generate the model server API key and write it to .run/model-key (owner-readable only); CLI
+    extraction reads it from there."""
     import secrets
 
     from jacara.core.config import MODEL_KEY_FILE
@@ -1276,12 +1385,12 @@ def _new_model_key() -> str:
 
 
 def _interrupt(signum: int, frame: object) -> None:
-    """把 SIGTERM 当成 Ctrl + C。"""
+    """Handle SIGTERM the same way as Ctrl + C."""
     raise KeyboardInterrupt
 
 
 def _running() -> bool:
-    """jacara start 是不是正在运行。"""
+    """Whether jacara start is running."""
     import json
 
     try:
@@ -1301,16 +1410,18 @@ def _backup_commands(args: argparse.Namespace) -> int:
     if args.command == "restore":
         return commands.run_restore(args.archive, settings, _running())
     from jacara.core.db import get_engine
-    from jacara.core.storage import S3Storage
+    from jacara.core.storage import get_storage
 
-    return commands.run_backup(get_engine(), S3Storage(settings), args.out, __version__, _running())
+    return commands.run_backup(get_engine(), get_storage(), args.out, __version__, _running())
 
 
 def _stop_running() -> int:
-    """jacara stop：请 jacara start 停下（它会把模型和 worker 一起停掉），再检查有没有剩下的子进程。
+    """jacara stop: ask jacara start to shut down (it stops the model and workers), then clean up
+    any remaining children.
 
-    发 SIGINT（和按 Ctrl + C 一样），start 会按正常流程收尾。
-    """
+    Sends SIGINT, equivalent to Ctrl + C, so that start runs its normal shutdown path. On Windows
+    os.kill() can deliver Ctrl + C only to processes sharing the console, so any other signal there
+    ends the process at once (TerminateProcess) and the children are stopped below."""
     import json
     import os
     import signal
@@ -1326,7 +1437,7 @@ def _stop_running() -> int:
     if _alive(main):
         os.kill(main, signal.SIGINT)
         print("正在停止……")
-        for _ in range(60):  # 最多等 30 秒：worker 可能正在处理一个文件
+        for _ in range(60):  # Wait up to 30 seconds; the worker may be processing a file.
             if not _alive(main):
                 break
             time.sleep(0.5)
@@ -1334,7 +1445,8 @@ def _stop_running() -> int:
             print(_paint(f"30 秒还没停下来，可以运行 kill -9 {main}", _YELLOW))
             return 1
 
-    # start 正常退出时会停掉子进程；万一它是被强制结束的，子进程还在，这里补上
+    # start stops its children on a normal exit; if it was killed, the children may still be
+    # running.
     left = [pid for pid in children if _alive(pid)]
     for pid in left:
         os.kill(pid, signal.SIGTERM)
@@ -1344,30 +1456,62 @@ def _stop_running() -> int:
         time.sleep(0.5)
     for pid in left:
         if _alive(pid):
-            os.kill(pid, signal.SIGKILL)
+            # Windows has no SIGKILL; os.kill() ends the process there whatever the signal.
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
     RUN_FILE.unlink(missing_ok=True)
     print(_paint("已经全部停止", _GREEN))
     return 0
 
 
 def _alive(pid: int) -> bool:
-    """这个进程还在不在。发 0 号信号只检查、不打扰它。"""
+    """Whether the process exists. On POSIX, signal 0 checks existence without affecting the
+    process. On Windows os.kill() with any signal but the console ones ends the process
+    (TerminateProcess), so the process is opened with SYNCHRONIZE access and its handle tested
+    with a zero-timeout wait: a process handle is signalled when the process ends. The exit code
+    (GetExitCodeProcess) is not used: STILL_ACTIVE (259) is also a valid exit code, which
+    Microsoft's documentation warns against reading as "still running"."""
     import os
+    import sys
 
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        synchronize, access_denied = 0x00100000, 5
+        wait_object_0 = 0x0
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        handle = kernel32.OpenProcess(synchronize, False, pid)
+        if not handle:
+            # Exists but may not be opened (another user's process), or does not exist
+            # (ERROR_INVALID_PARAMETER).
+            return ctypes.get_last_error() == access_denied
+        try:
+            result = kernel32.WaitForSingleObject(handle, 0)
+        finally:
+            kernel32.CloseHandle(handle)
+        # WAIT_OBJECT_0: ended. WAIT_TIMEOUT: running. WAIT_FAILED: unknown, treated as running
+        # so that jacara stop does not leave it behind.
+        return result != wait_object_0
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True  # 在，但不是我们的进程
+        return True  # Exists, but belongs to another process.
     return True
 
 
 def _answers(url: str, *, loading_ok: bool = False) -> bool:
-    """这个地址能不能正常回答（用来判断占着端口的是不是我们自己的服务）。
+    """Whether the URL responds as expected (tells whether a port is held by our own service).
 
-    loading_ok：llama-server 加载模型时 /health 回答 503，也算"是模型服务"。
-    trust_env=False：本机地址不走代理（系统设了代理时，httpx 默认会把请求交给代理）。
+    loading_ok: llama-server returns 503 from /health while a model is loading; treat that as
+    a model server.
+    trust_env=False: bypass any system proxy for local addresses (httpx honors it by default).
     """
     import httpx
 
@@ -1379,7 +1523,8 @@ def _answers(url: str, *, loading_ok: bool = False) -> bool:
 
 
 def _wait_free(port: int, seconds: float = 10.0) -> bool:
-    """等端口空出来：刚按了 Ctrl + C 时，上一次的模型可能还在退出，占着端口几秒钟。"""
+    """Wait for a port to be released; after Ctrl + C the previous model server may need a few
+    seconds to exit."""
     import time
 
     deadline = time.monotonic() + seconds
@@ -1392,16 +1537,22 @@ def _wait_free(port: int, seconds: float = 10.0) -> bool:
 
 
 def _port_free(port: int) -> bool:
-    """本机这个端口现在有没有人用。先查好，免得 worker 和模型都启动了，API 才发现端口被占。
+    """Whether a local port is free. Checked up front so that a conflict is not discovered only
+    after the worker and model have started.
 
-    SO_REUSEADDR：刚停掉的服务会让端口在 TIME_WAIT 状态留一两分钟（lsof 看不到任何程序）。
-    这时 llama-server 和 uvicorn 其实都能正常启动（它们也开了这个选项），
-    只有真的有程序在监听才算占用。
+    SO_REUSEADDR (macOS, Linux): a recently closed service leaves the port in TIME_WAIT for a
+    minute or two (not visible in lsof). llama-server and uvicorn can still bind in that state
+    because they set the same option, so only an active listener counts as in use. On Windows the
+    option means something else: it lets a socket bind to a port another socket is using, so the
+    check would always pass. There a plain bind is used, which fails while the port is in use
+    (sockets are not shareable by default since Windows Server 2003).
     """
     import socket
+    import sys
 
     with socket.socket() as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if sys.platform != "win32":
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind(("127.0.0.1", port))
         except OSError:
@@ -1410,7 +1561,7 @@ def _port_free(port: int) -> bool:
 
 
 def _stop(children: list[subprocess.Popen[bytes]]) -> None:
-    """让后台的进程都停下来：先礼貌地请它停（terminate），10 秒还没停就强制结束（kill）。"""
+    """Stop background processes: terminate first, kill after 10 seconds."""
     import subprocess
 
     for child in children:
@@ -1425,17 +1576,17 @@ def _stop(children: list[subprocess.Popen[bytes]]) -> None:
 
 
 MODEL_PORT = 8080
-"""jacara start 启动的大模型用这个端口，和 .env 里 MODEL_SERVER 的默认值一样。"""
+"""Port of the model server started by jacara start; matches the default MODEL_SERVER."""
 
 
-RUN_FILE = Path(__file__).resolve().parents[3] / ".run" / "jacara.json"
-"""jacara start 运行时把进程号写在这里（.run/ 在 .gitignore 里），jacara stop 靠它找到进程。"""
+RUN_FILE = data_home() / ".run" / "jacara.json"
+"""Process ids written by jacara start (.run/ is git-ignored); used by jacara stop."""
 
 _RED, _YELLOW, _GREEN = "31", "33", "32"
 
 
 def _paint(text: str, color: str) -> str:
-    """在终端里给文字上色（ANSI 颜色码）。输出到文件时不上色。"""
+    """Colorize terminal output with ANSI codes; no color when output is redirected."""
     if not color or not sys.stdout.isatty():
         return text
     return f"\033[{color}m{text}\033[0m"

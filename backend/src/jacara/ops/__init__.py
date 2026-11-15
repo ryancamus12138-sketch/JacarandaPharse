@@ -1,1 +1,1 @@
-"""运维：备份、恢复（ADR 0054）。"""
+"""Operations: backup and restore."""

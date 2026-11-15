@@ -14,7 +14,17 @@ titles = { en = "Tax Invoice (UAE)", ar = "فاتورة ضريبية" }
 countries = ["AE"]
 domains = ["发票"]
 description = "阿联酋的 tax invoice：Tax Invoice 字样、供应商名称地址 TRN、买方名称地址 TRN、发票号、日期、供货日期、描述、单价数量、税率、VAT（AED）、总额。TRN 不是 15 位、VAT 不等于 5%、没有 Tax Invoice 字样会提醒。"
+descriptions = { en = "UAE tax invoices: the words Tax Invoice, supplier name, address and TRN, buyer name, address and TRN, invoice number, date, date of supply, description, unit price and quantity, rate, VAT (AED), total. TRNs that are not 15 digits, VAT other than 5%, and missing Tax Invoice are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "ae_trn", "ae_vat_5", "ae_title"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: UAE tax invoices / simplified tax invoices.",
+  "Basis: Federal Decree-Law No. 8 of 2017 art. 65; Executive Regulation art. 59(1) (the words Tax Invoice, supplier name, address and TRN, name, address and TRN of a registered buyer, sequential number, date and date of supply, description, unit price, quantity, rate and amount, total and VAT (AED), exchange rate); art. 59(2)(5) simplified tax invoices: no limit for unregistered buyers, up to AED 10,000 for registered buyers (art. 59 as amended by Cabinet Decisions 100/2024 and 100/2025). VAT 5%. E-invoicing: pilot from 2026-07-01, mandatory from 2027-01-01 for annual revenue above AED 50 million.",
+  "Use: issued by UAE VAT-registered businesses; buyers deduct input tax with it; expense claims.",
+  "Source: invoicedataextraction \"UAE VAT invoice requirements\" (citing the FTA 2026 handbook and Ministerial Decision 66/2026).",
+]
 
 [[fields]]
 name = "document_title"
@@ -22,6 +32,7 @@ label = "单据标题"
 names = { en = "Document Title", ar = "عنوان المستند" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 aliases = ["عنوان المستند"]
 
 [[fields]]
@@ -32,6 +43,7 @@ type = "string"
 required = true
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 aliases = ["رقم الفاتورة"]
 
 [[fields]]
@@ -48,6 +60,7 @@ label = "交易日期"
 names = { en = "Date of Supply", ar = "تاريخ التوريد" }
 type = "date"
 description = "供货或提供服务的日期；和开具日期一样、或没写的留空"
+descriptions = { en = "The date of supply of goods or services; leave empty if it equals the issue date or is not given" }
 aliases = ["تاريخ التوريد"]
 
 [[fields]]
@@ -105,6 +118,7 @@ label = "汇率"
 names = { en = "Exchange Rate" }
 type = "string"
 description = "外币开票时换成 AED 的汇率，照抄"
+descriptions = { en = "The exchange rate to AED for invoices in foreign currency; copy it as written" }
 
 [[fields]]
 name = "net_total"
@@ -133,6 +147,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", ar = "البنود" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -161,6 +176,7 @@ label = "金额"
 names = { en = "Amount", ar = "المبلغ" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["المبلغ"]
 
 [[tables.columns]]

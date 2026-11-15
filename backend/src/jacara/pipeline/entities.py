@@ -1,9 +1,9 @@
-"""对象在不同单据之间对不上（ADR 0031）。
+"""Detect subjects that disagree across documents.
 
-模板里有对象（例如病人：编号 + 姓名、性别、出生日期）时，同一个编号在别的单据上也出现过，
-就比一比属于这个对象的其他字段：写得不一样，标黄提醒（不知道哪份是对的，所以两边都要人看）。
-只看同一个模板、当前这一轮、同一个团队的文档，最多比 50 份。
-"""
+When a template defines subjects (for example a patient: identifier + name, sex, date of birth)
+and the same identifier appears on other documents, the other fields of that subject are
+compared; differences are flagged (it is unknown which document is right, so both need a look).
+Only documents with the same template, current run and team are compared, at most 50."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from jacara.core.i18n import tr
 from jacara.models import Document, ExtractedValue, Extraction
 from jacara.templates import Template
 from jacara.templates.extras import normalize
@@ -31,7 +32,7 @@ def _current(extraction: Extraction) -> dict[str, str]:
 def entity_conflicts(
     session: Session, extraction: Extraction, template: Template
 ) -> list[dict[str, Any]]:
-    """返回和 current_checks 里 issues 一样格式的提醒。"""
+    """Returns warnings in the same format as issues in current_checks."""
     if not template.entities:
         return []
     mine = _current(extraction)
@@ -74,14 +75,23 @@ def entity_conflicts(
             }
             if not different:
                 continue
-            shown = "；".join(f"《{f}》写的是「{v}」" for f, v in list(different.items())[:3])
-            more = f" 等 {len(different)} 份" if len(different) > 3 else ""
+            shown = tr("；").join(
+                tr("《{filename}》中为「{value}」", filename=f, value=v)
+                for f, v in list(different.items())[:3]
+            )
+            if len(different) > 3:
+                shown = tr("{documents} 等 {n} 份", documents=shown, n=len(different))
             issues.append(
                 {
                     "rule": ENTITY_CONFLICT,
-                    "title": f"{entity.label}：和别的单据不一致",
-                    "message": f"同一个{labels.get(entity.key, entity.key)}「{key}」，"
-                    f"{shown}{more}，这里是「{mine[name]}」",
+                    "title": tr("{label}：与其他单据不一致", label=entity.label),
+                    "message": tr(
+                        "同一{key_label}「{key}」，{documents}，此处为「{value}」",
+                        key_label=labels.get(entity.key, entity.key),
+                        key=key,
+                        documents=shown,
+                        value=mine[name],
+                    ),
                     "fields": [name],
                     "severity": "warning",
                 }

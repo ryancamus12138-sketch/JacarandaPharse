@@ -1,13 +1,18 @@
-"""OCR 样本和团队设置两张表（ADR 0050）。
+"""OCR sample and team settings tables.
 
-ocr_samples          一条样本：一张单行小图（存在对象存储）+ 图上原样的文字 + OCR 当时读成什么。
-team_settings        按团队存的设置："自动收集纠错样本"开关、划分用的种子和版本。
-doc_group_members    业务单据（文件 + 这张单据的起始页）属于哪一组（ADR 0052）。
-split_assignments    每一组在某个划分版本里是训练、验证、锁定测试还是隔离。
-doc_pair_decisions   "这两张是不是同一张单据"人确认过的结果（PDF 和照片配对）。
-ocr_sample_exports   每次导出了哪些样本、哪个修订、分在哪边；以后发现重复时在这里记一笔。
-det_pages            检测样本（ADR 0061）：一页整页图上所有文字框，人调好、确认后导出给检测模型。
-"""
+ocr_samples          One sample: a line crop (in object storage) + the text exactly as on the
+image + what OCR read at the time.
+team_settings        Per-team settings: the "collect OCR correction samples" switch, split seed
+and version.
+doc_group_members    Group of each business document (file + first page of the document).
+split_assignments    Split of each group in a split version: train, validation, locked test or
+quarantined.
+doc_pair_decisions   Confirmed decisions on whether two documents are the same (PDF and photo
+pairing).
+ocr_sample_exports   Samples, revisions and splits of each export; duplicates found later are
+recorded here.
+det_pages            Detection samples: all text boxes on a full-page image, adjusted and
+confirmed by a person and exported for detection models."""
 
 from __future__ import annotations
 
@@ -26,7 +31,7 @@ class TeamSetting(Base, TimestampMixin):
 
     team_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    """设置的名字，例如 collect_ocr_samples。"""
+    """Setting name, for example collect_ocr_samples."""
     value: Mapped[Any] = mapped_column(JsonColumn)
 
 
@@ -36,64 +41,78 @@ class OcrSample(Base, OwnedMixin, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"), index=True)
     value_id: Mapped[uuid.UUID | None]
-    """从哪个字段的审核来的。"""
+    """Field review the sample came from."""
     revision_id: Mapped[uuid.UUID | None]
-    """哪一条审核记录（保存审核时收集的）。"""
+    """Revision (collected when the review was saved)."""
     page: Mapped[int]
-    """文件的第几页（从 1 开始）。"""
+    """Page of the file (1-based)."""
     unit_page: Mapped[int] = mapped_column(default=1)
-    """这张单据在文件里从第几页开始（ADR 0052）：和 document_id 一起认出是哪一张业务单据。"""
+    """First page of this document in the file: together with document_id identifies the business
+    document."""
     revision: Mapped[int] = mapped_column(default=1)
-    """图中原文改了几次（从 1 开始），导出清单里记着，知道训练用的是哪一版标签。"""
+    """Number of transcription revisions (from 1), recorded in export manifests to identify the
+    label version used for training."""
     kind: Mapped[str] = mapped_column(String(8))
-    """line：点的是一块 OCR 原文，按它的四个角裁；box：框选，按框裁。"""
+    """line: a clicked OCR block, cropped by its four corners; box: a selected region, cropped by
+    the box."""
     polygon: Mapped[list[Any]] = mapped_column(JsonColumn)
-    """裁图用的四个角 [[x, y] × 4]（页面图上的像素，PDF 是 216 DPI 的图）。框选的是框的四个角。"""
+    """Four crop corners [[x, y] × 4] (pixels of the page image; PDFs are rendered at 216 DPI). For
+    region selections, the corners of the box."""
     transcription: Mapped[str] = mapped_column(Text)
-    """图中原文：图上原样的文字，训练标签。"""
+    """Transcription: the text exactly as on the image; the training label."""
     ocr_text: Mapped[str | None] = mapped_column(Text)
-    """OCR 当时读成什么。框里原来没有 OCR 文字块是空（None）。"""
+    """What OCR read at the time. Empty (None) when the box contained no OCR text block."""
     category: Mapped[str] = mapped_column(String(16))
-    """rec_error（认错字）、correct（认对的行）、missed（漏认）、unclear（原因未确定）。"""
+    """rec_error (misread), correct (correctly read line), missed (not detected), unclear (cause
+    undetermined)."""
     error_tags: Mapped[list[Any]] = mapped_column(JsonColumn, default=list)
+    template_key: Mapped[str] = mapped_column(String(64), default="", server_default="", index=True)
+    """Template identity: extractions.template (the id of my template, the file name of a built-in
+    one). Filters, statistics and exports group by it; names are only for display."""
     template: Mapped[str] = mapped_column(String(200), default="")
-    """模板的名字（导出时用），例如"收据"。"""
+    """Template name at collection time, for example "Receipt". Shown only when the template can no
+    longer be loaded; otherwise the name is read from the template in the reader's language."""
     field: Mapped[str] = mapped_column(String(200), default="")
-    """字段 ID（表格的格子去掉行号，items.amount）。"""
+    """Field ID (table cells without the row number: items.amount)."""
     field_label: Mapped[str] = mapped_column(String(200), default="")
+    """Field name at collection time; shown only when the template can no longer be loaded."""
     source_format: Mapped[str] = mapped_column(String(8))
-    """pdf 或 image。"""
+    """pdf or image."""
     ocr_engine: Mapped[str] = mapped_column(String(128), default="")
-    """首轮 OCR 用的引擎和模型版本。"""
+    """Engine and model versions of the first OCR pass."""
     crop_key: Mapped[str | None] = mapped_column(String(255))
-    """小图在对象存储里的 key。裁图失败是空。"""
+    """Object storage key of the crop. Empty if cropping failed."""
     crop_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
     width: Mapped[int | None]
     height: Mapped[int | None]
     origin: Mapped[str] = mapped_column(String(12), default="review", server_default="review")
-    """怎么来的：review（审核时收集的）、backfill（从以前的修改补收的，ADR 0053，要人复核）。"""
+    """Origin: review (collected during review), backfill (recovered from earlier corrections;
+    requires verification)."""
     status: Mapped[str] = mapped_column(String(12), default="ready")
-    """ready（可以导出）、failed（裁图失败，可以重试）、withdrawn（撤回了，不导出）。"""
+    """ready (exportable), failed (cropping failed; retryable), withdrawn (not exported)."""
     error: Mapped[str] = mapped_column(Text, default="")
-    """裁图失败的原因。"""
+    """Cause of the cropping failure."""
 
 
 class DocGroupMember(Base, OwnedMixin, TimestampMixin):
-    """一个业务单据属于哪一组（ADR 0052）。同一组的样本永远在同一边（训练或验证）。"""
+    """Group of a business document. Samples of one group always land in the same split (training or
+    validation)."""
 
     __tablename__ = "doc_group_members"
     __table_args__ = (UniqueConstraint("document_id", "first_page"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     group_id: Mapped[uuid.UUID] = mapped_column(index=True)
-    """组号：随机 UUID，不含业务信息。PDF 和照片确认是同一张以后共用一个。"""
+    """Group id: a random UUID without business data. Shared by a PDF and a photo once confirmed to
+    be the same document."""
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"), index=True)
     first_page: Mapped[int]
-    """这张单据在文件里从第几页开始。"""
+    """First page of this document in the file."""
 
 
 class SplitAssignment(Base, TimestampMixin):
-    """一组在某个划分版本里分在哪边（ADR 0052）。第一次进数据集时按哈希分好存下，之后只读这里。"""
+    """Split of a group in a split version. Assigned by hash and stored when the group first enters
+    a dataset, then only read from here."""
 
     __tablename__ = "split_assignments"
 
@@ -101,16 +120,18 @@ class SplitAssignment(Base, TimestampMixin):
     version: Mapped[int] = mapped_column(primary_key=True)
     group_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     split: Mapped[str] = mapped_column(String(16))
-    """train（训练）、val（验证）、test_locked（锁定测试集）、quarantined（隔离，不导出）。"""
+    """train, val, test_locked (locked test set), quarantined (not exported)."""
     reason: Mapped[str] = mapped_column(Text, default="")
-    """为什么是这边：按哈希分的、管理员改的、合并时发现已导出过所以隔离……"""
+    """Reason for this split: hash assignment, administrator change, quarantine after merging
+    already-exported groups, …"""
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 
 class PairDecision(Base, OwnedMixin, TimestampMixin):
-    """两张业务单据是不是同一张（人确认过的）。same：合并了；different：不是，不再提名。"""
+    """Whether two business documents are the same (confirmed by a person). same: merged; different:
+    not the same and no longer proposed."""
 
     __tablename__ = "doc_pair_decisions"
 
@@ -123,29 +144,30 @@ class PairDecision(Base, OwnedMixin, TimestampMixin):
 
 
 class OcrSampleExport(Base, OwnedMixin, TimestampMixin):
-    """一次导出（ADR 0052）：导了哪些样本、哪个修订、分在哪边。
-    发现跨集合重复时在 affected 里记一笔。"""
+    """One export: which samples, which revisions and which splits. Cross-split duplicates found
+    later are recorded in affected."""
 
     __tablename__ = "ocr_sample_exports"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     kind: Mapped[str] = mapped_column(String(12))
-    """train_val（训练和验证）或 test（锁定测试集）。"""
+    """train_val (training and validation) or test (locked test set)."""
     split_version: Mapped[int]
     filters: Mapped[dict[str, Any]] = mapped_column(JsonColumn)
     counts: Mapped[dict[str, Any]] = mapped_column(JsonColumn)
-    """每边几组、几行。"""
+    """Groups and lines per split."""
     items: Mapped[list[Any]] = mapped_column(JsonColumn)
     """[{sample, revision, group, split}]"""
     affected: Mapped[list[Any]] = mapped_column(JsonColumn, default=list)
-    """导出以后发现的问题：[{group, reason, at}]。
-    例如这一组后来和另一组合并，可能一份训练、一份验证。"""
+    """Problems found after export: [{group, reason, at}], for example the group was later merged
+    with another, so one copy may be in training and the other in validation."""
 
 
 class DetPage(Base, OwnedMixin, TimestampMixin):
-    """检测样本（ADR 0061）：一页上所有的文字框。照 PPOCRLabel 的流程：先用 OCR 结果预标注，
-    人调整以后"确认这一页"，只有确认过的导出。
-    图不另存，导出时按 page_png 重新画（和裁小图同一张图）。"""
+    """Detection sample: all text boxes on one page. Following the PPOCRLabel workflow:
+    pre-annotated with OCR results, adjusted by a person and confirmed per page; only confirmed
+    pages are exported. The image is not stored separately but re-rendered with page_png on
+    export (the same image used for line crops)."""
 
     __tablename__ = "det_pages"
     __table_args__ = (UniqueConstraint("document_id", "page"),)
@@ -153,22 +175,24 @@ class DetPage(Base, OwnedMixin, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"), index=True)
     extraction_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("extractions.id"))
-    """预标注用的哪一次抽取（那一轮的 OCR 结果）。"""
+    """Extraction used for pre-annotation (OCR results of that run)."""
     page: Mapped[int]
-    """文件的第几页（从 1 开始）。"""
+    """Page of the file (1-based)."""
     unit_page: Mapped[int]
-    """这张单据在文件里从第几页开始：和 document_id 一起认出业务单据组（ADR 0052）。"""
+    """First page of this document in the file: together with document_id identifies the business
+    document group."""
     width: Mapped[int]
     height: Mapped[int]
     boxes: Mapped[list[Any]] = mapped_column(JsonColumn)
-    """[{"points": [[x, y] × 4], "text": "图上的字", "ignore": false, "origin": …}]，
-    origin 是 ocr、sample、missed 或 manual。坐标是页面图（page_png）上的像素。
-    ignore 的导出成 ###。"""
+    """[{"points": [[x, y] × 4], "text": "text on the image", "ignore": false, "origin": …}], where
+    origin is ocr, sample, missed or manual. Coordinates are pixels of the page image (page_png).
+    Ignored boxes are exported as ###."""
     status: Mapped[str] = mapped_column(String(12), default="draft")
-    """draft（还没确认）、confirmed（确认了，导出）、excluded（不用这一页）。"""
+    """draft (not confirmed), confirmed (exported), excluded (page not used)."""
     revision: Mapped[int] = mapped_column(default=1)
-    """改一次加 1。保存时要带上看到的修订号，不一样（别人刚改过）就拒绝。"""
+    """Incremented on every change. Saves must carry the revision seen; a mismatch (someone just
+    changed it) is rejected."""
     ocr_engine: Mapped[str] = mapped_column(String(255), default="")
-    """预标注用的 OCR 引擎和模型。"""
+    """OCR engine and models used for pre-annotation."""
     confirmed_by: Mapped[uuid.UUID | None]
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

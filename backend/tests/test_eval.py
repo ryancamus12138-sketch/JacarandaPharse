@@ -1,4 +1,5 @@
-"""评测：读数据集、统一格式后比对、算指标、写结果文件。不需要模型和真的数据集。"""
+"""Evaluation: dataset loading, normalized comparison, metrics, result files. No model or real
+dataset required."""
 
 from __future__ import annotations
 
@@ -9,6 +10,8 @@ import pytest
 from jacara.eval.run import run_eval, write_result
 from jacara.eval.score import FieldScore, close_enough, same, score_report, summarize
 from jacara.eval.sroie import load_sroie
+
+from .conftest import raises
 
 
 @pytest.mark.parametrize(
@@ -40,9 +43,11 @@ def test_same_ignores_format_differences(kind, predicted, gold, expected):
 @pytest.mark.parametrize(
     ("predicted", "gold", "expected"),
     [
-        ("LJAN HING STATIONERY SDN BHD", "LIAN HING STATIONERY SDN BHD", True),  # OCR 错一个字母
-        ("99 SPEED MART S/B (519537-X)", "99 SPEED MART S/B", False),  # 多抄了注册号
-        ("BAR WANG RICE", "UNIHAKKA INTERNATIONAL SDN BHD", False),  # 选了另一个名字
+        # OCR misread one letter.
+        ("LJAN HING STATIONERY SDN BHD", "LIAN HING STATIONERY SDN BHD", True),
+        # Registration number copied as well.
+        ("99 SPEED MART S/B (519537-X)", "99 SPEED MART S/B", False),
+        ("BAR WANG RICE", "UNIHAKKA INTERNATIONAL SDN BHD", False),  # Another name chosen.
         (None, "ABC", False),
     ],
 )
@@ -57,7 +62,7 @@ def test_load_sroie_maps_field_names(tmp_path):
         key = {"company": f"SHOP {i}", "date": "25/12/2018", "address": "X", "total": "9.00"}
         (tmp_path / "key" / f"00{i}.json").write_text(json.dumps(key))
         (tmp_path / "img" / f"00{i}.jpg").write_bytes(b"fake")
-    (tmp_path / "key" / "009.json").write_text("{}")  # 没有图片的答案跳过
+    (tmp_path / "key" / "009.json").write_text("{}")  # Answers without images are skipped.
 
     samples = load_sroie(tmp_path, limit=2)
     assert [s.sample_id for s in samples] == ["000", "001"]
@@ -65,16 +70,17 @@ def test_load_sroie_maps_field_names(tmp_path):
 
 
 def test_load_sroie_missing_says_how_to_download(tmp_path):
-    with pytest.raises(FileNotFoundError, match="jacara eval download"):
+    with raises(FileNotFoundError, "jacara eval download"):
         load_sroie(tmp_path / "nope")
 
 
 def test_score_report_uses_the_same_flags_as_review(report):
     answers = {"merchant": "BOOK TA .K (TAMAN DAYA) SDN BHD", "total": "9.00"}
     scores = {s.field: s for s in score_report("000", answers, report)}
-    assert set(scores) == {"merchant", "total"}  # 只评有答案的字段
+    assert set(scores) == {"merchant", "total"}  # Only fields with ground truth are evaluated.
     assert scores["merchant"].correct and scores["merchant"].has_evidence
-    # 总额对、找到了出处，但"现金 − 总额 = 找零"不通过（找零读成 100），所以也标黄
+    # The total is correct and has evidence, but "cash − total = change" fails (change read as 100),
+    # so it is flagged too.
     assert scores["total"].correct and scores["total"].flagged
 
 
@@ -85,9 +91,9 @@ def _score(field, correct, flagged):
 def test_summary_rates():
     scores = [
         _score("total", correct=True, flagged=False),
-        _score("total", correct=True, flagged=True),  # 误报
-        _score("total", correct=False, flagged=True),  # 拦住了
-        _score("total", correct=False, flagged=False),  # 漏了：没标黄的错值
+        _score("total", correct=True, flagged=True),  # False alarm.
+        _score("total", correct=False, flagged=True),  # Intercepted.
+        _score("total", correct=False, flagged=False),  # Missed: a wrong value not flagged.
     ]
     total, overall = summarize(scores)
     assert total.field == "total" and overall.field == "全部"

@@ -1,4 +1,4 @@
-"""命令行：jacara backup、jacara restore、jacara restore-drill（ADR 0054）。"""
+"""CLI commands: jacara backup, jacara restore, jacara restore-drill."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from jacara.core.i18n import render, tr
+from jacara.core.migrate import alembic_config
 from jacara.ops.backup import BackupError, check_archive, restore
 from jacara.ops.verify import Check, verify
 
@@ -16,7 +18,7 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
 
     from jacara.core.config import Settings
-    from jacara.core.storage import S3Storage
+    from jacara.ops.backup import FileStore
 
 DRILL_PROJECT = "jacara-drill"
 DRILL_POSTGRES_PORT = 55432
@@ -24,31 +26,34 @@ DRILL_S3_PORT = 58333
 
 
 def _say(message: str) -> None:
-    print("  " + message, flush=True)
+    """Progress line; stored messages (from backup and restore) are shown translated."""
+    print("  " + render(message), flush=True)
 
 
-def _ini() -> Path:
-    ini = Path("alembic.ini")
-    if not ini.is_file():
-        raise BackupError("请在项目根目录（有 alembic.ini 的地方）运行")
-    return ini
+def _project_root() -> Path:
+    """The restore drill starts its services with docker compose, from the project root."""
+    compose = Path("compose.yaml")
+    if not compose.is_file():
+        raise BackupError("请在项目根目录（有 compose.yaml 的地方）运行")
+    return compose
 
 
 def migrate_to(url: str, revision: str | None) -> None:
-    """把这个数据库的结构变成 revision 那一版（None 或 head 就是最新）。只在表都是空的时候调用。"""
+    """Bring this database's schema to revision (None or head means latest). Call only when all
+    tables are empty."""
     from alembic import command
-    from alembic.config import Config
     from alembic.runtime.migration import MigrationContext
     from alembic.script import ScriptDirectory
     from alembic.util import CommandError
     from sqlalchemy import create_engine
 
-    config = Config(str(_ini()))
-    config.attributes["url"] = url
+    config = alembic_config(url)
     target = revision or "head"
     script = ScriptDirectory.from_config(config)
     if target != "head" and script.get_revision(target) is None:
-        raise BackupError(f"备份是更新的代码做的（数据库版本 {target}），先把代码更新到那个版本")
+        raise BackupError(
+            tr("备份是更新的程序做的（数据库版本 {target}），请先安装更新的版本", target=target)
+        )
     engine = create_engine(url)
     try:
         with engine.connect() as conn:
@@ -61,7 +66,9 @@ def migrate_to(url: str, revision: str | None) -> None:
     try:
         command.upgrade(config, target)
     except CommandError:
-        command.downgrade(config, target)  # 空的库比备份新：退回备份时的版本，表是空的不丢东西
+        # Empty database newer than the backup: downgrade to the backup revision; nothing is lost
+        # since tables are empty.
+        command.downgrade(config, target)
 
 
 def _report(checks: list[Check]) -> bool:
@@ -71,7 +78,7 @@ def _report(checks: list[Check]) -> bool:
 
 
 def run_backup(
-    engine: Engine, storage: S3Storage, out_dir: Path, version: str, running: bool
+    engine: Engine, storage: FileStore, out_dir: Path, version: str, running: bool
 ) -> int:
     from sqlalchemy import func, select
 
@@ -89,7 +96,7 @@ def run_backup(
         ).scalar()
     print(f"备份到 {out_dir}/（数据库每张表 + 对象存储里每个文件）")
     path = backup(engine, storage, out_dir, version, _say)
-    os.chmod(path, 0o600)  # 里面是业务数据：只有自己能读
+    os.chmod(path, 0o600)  # Contains business data: owner-readable only.
     manifest = check_archive(path)
     rows = sum(manifest.tables.values())
     size = path.stat().st_size / 1024 / 1024
@@ -101,17 +108,17 @@ def run_backup(
 
 
 def run_restore(archive: Path, settings: Settings, running: bool) -> int:
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
-    from jacara.core.storage import S3Storage
+    from jacara.core.db import create_db_engine
+    from jacara.core.storage import get_storage
 
     if running:
         print("jacara 正在运行。先 jacara stop 再恢复。")
         return 1
     url = settings.database_url
-    engine = create_engine(url)
-    storage = S3Storage(settings)
+    engine = create_db_engine(url)
+    storage = get_storage()
     try:
         print(f"恢复 {archive}（先核对整个包，再恢复到空的数据库和存储）")
         manifest = restore(archive, engine, storage, lambda rev: migrate_to(url, rev), _say)
@@ -145,8 +152,9 @@ def _wait(ready: Callable[[], bool], seconds: float = 90) -> bool:
 
 
 def run_drill(archive: Path, keep: bool) -> int:
-    """恢复演练：另起一套空的数据库和对象存储（别的端口、别的数据卷），把包恢复进去、逐样打开，
-    默认做完就删掉这套演练环境。平时用的数据库和存储完全不碰。"""
+    """Restore drill: start a separate empty database and object storage (other ports, other
+    volumes), restore the archive into them and open every item; the drill environment is removed
+    afterwards by default. The production database and storage are never touched."""
     from sqlalchemy import create_engine, text
     from sqlalchemy.orm import sessionmaker
 
@@ -154,7 +162,7 @@ def run_drill(archive: Path, keep: bool) -> int:
     from jacara.core.storage import S3Storage
 
     try:
-        _ini()
+        _project_root()
         manifest = check_archive(archive)
     except BackupError as err:
         print(err)
@@ -164,8 +172,13 @@ def run_drill(archive: Path, keep: bool) -> int:
     )
     env = dict(os.environ)
     env.update(POSTGRES_PORT=str(DRILL_POSTGRES_PORT), S3_PORT=str(DRILL_S3_PORT))
+    # The drill always uses the docker compose services, whatever JACARA_DATABASE and
+    # JACARA_STORAGE say.
     settings = Settings(
-        postgres_port=DRILL_POSTGRES_PORT, s3_endpoint=f"http://127.0.0.1:{DRILL_S3_PORT}"
+        jacara_database="postgres",
+        jacara_storage="s3",
+        postgres_port=DRILL_POSTGRES_PORT,
+        s3_endpoint=f"http://127.0.0.1:{DRILL_S3_PORT}",
     )
     url = settings.database_url
     engine = create_engine(url)
@@ -176,7 +189,7 @@ def run_drill(archive: Path, keep: bool) -> int:
             with engine.connect() as conn:
                 conn.execute(text("select 1"))
             storage.keys()
-        except Exception:  # 还没起来
+        except Exception:  # Not up yet.
             return False
         return True
 

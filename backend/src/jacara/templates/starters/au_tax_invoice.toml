@@ -11,7 +11,16 @@ titles = { en = "Australian Tax Invoice" }
 domains = ["发票"]
 countries = ["AU"]
 description = "澳洲的 Tax invoice（抵扣 GST 用）。字段按 ATO 对税务发票的要求：1,000 澳元以下七项，1,000 澳元及以上加买方。"
+descriptions = { en = "Australian tax invoice (for claiming GST). Fields follow the ATO requirements for tax invoices: seven items below AUD 1,000, plus the buyer from AUD 1,000." }
 rules = ["issue_date_exists", "issue_date_not_future", "au_tax_invoice_title", "seller_abn", "buyer_abn", "au_buyer_1000", "au_gst_eleventh", "net_tax_gross", "item_line"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Australian tax invoices.",
+  "Field source: ATO \"Tax invoices\": below AUD 1,000 seven items are required (states it is a tax invoice, seller name, seller ABN, issue date, what was sold (with quantity and price), GST amount (or a statement that the total includes GST), whether each item includes GST);",
+  "From AUD 1,000 the buyer's name or ABN is also required.",
+]
 
 [[fields]]
 name = "document_title"
@@ -20,6 +29,7 @@ names = { en = "Document Title" }
 type = "string"
 required = true
 description = "单据上写的标题，税务发票要写明 Tax invoice，原样照抄"
+descriptions = { en = "The title written on the document; a tax invoice must state Tax invoice; copy it as written" }
 aliases = ["Tax Invoice", "Tax invoice"]
 
 [[fields]]
@@ -45,6 +55,7 @@ names = { en = "Supplier Name" }
 type = "string"
 required = true
 description = "开发票的公司名称（或注册的商号）"
+descriptions = { en = "The name (or registered business name) of the company issuing the invoice" }
 aliases = ["From", "Supplier", "Seller"]
 
 [[fields]]
@@ -54,6 +65,7 @@ names = { en = "Supplier ABN" }
 type = "string"
 required = true
 description = "卖方的 ABN，11 位数字，常写成 12 345 678 901，原样照抄"
+descriptions = { en = "The seller's ABN, 11 digits, often written as 12 345 678 901; copy it as written" }
 aliases = ["ABN"]
 
 [[fields]]
@@ -62,6 +74,7 @@ label = "买方名称"
 names = { en = "Buyer Name" }
 type = "string"
 description = "买方的名称；1,000 澳元及以上的税务发票必须有买方名称或 ABN"
+descriptions = { en = "The buyer's name; tax invoices of AUD 1,000 or more must show the buyer's name or ABN" }
 aliases = ["Bill To", "Customer", "Invoice To"]
 
 [[fields]]
@@ -84,6 +97,7 @@ label = "GST"
 names = { en = "GST" }
 type = "number"
 description = "GST 金额。只写了“总额含 GST”（Total includes GST）时填那个 GST 金额"
+descriptions = { en = "The GST amount. When only \"Total includes GST\" is written, enter that GST amount" }
 aliases = ["GST", "Total GST", "Includes GST"]
 
 [[fields]]
@@ -99,6 +113,7 @@ name = "items"
 label = "明细"
 names = { en = "Items" }
 description = "卖了什么，每样一行（要有数量和价格）。小计、GST、总额这些行不算明细"
+descriptions = { en = "What was sold, one row per item (with quantity and price). Subtotal, GST and total rows are not line items" }
 required = true
 
 [[tables.columns]]
@@ -135,3 +150,4 @@ label = "是否含 GST"
 names = { en = "GST Applies" }
 type = "string"
 description = "这一行是否含 GST 的标记（如 *、GST、GST free），原样照抄；没有就留空"
+descriptions = { en = "The mark showing whether this row includes GST (such as *, GST, GST free), copied as written; leave empty if absent" }

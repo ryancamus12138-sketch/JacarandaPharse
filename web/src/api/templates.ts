@@ -1,4 +1,4 @@
-/** 模板：/api/v1/templates（ADR 0030）。 */
+/** Templates: /api/v1/templates. */
 
 import { api, apiDownload, type DownloadedFile } from './client'
 import type {
@@ -13,7 +13,7 @@ import type {
   TrialResult,
 } from './types'
 
-/** 一个模板的概要（文档列表按模板筛选用）。 */
+/** Template summary (for filtering the document list by template). */
 export interface TemplateSummary {
   name: string
   title: string
@@ -21,12 +21,23 @@ export interface TemplateSummary {
   kind?: Template['kind']
 }
 
-/** 我的模板（没归档的在前）+ 内置模板。 */
+/** A known domain: stored form and name in the interface language. */
+export interface DomainOption {
+  value: string
+  label: string
+}
+
+/** Known domains for the tag editor (in the interface language). */
+export function listDomains(): Promise<DomainOption[]> {
+  return api<DomainOption[]>('/templates/domains')
+}
+
+/** My templates (non-archived first) + built-in templates. */
 export function listTemplates(): Promise<Template[]> {
   return api<Template[]>('/templates')
 }
 
-/** 起步模板库（九个）。 */
+/** Starter template library (nine templates). */
 export function listStarters(): Promise<Template[]> {
   return api<Template[]>('/templates/starters')
 }
@@ -37,12 +48,15 @@ export function listRules(): Promise<RuleInfo[]> {
 
 export interface FormulaCheck {
   ok: boolean
-  /** 换成中文名的写法：离店日期 − 入住日期。 */
+  /** Form with display names: Check-out date − Check-in date. */
   readable: string
   message: string
 }
 
-/** 边写边检查公式或规则条件（用编辑区现在的字段，不保存）。 */
+/**
+ * Live validation of a formula or rule condition (using the fields currently in the editor; nothing is
+ * saved).
+ */
 export function checkFormula(body: {
   text: string
   kind: 'formula' | 'condition'
@@ -53,7 +67,7 @@ export function checkFormula(body: {
   return api<FormulaCheck>('/templates/formula-check', { method: 'POST', json: body })
 }
 
-/** 一个模板。我的模板带历史版本和"有几份文档在用"。 */
+/** One template. My templates include version history and the number of documents using them. */
 export function getTemplate(name: string): Promise<Template> {
   return api<Template>(`/templates/${name}`)
 }
@@ -62,19 +76,19 @@ export function getTemplateVersion(id: string, version: number): Promise<Templat
   return api<Template>(`/templates/${id}/versions/${version}`)
 }
 
-/** 新建：空白、从起步模板复制、或者复制我的另一个模板。 */
+/** Create: blank, a copy of a starter template, or a copy of another of my templates. */
 export function createTemplate(body: {
   source: 'blank' | 'starter' | 'copy'
   starter?: string
   copy_of?: string
   title?: string
-  /** 空白模板：编辑页里填好的内容。 */
+  /** Blank template: the content entered in the editor. */
   content?: TemplateIn
 }): Promise<Template> {
   return api<Template>('/templates', { method: 'POST', json: body })
 }
 
-/** 保存一个新版本。 */
+/** Save a new version. */
 export function saveTemplate(id: string, body: TemplateIn): Promise<Template> {
   return api<Template>(`/templates/${id}`, { method: 'PUT', json: body })
 }
@@ -83,7 +97,7 @@ export function archiveTemplate(id: string, archived: boolean): Promise<Template
   return api<Template>(`/templates/${id}/archive`, { method: 'POST', json: { archived } })
 }
 
-/** 试跑：用最新版在一份文档上抽一次，不保存。要等模型跑完。 */
+/** Trial run: extract one document with the latest version without saving. Waits for the model. */
 export function trialTemplate(id: string, documentId: string): Promise<TrialResult> {
   return api<TrialResult>(`/templates/${id}/trial`, {
     method: 'POST',
@@ -91,8 +105,11 @@ export function trialTemplate(id: string, documentId: string): Promise<TrialResu
   })
 }
 
-/** 用样例建模板：样例文档里选好的键值对 → 新模板；样例换成按新模板的结果。 */
-/** 在样例上框选建模板（ADR 0047）：框好的字段 → 新模板。 */
+/**
+ * Create a template from a sample: selected key-value pairs → new template; the sample is reprocessed with
+ * it.
+ */
+/** Create a template by selecting regions on a sample: selected fields → new template. */
 export function createFromBoxes(body: {
   document_id: string
   title: string
@@ -114,7 +131,10 @@ export function createFromSample(body: {
   return api('/templates/from-sample', { method: 'POST', json: body })
 }
 
-/** 导出模板：JSON 文件，可以在别的电脑上导入。name 是我的模板的 id，或者起步模板的名字。 */
+/**
+ * Export a template as a JSON file for import on another machine. name is the id of one of my templates, or
+ * the name of a starter template.
+ */
 export function exportTemplate(
   name: string,
   format: 'xlsx' | 'json' = 'xlsx',
@@ -122,19 +142,22 @@ export function exportTemplate(
   return apiDownload(`/templates/${name}/export?format=${format}`, `template.${format}`)
 }
 
-/** 上传 Excel：标准模板 Excel 直接读出模板；业务报表返回每张 sheet 的猜测。 */
+/**
+ * Upload a workbook: a standard template workbook is read directly; a business report returns a guess for
+ * each sheet.
+ */
 export function analyzeExcel(file: File): Promise<ExcelAnalysis> {
   const form = new FormData()
   form.append('file', file)
   return api<ExcelAnalysis>('/templates/excel', { method: 'POST', body: form })
 }
 
-/** 再看一次上传过的 Excel（刷新预览页时用）。 */
+/** Show a previously uploaded workbook again (when the preview page is reloaded). */
 export function reanalyzeExcel(uploadId: string): Promise<ExcelAnalysis> {
   return api<ExcelAnalysis>(`/templates/excel/${uploadId}`)
 }
 
-/** 按预览里确认的结果建模板。 */
+/** Create a template from the confirmed preview. */
 export function buildFromExcel(
   uploadId: string,
   body: { title: string; category: string; description: string; starter: string; sheets: ExcelSheet[] },
@@ -142,17 +165,17 @@ export function buildFromExcel(
   return api<Template>(`/templates/excel/${uploadId}/build`, { method: 'POST', json: body })
 }
 
-/** 导入"导出模板"得到的 JSON 文件：新建一个我的模板。 */
+/** Import a JSON file produced by "Export template" as a new template of mine. */
 export function importTemplate(file: unknown): Promise<Template> {
   return api<Template>('/templates/import', { method: 'POST', json: file })
 }
 
-/** 删除模板。有文档用过的不能删（只能归档）。 */
+/** Delete a template. Templates used by documents are removed from lists but kept for those documents. */
 export function deleteTemplate(id: string): Promise<void> {
   return api<void>(`/templates/${id}`, { method: 'DELETE' })
 }
 
-/** 只改模板的标签（功能领域、国家和地区、自定义标签），不出新版本。 */
+/** Change only the template's tags (domains, country or region, custom tags); no new version. */
 export function setTemplateLabels(
   id: string,
   body: { domains?: string[]; countries?: string[]; tags?: string[] },

@@ -1,4 +1,4 @@
-/** 文档相关的接口：/api/v1/documents。 */
+/** Documents API: /api/v1/documents. */
 
 import { api, apiBlob, apiDownload, type DownloadedFile } from './client'
 import type {
@@ -39,17 +39,20 @@ export function listDocuments(
   return api<DocumentPage>(`/documents?${query}`)
 }
 
-/** 上一份、下一份待审核的文档（按列表顺序）。 */
-export function getNeighbors(id: string): Promise<DocumentNeighbors> {
-  return api<DocumentNeighbors>(`/documents/${id}/neighbors`)
+/**
+ * Previous and next documents of the list, and the next document awaiting review. list is the list page's
+ * query string (its filters), so paging walks the list the user came from.
+ */
+export function getNeighbors(id: string, list = ''): Promise<DocumentNeighbors> {
+  return api<DocumentNeighbors>(`/documents/${id}/neighbors${list ? `?${list}` : ''}`)
 }
 
-/** 工作台：统计、处理队列、需要先处理的。 */
+/** Dashboard: statistics, processing queue, items needing attention. */
 export function getDashboard(): Promise<Dashboard> {
   return api<Dashboard>('/dashboard')
 }
 
-/** 上传一个文件。文件用 FormData 发（和 /docs 里选文件上传一样），字段名必须叫 file。 */
+/** Upload a file. Sent as FormData (like the file upload on /docs); the field must be named file. */
 export function uploadDocument(
   file: File,
   template?: string,
@@ -57,29 +60,39 @@ export function uploadDocument(
 ): Promise<DocumentSummary> {
   const form = new FormData()
   form.append('file', file)
-  if (template) form.append('template', template) // 我的模板的 id，或者 discover
+  if (template) form.append('template', template) // Id of one of my templates, or discover.
   if (options.folder) form.append('folder', options.folder)
   if (options.split) form.append('split', options.split)
   if (options.skipDuplicate) form.append('skip_duplicate', 'true')
   return api<DocumentSummary>('/documents', { method: 'POST', body: form })
 }
 
-/** 批量导入过的文件夹（ADR 0036）。 */
+/** Folders imported in batches. */
 export function listFolders(): Promise<FolderCount[]> {
   return api<FolderCount[]>('/documents/folders')
 }
 
-/** 重新处理（失败后重试）。 */
+/** Requeue (retry after failure). */
 export function processDocument(id: string): Promise<DocumentSummary> {
   return api<DocumentSummary>(`/documents/${id}/process`, { method: 'POST' })
 }
 
-/** 文档详情：每一页的字段、出处和规则校验结果。 */
+/**
+ * Stop processing a queued or running document. It becomes failed ("stopped manually") and can be
+ * reprocessed; the worker gives the document up within about a second.
+ */
+export function stopDocument(id: string): Promise<DocumentSummary> {
+  return api<DocumentSummary>(`/documents/${id}/stop`, { method: 'POST' })
+}
+
+/** Document details: fields, evidence and rule results of every page. */
 export function getDocument(id: string, run?: number): Promise<DocumentDetail> {
   return api<DocumentDetail>(run ? `/documents/${id}?run=${run}` : `/documents/${id}`)
 }
 
-/** 换模板重新处理（新的一轮）。template 不写：用现在这个模板的最新版。 */
+/**
+ * Reprocess with another template (a new run). Without template: the latest version of the current template.
+ */
 export function reprocessDocument(
   id: string,
   body: {
@@ -87,31 +100,43 @@ export function reprocessDocument(
     reason: ReprocessReason
     note: string
     split?: string
-    /** 看不看原图（ADR 0038）：always、off、default（按系统设置）。不写：和上次一样。 */
+    /**
+     * Whether to show the page image to the model: always, off, default (system setting). Omitted: same as
+     * last time.
+     */
     vision?: 'always' | 'off' | 'default'
-    /** PDF 怎么读（ADR 0042）：image 画成图识别、text 只读文字层、default 按系统设置。 */
+    /**
+     * How to read PDFs: image renders pages for OCR, text reads only the text layer, default follows the
+     * system setting.
+     */
     pdf_read?: 'image' | 'text' | 'default'
   },
 ): Promise<DocumentSummary> {
   return api<DocumentSummary>(`/documents/${id}/reprocess`, { method: 'POST', json: body })
 }
 
-/** 采纳上次的确认：重新处理之后，能沿用的上一轮审核一次用上。 */
+/**
+ * Accept previous confirmations: after reprocessing, apply all reviews from the previous run that can be
+ * carried over.
+ */
 export function adoptPrevious(id: string): Promise<{ confirmed: number; edited: number }> {
   return api(`/documents/${id}/adopt-previous`, { method: 'POST' })
 }
 
-/** 某一页的图片（PNG）。出处框的坐标就是这张图上的像素。 */
+/** Image (PNG) of a page. Evidence box coordinates are pixels of this image. */
 export function getPageImage(id: string, page: number): Promise<Blob> {
   return apiBlob(`/documents/${id}/pages/${page}/image`)
 }
 
-/** 框选建模板（ADR 0047）：框里的值、旁边的标签、在页面哪里、像什么类型。 */
+/**
+ * Template building by region selection: the value inside the box, the nearby label, its position on the page
+ * and its likely type.
+ */
 export interface RegionDescription {
   text: string
   confidence: number | null
   label: string | null
-  /** 值在标签的"右边"还是"下面"。 */
+  /** Whether the value is to the right of or below the label. */
   side: string | null
   type: 'string' | 'number' | 'date' | 'date_range'
   position: string
@@ -126,23 +151,28 @@ export function describeRegion(id: string, page: number, box: Box): Promise<Regi
   })
 }
 
-/** 某一页上一块区域放大后的图（ADR 0042）：候选值旁边显示，看清是哪个字。 */
+/** Zoomed image of a region on a page, shown next to candidate values to reveal the exact characters. */
 export function getPageCrop(id: string, page: number, box: number[]): Promise<Blob> {
   return apiBlob(`/documents/${id}/pages/${page}/crop?box=${box.map((v) => v.toFixed(1)).join(',')}`)
 }
 
-/** 这张单据这一轮发给模型的单据文字原文（ADR 0053）。 */
+/** Document text sent to the model for this document in this run. */
 export function getSentText(id: string, extractionId: string): Promise<SentText> {
   return api<SentText>(`/documents/${id}/extractions/${extractionId}/sent`)
 }
 
-/** 某一页的 OCR 结果：每个文字块的文字和位置。审核时"从原文选取"用。 */
+/**
+ * OCR result of a page: text and position of every text block. Used by "select from source text" during
+ * review.
+ */
 export function getPageOcr(id: string, page: number): Promise<PageOcr> {
   return api<PageOcr>(`/documents/${id}/pages/${page}/ocr`)
 }
 
-/** 重新识别页面上的一块区域：裁下来、放大，再 OCR 一次。只返回文字，不保存。 */
-/** 让模型看一块区域（ADR 0038）：读出文字和要填的字段的值。不保存。 */
+/**
+ * Re-recognize a region of the page: crop, enlarge and run OCR again. Returns text only and saves nothing.
+ */
+/** Ask the model about a region: reads the text and the value of the target field. Saves nothing. */
 export function lookRegion(
   id: string,
   page: number,
@@ -158,28 +188,36 @@ export function ocrRegion(id: string, page: number, box: Box): Promise<RegionOut
   })
 }
 
-/** 完成审核：所有标黄的字段都处理过之后，文档变成"已审核"。 */
+/** Complete review: once every flagged field has been handled, the document becomes reviewed. */
 export function completeReview(id: string): Promise<DocumentSummary> {
   return api<DocumentSummary>(`/documents/${id}/review`, { method: 'POST' })
 }
 
 /**
- * 导出方式（选了多个文档时）：
- * - separate：每个文档一个 Excel，打包成 zip，解压后是一个文件夹；
- * - summary：所有文档汇总到一个 Excel，一行一张单据，方便对账。
- * - csv：CSV（UTF-8），内容和汇总 Excel 一样；有明细表时每张表一个 .csv 打包成 zip。
- * - json：JSON（UTF-8），给别的程序读：文档 → 每张单据 → 字段、表格。
+ * Export mode (for several documents):
+ * - separate: one workbook per document, packed into a zip that extracts to a folder;
+ * - summary: all documents in one workbook, one row per document, for reconciliation;
+ * - csv: CSV (UTF-8) with the same content as the summary workbook; with line-item tables, one .csv per table
+ *   packed into a zip;
+ * - json: JSON (UTF-8) for other programs: document → sub-documents → fields and tables.
  */
 export type ExportMode = 'separate' | 'summary' | 'csv' | 'json'
 
-/** 导出：一个文档就是一个 Excel；多个文档按 mode 打包成 zip 或汇总成一个 Excel。 */
-/** language：列名用哪种语言（ADR 0048），不写或 zh 是中文；模板没写这种语言的列还是中文。 */
+/**
+ * Export: one document yields one workbook; several documents are packed into a zip or summarized in one
+ * workbook according to mode.
+ */
+/**
+ * language: language of column headers; omitted means each template's primary language; columns without a
+ * name in that language keep their primary language name.
+ */
 export function exportDocuments(
   ids: string[],
   mode: ExportMode,
   language?: string,
 ): Promise<DownloadedFile> {
-  const lang = language && language !== 'zh' ? language : null
+  // Sent even for Chinese: the template's primary language may be another one.
+  const lang = language || null
   if (mode === 'csv' || mode === 'json') {
     const query = new URLSearchParams()
     for (const id of ids) query.append('ids', id)
@@ -192,7 +230,7 @@ export function exportDocuments(
   }
   const query = new URLSearchParams()
   for (const id of ids) {
-    query.append('ids', id) // 后端要的格式：?ids=第一个&ids=第二个
+    query.append('ids', id) // Format expected by the backend: ?ids=FIRST&ids=SECOND
   }
   if (lang) query.append('lang', lang)
   return mode === 'separate'
@@ -200,22 +238,22 @@ export function exportDocuments(
     : apiDownload(`/documents/export.xlsx?${query}`, 'export.xlsx')
 }
 
-/** 先跳过：拿不准的先放一放，不算进"下一份"。 */
+/** Skip for now: set aside a document that needs more thought; excluded from "Next". */
 export function skipDocument(id: string, reason: string): Promise<DocumentSummary> {
   return api<DocumentSummary>(`/documents/${id}/skip`, { method: 'POST', json: { reason } })
 }
 
-/** 取消跳过：回到待审核里。 */
+/** Unskip: return the document to the review queue. */
 export function unskipDocument(id: string): Promise<DocumentSummary> {
   return api<DocumentSummary>(`/documents/${id}/unskip`, { method: 'POST' })
 }
 
-/** 一份文档的全部备注。 */
+/** All comments of a document. */
 export function listComments(id: string): Promise<DocComment[]> {
   return api<DocComment[]>(`/documents/${id}/comments`)
 }
 
-/** 写备注。field 不写 = 整份文档；写在字段上要给第几页。 */
+/** Add a comment. Without field it applies to the whole document; field comments need the page. */
 export function addComment(
   id: string,
   body: string,
@@ -237,14 +275,16 @@ export function deleteComment(commentId: string): Promise<void> {
   return api<void>(`/comments/${commentId}`, { method: 'DELETE' })
 }
 
-/** 某一页的结构：版面区域、表格的格子、标题 → 值（ADR 0034）。 */
+/** Structure of a page: layout regions, table cells, label → value pairs. */
 export function getPageStructure(id: string, page: number, run?: number): Promise<PageStructure> {
   const query = run ? `?run=${run}` : ''
   return api<PageStructure>(`/documents/${id}/pages/${page}/structure${query}`)
 }
 
-/** 删除文档（一份或几份）：原始文件、处理结果、审核记录、备注都删掉，不能恢复。正在处理的跳过。 */
-/** 批量重新处理的设置。null：每份和上次一样；template 不写：各自用现在这个模板的最新版。 */
+/**
+ * Settings for bulk reprocessing. null: same as last time for each document; without template: each
+ * document's latest template version.
+ */
 export interface BatchReprocess {
   template?: string
   split: 'auto' | 'one' | 'pages' | null
@@ -254,7 +294,10 @@ export interface BatchReprocess {
   note: string
 }
 
-/** 勾选的几份用同样的设置一起重新处理。skipped：没处理的（正在处理、还在排队……）。 */
+/**
+ * Reprocess the selected documents with the same settings. Queued and running documents are restarted.
+ * skipped: documents that could not be reprocessed (missing original file, …).
+ */
 export function reprocessDocuments(
   ids: string[],
   settings: BatchReprocess,
@@ -265,6 +308,20 @@ export function reprocessDocuments(
   })
 }
 
+/** Stop several queued or running documents (see stopDocument). */
+export function stopDocuments(ids: string[]): Promise<{ stopped: number; skipped: string[] }> {
+  return api<{ stopped: number; skipped: string[] }>('/documents/stop', { method: 'POST', json: { ids } })
+}
+
+/** Stop every queued and running document (the processing queue's "Stop all"). */
+export function stopAllDocuments(): Promise<{ stopped: number; skipped: string[] }> {
+  return api<{ stopped: number; skipped: string[] }>('/documents/stop-all', { method: 'POST' })
+}
+
+/**
+ * Delete documents (one or several): original files, results, review records and comments are deleted
+ * permanently. Queued and running documents are deleted too; their processing stops and writes nothing.
+ */
 export function deleteDocuments(ids: string[]): Promise<{ deleted: number; skipped: string[] }> {
   return api<{ deleted: number; skipped: string[] }>('/documents/delete', {
     method: 'POST',

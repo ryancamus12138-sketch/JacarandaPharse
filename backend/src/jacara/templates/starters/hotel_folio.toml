@@ -8,7 +8,15 @@ title = "酒店账单"
 titles = { en = "Hotel Folio", ar = "فاتورة الفندق", de = "Hotelrechnung", es = "Factura de hotel", fr = "Facture d'hôtel", hi = "होटल बिल", id = "Tagihan hotel", it = "Conto dell'hotel", ja = "ホテル明細書", ko = "호텔 청구서", ms = "Bil hotel", nl = "Hotelrekening", pl = "Rachunek hotelowy", th = "ใบแจ้งค่าห้องพัก", vi = "Hóa đơn khách sạn", "zh-Hant" = "酒店帳單" }
 domains = ["住宿"]
 description = "酒店退房账单（Folio）：入住离店、房号、逐日消费。字段参考 schema.org LodgingReservation。"
+descriptions = { en = "Hotel checkout bill (folio): check-in and check-out, room number, daily charges. Fields follow schema.org LodgingReservation." }
 rules = ["total_positive", "stay_order", "stay_nights", "issue_date_exists", "issue_date_not_future", "items_sum"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: hotel bills.",
+  "Field source: schema.org LodgingReservation (checkinTime, checkoutTime, lodgingUnitDescription)",
+]
 
 [[fields]]
 name = "hotel"
@@ -17,6 +25,7 @@ names = { en = "Hotel", ar = "الفندق", de = "Hotel", es = "Hotel", fr = "H
 type = "string"
 required = true
 description = "开账单的酒店名称，照抄单据上的完整写法（连分店名、所在地区一起）；下面一行的街道地址不算"
+descriptions = { en = "The name of the hotel issuing the bill, copied in full as written on the document (including branch name and area); the street address on the next line does not count" }
 aliases = ["Hotel", "Hotel Name", "Hotel Details", "Property"]
 
 [[fields]]
@@ -49,6 +58,7 @@ label = "晚数"
 names = { en = "Nights", ar = "عدد الليالي", de = "Nächte", es = "Noches", fr = "Nuits", hi = "रातें", id = "Malam", it = "Notti", ja = "泊数", ko = "숙박일수", ms = "Malam", nl = "Nachten", pl = "Noce", th = "จำนวนคืน", vi = "Số đêm", "zh-Hant" = "晚數" }
 type = "number"
 description = "住了几晚：离店日期减入住日期，自动算，不从单据上找（Rooms 一栏是房间数，不是晚数）"
+descriptions = { en = "Number of nights: check-out date minus check-in date, computed automatically and not read from the document (the Rooms column is the number of rooms, not nights)" }
 compute = "check_out - check_in"
 
 [[fields]]
@@ -57,6 +67,7 @@ label = "房号"
 names = { en = "Room No.", ar = "رقم الغرفة", de = "Zimmernummer", es = "N.º de habitación", fr = "N° de chambre", hi = "कमरा संख्या", id = "Nomor kamar", it = "N. camera", ja = "部屋番号", ko = "객실번호", ms = "No. bilik", nl = "Kamernummer", pl = "Numer pokoju", th = "หมายเลขห้อง", vi = "Số phòng", "zh-Hant" = "房號" }
 type = "string"
 description = "房间号码（例如 1208）。Rooms 一栏是房间数，不是房号"
+descriptions = { en = "The room number (for example 1208). The Rooms column is the number of rooms, not the room number" }
 aliases = ["Room No.", "Room Number"]
 
 [[fields]]
@@ -95,6 +106,7 @@ names = { en = "Total", ar = "الإجمالي", de = "Summe", es = "Total", fr 
 type = "number"
 required = true
 description = "账单的总额（消费合计，不是付款后的余额）"
+descriptions = { en = "The bill total (total charges, not the balance after payments)" }
 aliases = ["Total", "Total Charges"]
 
 [[fields]]
@@ -109,6 +121,7 @@ name = "items"
 label = "消费明细"
 names = { en = "Charges", ar = "الرسوم", de = "Leistungen", es = "Cargos", fr = "Prestations", hi = "शुल्क", id = "Rincian biaya", it = "Addebiti", ja = "利用明細", ko = "이용내역", ms = "Caj", nl = "Kosten", pl = "Obciążenia", th = "รายการค่าใช้จ่าย", vi = "Chi tiết chi phí", "zh-Hant" = "消費明細" }
 description = "账单上逐笔的消费（房费、餐饮等），每笔一行。付款、押金退还这些行不算"
+descriptions = { en = "The individual charges on the bill (room, food and beverage, etc.), one row each. Payments and deposit refunds are not rows" }
 
 [[tables.columns]]
 name = "date"

@@ -1,12 +1,13 @@
-"""一个文件里有几张单据（ADR 0036）：把页分成一段一段，每段是一张单据。
+"""Split a file into documents: pages are grouped into segments, each segment being one document.
 
-四种分法（documents.split）：
-- auto：自动判断。先看页上有没有"Page 2 of 3""第 2 页 共 3 页""续"这类标记；
-  没有标记，再让模型看上一页结尾和这一页开头，判断是不是续页。没有模型（或模型答不上来）就当新单据。
-- one：整个文件是一张单据。
-- pages：每页一张。
-- 页码范围："1-2, 3, 4-6"。没写到的页按自动判断接在后面。
-"""
+Four modes (documents.split):
+- auto: detect automatically. First look for markers such as "Page 2 of 3", "第 2 页 共 3 页" or
+  "续"; without markers, ask the model whether the page continues the previous one, based on
+  the end of the previous page and the start of this one. Without a model (or without an
+  answer), a new document starts.
+- one: the whole file is one document.
+- pages: one document per page.
+- Page ranges: "1-2, 3, 4-6". Pages not covered are appended using automatic detection."""
 
 from __future__ import annotations
 
@@ -14,45 +15,53 @@ import re
 from collections.abc import Callable, Sequence
 from typing import Literal
 
+from jacara.core.i18n import stored
 from jacara.plugins.ocr.base import OcrPage
 
 Judge = Callable[[OcrPage, OcrPage], bool | None]
-"""（上一页，这一页）→ 这一页是不是续页。None 表示判断不了。"""
+"""(previous page, this page) → whether this page is a continuation. None if undecidable."""
 
 Segment = tuple[int, int]
-"""一张单据：从第几页到第几页（从 1 开始，含两头）。"""
+"""One document: first and last page (1-based, inclusive)."""
 
 
 class SplitError(ValueError):
-    """页码范围写错了。说明直接给人看。"""
+    """Invalid page ranges. The message is shown to the user as is."""
 
 
 _RANGE = re.compile(r"^\s*(\d+)\s*(?:[-–~]\s*(\d+))?\s*$")
 
 
 def parse_ranges(text: str) -> list[Segment]:
-    """ "1-2, 3, 4-6" → [(1, 2), (3, 3), (4, 6)]。要从 1 开始、按顺序、不重叠。"""
+    """ "1-2, 3, 4-6" → [(1, 2), (3, 3), (4, 6)]. Must start at 1, be in order and not overlap."""
     ranges: list[Segment] = []
     for piece in re.split(r"[,，;；]", text):
         if not piece.strip():
             continue
         m = _RANGE.match(piece)
         if m is None:
-            raise SplitError(f"页码写得不对：「{piece.strip()}」，例如 1-2, 3, 4-6")
+            raise SplitError(
+                stored("页码格式错误：「{piece}」，正确格式如 1-2, 3, 4-6", piece=piece.strip())
+            )
         start, end = int(m[1]), int(m[2] or m[1])
         expected = ranges[-1][1] + 1 if ranges else 1
         if start != expected or end < start:
             raise SplitError(
-                f"页码要从 1 开始、按顺序、不重叠：「{piece.strip()}」应该从第 {expected} 页开始"
+                stored(
+                    ("页码需从 1 开始、按顺序且不重叠：「{piece}」应从第 {expected} 页开始"),
+                    piece=piece.strip(),
+                    expected=expected,
+                )
             )
         ranges.append((start, end))
     if not ranges:
-        raise SplitError("没有写页码")
+        raise SplitError(stored("未填写页码"))
     return ranges
 
 
 def normalize_split(split: str | None) -> str:
-    """检查并整理写法：auto、one、pages 原样；页码范围整理成 "1-2, 3, 4-6"。"""
+    """Validate and normalize: auto, one and pages unchanged; page ranges normalized to "1-2, 3,
+    4-6"."""
     text = (split or "auto").strip()
     if text in ("auto", "one", "pages"):
         return text
@@ -73,8 +82,8 @@ Marker = Literal["starts", "continues"]
 
 
 def page_marker(page: OcrPage) -> Marker | None:
-    """页上写着的标记：第 1 页 → starts；第 2 页及以后、"续""continued" → continues。
-    没有标记是 None。"""
+    """Marker printed on the page: page 1 → starts; page 2 or later, "续", "continued" → continues.
+    None without a marker."""
     for line in page.lines:
         text = line.text
         for k, pattern in enumerate(_OF):
@@ -96,7 +105,8 @@ def segments(
     judge: Judge | None = None,
     progress: Callable[[int], None] | None = None,
 ) -> list[Segment]:
-    """按 split 把页分成几张单据。progress(第几页) 在自动判断每一页前报告一次。"""
+    """Split pages into documents according to split. progress(page) is called before each page
+    during automatic detection."""
     count = len(pages)
     if count == 0:
         return []

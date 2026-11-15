@@ -2,9 +2,15 @@ import { Button, Flex, Result, Spin } from 'antd'
 import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router'
 import { useAuth } from './useAuth'
+import { useTranslation } from 'react-i18next'
+import { DataFolderMissing, MaintenanceWait } from '../components/DesktopScreens'
 
-/** 守门员：还没登录就带去登录页；后端连不上就显示错误。登录了才显示里面的页面。 */
+/**
+ * Gate: redirects to login when not logged in and shows an error when the backend is unreachable. Renders its
+ * children only after login.
+ */
 export function RequireAuth({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
   const { me, loading, error, refresh } = useAuth()
   const location = useLocation()
 
@@ -15,24 +21,32 @@ export function RequireAuth({ children }: { children: ReactNode }) {
       </Flex>
     )
   }
+  if (error?.unavailable) {
+    return <DataFolderMissing folder={error.unavailable} />
+  }
+  if (error?.maintenance) {
+    return <MaintenanceWait />
+  }
   if (error) {
     return (
       <Result
         status="error"
-        title="打不开"
+        title={t('无法打开')}
         subTitle={error.message}
-        extra={<Button onClick={() => void refresh()}>重试</Button>}
+        extra={<Button onClick={() => void refresh()}>{t('重试')}</Button>}
       />
     )
   }
   if (me === null) {
-    // 记下原来想去的地址，登录后再回去
+    // Remember the intended destination and return there after login.
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
   }
   return children
 }
 
-/** 页面级的权限检查：没有这个权限就显示 403。真正挡住操作的还是后端。 */
+/**
+ * Page-level permission check: shows 403 without the permission. The backend still enforces every operation.
+ */
 export function RequirePermission({
   permission,
   children,
@@ -40,9 +54,10 @@ export function RequirePermission({
   permission: string
   children: ReactNode
 }) {
+  const { t } = useTranslation()
   const { can } = useAuth()
   if (!can(permission)) {
-    return <Result status="403" title="没有权限" subTitle="这个页面只有管理员能看。" />
+    return <Result status="403" title={t('没有权限')} subTitle={t('此页面仅管理员可访问。')} />
   }
   return children
 }

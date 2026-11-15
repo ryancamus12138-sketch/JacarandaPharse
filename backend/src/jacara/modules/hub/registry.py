@@ -1,10 +1,10 @@
-# ruff: noqa: E501
-"""模型库（ADR 0059）：models/hub/<模型名>/v<版本号>/ 里的权重文件和模型卡。
+"""Model library: weight files and model cards in models/hub/<model name>/v<version>/.
 
-概念照 MLflow 模型注册表（注册模型 → 版本，同名再导入版本号加 1）和 Hugging Face 的模型卡
-（README.md，顶上 YAML 写元数据），只取概念、不用这两个软件。"在用"就是 models/selected.json（ADR 0046），
-不另存。这里只管文件：检查、改名、读写模型卡；权限、审计日志在 service.py。
-"""
+Concepts follow the MLflow Model Registry (registered model → versions; importing the same name
+again increments the version) and Hugging Face model cards (README.md with YAML metadata at the
+top); only the concepts are used, not the software. "In use" is models/selected.json and is not
+stored separately. This module handles files only (validation, renaming, reading and writing
+model cards); permissions and audit logging are in service.py."""
 
 from __future__ import annotations
 
@@ -23,15 +23,17 @@ from typing import IO, Any
 import yaml
 
 from jacara.core import config
+from jacara.core.i18n import N_, join_items, render, tr
 
 KINDS: dict[str, str] = {
-    "model": "大模型",
-    "mmproj": "视觉模型",
-    "ocr_det": "OCR 文字检测",
-    "ocr_rec": "OCR 文字识别",
-    "table": "表格结构模型",
+    "model": N_("大模型"),
+    "mmproj": N_("视觉模型"),
+    "ocr_det": N_("OCR 文字检测"),
+    "ocr_rec": N_("OCR 文字识别"),
+    "table": N_("表格结构模型"),
 }
-"""和换模型（ADR 0046）的槽位同名。识别模型的字典跟着识别模型走，不单独成一种。"""
+"""Same names as the model selection slots. The recognition dictionary belongs to the recognition
+model and is not a kind of its own."""
 
 FORMATS: dict[str, str] = {
     "model": ".gguf",
@@ -42,9 +44,15 @@ FORMATS: dict[str, str] = {
 }
 
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-"""模型名：字母、数字、点、横线、下划线，字母或数字开头（文件夹名，各系统都安全）。"""
+"""Model name: letters, digits, period, hyphen and underscore, starting with a letter or digit (safe
+as a folder name on every system)."""
 
 FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ ()+-]{0,127}$")
+
+SPLIT = re.compile(r"^(?P<stem>.+)-(?P<part>\d{5})-of-(?P<count>\d{5})\.gguf$", re.IGNORECASE)
+"""A GGUF model split into several files: llama.cpp's gguf-split names them
+<stem>-00001-of-00003.gguf, … (llama_split_path, "%s-%05d-of-%05d.gguf"), and llama-server is given
+the first one and loads the others from the same folder."""
 
 CARD = "README.md"
 INCOMING = ".incoming"
@@ -52,7 +60,7 @@ CHUNK = 1024 * 1024
 
 
 class HubError(Exception):
-    """业务错误。code 让 router 知道该返回哪种 HTTP 状态。"""
+    """Business error. code tells the router which HTTP status to return."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -61,16 +69,17 @@ class HubError(Exception):
 
 
 def hub_root() -> Path:
-    """models/hub。每次现取 config.PROJECT_ROOT：测试会把它换成临时文件夹。"""
-    return config.PROJECT_ROOT / "models" / "hub"
+    """models/hub in the data directory. Resolved on every call because tests replace the data
+    directory with a temporary one."""
+    return config.data_home() / "models" / "hub"
 
 
 def relative(path: Path) -> str:
-    """相对项目根目录的路径（selected.json 里存的就是这种）。"""
-    return path.relative_to(config.PROJECT_ROOT).as_posix()
+    """Path relative to the data directory (the form stored in selected.json)."""
+    return path.relative_to(config.data_home()).as_posix()
 
 
-# ---- 模型卡 ----
+# ---- Model card ----
 
 
 @dataclass
@@ -79,7 +88,8 @@ class CardFile:
     sha256: str
     size: int
     role: str
-    """weights（权重）或 dict（识别字典）。"""
+    """weights, shard (the further files of a split GGUF model) or dict (recognition
+    dictionary)."""
 
 
 @dataclass
@@ -90,7 +100,8 @@ class ModelVersion:
     path: Path
     files: list[CardFile]
     meta: dict[str, Any] = field(default_factory=dict)
-    """模型卡 YAML 头里的其他元数据：base_model、datasets、license、imported_at、imported_by、checks。"""
+    """Other metadata in the model card YAML header: base_model, datasets, license, imported_at,
+    imported_by, checks."""
     description: str = ""
 
     @property
@@ -104,7 +115,7 @@ class ModelVersion:
 
 
 def read_card(path: Path) -> tuple[dict[str, Any], str]:
-    """README.md → (YAML 头, 正文)。没有 YAML 头时元数据是空的。"""
+    """README.md → (YAML header, body). Metadata is empty without a YAML header."""
     text = path.read_text("utf-8")
     if not text.startswith("---\n"):
         return {}, text
@@ -141,7 +152,8 @@ def _version(path: Path, name: str) -> ModelVersion | None:
 
 
 def versions(name: str | None = None) -> list[ModelVersion]:
-    """模型库里所有版本（或某个模型的），按名字、版本号排。坏掉的（没有卡、文件少了）不列。"""
+    """All versions in the library (or of one model), ordered by name and version. Broken versions
+    (missing card or files) are omitted."""
     root = hub_root()
     if not root.is_dir():
         return []
@@ -157,18 +169,18 @@ def versions(name: str | None = None) -> list[ModelVersion]:
 
 def get_version(name: str, version: int) -> ModelVersion:
     if not NAME.fullmatch(name):
-        raise HubError("not_found", "没有这个模型")
+        raise HubError("not_found", tr("模型不存在"))
     found = _version(hub_root() / name / f"v{version}", name)
     if found is None:
-        raise HubError("not_found", f"没有 {name} 的第 {version} 版")
+        raise HubError("not_found", tr("{name} 不存在第 {version} 版", name=name, version=version))
     return found
 
 
-# ---- 写入和检查 ----
+# ---- Writing and validation ----
 
 
 def receive(chunks: Iterable[bytes], target: Path) -> tuple[str, int]:
-    """边写边算 SHA-256，返回 (sha256, 大小)。"""
+    """Compute SHA-256 while writing; return (sha256, size)."""
     digest = hashlib.sha256()
     size = 0
     with target.open("wb") as out:
@@ -185,35 +197,41 @@ def read_chunks(stream: IO[bytes]) -> Iterator[bytes]:
 
 
 def incoming() -> Path:
-    """一次导入用的临时文件夹（models/hub/.incoming/<随机>）：和最后的位置在同一个文件系统，改名是原子的。"""
+    """Temporary folder for one import (models/hub/.incoming/<random>): on the same file system as
+    the final location, so the rename is atomic."""
     path = hub_root() / INCOMING / uuid.uuid4().hex
     path.mkdir(parents=True)
     return path
 
 
 def check_space(size: int) -> None:
-    """磁盘剩余空间要有文件大小的 1.1 倍。"""
+    """Free disk space must be at least 1.1 times the file size."""
     root = hub_root()
     root.mkdir(parents=True, exist_ok=True)
     free = shutil.disk_usage(root).free
     if size and free < size * 1.1:
         raise HubError(
             "invalid",
-            f"磁盘空间不够：要 {size * 1.1 / 1e9:.1f} GB，只剩 {free / 1e9:.1f} GB",
+            tr(
+                "磁盘空间不足：需要 {needed:.1f} GB，仅剩 {free:.1f} GB",
+                needed=size * 1.1 / 1e9,
+                free=free / 1e9,
+            ),
         )
 
 
 def check_gguf(path: Path) -> dict[str, Any]:
-    """GGUF 规范（ggml docs/gguf.md）：开头是 GGUF 四个字节，接着 4 字节的版本号（1～3）。"""
+    """GGUF specification (ggml docs/gguf.md): the magic bytes GGUF followed by a 4-byte version
+    (1–3)."""
     with path.open("rb") as f:
         head = f.read(8)
     if len(head) < 8 or head[:4] != b"GGUF":
-        raise HubError("invalid", "不是 GGUF 文件（开头不是 GGUF）")
+        raise HubError("invalid", tr("不是 GGUF 文件（文件头不是 GGUF）"))
     version = struct.unpack("<I", head[4:])[0]
     if version not in (1, 2, 3):
-        version = struct.unpack(">I", head[4:])[0]  # v3 起可以是大端
+        version = struct.unpack(">I", head[4:])[0]  # Big-endian is allowed from v3.
     if version not in (1, 2, 3):
-        raise HubError("invalid", "GGUF 版本号不认识，文件可能坏了")
+        raise HubError("invalid", tr("无法识别 GGUF 版本号，文件可能已损坏"))
     return {"format": "gguf", "gguf_version": version}
 
 
@@ -222,30 +240,36 @@ def _shape(dims: Any) -> list[int | str | None]:
 
 
 def read_dict(path: Path) -> list[str]:
-    """识别字典：一行一个字，和 RapidOCR 读字典的方式一样（只去掉行尾的换行）。"""
+    """Recognition dictionary: one character per line, read the same way as RapidOCR (only the
+    trailing newline is stripped)."""
     return [line.rstrip("\r\n") for line in path.read_bytes().decode("utf-8").splitlines()]
 
 
 def check_onnx(path: Path, kind: str, dictionary: Path | None) -> dict[str, Any]:
-    """ONNX：onnxruntime 能加载；输入是 4 维图片；识别模型输出 3 维、检测模型输出 4 维；
-    识别模型的类别数 = 字符表行数 + 2（RapidOCR 的 CTCLabelDecode 前面插 blank、后面加空格）。"""
+    """ONNX: loadable by onnxruntime; the input is a 4-D image; recognition models output 3-D and
+    detection models 4-D; for recognition models the class count equals dictionary lines + 2
+    (RapidOCR CTCLabelDecode prepends blank and appends space)."""
     import onnxruntime as ort
 
     try:
         session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
-    except Exception as err:  # onnxruntime 的错误种类很多
-        raise HubError("invalid", f"onnxruntime 打不开这个文件：{str(err)[:200]}") from err
+    except Exception as err:  # onnxruntime raises many error types.
+        raise HubError(
+            "invalid", tr("onnxruntime 无法打开此文件：{detail}", detail=str(err)[:200])
+        ) from err
     inputs = [_shape(i.shape) for i in session.get_inputs()]
     outputs = [_shape(o.shape) for o in session.get_outputs()]
     info: dict[str, Any] = {"format": "onnx", "inputs": inputs, "outputs": outputs}
     if not inputs or len(inputs[0]) != 4:
-        raise HubError("invalid", "输入不是 4 维图片（批量、通道、高、宽），不像 OCR 或表格模型")
+        raise HubError(
+            "invalid", tr("输入不是 4 维图像（批量、通道、高、宽），不符合 OCR 或表格模型的特征")
+        )
     if kind in ("ocr_det", "ocr_rec") and outputs:
         rank = len(outputs[0])
         if kind == "ocr_rec" and rank == 4:
-            raise HubError("invalid", "这个文件的输出是 4 维，像是检测模型，不是识别模型")
+            raise HubError("invalid", tr("此文件的输出为 4 维，应为检测模型而非识别模型"))
         if kind == "ocr_det" and rank == 3:
-            raise HubError("invalid", "这个文件的输出是 3 维，像是识别模型，不是检测模型")
+            raise HubError("invalid", tr("此文件的输出为 3 维，应为识别模型而非检测模型"))
     if kind != "ocr_rec":
         return info
     meta = session.get_modelmeta().custom_metadata_map
@@ -253,15 +277,19 @@ def check_onnx(path: Path, kind: str, dictionary: Path | None) -> dict[str, Any]
         chars = meta["character"].splitlines()
         info["dict_source"] = "model"
         if dictionary is not None:
-            info["dict_note"] = "模型自带字符表，RapidOCR 只用自带的，传的字典不会生效"
+            info["dict_note"] = tr(
+                "模型已内置字符表，RapidOCR 仅使用内置字符表，上传的字典不会生效"
+            )
     elif dictionary is not None:
         chars = read_dict(dictionary)
         info["dict_source"] = "file"
     else:
         raise HubError(
             "invalid",
-            "这个识别模型没有自带字符表，要一起传字典（.txt）。"
-            "不传的话 RapidOCR 会去网上下载字典，离线用不了",
+            tr(
+                "此识别模型未内置字符表，需同时上传字典（.txt）。否则 RapidOC"
+                "R 将尝试联网下载字典，离线环境下无法使用"
+            ),
         )
     info["characters"] = len(chars)
     classes = outputs[0][-1] if outputs and outputs[0] else None
@@ -270,8 +298,15 @@ def check_onnx(path: Path, kind: str, dictionary: Path | None) -> dict[str, Any]
         if classes != len(chars) + 2:
             raise HubError(
                 "invalid",
-                f"字典和模型对不上：模型有 {classes} 类，字典 {len(chars)} 个字"
-                f"（应该是 {classes - 2} 个：RapidOCR 会再加 blank 和空格两类）",
+                tr(
+                    (
+                        "字典与模型不匹配：模型有 {classes} 类，字典有 {n} 个字符（应"
+                        "为 {expected} 个：RapidOCR 会另加 blank 和空格两类）"
+                    ),
+                    classes=classes,
+                    n=len(chars),
+                    expected=classes - 2,
+                ),
             )
     return info
 
@@ -282,11 +317,49 @@ def check(kind: str, weights: Path, dictionary: Path | None) -> dict[str, Any]:
     return check_onnx(weights, kind, dictionary)
 
 
+def split_parts(weights: str) -> list[str]:
+    """The further files of a split GGUF model whose first file is weights; empty when it is not
+    the first file of a split model."""
+    match = SPLIT.fullmatch(weights)
+    if match is None or int(match["part"]) != 1:
+        return []
+    stem, count = match["stem"], int(match["count"])
+    suffix = weights[-5:]  # .gguf as written.
+    return [f"{stem}-{n:05d}-of-{count:05d}{suffix}" for n in range(2, count + 1)]
+
+
+def precheck(name: str, kind: str) -> None:
+    """The checks of add_version that do not need the files: a valid name and kind, and the same
+    kind as the earlier versions of this name."""
+    if not NAME.fullmatch(name):
+        raise HubError(
+            "invalid",
+            tr("模型名称只能包含字母、数字和 ._-，需以字母或数字开头，最多 64 个字符"),
+        )
+    if kind not in KINDS:
+        raise HubError("invalid", tr("未知种类：{kind}", kind=kind))
+    earlier = versions(name)
+    if earlier and earlier[-1].kind != kind:
+        raise HubError(
+            "invalid",
+            tr(
+                "{name} 已是{kind}，新版本需为同一种类；其他种类请使用新名称",
+                name=name,
+                kind=tr(KINDS[earlier[-1].kind]),
+            ),
+        )
+
+
 def safe_filename(filename: str, suffix: str) -> str:
     name = Path(filename.replace("\\", "/")).name.strip()
     if not FILE.fullmatch(name) or not name.lower().endswith(suffix):
         raise HubError(
-            "invalid", f"文件名只能用字母、数字和 ._-()+，并且以 {suffix} 结尾：{filename}"
+            "invalid",
+            tr(
+                ("文件名只能包含字母、数字和 ._-()+，且需以 {suffix} 结尾：{filename}"),
+                suffix=suffix,
+                filename=filename,
+            ),
         )
     return name
 
@@ -300,24 +373,25 @@ def add_version(
     meta: dict[str, Any],
     description: str,
 ) -> ModelVersion:
-    """work 里已经放好了权重（和字典）：检查、写模型卡、改名成下一个版本。出错时删掉 work。"""
+    """work already contains the weights (and dictionary; for a split GGUF model, every file of
+    it): validate, write the model card and rename to the next version. On error, work is
+    deleted."""
     try:
-        if not NAME.fullmatch(name):
-            raise HubError("invalid", "模型名只能用字母、数字和 ._-，字母或数字开头，最多 64 个字")
-        if kind not in KINDS:
-            raise HubError("invalid", f"不认识的种类：{kind}")
+        precheck(name, kind)
         if dictionary is not None and kind != "ocr_rec":
-            raise HubError("invalid", "只有识别模型要字典")
+            raise HubError("invalid", tr("仅识别模型需要字典"))
         if weights == dictionary:
-            raise HubError("invalid", "字典和模型不能是同一个文件")
-        earlier = versions(name)
-        if earlier and earlier[-1].kind != kind:
+            raise HubError("invalid", tr("字典与模型不能为同一文件"))
+        parts = split_parts(weights) if FORMATS[kind] == ".gguf" else []
+        missing = [p for p in parts if not (work / p).is_file()]
+        if missing:
             raise HubError(
                 "invalid",
-                f"{name} 已经是{KINDS[earlier[-1].kind]}了，新版本要是同一种；别的种类换个名字",
+                tr("分片模型缺少文件：{files}", files=render(join_items(missing))),
             )
         checks = check(kind, work / weights, work / dictionary if dictionary else None)
         files = [_card_file(work / weights, "weights")]
+        files += [_card_file(work / p, "shard") for p in parts]
         if dictionary:
             files.append(_card_file(work / dictionary, "dict"))
         card = {
@@ -330,7 +404,9 @@ def add_version(
         write_card(work / CARD, card, description.strip() + "\n" if description.strip() else "")
         model = hub_root() / name
         model.mkdir(parents=True, exist_ok=True)
-        while True:  # 两个人同时导入同名模型：改名失败的再往后排一个
+        # Two users importing the same model name concurrently: if the rename fails, take the next
+        # version.
+        while True:
             number = 1 + max((v.version for v in versions(name)), default=0)
             number = max(number, 1 + max(_numbers(model), default=0))
             try:
@@ -361,7 +437,8 @@ def _card_file(path: Path, role: str) -> CardFile:
 
 
 def remove(version: ModelVersion) -> None:
-    """删掉一个版本的文件夹；这个模型一个版本都不剩时连模型文件夹一起删。"""
+    """Delete the folder of one version; when no version of the model remains, delete the model
+    folder too."""
     shutil.rmtree(version.path)
     model = version.path.parent
     if model.is_dir() and not any(model.iterdir()):
@@ -369,7 +446,8 @@ def remove(version: ModelVersion) -> None:
 
 
 def pack(version: ModelVersion, target: Path) -> Path:
-    """一个版本打成 zip（权重本来就是压缩过的，不再压，ZIP_STORED），拿到别的电脑上导入。"""
+    """Pack one version into a zip for import on another machine (weights are already compressed, so
+    ZIP_STORED is used)."""
     with zipfile.ZipFile(target, "w", zipfile.ZIP_STORED, allowZip64=True) as archive:
         archive.write(version.path / CARD, CARD)
         for f in version.files:
@@ -378,11 +456,12 @@ def pack(version: ModelVersion, target: Path) -> Path:
 
 
 def unpack(archive_path: Path, work: Path) -> tuple[str, str | None, dict[str, Any], str]:
-    """导入别的电脑导出的 zip：读模型卡，取出权重和字典。返回 (权重文件名, 字典文件名, 元数据, 说明)。"""
+    """Import a zip exported on another machine: read the model card and extract weights and
+    dictionary. Returns (weights file name, dictionary file name, metadata, description)."""
     with zipfile.ZipFile(archive_path) as archive:
         names = set(archive.namelist())
         if CARD not in names:
-            raise HubError("invalid", "zip 里没有模型卡 README.md，不是模型库导出的")
+            raise HubError("invalid", tr("zip 中缺少模型卡 README.md，不是本程序导出的模型文件"))
         card = archive.read(CARD).decode("utf-8")
         tmp = work / "card.md"
         tmp.write_text(card, "utf-8")
@@ -392,15 +471,20 @@ def unpack(archive_path: Path, work: Path) -> tuple[str, str | None, dict[str, A
         weights = next((str(f["name"]) for f in listed if f.get("role") == "weights"), None)
         dictionary = next((str(f["name"]) for f in listed if f.get("role") == "dict"), None)
         if weights is None:
-            raise HubError("invalid", "模型卡里没写权重文件")
+            raise HubError("invalid", tr("模型卡中未指定权重文件"))
         for f in listed:
             filename = str(f["name"])
             if filename not in names or Path(filename).name != filename or filename == CARD:
-                raise HubError("invalid", f"zip 里缺文件或文件名不对：{filename}")
+                raise HubError(
+                    "invalid", tr("zip 中缺少文件或文件名错误：{filename}", filename=filename)
+                )
             with archive.open(filename) as src:
                 sha, _ = receive(read_chunks(src), work / filename)
             if sha != f.get("sha256"):
-                raise HubError("invalid", f"{filename} 的 SHA-256 和模型卡上的不一样，文件可能坏了")
+                raise HubError(
+                    "invalid",
+                    tr("{filename} 的 SHA-256 与模型卡不一致，文件可能已损坏", filename=filename),
+                )
     keep = {k: meta[k] for k in ("base_model", "datasets", "license", "imported_by") if k in meta}
     keep["kind"] = meta.get("kind")
     return weights, dictionary, keep, body.strip()

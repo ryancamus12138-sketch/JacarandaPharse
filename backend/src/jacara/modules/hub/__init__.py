@@ -1,1 +1,1 @@
-"""模型和数据集库（ADR 0059）、OCR 模型评测（ADR 0060）。"""
+"""Model and dataset library, and OCR model evaluation."""

@@ -43,41 +43,47 @@ import { StructureCard } from './StructureCard'
 import { blankField, FIELD_ID, fieldsProblem } from './templateFields'
 import { LabelFields, LabelTags } from './LabelWidgets'
 import { Tip } from '../../components/Tip'
+import { useTranslation } from 'react-i18next'
+import { msg, t } from '../../i18n'
+import { DEFAULT_LANGUAGE, newTemplateLanguage, untranslated, withLanguage } from './templateLanguage'
 
 
 const STATUS_TEXT: Record<string, [string, string]> = {
-  matched: ['有出处', 'green'],
-  fuzzy: ['相似', 'gold'],
-  not_found: ['找不到出处', 'red'],
-  empty: ['原文没有', 'default'],
+  matched: [msg('有出处'), 'green'],
+  fuzzy: [msg('相似'), 'gold'],
+  not_found: [msg('未找到出处'), 'red'],
+  empty: [msg('原文缺失'), 'default'],
 }
 
-function draftOf(t: Template): TemplateIn {
+function draftOf(tpl: Template): TemplateIn {
   return {
-    title: t.title,
-    titles: t.titles ?? {},
-    category: t.category,
-    description: t.description,
-    fields: t.fields,
-    tables: t.tables,
-    rules: t.rules.map((r) => r.id),
-    custom_rules: t.custom_rules ?? [],
-    domains: t.domains ?? (t.category ? [t.category] : []),
-    countries: t.countries ?? [],
-    tags: t.tags ?? [],
+    title: tpl.title,
+    titles: tpl.titles ?? {},
+    language: tpl.language ?? DEFAULT_LANGUAGE,
+    category: tpl.category,
+    description: tpl.description,
+    descriptions: tpl.descriptions ?? {},
+    fields: tpl.fields,
+    tables: tpl.tables,
+    rules: tpl.rules.map((r) => r.id),
+    custom_rules: tpl.custom_rules ?? [],
+    domains: tpl.domains ?? (tpl.category ? [tpl.category] : []),
+    countries: tpl.countries ?? [],
+    tags: tpl.tags ?? [],
     note: '',
   }
 }
 
 /**
- * 编辑我的模板：字段、表格、规则；每次保存是一个新版本（旧文档还按原来的版本）。
- * 也可以先"试跑"：用最新版在一份已处理的文档上抽一次看看，不保存。
+ * Edit one of my templates: fields, tables, rules; every save creates a new version (older documents keep
+ * their version). A trial run extracts one processed document with the latest version without saving.
  */
-/** 新建空白模板：还没存进数据库，点了保存才建（第 1 版）。 */
+/** New blank template: not stored in the database until saved (as version 1). */
 const BLANK: Template = {
   name: '',
   version: 0,
-  title: '新模板',
+  get title() { return t('新模板') },
+  get language() { return newTemplateLanguage() },
   description: '',
   category: '',
   kind: 'mine',
@@ -88,7 +94,7 @@ const BLANK: Template = {
   fields: [
     {
       name: 'total',
-      label: '总额',
+      get label() { return t('总额') },
       type: 'number',
       required: true,
       description: '',
@@ -110,6 +116,7 @@ const BLANK: Template = {
 }
 
 export function TemplateEditorPage() {
+  const { t } = useTranslation()
   const { id = '' } = useParams()
   const isNew = id === 'new'
   const template = useQuery({
@@ -132,21 +139,22 @@ export function TemplateEditorPage() {
     return (
       <Result
         status="warning"
-        title="打不开这个模板"
+        title={t('无法打开此模板')}
         subTitle={text}
         extra={
           <Link to="/templates">
-            <Button>回模板列表</Button>
+            <Button>{t('返回模板列表')}</Button>
           </Link>
         }
       />
     )
   }
-  // key：保存出新版本后，编辑区从新版本重新开始
+  // key: after saving a new version, the editor restarts from it.
   return <Editor key={`${id}:${template.data.version}`} template={template.data} />
 }
 
 function Editor({ template }: { template: Template }) {
+  const { t } = useTranslation()
   const { can } = useAuth()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
@@ -155,19 +163,36 @@ function Editor({ template }: { template: Template }) {
   const [viewing, setViewing] = useState<number | null>(null)
   const [trialDoc, setTrialDoc] = useState<string>()
   const set = (patch: Partial<TemplateIn>) => setDraft((d) => ({ ...d, ...patch }))
-  // 名称语言（ADR 0048）：模板已经写了的语言在前，后面是别的常用语言，选了就能填
-  const [language, setLanguage] = useState('zh')
+  // Primary language: title, description and every name and description are written in it; the model gets
+  // its descriptions, and the review page and exports show its names by default.
+  const primary = draft.language ?? DEFAULT_LANGUAGE
+  // Editing language: the primary language first, then languages already in the template, then other common
+  // languages that can be added.
+  const [language, setLanguage] = useState(primary)
   const editorLanguages = [
-    ...new Set(['zh', ...(template.languages ?? []), ...Object.keys(LANGUAGE_NAMES)]),
+    ...new Set([primary, ...(template.languages ?? []), ...Object.keys(LANGUAGE_NAMES)]),
   ]
-  // 已经存过的字段 ID 不能改（新建的还没存过，都能改）
+  const changePrimary = (next: string) => {
+    const missing = untranslated(draft, next)
+    setDraft(withLanguage(draft, next))
+    setLanguage(next)
+    if (missing > 0) {
+      void message.warning(
+        t('主语言已改为{{languageName}}。有 {{count}} 处尚无{{languageName}}版本，暂时保留原文字，请补充翻译', {
+          languageName: languageName(next),
+          count: missing,
+        }),
+      )
+    }
+  }
+  // Field IDs already saved cannot change (new, unsaved fields can).
   const saved = template.id !== null
   const locked = useMemo(
     () => new Set(saved ? template.fields.map((f) => f.name) : []),
     [template, saved],
   )
   const lockedTables = useMemo(
-    () => new Set(saved ? template.tables.map((t) => t.name) : []),
+    () => new Set(saved ? template.tables.map((tbl) => tbl.name) : []),
     [template, saved],
   )
 
@@ -187,24 +212,24 @@ function Editor({ template }: { template: Template }) {
 
   const isNew = template.id === null
   const navigate = useNavigate()
-  // 新建的：点了保存才建，建好换到它自己的页面
+  // New template: created on save, then navigate to its own page.
   const create = useMutation({
     mutationFn: () => createTemplate({ source: 'blank', content: draft }),
-    onSuccess: (t) => {
+    onSuccess: (tpl) => {
       void queryClient.invalidateQueries({ queryKey: ['templates'] })
-      void message.success(`已保存「${t.title}」（第 1 版）`)
-      void navigate(`/templates/${t.id}`, { replace: true })
+      void message.success(t('已保存「{{title}}」（第 1 版）', { title: tpl.title }))
+      void navigate(`/templates/${tpl.id}`, { replace: true })
     },
     onError: (err: unknown) =>
       void message.error(err instanceof ApiError ? err.message : String(err)),
   })
   const save = useMutation({
     mutationFn: () => saveTemplate(template.id ?? '', draft),
-    onSuccess: (t) => {
+    onSuccess: (tpl) => {
       void queryClient.invalidateQueries({ queryKey: ['templates'] })
-      queryClient.setQueryData(['template', t.id], { ...template, ...t, versions: template.versions })
-      void queryClient.invalidateQueries({ queryKey: ['template', t.id] })
-      void message.success(`已保存第 ${t.version} 版。以后上传、重新处理用这一版，旧文档不变`)
+      queryClient.setQueryData(['template', tpl.id], { ...template, ...tpl, versions: template.versions })
+      void queryClient.invalidateQueries({ queryKey: ['template', tpl.id] })
+      void message.success(t('已保存第 {{version}} 版。之后的上传和重新处理将使用此版本，已有文档不受影响', { version: tpl.version }))
     },
     onError,
   })
@@ -215,21 +240,21 @@ function Editor({ template }: { template: Template }) {
 
   const dirty = JSON.stringify({ ...draft, note: '' }) !== JSON.stringify(draftOf(template))
   const problem =
-    (!draft.title.trim() ? '模板名不能空' : null) ??
-    (draft.fields.length === 0 ? '至少要有一个字段' : null) ??
-    fieldsProblem(draft.fields, '字段里') ??
+    (!draft.title.trim() ? t('模板名称不能为空') : null) ??
+    (draft.fields.length === 0 ? t('至少需要一个字段') : null) ??
+    fieldsProblem(draft.fields, t('字段里')) ??
     draft.tables
       .map(
-        (t) =>
-          (!FIELD_ID.test(t.name) ? `表格 ID「${t.name}」只能用小写英文字母、数字和下划线` : null) ??
-          (t.columns.length === 0 ? `表格「${t.label}」至少要有一列` : null) ??
-          fieldsProblem(t.columns, `表格「${t.label}」`),
+        (tbl) =>
+          (!FIELD_ID.test(tbl.name) ? t('表格 ID「{{name}}」只能包含小写英文字母、数字和下划线', { name: tbl.name }) : null) ??
+          (tbl.columns.length === 0 ? t('表格「{{label}}」至少需要一列', { label: tbl.label }) : null) ??
+          fieldsProblem(tbl.columns, t('表格「{{label}}」', { label: tbl.label })),
       )
       .find((p) => p !== null) ??
     null
 
   const setTable = (i: number, patch: Partial<TemplateTable>) =>
-    set({ tables: draft.tables.map((t, j) => (j === i ? { ...t, ...patch } : t)) })
+    set({ tables: draft.tables.map((tbl, j) => (j === i ? { ...tbl, ...patch } : tbl)) })
 
   return (
     <Flex vertical gap={16}>
@@ -237,15 +262,15 @@ function Editor({ template }: { template: Template }) {
         title={
           <Flex gap={8} align="center" wrap>
             <Link to="/templates">
-              <Button icon={<ArrowLeftOutlined />}>模板</Button>
+              <Button icon={<ArrowLeftOutlined />}>{t('模板')}</Button>
             </Link>
-            <Typography.Text strong>{isNew ? '新建模板' : template.title}</Typography.Text>
-            {isNew ? <Tag color="orange">还没保存</Tag> : <Tag>第 {template.version} 版</Tag>}
-            {template.archived && <Tag>已归档</Tag>}
+            <Typography.Text strong>{isNew ? t('新建模板') : template.title}</Typography.Text>
+            {isNew ? <Tag color="orange">{t('未保存')}</Tag> : <Tag>{t('第 {{version}} 版', { version: template.version })}</Tag>}
+            {template.archived && <Tag>{t('已归档')}</Tag>}
             <LabelTags
               template={{ ...template, domains: draft.domains, countries: draft.countries, tags: draft.tags }}
             />
-            {template.kind !== 'mine' && <Tag color="blue">只读（{template.kind === 'starter' ? '起步模板' : '内置模板'}）</Tag>}
+            {template.kind !== 'mine' && <Tag color="blue">{t('只读（{{kind}}）', { kind: template.kind === 'starter' ? t('起步模板') : t('内置模板') })}</Tag>}
           </Flex>
         }
         extra={
@@ -253,7 +278,7 @@ function Editor({ template }: { template: Template }) {
             isNew ? (
               <Space>
                 <Link to="/templates">
-                  <Button>取消</Button>
+                  <Button>{t('取消')}</Button>
                 </Link>
                 <Button
                   type="primary"
@@ -262,13 +287,13 @@ function Editor({ template }: { template: Template }) {
                   loading={create.isPending}
                   onClick={() => create.mutate()}
                 >
-                  保存
+                  {t('保存')}
                 </Button>
               </Space>
             ) : (
               <Space.Compact>
                 <Input
-                  placeholder="这一版改了什么（可以不写）"
+                  placeholder={t('本版本修改说明（选填）')}
                   value={draft.note}
                   onChange={(e) => set({ note: e.target.value })}
                   style={{ width: 260 }}
@@ -280,7 +305,7 @@ function Editor({ template }: { template: Template }) {
                   loading={save.isPending}
                   onClick={() => save.mutate()}
                 >
-                  保存为第 {template.version + 1} 版
+                  {t('保存为第 {{version}} 版', { version: template.version + 1 })}
                 </Button>
               </Space.Compact>
             )
@@ -295,22 +320,22 @@ function Editor({ template }: { template: Template }) {
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            title="填好字段后点右上角“保存”，才会加到我的模板里"
-            description="离开这个页面不保存，什么都不会留下。"
+            title={t('填写字段后点击右上角“保存”，模板才会添加到我的模板')}
+            description={t('未保存就离开此页面，内容将不会保留。')}
           />
         )}
         {template.used > 0 && !readOnly && (
           <Tip
             id="editor-template-used"
             style={{ marginBottom: 12 }}
-            title={`有 ${template.used} 份文档用这个模板`}
-            description="保存新版本不会改它们已有的结果；想按新版本重新抽，在审核页面点“重新处理”。"
+            title={t('已有 {{used}} 份文档使用此模板', { used: template.used })}
+            description={t('保存新版本不会改变这些文档已有的结果；如需按新版本重新抽取，请在审核页点击“重新处理”。')}
           />
         )}
         {!readOnly && <StarterFormulas template={template} draft={draft} set={set} />}
         <Descriptions column={{ xs: 1, md: 3 }} size="small">
-          <Descriptions.Item label={language === 'zh' ? '模板名' : `模板名（${languageName(language)}）`}>
-            {language === 'zh' ? (
+          <Descriptions.Item label={language === primary ? t('模板名称') : t('模板名（{{languageName}}）', { languageName: languageName(language) })}>
+            {language === primary ? (
               <Input value={draft.title} disabled={readOnly} onChange={(e) => set({ title: e.target.value })} />
             ) : (
               <Input
@@ -321,11 +346,42 @@ function Editor({ template }: { template: Template }) {
               />
             )}
           </Descriptions.Item>
-          <Descriptions.Item label="说明" span={2}>
-            <Input
-              value={draft.description}
+          <Descriptions.Item
+            label={language === primary ? t('说明') : t('说明（{{languageName}}）', { languageName: languageName(language) })}
+            span={2}
+          >
+            {language === primary ? (
+              <Input
+                value={draft.description}
+                disabled={readOnly}
+                onChange={(e) => set({ description: e.target.value })}
+              />
+            ) : (
+              <Input
+                value={draft.descriptions?.[language] ?? ''}
+                placeholder={draft.description}
+                disabled={readOnly}
+                onChange={(e) => set({ descriptions: { ...draft.descriptions, [language]: e.target.value } })}
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item
+            label={
+              <Tooltip title={t('名称和说明均以此语言编写；审核页和导出默认显示此语言的名称，提供给模型的说明也使用此语言')}>
+                {t('主语言')}
+              </Tooltip>
+            }
+          >
+            <Select
+              size="small"
+              aria-label={t('主语言')}
+              value={primary}
               disabled={readOnly}
-              onChange={(e) => set({ description: e.target.value })}
+              options={languageOptions(editorLanguages)}
+              onChange={changePrimary}
+              style={{ minWidth: 150 }}
+              showSearch
+              optionFilterProp="label"
             />
           </Descriptions.Item>
         </Descriptions>
@@ -343,16 +399,16 @@ function Editor({ template }: { template: Template }) {
       </Card>
 
       <Card
-        title={`字段（${draft.fields.length}）`}
+        title={t('字段（{{length}}）', { length: draft.fields.length })}
         size="small"
         extra={
           <Flex align="center" gap={8}>
-            <Tooltip title="字段名可以写几种语言：审核页、导出时切换。没写的语言显示中文名。也会告诉模型单据上可能这么写">
-              <Typography.Text type="secondary">名称语言</Typography.Text>
+            <Tooltip title={t('名称和说明可填写多种语言，在审核页、导出和预览中切换；未填写的语言显示主语言内容。各语言名称也会提供给模型，作为单据上可能出现的写法')}>
+              <Typography.Text type="secondary">{t('编辑语言')}</Typography.Text>
             </Tooltip>
             <Select
               size="small"
-              aria-label="名称语言"
+              aria-label={t('编辑语言')}
               value={language}
               options={languageOptions(editorLanguages)}
               onChange={setLanguage}
@@ -365,6 +421,7 @@ function Editor({ template }: { template: Template }) {
       >
         <FieldsEditor
           language={language}
+          primary={primary}
           fields={draft.fields}
           onChange={(fields) => set({ fields })}
           locked={locked}
@@ -374,7 +431,7 @@ function Editor({ template }: { template: Template }) {
       </Card>
 
       <Card
-        title={`表格（${draft.tables.length}）`}
+        title={t('表格（{{length}}）', { length: draft.tables.length })}
         size="small"
         extra={
           !readOnly && (
@@ -385,64 +442,64 @@ function Editor({ template }: { template: Template }) {
                   tables: [
                     ...draft.tables,
                     {
-                      name: draft.tables.some((t) => t.name === 'items') ? `table_${draft.tables.length + 1}` : 'items',
-                      label: '明细',
+                      name: draft.tables.some((tbl) => tbl.name === 'items') ? `table_${draft.tables.length + 1}` : 'items',
+                      label: t('明细'),
                       description: '',
                       required: false,
                       export: true,
-                      columns: [{ ...blankField([]), name: 'amount', label: '金额', type: 'number' }],
+                      columns: [{ ...blankField([]), name: 'amount', label: t('金额'), type: 'number' }],
                     },
                   ],
                 })
               }
             >
-              加一张表
+              {t('添加表格')}
             </Button>
           )
         }
       >
         {draft.tables.length === 0 ? (
-          <Empty description="没有表格。商品明细、航段这种行数不固定的，用表格" />
+          <Empty description={t('暂无表格。行数不固定的内容（如商品明细、航段）请使用表格')} />
         ) : (
           <Flex vertical gap={16}>
-            {draft.tables.map((t, i) => (
+            {draft.tables.map((tbl, i) => (
               <Card
                 key={i}
                 type="inner"
                 size="small"
                 title={
                   <Flex gap={8} align="center" wrap>
-                    {language === 'zh' ? (
+                    {language === primary ? (
                       <Input
-                        value={t.label}
+                        value={tbl.label}
                         disabled={readOnly}
                         onChange={(e) => setTable(i, { label: e.target.value })}
-                        style={{ width: 140 }}
-                        addonBefore="中文名"
+                        style={{ width: 200 }}
+                        addonBefore={languageName(primary)}
                       />
                     ) : (
                       <Input
-                        value={t.names?.[language] ?? ''}
-                        placeholder={t.label}
+                        value={tbl.names?.[language] ?? ''}
+                        placeholder={tbl.label}
                         disabled={readOnly}
-                        onChange={(e) => setTable(i, { names: { ...t.names, [language]: e.target.value } })}
+                        onChange={(e) => setTable(i, { names: { ...tbl.names, [language]: e.target.value } })}
                         style={{ width: 200 }}
                         addonBefore={languageName(language)}
                       />
                     )}
                     <Input
-                      value={t.name}
-                      disabled={readOnly || lockedTables.has(t.name)}
-                      status={FIELD_ID.test(t.name) ? undefined : 'error'}
+                      value={tbl.name}
+                      disabled={readOnly || lockedTables.has(tbl.name)}
+                      status={FIELD_ID.test(tbl.name) ? undefined : 'error'}
                       onChange={(e) => setTable(i, { name: e.target.value.trim() })}
                       style={{ width: 160 }}
                       addonBefore="ID"
                     />
-                    <Checkbox checked={t.required} disabled={readOnly} onChange={(e) => setTable(i, { required: e.target.checked })}>
-                      至少一行
+                    <Checkbox checked={tbl.required} disabled={readOnly} onChange={(e) => setTable(i, { required: e.target.checked })}>
+                      {t('至少一行')}
                     </Checkbox>
-                    <Checkbox checked={t.export} disabled={readOnly} onChange={(e) => setTable(i, { export: e.target.checked })}>
-                      导出
+                    <Checkbox checked={tbl.export} disabled={readOnly} onChange={(e) => setTable(i, { export: e.target.checked })}>
+                      {t('导出')}
                     </Checkbox>
                   </Flex>
                 }
@@ -454,32 +511,45 @@ function Editor({ template }: { template: Template }) {
                       icon={<DeleteOutlined />}
                       onClick={() => set({ tables: draft.tables.filter((_, j) => j !== i) })}
                     >
-                      删掉这张表
+                      {t('删除此表格')}
                     </Button>
                   )
                 }
               >
-                <Input.TextArea
-                  value={t.description}
-                  disabled={readOnly}
-                  autoSize={{ minRows: 1, maxRows: 3 }}
-                  placeholder="给模型的说明：表在单据哪里、哪些行不算（小计、合计……）"
-                  onChange={(e) => setTable(i, { description: e.target.value })}
-                  style={{ marginBottom: 8 }}
-                />
+                {language === primary ? (
+                  <Input.TextArea
+                    value={tbl.description}
+                    disabled={readOnly}
+                    autoSize={{ minRows: 1, maxRows: 3 }}
+                    placeholder={t('给模型的说明：表格在单据中的位置、哪些行不计入（小计、合计等）')}
+                    onChange={(e) => setTable(i, { description: e.target.value })}
+                    style={{ marginBottom: 8 }}
+                  />
+                ) : (
+                  <Input.TextArea
+                    value={tbl.descriptions?.[language] ?? ''}
+                    disabled={readOnly}
+                    autoSize={{ minRows: 1, maxRows: 3 }}
+                    placeholder={tbl.description}
+                    aria-label={t('说明（{{languageName}}）', { languageName: languageName(language) })}
+                    onChange={(e) => setTable(i, { descriptions: { ...tbl.descriptions, [language]: e.target.value } })}
+                    style={{ marginBottom: 8 }}
+                  />
+                )}
                 <FieldsEditor
                   language={language}
-                  fields={t.columns}
+                  primary={primary}
+                  fields={tbl.columns}
                   onChange={(columns) => setTable(i, { columns })}
                   locked={
                     new Set(
                       saved
-                        ? (template.tables.find((x) => x.name === t.name)?.columns.map((c) => c.name) ?? [])
+                        ? (template.tables.find((x) => x.name === tbl.name)?.columns.map((c) => c.name) ?? [])
                         : [],
                     )
                   }
                   readOnly={readOnly}
-                  scope={{ fields: draft.fields, tables: draft.tables, row: t.name }}
+                  scope={{ fields: draft.fields, tables: draft.tables, row: tbl.name }}
                 />
               </Card>
             ))}
@@ -513,18 +583,17 @@ function Editor({ template }: { template: Template }) {
           title={
             <Space>
               <ExperimentOutlined />
-              试跑
+              {t('试跑')}
             </Space>
           }
         >
           <Typography.Paragraph type="secondary">
-            用<b>已保存的最新版</b>（第 {template.version} 版）在一份处理过的文档上抽一次，看看抽出什么。
-            不保存、不改文档。要等模型跑完，每页十几秒。
+            {t('使用')}<b>{t('已保存的最新版本')}</b>{t('（第 {{version}} 版）对一份已处理的文档执行一次抽取，以预览结果。结果不保存，也不修改文档。需等待模型运行完成，每页约十几秒。', { version: template.version })}
           </Typography.Paragraph>
           <Flex gap={8} wrap style={{ marginBottom: 12 }}>
             <Select
               style={{ minWidth: 320 }}
-              placeholder="选一份文档"
+              placeholder={t('选择文档')}
               value={trialDoc}
               onChange={setTrialDoc}
               loading={documents.isPending}
@@ -537,16 +606,16 @@ function Editor({ template }: { template: Template }) {
               loading={trial.isPending}
               onClick={() => trialDoc && trial.mutate(trialDoc)}
             >
-              试跑
+              {t('试跑')}
             </Button>
-            {dirty && <Typography.Text type="warning">有没保存的修改：试跑用的是已保存的版本</Typography.Text>}
+            {dirty && <Typography.Text type="warning">{t('存在未保存的修改：试跑使用已保存的版本')}</Typography.Text>}
           </Flex>
           {trial.data && <TrialView result={trial.data} />}
         </Card>
       )}
 
       {template.kind === 'mine' && !isNew && (
-        <Card size="small" title="历史版本">
+        <Card size="small" title={t('历史版本')}>
           <List
             size="small"
             dataSource={template.versions}
@@ -554,12 +623,12 @@ function Editor({ template }: { template: Template }) {
               <List.Item
                 actions={[
                   <Button key="view" type="link" onClick={() => setViewing(v.version)}>
-                    查看
+                    {t('查看')}
                   </Button>,
                 ]}
               >
                 <Space>
-                  <Tag color={v.version === template.version ? 'purple' : undefined}>第 {v.version} 版</Tag>
+                  <Tag color={v.version === template.version ? 'purple' : undefined}>{t('第 {{version}} 版', { version: v.version })}</Tag>
                   <Typography.Text type="secondary">{formatTime(v.created_at)}</Typography.Text>
                   <Typography.Text>{v.note}</Typography.Text>
                 </Space>
@@ -571,7 +640,7 @@ function Editor({ template }: { template: Template }) {
 
       <Modal
         open={viewing !== null}
-        title={`第 ${viewing ?? ''} 版（只读）`}
+        title={t('第 {{value}} 版（只读）', { value: viewing ?? '' })}
         footer={null}
         width={720}
         onCancel={() => setViewing(null)}
@@ -583,15 +652,15 @@ function Editor({ template }: { template: Template }) {
             pagination={false}
             dataSource={[
               ...oldVersion.data.fields,
-              ...oldVersion.data.tables.flatMap((t) =>
-                t.columns.map((c) => ({ ...c, name: `${t.name}.${c.name}`, label: `${t.label} · ${c.label}` })),
+              ...oldVersion.data.tables.flatMap((tbl) =>
+                tbl.columns.map((c) => ({ ...c, name: `${tbl.name}.${c.name}`, label: `${tbl.label} · ${c.label}` })),
               ),
             ]}
             columns={[
-              { title: '中文名', dataIndex: 'label' },
-              { title: '字段 ID', dataIndex: 'name' },
-              { title: '类型', dataIndex: 'type' },
-              { title: '必填', dataIndex: 'required', render: (r: boolean) => (r ? '是' : '') },
+              { title: t('名称'), dataIndex: 'label' },
+              { title: t('字段 ID'), dataIndex: 'name' },
+              { title: t('类型'), dataIndex: 'type' },
+              { title: t('必填'), dataIndex: 'required', render: (r: boolean) => (r ? t('是') : '') },
             ]}
           />
         ) : (
@@ -603,14 +672,15 @@ function Editor({ template }: { template: Template }) {
 }
 
 function TrialView({ result }: { result: TrialResult }) {
+  const { t } = useTranslation()
   return (
     <Flex vertical gap={12}>
       <Typography.Text type="secondary">
-        第 {result.version} 版，用时 {(result.duration_ms / 1000).toFixed(1)} 秒
+        {t('第 {{version}} 版，耗时 {{toFixed}} 秒', { version: result.version, toFixed: (result.duration_ms / 1000).toFixed(1) })}
       </Typography.Text>
       {result.pages.map((page) => (
         <Flex key={page.page} vertical gap={8}>
-          {result.pages.length > 1 && <Typography.Text strong>第 {page.page} 页</Typography.Text>}
+          {result.pages.length > 1 && <Typography.Text strong>{t('第 {{page}} 页', { page: page.page })}</Typography.Text>}
           {page.issues.map((issue, i) => (
             <Alert
               key={`${issue.rule}:${i}`}
@@ -626,13 +696,13 @@ function TrialView({ result }: { result: TrialResult }) {
             pagination={false}
             dataSource={page.fields}
             columns={[
-              { title: '字段', dataIndex: 'label', width: 200 },
-              { title: '抽出的值', dataIndex: 'value', render: (v: string | null) => v ?? <Typography.Text type="secondary">（空）</Typography.Text> },
+              { title: t('字段'), dataIndex: 'label', width: 200 },
+              { title: t('抽出的值'), dataIndex: 'value', render: (v: string | null) => v ?? <Typography.Text type="secondary">{t('（空）')}</Typography.Text> },
               {
-                title: '出处',
+                title: t('出处'),
                 dataIndex: 'status',
                 width: 120,
-                render: (s: string) => <Tag color={STATUS_TEXT[s]?.[1]}>{STATUS_TEXT[s]?.[0] ?? s}</Tag>,
+                render: (s: string) => <Tag color={STATUS_TEXT[s]?.[1]}>{STATUS_TEXT[s] ? t(STATUS_TEXT[s][0]) : s}</Tag>,
               },
             ]}
           />
@@ -643,8 +713,9 @@ function TrialView({ result }: { result: TrialResult }) {
 }
 
 /**
- * 从起步模板复制的模板：起步模板后来给字段加了公式（例如酒店账单的晚数 = 离店 − 入住），
- * 这份还没有。提示一下，点"套用"填进编辑区，再保存成新版本（ADR 0035）。
+ * Copies of a starter template: the starter template has since added formulas to some fields (for example
+ * nights = check-out − check-in on hotel bills) that this copy lacks. Offer "Apply" to fill them into the
+ * editor, then save a new version.
  */
 function StarterFormulas({
   template,
@@ -655,13 +726,14 @@ function StarterFormulas({
   draft: TemplateIn
   set: (patch: Partial<TemplateIn>) => void
 }) {
+  const { t } = useTranslation()
   const labels = new Map<string, string>()
   for (const f of draft.fields) labels.set(f.name, f.label)
-  for (const t of draft.tables) for (const c of t.columns) labels.set(`${t.name}.${c.name}`, `${t.label}的${c.label}`)
+  for (const tbl of draft.tables) for (const c of tbl.columns) labels.set(`${tbl.name}.${c.name}`, t('{{label}}的{{label2}}', { label: tbl.label, label2: c.label }))
   const current = (key: string) => {
     const [table, column] = key.split('.')
     if (column === undefined) return draft.fields.find((f) => f.name === key)?.compute
-    return draft.tables.find((t) => t.name === table)?.columns.find((c) => c.name === column)?.compute
+    return draft.tables.find((tbl) => tbl.name === table)?.columns.find((c) => c.name === column)?.compute
   }
   const pending = Object.entries(template.starter_formulas ?? {}).filter(
     ([key]) => labels.has(key) && !current(key)?.trim(),
@@ -671,10 +743,10 @@ function StarterFormulas({
     const formulas = new Map(pending)
     set({
       fields: draft.fields.map((f) => (formulas.has(f.name) ? { ...f, compute: formulas.get(f.name) } : f)),
-      tables: draft.tables.map((t) => ({
-        ...t,
-        columns: t.columns.map((c) => {
-          const formula = formulas.get(`${t.name}.${c.name}`)
+      tables: draft.tables.map((tbl) => ({
+        ...tbl,
+        columns: tbl.columns.map((c) => {
+          const formula = formulas.get(`${tbl.name}.${c.name}`)
           return formula ? { ...c, compute: formula } : c
         }),
       })),
@@ -685,7 +757,7 @@ function StarterFormulas({
       type="warning"
       showIcon
       style={{ marginBottom: 12 }}
-      title="起步模板后来加了公式，这份模板还没有"
+      title={t('起步模板已新增公式，此模板尚未同步')}
       description={
         <>
           {pending.map(([key, formula]) => (
@@ -693,12 +765,12 @@ function StarterFormulas({
               {labels.get(key)} = <Typography.Text code>{formula}</Typography.Text>
             </div>
           ))}
-          <div>套用后这些字段按公式算，不再让模型从单据上找。套用后点右上角保存。</div>
+          <div>{t('应用后，这些字段将按公式计算，不再由模型从单据中抽取。应用后请点击右上角保存。')}</div>
         </>
       }
       action={
         <Button size="small" type="primary" onClick={apply}>
-          套用
+          {t('应用')}
         </Button>
       }
     />

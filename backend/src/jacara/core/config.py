@@ -1,29 +1,81 @@
-"""配置：从环境变量和项目根目录的 .env 读取，全项目只在这里读配置。
+"""Application settings, read from environment variables and the .env file in the project root. This
+is the only place in the code base that reads configuration.
 
-字段名和 .env 里的变量名一一对应（不区分大小写）：postgres_password ↔ POSTGRES_PASSWORD。
-docker compose 读的也是同一个 .env，所以数据库密码只需要写一次。
-"""
+Field names map one-to-one to variable names in .env (case-insensitive): postgres_password ↔
+POSTGRES_PASSWORD. docker compose reads the same .env, so the database password is written only
+once."""
 
 from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, SecretStr
+from pydantic.fields import FieldInfo
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+
+
+class WatchFolder(BaseModel):
+    """A watch folder and the template for what is imported from it (the choices of the upload
+    page: auto, discover or the id of one of my templates)."""
+
+    path: Path
+    template: str = "auto"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Precedence: init arguments → environment variables → .env → settings page → defaults.
+        The desktop app reads no .env (see reads_env_file)."""
+        dotenv = (dotenv_settings,) if reads_env_file() else ()
+        return (
+            init_settings,
+            env_settings,
+            *dotenv,
+            PageSettingsSource(settings_cls),
+            file_secret_settings,
+        )
+
     jacara_mode: Literal["personal", "team"] = "personal"
 
+    jacara_database: Literal["postgres", "sqlite"] = "postgres"
+    """Database: postgres (the server deployment with docker compose) or sqlite (the desktop
+    edition; a single file, jacara.db, in the data directory). Mirrors Gitea's [database]
+    DB_TYPE."""
+    jacara_storage: Literal["s3", "local"] = "s3"
+    """Where uploaded originals and other files are stored: s3 (SeaweedFS or any S3-compatible
+    store) or local (the files/ folder in the data directory). Mirrors Gitea's STORAGE_TYPE."""
+    jacara_queue: Literal["celery", "huey"] = "celery"
+    """Background task queue: celery (with Valkey) or huey (stored in queue.db in the data
+    directory; no separate service). Mirrors Gitea's [queue] TYPE."""
+
+    jacara_desktop: bool = False
+    """Running inside the desktop app (`jacara desktop` sets it). Advice in messages then names
+    actions in the app, such as restarting JacarandaParse, instead of terminal commands; and no .env
+    file is read, because the app's working folder is not a project folder (see reads_env_file)."""
+
     jacara_api_docs: bool = True
-    """是否打开接口文档页 /docs。给别人用时建议关掉（false）：少暴露一些接口细节。"""
+    """Whether to serve the API documentation at /docs. Disable (false) when others use this
+    instance, to expose fewer API details."""
 
     jacara_web_dir: Path | None = None
-    """打包好的网页在哪个文件夹。不写就用项目里的 web/dist（cd web && npm run build 生成）。"""
+    """Directory of the built frontend. Defaults to web/dist in the project (built with `cd web &&
+    npm run build`)."""
 
     postgres_user: str = "jacara"
     postgres_password: SecretStr = SecretStr("")
@@ -41,57 +93,82 @@ class Settings(BaseSettings):
 
     model_server: str = "http://127.0.0.1:8080"
 
+    jacara_llama_server: Path | None = None
+    """llama-server executable. Defaults to the build shipped with the desktop app
+    (plugins/model_backends/llama_builds.py), then to llama-server on PATH."""
+
+    jacara_llama_device: Literal["auto", "cpu", "vulkan"] = "auto"
+    """Which shipped llama.cpp build runs the model when the app has several (Windows: cpu and
+    vulkan). auto: the Vulkan build when it reports a GPU, otherwise the CPU build."""
+
     jacara_model: Path | None = None
-    """jacara start 要启动的模型文件（.gguf）。不写就用 models/ 文件夹里唯一的那个 .gguf。"""
+    """Model file (.gguf) started by `jacara start`. Defaults to the only .gguf file in models/."""
 
     jacara_mmproj: Path | None = None
-    """视觉模型文件（mmproj-*.gguf，ADR 0038）：有了它模型能看原图。
-    不写就用 models/ 里唯一的 mmproj*.gguf；没有就只看文字。"""
+    """Vision projector file (mmproj-*.gguf) that lets the model see the page image. Defaults to the
+    only mmproj*.gguf in models/; without one the model reads text only."""
     jacara_vision: Literal["auto", "always", "off"] = "auto"
-    """什么时候让模型看原图（ADR 0038）：auto 只在照片、扫描件 OCR 不可靠时看；
-    always 每张都看（慢）；off 不看。"""
+    """When the model is shown the page image: auto only for photos and scans where OCR is
+    unreliable; always for every page (slow); off never."""
     jacara_pdf_read: Literal["image", "text"] = "image"
-    """PDF 怎么读文字（ADR 0042）：image 每页画成图做 OCR，和照片走同一条路，PDF 自带的文字
-    只拿来核对；text 只读 PDF 自带的文字（快，只适合确定干净的电子版）。"""
+    """How text is read from PDFs: image renders each page and runs OCR, the same path as photos,
+    and uses the embedded text only for cross-checking; text reads only the embedded text layer
+    (fast; suitable only for known-clean digital PDFs)."""
     jacara_ocr_det: Path | None = None
-    """自己的文字检测模型（.onnx，ADR 0046）。不写就用网页上选的，再没有就用 RapidOCR 自带的。"""
+    """Custom text detection model (.onnx). Defaults to the model selected in the web UI, then to
+    the model bundled with RapidOCR."""
     jacara_ocr_rec: Path | None = None
-    """自己的文字识别模型（.onnx），一般要配套的字典 JACARA_OCR_DICT。"""
+    """Custom text recognition model (.onnx); usually requires the matching dictionary
+    JACARA_OCR_DICT."""
     jacara_ocr_dict: Path | None = None
     jacara_learn: bool = True
-    """抽取时把同一个模板以前人工改过的例子告诉模型（ADR 0045）。"""
+    """Include past manual corrections for the same template as examples in the extraction prompt.
+    """
     jacara_learn_mode: Literal["recent", "curated"] = "recent"
-    """怎么挑例子：recent 最近改得多的（ADR 0045）；curated 整理过的：只用错在模型的、合并重复、
-    去掉过期的、同一个发单方优先（ADR 0055）。先用 jacara eval replay 比过再换。"""
+    """Example selection: recent prefers recently and frequently corrected values; curated uses only
+    model errors, merges duplicates, drops stale examples and prefers the same issuer. Compare
+    with `jacara eval replay` before switching."""
     jacara_ocr_max_side: int = 4000
-    """整页 OCR 前，图的长边最多多少像素（ADR 0042）。"""
+    """Maximum length in pixels of the longer image side before full-page OCR."""
     jacara_layout: bool = True
-    """抽取前先用版面模型找出页面上的区域（标题、正文、表格、页眉页脚），ADR 0034。"""
+    """Run the layout model before extraction to detect page regions (title, body text, tables,
+    headers and footers)."""
     jacara_table_model: Path | None = None
-    """表格结构模型（SLANet-plus 的 .onnx）。不写就用 models/table/slanet-plus.onnx；
-    没有这个文件时，
-    表格的格子按文字位置用规则划分。"""
+    """Table structure model (SLANet-plus .onnx). Defaults to models/table/slanet-plus.onnx; without
+    it, table cells are derived from text positions by rules."""
 
     jacara_pipeline: bool = True
-    """后台分两个工位（ADR 0051）：OCR 工位认字、模型工位抽取，两边同时干活，批量导入更快。
-    false：一个进程从头做到尾（以前的做法，省几百 MB 内存）。"""
+    """Run the background pipeline as two stages: an OCR stage and a model stage working
+    concurrently, which speeds up batch imports. false: one process handles each document end to
+    end (the previous behavior; saves a few hundred MB of memory)."""
     jacara_watch_dir: Path | None = None
-    """监视文件夹（ADR 0036）：放进去的图片和 PDF 自动导入。
-    jacara start 会一起启动；不写就不监视。"""
-    jacara_watch_template: str | None = None
-    """监视文件夹导入时用的模板（我的模板的 id）。不写就用上一次用的。"""
+    """Watch folder: images and PDFs placed in it are imported automatically. Started by `jacara
+    start`; not watched when unset."""
+    jacara_watch_template: str = "auto"
+    """Template used for watch-folder imports, with the values of the upload page: auto (each
+    document picks one of my templates; key-value discovery while there are none), discover, or the
+    id of one of my templates."""
+    jacara_watch_folders: list[WatchFolder] = []
+    """Watch folders set on the settings page, each with its own template (see watch_folders())."""
+    jacara_auto_backup: bool = True
+    """Desktop app: back up the database once a day into backups/auto/."""
+    jacara_auto_backup_keep: int = 14
+    """Desktop app: automatic database backups kept (Immich's default: 14)."""
     jacara_watch_user: str | None = None
-    """团队模式下，监视文件夹导入的文件算谁传的（用户名）。个人模式不用写。"""
+    """Team mode: user name recorded as the uploader of watch-folder imports. Not needed in personal
+    mode."""
 
     max_upload_mb: int = 50
-    """上传文件的大小上限（MB）。"""
+    """Maximum upload size in MB."""
 
     session_hours: int = 12
-    """登录多久后过期（小时）。只在 team 模式用。"""
+    """Login session lifetime in hours. Team mode only."""
 
     @property
     def database_url(self) -> str:
-        """SQLAlchemy 用的连接地址。里面有密码，不要打印出来。"""
+        """SQLAlchemy connection URL. Contains the password; do not log it."""
+        if self.jacara_database == "sqlite":
+            return f"sqlite:///{(data_home() / SQLITE_FILE).as_posix()}"
         password = self.postgres_password.get_secret_value()
         return (
             f"postgresql+psycopg://{self.postgres_user}:{password}"
@@ -104,49 +181,69 @@ class Settings(BaseSettings):
 
     @property
     def web_dist(self) -> Path:
-        """打包好的网页所在的文件夹。"""
+        """Directory of the built frontend."""
         return self.jacara_web_dir or PROJECT_ROOT / "web" / "dist"
 
     def find_model(self) -> Path | None:
-        """jacara start 不带 --model 时用哪个模型：先看 JACARA_MODEL，再看 models/ 里的。
+        """Model used by `jacara start` without --model: JACARA_MODEL first, then models/.
 
-        models/ 里有好几个 .gguf 时不猜，返回 None，让人用 --model 或 JACARA_MODEL 指定。
-        """
+                Returns None when models/ contains several .gguf files instead of guessing;
+        specify one with --model or JACARA_MODEL."""
         if self.jacara_model is not None:
             path = self.jacara_model
-            return path if path.is_absolute() else PROJECT_ROOT / path
+            return path if path.is_absolute() else data_home() / path
         chosen = chosen_file("model")
-        if chosen:
+        if chosen or self.jacara_desktop:
+            # The desktop app runs only what is in use in the model library: loose
+            # files in models/ are offered for import in the wizard instead.
             return chosen
-        found = sorted(p for p in (PROJECT_ROOT / "models").glob("*.gguf") if not is_mmproj(p))
+        found = sorted(p for p in (data_home() / "models").glob("*.gguf") if not is_mmproj(p))
         return found[0] if len(found) == 1 else None
 
     def find_mmproj(self) -> Path | None:
-        """视觉模型文件（ADR 0038）：先看 JACARA_MMPROJ，再看 models/ 里唯一的 mmproj*.gguf。"""
+        """Vision projector file: JACARA_MMPROJ first, then the only mmproj*.gguf in models/."""
         if self.jacara_mmproj is not None:
             path = self.jacara_mmproj
-            path = path if path.is_absolute() else PROJECT_ROOT / path
+            path = path if path.is_absolute() else data_home() / path
             return path if path.is_file() else None
         if model_choices().get("mmproj") == "":
-            return None  # 网页上选了"不用视觉模型"
+            return None  # Vision model disabled in the web UI.
         chosen = chosen_file("mmproj")
-        if chosen:
+        if chosen or self.jacara_desktop:
             return chosen
-        found = sorted(p for p in (PROJECT_ROOT / "models").glob("*.gguf") if is_mmproj(p))
+        found = sorted(p for p in (data_home() / "models").glob("*.gguf") if is_mmproj(p))
         return found[0] if len(found) == 1 else None
 
+    def watch_folders(self) -> list[WatchFolder]:
+        """Folders to watch: those set on the settings page, plus JACARA_WATCH_DIR with
+        JACARA_WATCH_TEMPLATE (one folder; kept for .env and the command line)."""
+        found = list(self.jacara_watch_folders)
+        if self.jacara_watch_dir is not None and all(
+            f.path != self.jacara_watch_dir for f in found
+        ):
+            found.insert(
+                0, WatchFolder(path=self.jacara_watch_dir, template=self.jacara_watch_template)
+            )
+        return found
+
     def table_model(self) -> Path | None:
-        """表格结构模型文件；没有就是 None。"""
-        path = (
-            self.jacara_table_model
-            or chosen_file("table")
-            or PROJECT_ROOT / "models" / "table" / "slanet-plus.onnx"
-        )
-        return path if path.is_file() else None
+        """Table structure model file, or None: JACARA_TABLE_MODEL, then the web UI selection, then
+        (not in the desktop app) models/table/slanet-plus.onnx in the data directory, then the copy
+        shipped with the program (bundled_table_model)."""
+        path = self.jacara_table_model or chosen_file("table")
+        if path is None and not self.jacara_desktop:
+            # The desktop app runs imported models only; a loose file is offered for import.
+            path = data_home() / "models" / "table" / "slanet-plus.onnx"
+        if path is not None and path.is_file():
+            return path
+        if self.jacara_table_model is None and not model_choices().get("table"):
+            return bundled_table_model()
+        return None
 
     def ocr_models(self) -> dict[str, Path]:
-        """自己的 OCR 模型文件（检测 det、识别 rec、识别用的字典 dict），ADR 0046。
-        先看 JACARA_OCR_DET / _REC / _DICT，再看网页上选的；都没有就用 RapidOCR 自带的。"""
+        """Custom OCR model files (detection det, recognition rec, recognition dictionary dict).
+                JACARA_OCR_DET / _REC / _DICT first, then the web UI selection; otherwise the
+        models bundled with RapidOCR."""
         found: dict[str, Path] = {}
         for key, env in (
             ("det", self.jacara_ocr_det),
@@ -154,7 +251,7 @@ class Settings(BaseSettings):
             ("dict", self.jacara_ocr_dict),
         ):
             path = (
-                (env if env.is_absolute() else PROJECT_ROOT / env)
+                (env if env.is_absolute() else data_home() / env)
                 if env
                 else chosen_file(f"ocr_{key}")
             )
@@ -163,12 +260,14 @@ class Settings(BaseSettings):
         return found
 
     def weak_secrets(self) -> list[str]:
-        """还是空的、或者还是示例值 change-me 的密钥，返回它们在 .env 里的名字。"""
-        secrets = {
-            "POSTGRES_PASSWORD": self.postgres_password,
-            "S3_ACCESS_KEY": self.s3_access_key,
-            "S3_SECRET_KEY": self.s3_secret_key,
-        }
+        """Names in .env of secrets that are still empty or still the example value change-me.
+        Only the services actually in use are checked: SQLite and local storage have no secrets."""
+        secrets: dict[str, SecretStr] = {}
+        if self.jacara_database == "postgres":
+            secrets["POSTGRES_PASSWORD"] = self.postgres_password
+        if self.jacara_storage == "s3":
+            secrets["S3_ACCESS_KEY"] = self.s3_access_key
+            secrets["S3_SECRET_KEY"] = self.s3_secret_key
         return [
             name
             for name, value in secrets.items()
@@ -177,32 +276,87 @@ class Settings(BaseSettings):
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
-"""项目根目录：这个文件在 backend/src/jacara/core/ 下面，往上四层。"""
+"""Project root: this file lives in backend/src/jacara/core/, four levels below the root."""
 
 _PLACEHOLDERS = {"", "change-me"}
 
+SQLITE_FILE = "jacara.db"
+"""SQLite database file in the data directory (JACARA_DATABASE=sqlite)."""
+
+
+def resource_dir() -> Path:
+    """Read-only files shipped with the program: in the packaged app the folder PyInstaller unpacks
+    its bundle into (sys._MEIPASS), otherwise the project root."""
+    import sys
+
+    bundle = getattr(sys, "_MEIPASS", None)
+    return Path(bundle) if bundle else PROJECT_ROOT
+
+
+BUNDLED_TABLE_MODEL = Path("models") / "table" / "slanet-plus.onnx"
+"""Table structure model shipped with the desktop app (SLANet-plus, Apache 2.0), relative to
+resource_dir()."""
+
+
+def bundled_table_model() -> Path | None:
+    """The table structure model shipped with the program, when present. None when the program
+    folder is the data directory (run from source without JACARA_HOME): the file there is the
+    user's own models/table/slanet-plus.onnx."""
+    if resource_dir().resolve() == data_home().resolve():
+        return None
+    path = resource_dir() / BUNDLED_TABLE_MODEL
+    return path if path.is_file() else None
+
+
+def data_home() -> Path:
+    """Root directory for data written at run time: models/, data/settings.json, .run/, and in the
+    desktop edition the SQLite database, the task queue and stored files.
+
+    Set only through the JACARA_HOME environment variable, because the settings page file itself
+    lives here and must be found before any settings are read. Defaults to the project root, so
+    development and docker compose deployments keep their current layout. Read on every call so
+    that tests can replace PROJECT_ROOT."""
+    import os
+
+    value = os.environ.get("JACARA_HOME")
+    return Path(value).expanduser() if value else PROJECT_ROOT
+
 
 def is_mmproj(path: Path) -> bool:
-    """视觉模型文件（mmproj）：名字里有 mmproj。它不是对话模型，找模型时跳过。"""
+    """Vision projector file (mmproj): its name contains mmproj. It is not a chat model and is
+    skipped when looking for one."""
     return "mmproj" in path.name.lower()
 
 
 @lru_cache
 def get_settings() -> Settings:
-    """读一次配置，之后一直用同一份。测试里改了环境变量，要先调用 get_settings.cache_clear()。"""
+    """Read the settings once and reuse them. Tests that change environment variables must call
+    get_settings.cache_clear() first."""
     return Settings()
 
 
-MODEL_KEY_FILE = PROJECT_ROOT / ".run" / "model-key"
-"""jacara start 每次生成的模型服务密钥（只有自己能读）。worker、命令行从这里读。"""
+def reads_env_file() -> bool:
+    """Whether settings are read from .env. Not in the desktop app (JACARA_DESKTOP=true): its
+    settings come from the environment set by `jacara desktop` and from the settings page, never
+    from a .env that happens to be in its working folder. Checked in the environment because it
+    decides how the settings themselves are read."""
+    import os
+
+    return os.environ.get("JACARA_DESKTOP", "").lower() != "true"
+
+
+MODEL_KEY_FILE = data_home() / ".run" / "model-key"
+"""Model server API key generated by each `jacara start` (owner-readable only). Read by the worker
+and the CLI."""
 
 
 def model_api_key() -> str | None:
-    """调用本机模型服务用的密钥：环境变量 MODEL_API_KEY，或者 jacara start 写的文件。
+    """API key for the local model server: the MODEL_API_KEY environment variable, or the file
+    written by `jacara start`.
 
-    jacara start 启动 llama-server 时会设密钥，本机别的程序（浏览器里的网页、别的软件）
-    不知道密钥就用不了模型。自己单独 jacara serve 启动的模型没有密钥，这里返回 None 也能用。
-    """
+    `jacara start` sets a key when launching llama-server, so that other local programs (web
+    pages in the browser, other software) cannot use the model without it. A model started
+    separately with `jacara serve` has no key; returning None works in that case."""
     import os
 
     key = os.environ.get("MODEL_API_KEY")
@@ -215,16 +369,19 @@ def model_api_key() -> str | None:
 
 
 CHOICES_FILE = "models/selected.json"
-"""网页上"换模型"选的文件（ADR 0046），放在 models/ 里（models/ 不进仓库，每台电脑自己的）。
-格式：{"model": "models/xxx.gguf", "mmproj": "models/mmproj.gguf" 或 ""（不用）, "table": …,
-"ocr_det": …, "ocr_rec": …, "ocr_dict": …}，路径相对项目根目录。.env 里写了的优先。"""
+"""Model files selected in the web UI, stored in models/ (not tracked in the repository; local to
+each machine).
+Format: {"model": "models/xxx.gguf", "mmproj": "models/mmproj.gguf" or "" (disabled), "table": …,
+"ocr_det": …, "ocr_rec": …, "ocr_dict": …}; paths are relative to the data directory. Values set in
+.env take precedence."""
 
 
 def model_choices() -> dict[str, str]:
-    """网页上选的模型文件。没选过、文件坏了是空的。"""
+    """Model files selected in the web UI. Empty when nothing has been selected or the file is
+    corrupt."""
     import json
 
-    path = PROJECT_ROOT / CHOICES_FILE
+    path = data_home() / CHOICES_FILE
     try:
         data = json.loads(path.read_text("utf-8"))
     except (OSError, ValueError):
@@ -233,10 +390,63 @@ def model_choices() -> dict[str, str]:
 
 
 def chosen_file(key: str) -> Path | None:
-    """网页上为 key 选的文件，还在才返回。"""
+    """File selected in the web UI for key; returned only if it still exists."""
     value = model_choices().get(key)
     if not value:
         return None
     path = Path(value)
-    path = path if path.is_absolute() else PROJECT_ROOT / path
+    path = path if path.is_absolute() else data_home() / path
     return path if path.is_file() else None
+
+
+PAGE_SETTINGS_FILE = "data/settings.json"
+"""Settings changed on the settings page: local to this machine and not tracked in the repository.
+Values set in .env take precedence."""
+
+PAGE_EDITABLE = (
+    "jacara_vision",
+    "jacara_pdf_read",
+    "jacara_ocr_max_side",
+    "jacara_layout",
+    "jacara_learn",
+    "jacara_learn_mode",
+    "jacara_pipeline",
+    "jacara_watch_dir",
+    "jacara_watch_template",
+    "jacara_watch_folders",
+    "jacara_auto_backup",
+    "jacara_auto_backup_keep",
+    "max_upload_mb",
+    "jacara_api_docs",
+    "jacara_llama_device",
+)
+"""Settings editable on the settings page. Database and object storage addresses and credentials,
+and the edition (personal or team), can only be set in .env."""
+
+
+def page_settings_path() -> Path:
+    return data_home() / PAGE_SETTINGS_FILE
+
+
+def page_settings() -> dict[str, Any]:
+    """Values changed on the settings page (only keys in PAGE_EDITABLE; a corrupt file is treated as
+    empty)."""
+    import json
+
+    try:
+        data = json.loads(page_settings_path().read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: v for k, v in data.items() if k in PAGE_EDITABLE}
+
+
+class PageSettingsSource(PydanticBaseSettingsSource):
+    """pydantic-settings source for the values changed on the settings page (data/settings.json)."""
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
+        return page_settings().get(field_name), field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        return page_settings()

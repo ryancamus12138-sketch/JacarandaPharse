@@ -10,7 +10,15 @@ titles = { en = "Express / Freight Waybill (China)" }
 domains = ["物流"]
 countries = ["CN"]
 description = "国内快递、快运、零担货运的运单（面单、托运单）：运单号、寄件人、收件人、内件品名、件数、计费重量、保价、运费和其他费用、付款方式、签收人。各项费用加起来和费用合计对不上会提醒。"
+descriptions = { en = "Waybills of domestic express, freight and less-than-truckload carriers (labels, consignment notes): waybill number, sender, recipient, contents, packages, chargeable weight, insured value, freight and other charges, payment method, person who signed. Charges not adding up to the total charges are reported." }
 rules = ["waybill_fees"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: domestic express and freight waybills (labels).",
+  "Fields follow GB/T 28582 \"Express waybills\" and the common elements of express and LTL freight waybills: waybill number, sender and recipient information, contents, packages, weight, insured value, charges, payment method, signature for receipt; formats differ between carriers, so the fields are the shared part.",
+]
 
 [[fields]]
 name = "carrier"
@@ -19,6 +27,7 @@ names = { en = "Carrier" }
 type = "string"
 required = true
 description = "快递、物流公司的名称，常在左上角 Logo 旁"
+descriptions = { en = "The name of the express or logistics company, often next to the logo at the top left" }
 aliases = ["承运人", "承运公司", "快递公司"]
 
 [[fields]]
@@ -29,6 +38,7 @@ type = "string"
 required = true
 unique = true
 description = "运单号、快递单号、托运单号，照抄（条码下面的数字）"
+descriptions = { en = "The waybill, tracking or consignment number; copy it as written (the digits below the barcode)" }
 aliases = ["运单号码", "快递单号", "托运单号", "单号", "Waybill No", "Tracking No"]
 
 [[fields]]
@@ -44,6 +54,7 @@ label = "服务类型"
 names = { en = "Service Type" }
 type = "string"
 description = "产品或服务类型，照抄，如 标准快递、特快、次日达、整车、零担"
+descriptions = { en = "The product or service type; copy it as written, such as standard express, express, next day, full truckload, LTL" }
 aliases = ["产品类型", "业务类型", "服务方式", "运输方式"]
 
 [[fields]]
@@ -61,6 +72,7 @@ names = { en = "Sender Phone" }
 type = "string"
 sensitive = true
 description = "照抄，打了星号的也照抄"
+descriptions = { en = "Copy it as written, including asterisks" }
 aliases = ["寄件人电话", "发货人电话", "寄方电话"]
 
 [[fields]]
@@ -101,6 +113,7 @@ label = "内件品名"
 names = { en = "Contents" }
 type = "string"
 description = "托寄物、货物名称，照抄"
+descriptions = { en = "The contents or name of the goods; copy it as written" }
 aliases = ["托寄物", "物品名称", "货物名称", "内件", "品名"]
 
 [[fields]]
@@ -116,6 +129,7 @@ label = "计费重量"
 names = { en = "Chargeable Weight" }
 type = "number"
 description = "计费重量（公斤），只要数字；只写实际重量的照抄实际重量"
+descriptions = { en = "The chargeable weight (kg), digits only; if only the actual weight is written, copy that" }
 aliases = ["计费重量", "重量", "实际重量", "kg"]
 
 [[fields]]
@@ -124,6 +138,7 @@ label = "体积"
 names = { en = "Volume" }
 type = "number"
 description = "体积（立方米或立方厘米，照单据），快运常有"
+descriptions = { en = "The volume (cubic meters or cubic centimeters, as on the document); common on freight waybills" }
 aliases = ["体积", "方数"]
 
 [[fields]]
@@ -132,6 +147,7 @@ label = "保价金额"
 names = { en = "Declared Value" }
 type = "number"
 description = "声明价值、保价金额，只要数字"
+descriptions = { en = "The declared value or insured amount, digits only" }
 aliases = ["声明价值", "保价金额", "保价"]
 
 [[fields]]
@@ -161,6 +177,7 @@ label = "其他费用"
 names = { en = "Other Fees" }
 type = "number"
 description = "送货上门、上楼、代收手续费等其他费用加起来"
+descriptions = { en = "The sum of other charges such as door delivery, upstairs delivery and collection fees" }
 aliases = ["其他费用", "增值服务费", "附加费"]
 
 [[fields]]
@@ -192,6 +209,7 @@ names = { en = "Signed by" }
 type = "string"
 sensitive = true
 description = "签收人签字，照抄；手写看不清的留空"
+descriptions = { en = "The signature of the person who signed for receipt; copy it as written; leave empty if the handwriting is illegible" }
 aliases = ["收件人签名", "签收人", "签收"]
 
 [[fields]]
@@ -200,4 +218,5 @@ label = "签收时间"
 names = { en = "Signed at" }
 type = "string"
 description = "照抄（含时分）"
+descriptions = { en = "Copy it as written (with hours and minutes)" }
 aliases = ["签收时间", "签收日期"]

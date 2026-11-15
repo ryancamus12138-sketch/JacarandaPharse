@@ -1,11 +1,14 @@
-"""单据系列（ADR 0055，B3）：同一个发单方的单据算一个系列，他们的版式、写法、容易错的地方相近。
+"""Document series: documents from the same issuer form a series and share layout, wording and
+typical errors.
 
-照 ABBYY FlexiCapture for Invoices 的做法（同一家供应商的发票算一种类型，至少 3 份才单独训练）：
-- 系列 = 发单方：有税号用税号（去掉空格和符号、转大写），
-  没有就用发单方名称（去掉空格、标点，小写）；
-- 处理一张新单据时，在它的 OCR 文字里找已知系列的税号或名称，找到就算这个系列。不多调一次模型；
-- 认错的代价只是挑的例子没那么贴切：值照样要找出处、照样核对。
-"""
+Following ABBYY FlexiCapture for Invoices (invoices from one vendor form a type, trained
+separately after at least 3 documents):
+- Series = issuer: the tax id if present (whitespace and symbols removed, uppercase), otherwise
+  the issuer name (whitespace and punctuation removed, lowercase);
+- For a new document, the OCR text is searched for the tax id or name of known series; a match
+  assigns the series. No extra model call;
+- A wrong match only makes the chosen examples less relevant: values still need evidence and are
+  still cross-checked."""
 
 from __future__ import annotations
 
@@ -23,7 +26,7 @@ TAX_NAMES = (
     "tax_id",
     "vat_number",
 )
-"""发单方税号的字段名（不含买方税号）。"""
+"""Field names of the issuer tax id (excluding the buyer tax id)."""
 
 ISSUER_NAMES = (
     "seller_name",
@@ -38,7 +41,7 @@ ISSUER_NAMES = (
     "carrier",
     "shipper",
 )
-"""发单方名称的字段名，前面的优先。"""
+"""Field names of the issuer name, earlier ones first."""
 
 MIN_TAX = 6
 MIN_NAME = 4
@@ -53,7 +56,8 @@ def _name(text: str) -> str:
 
 
 def series_key(values: Mapping[str, str | None]) -> str | None:
-    """一张单据审核后的值 → 系列。税号优先（tax:…），没有就用名称（name:…）；都没有是 None。"""
+    """Post-review values of a document → series. Tax id first (tax:…), otherwise name (name:…);
+    None if neither."""
     for name in TAX_NAMES:
         raw = values.get(name)
         if raw and len(key := _tax(raw)) >= MIN_TAX:
@@ -66,7 +70,8 @@ def series_key(values: Mapping[str, str | None]) -> str | None:
 
 
 def series_in(text: str, candidates: Iterable[str]) -> str | None:
-    """这张单据的 OCR 文字里写着哪个已知系列的税号或名称。税号优先；几个都对上取最长的。"""
+    """Known series whose tax id or name appears in this document's OCR text. Tax ids first; with
+    several matches, the longest."""
     taxes = _tax(text)
     names = _name(text)
     found = [

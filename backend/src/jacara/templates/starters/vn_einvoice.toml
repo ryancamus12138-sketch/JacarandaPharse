@@ -13,7 +13,17 @@ titles = { en = "VAT e-Invoice (Vietnam)", vi = "Hóa đơn giá trị gia tăng
 countries = ["VN"]
 domains = ["发票"]
 description = "越南的增值税电子发票：模板号（ký hiệu mẫu số）、发票符号、发票号、税务机关代码、开具日期，卖方和买方的名称地址税号（MST），商品、单位、数量、单价、金额，税率、增值税额、合计。MST 位数不对、税率不是 0/5/8/10%、2027 年后还用 8% 会提醒。"
+descriptions = { en = "Vietnamese VAT e-invoices: form number (ký hiệu mẫu số), invoice series, invoice number, tax authority code, issue date, names, addresses and tax codes (MST) of the seller and buyer, goods, unit, quantity, unit price, amount, tax rate, VAT and total. MST with the wrong number of digits, rates other than 0/5/8/10%, and 8% used after 2026 are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "vn_seller_mst", "vn_buyer_mst", "vn_rates", "vn_reduced_8"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Vietnamese e-invoices (VAT invoices, hóa đơn GTGT).",
+  "Basis: Decree 123/2020/NĐ-CP art. 10 (invoice contents) as amended by Decree 70/2025/NĐ-CP (effective 2025-06-01: the buyer may give a personal identification number; restaurants must list dishes; transport must give the plate number); Circular 78/2021 invoice series; VAT rates 0/5/10%; reduced to 8% under Resolution 204/2025/QH15 from 2025-07-01 to 2026-12-31.",
+  "Use: all sales in Vietnam require e-invoices carrying the tax authority code (mã CQT); buyers use them to deduct input tax and for expense claims.",
+  "Sources: hcc.nghean.gov.vn \"Decree No. 70/2025/NĐ-CP\"; DFDL \"Extension of the reduced 8% VAT rate to 31 December 2026\".",
+]
 
 [[fields]]
 name = "document_title"
@@ -21,6 +31,7 @@ label = "单据标题"
 names = { en = "Document Title", vi = "Tên hóa đơn" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 aliases = ["Tên hóa đơn"]
 
 [[fields]]
@@ -29,6 +40,7 @@ label = "模板号"
 names = { en = "Form No.", vi = "Ký hiệu mẫu số" }
 type = "string"
 description = "ký hiệu mẫu số，一位数字（1 = 增值税发票）"
+descriptions = { en = "ký hiệu mẫu số, one digit (1 = VAT invoice)" }
 aliases = ["Ký hiệu mẫu số"]
 
 [[fields]]
@@ -37,6 +49,7 @@ label = "发票符号"
 names = { en = "Invoice Symbol", vi = "Ký hiệu" }
 type = "string"
 description = "ký hiệu hóa đơn，如 C25TAA，照抄"
+descriptions = { en = "ký hiệu hóa đơn, such as C25TAA; copy it as written" }
 aliases = ["Ký hiệu"]
 
 [[fields]]
@@ -47,6 +60,7 @@ type = "string"
 required = true
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 aliases = ["Số hóa đơn"]
 
 [[fields]]
@@ -56,6 +70,7 @@ names = { en = "Tax Authority Code", vi = "Mã của cơ quan thuế" }
 type = "string"
 unique = true
 description = "mã của cơ quan thuế，照抄"
+descriptions = { en = "mã của cơ quan thuế; copy it as written" }
 aliases = ["Mã của cơ quan thuế"]
 
 [[fields]]
@@ -80,6 +95,7 @@ label = "卖方税号"
 names = { en = "Seller Tax ID", vi = "Mã số thuế người bán" }
 type = "string"
 description = "照抄，带上字母和分隔符"
+descriptions = { en = "Copy it as written, with letters and separators" }
 aliases = ["Mã số thuế người bán"]
 
 [[fields]]
@@ -102,6 +118,7 @@ label = "买方税号"
 names = { en = "Buyer Tax ID", vi = "Mã số thuế người mua" }
 type = "string"
 description = "照抄；没有就留空"
+descriptions = { en = "Copy it as written; leave empty if absent" }
 aliases = ["Mã số thuế người mua"]
 
 [[fields]]
@@ -111,6 +128,7 @@ names = { en = "Buyer Personal ID", vi = "Số định danh cá nhân" }
 type = "string"
 sensitive = true
 description = "số định danh cá nhân（NĐ 70/2025），没有留空"
+descriptions = { en = "số định danh cá nhân (personal identification number, Decree 70/2025); leave empty if absent" }
 aliases = ["Số định danh cá nhân"]
 
 [[fields]]
@@ -126,6 +144,7 @@ label = "税率"
 names = { en = "Tax Rate", vi = "Thuế suất GTGT" }
 type = "string"
 description = "照抄，如 10%；有几个税率就留空，看明细"
+descriptions = { en = "Copy it as written, such as 10%; leave empty when there are several rates and check the line items" }
 aliases = ["Thuế suất GTGT"]
 
 [[fields]]
@@ -155,6 +174,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", vi = "Hàng hóa, dịch vụ" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -190,4 +210,5 @@ label = "金额"
 names = { en = "Amount", vi = "Thành tiền" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["Thành tiền"]

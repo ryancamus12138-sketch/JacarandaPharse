@@ -3,6 +3,38 @@
 完全离线、本地部署的文档结构化工具：把收据、发票等 PDF 和图片抽取成结构化字段，
 **每个值都能回到原文找到出处**，找不到出处的值会被标红，交给人工确认。
 
+## 下载和安装（个人版）
+
+个人版装在你自己的电脑上，一个人用，**不用注册、不用登录**，数据只在本机。推荐 Apple 芯片的 Mac
+（大模型文件 5.7 GB，内存建议 16 GB 以上）。
+
+1. **先装三样东西**（只要一次）：
+   - [Docker Desktop](https://www.docker.com/products/docker-desktop/)：装好后打开它；
+   - [uv](https://docs.astral.sh/uv/)：Mac 上 `brew install uv`；
+   - llama.cpp（运行大模型）：Mac 上 `brew install llama.cpp`。
+2. **下载**：在 GitHub 的 [Releases](../../releases) 里下载最新的 `JacarandaParse-版本.zip`，解压到一个固定的地方
+   （例如 `~/JacarandaParse`）。旁边的 `.sha256` 文件可以用来核对：`shasum -a 256 JacarandaParse-版本.zip`。
+3. **安装**：打开"终端"，进到解压出来的文件夹，运行
+
+   ```bash
+   ./scripts/install.sh
+   ```
+
+   它会装好依赖、生成配置（`.env`，里面的密钥是随机的）、启动数据库、建表，然后逐项检查，缺什么告诉你去哪拿。
+   第一次要联网（下载依赖和数据库镜像），装好以后用的时候不联网。
+4. **下载大模型**：在浏览器里下载
+   <https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf>（约 5.7 GB，Apache-2.0），
+   放进文件夹里的 `models/`。视觉模型（可选，照片、扫描件认不准时让模型看原图）见下面"第一次准备"。
+   放好后可以再运行一次 `uv run --frozen --no-dev jacara setup` 确认都齐了。
+5. **启动**：双击 `JacarandaParse.command`，或者在终端里运行 `uv run --frozen --no-dev jacara start`。
+   浏览器会自动打开 <http://127.0.0.1:8000>。关掉终端窗口或按 Ctrl + C 就全部停止。
+   Mac 提示"无法打开"时，在终端里运行一次 `xattr -d com.apple.quarantine JacarandaParse.command`。
+
+**升级到新版本**：先在"设置 → 数据和备份"里照着做一次备份；下载新版本解压到新文件夹，把旧文件夹里的 `.env`、`models/`、
+`data/` 拷过去，再运行 `./scripts/install.sh`（会自动把数据库升级到新版本）。数据库里的数据在 Docker 里，不会丢。
+
+**设置**：网页左边的"设置"里能改识别和处理的选项、换模型、看数据量和各项服务状态。
+
 ## 它怎么工作
 
 ```text
@@ -18,7 +50,9 @@
 
 全程不联网：OCR 模型随包提供，大模型由本机的 llama-server 运行。
 
-## 第一次准备
+界面有中文和英文两种，右上角的按钮切换（第一次按浏览器的语言）；模板里的字段名用哪种语言另外设置，互不影响。
+
+## 第一次准备（从源码装，开发用）
 
 需要 [uv](https://docs.astral.sh/uv/)、[Docker Desktop](https://www.docker.com/products/docker-desktop/)、[Node.js](https://nodejs.org)（LTS）
 和 llama.cpp（Mac：`brew install llama.cpp`）。Python 由 uv 自动下载。
@@ -49,7 +83,8 @@ uv run jacara doctor         # 检查 .env、网页和各项服务
 系统信息页能看到模型能不能看图。
 
 批量导入（ADR 0036）：文档页可以一次拖进几百个文件，或者“选择整个文件夹”，列表按文件夹筛选。
-要自动导入一个文件夹，在 `.env` 里写 `JACARA_WATCH_DIR=文件夹路径`，`jacara start` 会一起启动；
+要自动导入文件夹，在「设置 → 识别和处理 → 监视文件夹」里添加（可以设多个，每个单独选模板），
+或在 `.env` 里写 `JACARA_WATCH_FOLDERS`（格式见 `.env.example`），`jacara start` 会一起启动；
 放进去的图片和 PDF 自动导入，不动、不删原文件，内容一样的只导入一次。
 也可以单独运行 `uv run jacara watch 文件夹路径`。
 
@@ -221,7 +256,7 @@ cd web && npm run lint && npm run build
 | `backend/src/jacara/worker.py` | 后台任务入口 |
 | `backend/src/jacara/eval/` | 评测（开发用） |
 | `backend/src/jacara/templates/` | 模板：每种单据抽哪些字段、查哪些规则（.toml） |
-| `backend/migrations/` | 数据库迁移 |
+| `backend/src/jacara/migrations/` | 数据库迁移 |
 | `backend/tests/` | 自动测试 |
 | `web/` | 前端（React + TypeScript），见 [web/README.md](web/README.md) |
 | `deploy/` | 部署 |
@@ -235,7 +270,7 @@ cd web && npm run lint && npm run build
 | 处理流水线 | PDF/图片读取 → OCR → 字段抽取 → 证据对齐 → 规则校验 → 导出 | 完成 |
 | 后端 | 基础设施、数据库、文档 API、后台任务、人工审核、导出 API、账号与权限 | 完成 |
 | 前端 | 登录、文档列表、审核工作台、导出、用户管理、审计日志 | 完成 |
-| 部署 | 一个命令跑起来（完成）、Docker Compose、离线安装包 | 进行中 |
+| 部署 | 一个命令跑起来、个人版发布包和安装脚本（完成）；离线安装包 | 进行中 |
 
 ## 授权
 

@@ -1,10 +1,13 @@
-"""OCR 样本按业务单据分组、划分训练集和验证集（ADR 0052）。
+"""Group OCR samples by business document and split them into training and validation sets.
 
-- 业务单据 = 文件 + 这张单据的起始页；同一组的样本永远在同一边。
-- 一组第一次进数据集时按 SHA-256(种子:版本:组号) 分桶，前 20% 进验证集，结果存表，之后只读表。
-- 字节一样的文件自动同组；PDF 和照片按单号、日期、金额……提名，人确认后合并。
-- 合并、拆开时如果已经导出过，组被隔离，受影响的导出记录记一笔。
-"""
+- Business document = file + first page of the document; samples of one group always land in the
+  same split.
+- When a group first enters a dataset it is bucketed by SHA-256(seed:version:group id); the first
+  20% go to validation. The result is stored and only read afterwards.
+- Files with identical bytes are grouped automatically; a PDF and a photo are proposed as a pair
+  by document number, date, amount, …, and merged after a person confirms.
+- Merging or splitting a group that has already been exported quarantines the group and records
+  the affected exports."""
 
 from __future__ import annotations
 
@@ -21,6 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
+from jacara.core.i18n import N_, nested, stored, tr
 from jacara.modules.documents.models import Document, Extraction
 from jacara.modules.ocr_samples.models import (
     DocGroupMember,
@@ -33,21 +37,21 @@ from jacara.modules.ocr_samples.models import (
 
 BUCKETS = 10_000
 VAL_BUCKETS = 2_000
-"""0～9999 里前 2000 个桶进验证集：按组的目标比例 80/20。"""
+"""The first 2000 of 10000 buckets go to validation: a target ratio of 80/20 by group."""
 
 SPLITS = ("train", "val", "test_locked", "quarantined")
 SPLIT_NAMES = {
-    "train": "训练集",
-    "val": "验证集",
-    "test_locked": "锁定测试集",
-    "quarantined": "隔离",
+    "train": N_("训练集"),
+    "val": N_("验证集"),
+    "test_locked": N_("锁定测试集"),
+    "quarantined": N_("隔离"),
 }
 
 Unit = tuple[uuid.UUID, int]
-"""业务单据：（文档 id，这张单据的起始页）。"""
+"""Business document: (document id, first page of the document)."""
 
 
-# ---- 种子和版本 ----
+# ---- Seed and version ----
 
 
 def _setting(session: Session, team_id: uuid.UUID, key: str, make: Any) -> Any:
@@ -60,7 +64,7 @@ def _setting(session: Session, team_id: uuid.UUID, key: str, make: Any) -> Any:
 
 
 def split_seed(session: Session, team_id: uuid.UUID) -> str:
-    """这个团队划分用的随机种子（第一次用时生成，之后不变）。"""
+    """Random seed of this team's split (generated on first use, then fixed)."""
     return str(_setting(session, team_id, "ocr_split_seed", lambda: secrets.token_hex(16)))
 
 
@@ -78,11 +82,11 @@ def hashed_split(seed: str, version: int, group_id: uuid.UUID) -> str:
 
 
 def anonymous(seed: str, group_id: uuid.UUID) -> str:
-    """导出清单里的组号：稳定（多次导出一样）、不含业务信息。"""
+    """Group id used in export manifests: stable across exports and free of business data."""
     return "g_" + hashlib.sha256(f"{seed}:group:{group_id}".encode()).hexdigest()[:12]
 
 
-# ---- 组 ----
+# ---- Groups ----
 
 
 def member_of(session: Session, unit: Unit) -> DocGroupMember | None:
@@ -97,7 +101,8 @@ def member_of(session: Session, unit: Unit) -> DocGroupMember | None:
 def ensure_member(
     session: Session, team_id: uuid.UUID, user_id: uuid.UUID, unit: Unit
 ) -> DocGroupMember:
-    """业务单据的组：没有就建。字节一样的文件（重复上传）同一起始页直接进同一组。"""
+    """Group of a business document, created if missing. Files with identical bytes (duplicate
+    uploads) with the same first page join the same group."""
     found = member_of(session, unit)
     if found is not None:
         return found
@@ -134,7 +139,8 @@ def assignment(
 
 
 def ensure_split(session: Session, team_id: uuid.UUID, group_id: uuid.UUID) -> SplitAssignment:
-    """这一组在当前划分版本里分在哪边：第一次按哈希分好存下，之后只读表。"""
+    """Split of this group in the current split version: assigned by hash and stored the first time,
+    then read from the table."""
     version = split_version(session, team_id)
     found = assignment(session, team_id, group_id, version)
     if found is None:
@@ -143,7 +149,7 @@ def ensure_split(session: Session, team_id: uuid.UUID, group_id: uuid.UUID) -> S
             version=version,
             group_id=group_id,
             split=hashed_split(split_seed(session, team_id), version, group_id),
-            reason="第一次进数据集时按哈希分",
+            reason=stored("首次进入数据集时按哈希分配"),
         )
         session.add(found)
         session.flush()
@@ -151,7 +157,8 @@ def ensure_split(session: Session, team_id: uuid.UUID, group_id: uuid.UUID) -> S
 
 
 def ensure_sample_groups(session: Session, team_id: uuid.UUID, user_id: uuid.UUID) -> None:
-    """还没分组的样本（ADR 0052 以前收集的）补上：起始页按它来自的那张单据，再分组、分边。"""
+    """Backfill groups for samples collected before grouping existed: the first page comes from the
+    document of the sample, then group and split are assigned."""
     from jacara.modules.fields.models import ExtractedValue
 
     grouped = select(DocGroupMember.document_id, DocGroupMember.first_page)
@@ -188,7 +195,7 @@ def splits_of(session: Session, team_id: uuid.UUID) -> dict[uuid.UUID, SplitAssi
 
 
 def locked_units(session: Session, team_id: uuid.UUID) -> set[Unit]:
-    """锁定测试集里的业务单据：不当"从人改过的地方学"的例子来源（ADR 0052）。"""
+    """Business documents in the locked test split: never used as sources of learning examples."""
     splits = splits_of(session, team_id)
     return {
         unit
@@ -197,13 +204,13 @@ def locked_units(session: Session, team_id: uuid.UUID) -> set[Unit]:
     }
 
 
-# ---- 导出过没有 ----
+# ---- Export status ----
 
 
 def exports_with(
     session: Session, team_id: uuid.UUID, groups: Iterable[uuid.UUID]
 ) -> list[OcrSampleExport]:
-    """导出过这几组里任何一组的导出记录。"""
+    """Export records that included any of these groups."""
     wanted = {str(g) for g in groups}
     records = session.scalars(
         select(OcrSampleExport).where(OcrSampleExport.team_id == team_id)
@@ -212,7 +219,7 @@ def exports_with(
 
 
 def exported_as(session: Session, team_id: uuid.UUID, group_id: uuid.UUID) -> set[str]:
-    """这一组被导出过在哪几边（train、val、test_locked）。"""
+    """Splits in which this group has been exported (train, val, test_locked)."""
     return {
         str(item.get("split"))
         for record in exports_with(session, team_id, [group_id])
@@ -240,7 +247,7 @@ def _mark_affected(
     return len(records)
 
 
-# ---- 合并、拆开、改划分 ----
+# ---- Merge, split, reassign ----
 
 
 class GroupError(Exception):
@@ -261,11 +268,13 @@ class MergeResult:
 def merge(
     session: Session, team_id: uuid.UUID, user_id: uuid.UUID, keep: Unit, other: Unit
 ) -> MergeResult:
-    """确认两张业务单据是同一张：other 那一组的单据都并进 keep 那一组。
+    """Confirm that two business documents are the same: documents in other's group are merged into
+    keep's group.
 
-    两边划分一样照旧；不一样、两边都没导出过，按 keep 那边（有一边是锁定测试集的，整组锁定）；
-    不一样、有一边已经导出过：可能一份进了训练、一份进了验证，整组隔离，受影响的导出记一笔。
-    """
+        If both splits agree, nothing changes. If they differ and neither was exported, keep's
+    split wins (if either is the locked test split, the whole group is locked). If they differ
+    and either was exported, one copy may be in training and the other in validation: the whole
+    group is quarantined and the affected exports are recorded."""
     a = ensure_member(session, team_id, user_id, keep)
     b = ensure_member(session, team_id, user_id, other)
     first, second = a.group_id, b.group_id
@@ -281,18 +290,27 @@ def merge(
     affected = 0
     splits = {split_a.split, split_b.split}
     if "quarantined" in splits:
-        split_a.split, split_a.reason = "quarantined", "合并的两组里有一组本来就被隔离"
+        split_a.split, split_a.reason = "quarantined", stored("合并的两个分组中有一个已被隔离")
     elif len(splits) == 1:
         pass
     elif not touched:
         if "test_locked" in splits:
-            split_a.split, split_a.reason = "test_locked", "合并：有一组是锁定测试集"
+            split_a.split, split_a.reason = (
+                "test_locked",
+                stored("合并：其中一个分组属于锁定测试集"),
+            )
         else:
-            split_a.reason = f"合并：按保留那一组（{SPLIT_NAMES[split_a.split]}）"
+            split_a.reason = stored(
+                "合并：沿用保留分组的划分（{split}）", split=nested(SPLIT_NAMES[split_a.split])
+            )
     else:
-        reason = (
-            f"确认是同一张单据时，两组已经导出过、分在不同边"
-            f"（{SPLIT_NAMES[split_a.split]}、{SPLIT_NAMES[split_b.split]}）：可能一份训练、一份验证"
+        reason = stored(
+            (
+                "确认为同一张单据时，两个分组均已导出且位于不同划分（{first}"
+                "、{second}）：可能同时出现在训练集和验证集中"
+            ),
+            first=nested(SPLIT_NAMES[split_a.split]),
+            second=nested(SPLIT_NAMES[split_b.split]),
         )
         split_a.split, split_a.reason = "quarantined", reason
         affected = _mark_affected(session, team_id, [first, second], reason)
@@ -302,22 +320,23 @@ def merge(
 
 
 def detach(session: Session, team_id: uuid.UUID, member_id: uuid.UUID) -> MergeResult:
-    """配错了：把这张单据从组里拆出来，换一个新组。原来的组导出过的，两边都隔离。"""
+    """Mismatched pair: move this document out of its group into a new group. If the original group
+    was exported, both are quarantined."""
     member = session.get(DocGroupMember, member_id)
     if member is None or member.team_id != team_id:
-        raise GroupError("not_found", "找不到这张单据")
+        raise GroupError("not_found", tr("单据不存在"))
     old = member.group_id
     rest = session.scalars(
         select(DocGroupMember).where(DocGroupMember.group_id == old, DocGroupMember.id != member.id)
     ).all()
     if not rest:
-        raise GroupError("invalid", "这一组只有这一张单据，不用拆")
+        raise GroupError("invalid", tr("此分组仅含这一张单据，无需拆分"))
     member.group_id = uuid.uuid4()
     session.flush()
     new_split = ensure_split(session, team_id, member.group_id)
     affected = 0
     if exports_with(session, team_id, [old]):
-        reason = "拆开配错的单据时，原来的组已经导出过：拆出来的这张可能在另一边也出现过"
+        reason = stored("拆分配对错误的单据时，原分组已导出：拆出的单据可能已出现在另一划分中")
         new_split.split, new_split.reason = "quarantined", reason
         old_split = ensure_split(session, team_id, old)
         old_split.split, old_split.reason = "quarantined", reason
@@ -329,40 +348,42 @@ def detach(session: Session, team_id: uuid.UUID, member_id: uuid.UUID) -> MergeR
 def set_split(
     session: Session, team_id: uuid.UUID, group_id: uuid.UUID, split: str
 ) -> SplitAssignment:
-    """管理员手动改一组的划分。
+    """Manually change the split of a group (administrators).
 
-    导出进过训练集的不能再当验证集或测试集；锁定测试集只能锁从没导出过的组（要独立、干净）。
-    """
+        Groups exported into training can no longer become validation or test; only groups never
+    exported can be locked as test (it must stay independent and clean)."""
     if split not in SPLITS:
-        raise GroupError("invalid", f"没有这种划分：{split}")
+        raise GroupError("invalid", tr("划分不存在：{split}", split=split))
     if not session.scalar(
         select(DocGroupMember.id).where(
             DocGroupMember.group_id == group_id, DocGroupMember.team_id == team_id
         )
     ):
-        raise GroupError("not_found", "找不到这一组")
+        raise GroupError("not_found", tr("分组不存在"))
     found = ensure_split(session, team_id, group_id)
     if split == found.split:
         return found
     used = exported_as(session, team_id, group_id)
     if split in ("val", "test_locked") and "train" in used:
-        raise GroupError("invalid", "这一组已经导出进训练集，不能再当验证集或测试集")
+        raise GroupError("invalid", tr("此分组已导出到训练集，不能再用作验证集或测试集"))
     if split == "test_locked" and used - {"test_locked"}:
-        raise GroupError("invalid", "锁定测试集只能用从没导出过的组（测试集要独立、没人看过）")
+        raise GroupError(
+            "invalid", tr("锁定测试集只能使用从未导出的分组（测试集需保持独立且未被查看）")
+        )
     if found.split == "val" and split == "train" and "val" in used:
         _mark_affected(
             session,
             team_id,
             [group_id],
-            "这一组从验证集改到训练集：之前用它算的验证成绩以后不再独立",
+            stored("此分组从验证集改为训练集：此前基于其计算的验证结果不再独立"),
         )
     found.split = split
-    found.reason = "管理员手动改的"
+    found.reason = stored("管理员手动修改")
     session.flush()
     return found
 
 
-# ---- PDF 和照片配对：提名 ----
+# ---- Pairing PDFs and photos: proposals ----
 
 TOTAL_NAMES = ("total", "amount", "total_amount", "grand_total", "amount_due", "total_with_tax")
 DATE_NAMES = ("date", "issue_date", "invoice_date", "bill_date", "report_date")
@@ -380,7 +401,7 @@ ISSUER_NAMES = (
 
 @dataclass(frozen=True)
 class UnitKey:
-    """配对用的几个值：单据类型、单号、日期、金额、币种、发单方。"""
+    """Values used for pairing: document type, document number, date, amount, currency, issuer."""
 
     unit: Unit
     kind: str
@@ -446,7 +467,7 @@ def unit_key(extraction: Extraction) -> UnitKey:
 
 
 def _agree(a: object, b: object) -> bool:
-    """两边都有才比；有一边没有不算冲突。"""
+    """Compare only when both sides have a value; a value missing on one side is not a conflict."""
     if a is None or b is None:
         return True
     if isinstance(a, float) and isinstance(b, float):
@@ -455,7 +476,8 @@ def _agree(a: object, b: object) -> bool:
 
 
 def same_document(a: UnitKey, b: UnitKey) -> bool:
-    """像不像同一张单据（只是提名，人确认后才合并）。只有日期和金额一样不算。"""
+    """Whether two documents look like the same one (only a proposal; merged after confirmation).
+    Matching date and amount alone are not enough."""
     if a.kind != b.kind:
         return False
     if not all(
@@ -473,12 +495,13 @@ def same_document(a: UnitKey, b: UnitKey) -> bool:
     if shared:
         return all(numbers_a[n] == numbers_b[n] for n in shared)
     if numbers_a or numbers_b:
-        return False  # 一边有单号、一边没有：对不上
+        return False  # Document number on one side only: no match.
     return None not in (a.issuer, b.issuer, a.date, b.date, a.total, b.total)
 
 
 def nominations(session: Session, team_id: uuid.UUID) -> list[tuple[UnitKey, UnitKey]]:
-    """可能是同一张单据、还没人确认过的两张（至少一张已经有样本）。"""
+    """Pairs that may be the same document and have not been confirmed (at least one has
+    samples)."""
     members = groups_of(session, team_id)
     if not members:
         return []
@@ -501,9 +524,9 @@ def nominations(session: Session, team_id: uuid.UUID) -> list[tuple[UnitKey, Uni
         for i, a in enumerate(group):
             for b in group[i + 1 :]:
                 if a.unit[0] == b.unit[0] or sha.get(a.unit[0]) == sha.get(b.unit[0]):
-                    continue  # 同一个文件、或者字节一样（已经自动同组）
+                    continue  # Same file, or identical bytes (already grouped automatically).
                 if a.unit not in members and b.unit not in members:
-                    continue  # 两边都还没样本：等有了再说
+                    continue  # Neither has samples yet: decide later.
                 if members.get(a.unit) is not None and members.get(a.unit) == members.get(b.unit):
                     continue
                 if frozenset({a.unit, b.unit}) in decided:

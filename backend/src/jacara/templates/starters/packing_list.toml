@@ -9,6 +9,7 @@ title = "装箱单（Packing List）"
 titles = { en = "Packing List", ar = "قائمة التعبئة", de = "Packliste", es = "Lista de empaque", fr = "Liste de colisage", hi = "पैकिंग सूची", id = "Daftar kemasan", it = "Lista di imballaggio", ja = "パッキングリスト", ko = "포장명세서", ms = "Senarai pembungkusan", nl = "Paklijst", pl = "Lista pakowa", th = "รายการบรรจุหีบห่อ", vi = "Phiếu đóng gói", "zh-Hant" = "裝箱單" }
 domains = ["物流", "外贸单证"]
 description = "出口、进口货物的装箱单：发货人、收货人、发票号、合同号、唛头、港口，每一行的箱号、品名、件数、数量、净重、毛重、体积和合计。每行件数、数量、重量、体积加起来和合计对不上、净重比毛重大会提醒。"
+descriptions = { en = "Packing lists for exported and imported goods: shipper, consignee, invoice number, contract number, shipping marks, ports, and per row the carton numbers, description, packages, quantity, net weight, gross weight, volume, plus totals. Packages, quantities, weights or volumes that do not add up to the totals, and net weight above gross weight, are reported." }
 rules = [
   "packing_packages",
   "packing_quantity",
@@ -19,6 +20,13 @@ rules = [
   "total_net_not_over_gross",
 ]
 
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: packing lists.",
+  "Fields follow the common elements of packing lists in trade documents: exporter / importer, invoice number, contract number, shipping marks, ports of loading and destination, per row the carton numbers, description, packages, quantity, net weight, gross weight, volume, plus totals; packages and weights must match the commercial invoice and bill of lading.",
+]
+
 [[fields]]
 name = "document_no"
 label = "装箱单号"
@@ -26,6 +34,7 @@ names = { en = "Packing List No.", ar = "رقم قائمة التعبئة", de =
 type = "string"
 unique = true
 description = "装箱单自己的编号，照抄；没有单独编号的留空"
+descriptions = { en = "The packing list's own number; copy it as written; leave empty if there is no separate number" }
 aliases = ["装箱单号", "Packing List No", "P/L No", "PL No", "No."]
 
 [[fields]]
@@ -41,6 +50,7 @@ label = "发票号"
 names = { en = "Invoice No.", ar = "رقم الفاتورة", de = "Rechnungsnummer", es = "Número de factura", fr = "Numéro de facture", hi = "बीजक संख्या", id = "Nomor faktur", it = "Numero fattura", ja = "請求書番号", ko = "인보이스 번호", ms = "No. invois", nl = "Factuurnummer", pl = "Numer faktury", th = "เลขที่ใบแจ้งหนี้", vi = "Số hóa đơn", "zh-Hant" = "發票號碼" }
 type = "string"
 description = "对应的商业发票号，照抄"
+descriptions = { en = "The corresponding commercial invoice number; copy it as written" }
 aliases = ["发票号码", "Invoice No", "Invoice Number", "Inv. No"]
 
 [[fields]]
@@ -49,6 +59,7 @@ label = "合同号"
 names = { en = "Contract No.", ar = "رقم العقد", de = "Vertragsnummer", es = "N.º de contrato", fr = "N° de contrat", hi = "अनुबंध संख्या", id = "Nomor kontrak", it = "N. contratto", ja = "契約番号", ko = "계약번호", ms = "No. kontrak", nl = "Contractnummer", pl = "Numer umowy", th = "เลขที่สัญญา", vi = "Số hợp đồng", "zh-Hant" = "合約號碼" }
 type = "string"
 description = "合同号、订单号（S/C、P/O），照抄"
+descriptions = { en = "Contract or order number (S/C, P/O); copy it as written" }
 aliases = ["合同号码", "订单号", "Contract No", "S/C No", "P/O No", "Order No"]
 
 [[fields]]
@@ -58,6 +69,7 @@ names = { en = "Shipper", ar = "الشاحن", de = "Versender", es = "Embarcado
 type = "string"
 required = true
 description = "出口商、卖方的名称（地址不用写）"
+descriptions = { en = "The name of the exporter or seller (no address)" }
 aliases = ["出口商", "卖方", "Shipper", "Exporter", "Seller", "From"]
 
 [[fields]]
@@ -66,6 +78,7 @@ label = "收货人"
 names = { en = "Consignee", ar = "المرسل إليه", de = "Empfänger", es = "Consignatario", fr = "Destinataire", hi = "प्रेषिती", id = "Penerima", it = "Destinatario", ja = "荷受人", ko = "수하인", ms = "Penerima", nl = "Ontvanger", pl = "Odbiorca", th = "ผู้รับสินค้า", vi = "Người nhận hàng", "zh-Hant" = "收貨人" }
 type = "string"
 description = "进口商、买方、收货人的名称（地址不用写）"
+descriptions = { en = "The name of the importer, buyer or consignee (no address)" }
 aliases = ["进口商", "买方", "Consignee", "Importer", "Buyer", "To", "Messrs"]
 
 [[fields]]
@@ -88,6 +101,7 @@ label = "运输方式"
 names = { en = "Mode of Transport", ar = "وسيلة النقل", de = "Transportart", es = "Medio de transporte", fr = "Mode de transport", hi = "परिवहन का साधन", id = "Moda transportasi", it = "Modalità di trasporto", ja = "輸送手段", ko = "운송수단", ms = "Mod pengangkutan", nl = "Vervoerswijze", pl = "Rodzaj transportu", th = "วิธีการขนส่ง", vi = "Phương thức vận tải", "zh-Hant" = "運輸方式" }
 type = "string"
 description = "船名航次、航班号或运输方式（By Sea、By Air），照抄"
+descriptions = { en = "Vessel and voyage, flight number or mode of transport (By Sea, By Air); copy it as written" }
 aliases = ["运输工具", "船名", "Shipped per", "Vessel", "By"]
 
 [[fields]]
@@ -96,6 +110,7 @@ label = "唛头"
 names = { en = "Shipping Marks", ar = "علامات الشحن", de = "Markierungen", es = "Marcas", fr = "Marques", hi = "शिपिंग चिह्न", id = "Tanda kirim", it = "Marche", ja = "荷印", ko = "화인", ms = "Tanda penghantaran", nl = "Merken", pl = "Znaki", th = "เครื่องหมายหีบห่อ", vi = "Ký mã hiệu", "zh-Hant" = "嘜頭" }
 type = "string"
 description = "Shipping Marks 一栏照抄，多行用空格连起来；写 N/M 的照抄 N/M"
+descriptions = { en = "Copy the Shipping Marks box as written, joining several lines with spaces; copy N/M as N/M" }
 aliases = ["唛头", "Shipping Marks", "Marks", "Marks & Nos"]
 
 [[fields]]
@@ -104,6 +119,7 @@ label = "总件数"
 names = { en = "Total Packages", ar = "إجمالي الطرود", de = "Packstücke gesamt", es = "Total de bultos", fr = "Nombre total de colis", hi = "कुल पैकेज", id = "Total kemasan", it = "Colli totali", ja = "総梱包数", ko = "총 포장수", ms = "Jumlah bungkusan", nl = "Totaal colli", pl = "Łączna liczba opakowań", th = "จำนวนหีบห่อรวม", vi = "Tổng số kiện", "zh-Hant" = "總件數" }
 type = "number"
 description = "一共多少件（箱、托、包），只要数字"
+descriptions = { en = "The total number of packages (cartons, pallets, bags), digits only" }
 aliases = ["总件数", "总箱数", "Total Packages", "Total Cartons", "Total CTNS", "Total"]
 
 [[fields]]
@@ -112,6 +128,7 @@ label = "包装单位"
 names = { en = "Package Unit", ar = "وحدة التعبئة", de = "Verpackungseinheit", es = "Unidad de embalaje", fr = "Unité d'emballage", hi = "पैकेज इकाई", id = "Satuan kemasan", it = "Unità di imballaggio", ja = "梱包単位", ko = "포장단위", ms = "Unit bungkusan", nl = "Verpakkingseenheid", pl = "Jednostka opakowania", th = "หน่วยหีบห่อ", vi = "Đơn vị kiện", "zh-Hant" = "包裝單位" }
 type = "string"
 description = "件数的单位，照抄：CTNS、PALLETS、BAGS、箱"
+descriptions = { en = "The package unit; copy it as written: CTNS, PALLETS, BAGS, 箱" }
 aliases = ["包装", "Package", "Packing"]
 
 [[fields]]
@@ -120,6 +137,7 @@ label = "总数量"
 names = { en = "Total Quantity", ar = "إجمالي الكمية", de = "Gesamtmenge", es = "Cantidad total", fr = "Quantité totale", hi = "कुल मात्रा", id = "Total kuantitas", it = "Quantità totale", ja = "総数量", ko = "총 수량", ms = "Jumlah kuantiti", nl = "Totale hoeveelheid", pl = "Łączna ilość", th = "ปริมาณรวม", vi = "Tổng số lượng", "zh-Hant" = "總數量" }
 type = "number"
 description = "货物的总数量（个、套、米……），只要数字"
+descriptions = { en = "The total quantity of goods (pieces, sets, meters, …), digits only" }
 aliases = ["总数量", "Total Quantity", "Total Qty"]
 
 [[fields]]
@@ -128,6 +146,7 @@ label = "总净重"
 names = { en = "Total Net Weight", ar = "إجمالي الوزن الصافي", de = "Nettogewicht gesamt", es = "Peso neto total", fr = "Poids net total", hi = "कुल शुद्ध वजन", id = "Total berat bersih", it = "Peso netto totale", ja = "総正味重量", ko = "총 순중량", ms = "Jumlah berat bersih", nl = "Totaal nettogewicht", pl = "Łączna masa netto", th = "น้ำหนักสุทธิรวม", vi = "Tổng trọng lượng tịnh", "zh-Hant" = "總淨重" }
 type = "number"
 description = "只要数字，单位写在「重量单位」里"
+descriptions = { en = "Digits only; put the unit in \"Weight unit\"" }
 aliases = ["总净重", "Total N.W.", "Total Net Weight", "N.W."]
 
 [[fields]]
@@ -151,6 +170,7 @@ label = "总体积"
 names = { en = "Total Volume", ar = "إجمالي الحجم", de = "Volumen gesamt", es = "Volumen total", fr = "Volume total", hi = "कुल आयतन", id = "Total volume", it = "Volume totale", ja = "総容積", ko = "총 용적", ms = "Jumlah isipadu", nl = "Totaal volume", pl = "Łączna objętość", th = "ปริมาตรรวม", vi = "Tổng thể tích", "zh-Hant" = "總材積" }
 type = "number"
 description = "总体积，一般是立方米（CBM），只要数字"
+descriptions = { en = "The total volume, usually in cubic meters (CBM), digits only" }
 aliases = ["总体积", "Total Measurement", "Total Volume", "Total CBM", "MEAS"]
 
 [[tables]]
@@ -159,6 +179,7 @@ label = "装箱明细"
 names = { en = "Packing Details", ar = "تفاصيل التعبئة", de = "Packdetails", es = "Detalle de embalaje", fr = "Détail du colisage", hi = "पैकिंग विवरण", id = "Rincian kemasan", it = "Dettaglio imballaggio", ja = "梱包明細", ko = "포장내역", ms = "Butiran pembungkusan", nl = "Paklijstdetails", pl = "Szczegóły pakowania", th = "รายละเอียดการบรรจุ", vi = "Chi tiết đóng gói", "zh-Hant" = "裝箱明細" }
 required = true
 description = "每一行一种货物或一组箱子（箱号 1-10 这种算一行）。表头、合计行不算一行"
+descriptions = { en = "One row per kind of goods or group of cartons (carton numbers 1-10 count as one row). Headers and total rows are not rows" }
 
 [[tables.columns]]
 name = "carton_no"
@@ -166,6 +187,7 @@ label = "箱号"
 names = { en = "Carton No.", ar = "رقم الكرتونة", de = "Kartonnummer", es = "N.º de caja", fr = "N° de carton", hi = "कार्टन संख्या", id = "Nomor karton", it = "N. cartone", ja = "ケース番号", ko = "박스번호", ms = "No. kotak", nl = "Doosnummer", pl = "Numer kartonu", th = "เลขที่กล่อง", vi = "Số thùng", "zh-Hant" = "箱號" }
 type = "string"
 description = "箱号范围，照抄，如 1-10、C/No. 11-20"
+descriptions = { en = "The carton number range; copy it as written, such as 1-10, C/No. 11-20" }
 aliases = ["箱号", "C/No.", "Carton No", "Case No"]
 
 [[tables.columns]]
@@ -174,6 +196,7 @@ label = "品名"
 names = { en = "Description", ar = "الوصف", de = "Bezeichnung", es = "Descripción", fr = "Désignation", hi = "विवरण", id = "Uraian", it = "Descrizione", ja = "内容", ko = "내용", ms = "Perihalan", nl = "Omschrijving", pl = "Nazwa", th = "รายละเอียด", vi = "Tên hàng", "zh-Hant" = "品名" }
 type = "string"
 description = "货物名称和规格，照抄"
+descriptions = { en = "Description and specification of the goods; copy it as written" }
 aliases = ["货物名称", "品名", "Description", "Description of Goods", "Commodity"]
 
 [[tables.columns]]
@@ -189,6 +212,7 @@ label = "件数"
 names = { en = "Cartons", ar = "الكراتين", de = "Kartons", es = "Cajas", fr = "Cartons", hi = "कार्टन", id = "Karton", it = "Cartoni", ja = "ケース数", ko = "박스수", ms = "Kotak", nl = "Dozen", pl = "Kartony", th = "จำนวนกล่อง", vi = "Số thùng hàng", "zh-Hant" = "件數" }
 type = "number"
 description = "这一行有几箱（几件），只要数字"
+descriptions = { en = "How many cartons (packages) in this row, digits only" }
 aliases = ["件数", "箱数", "CTNS", "Packages", "Cartons"]
 
 [[tables.columns]]
@@ -197,6 +221,7 @@ label = "数量"
 names = { en = "Quantity", ar = "الكمية", de = "Menge", es = "Cantidad", fr = "Quantité", hi = "मात्रा", id = "Jumlah", it = "Quantità", ja = "数量", ko = "수량", ms = "Kuantiti", nl = "Aantal", pl = "Ilość", th = "จำนวน", vi = "Số lượng", "zh-Hant" = "數量" }
 type = "number"
 description = "这一行货物的数量（不是箱数），只要数字"
+descriptions = { en = "The quantity of goods in this row (not the number of cartons), digits only" }
 aliases = ["数量", "Quantity", "Qty", "PCS"]
 
 [[tables.columns]]
@@ -212,6 +237,7 @@ label = "净重"
 names = { en = "Net Weight", ar = "الوزن الصافي", de = "Nettogewicht", es = "Peso neto", fr = "Poids net", hi = "शुद्ध वजन", id = "Berat bersih", it = "Peso netto", ja = "正味重量", ko = "순중량", ms = "Berat bersih", nl = "Nettogewicht", pl = "Masa netto", th = "น้ำหนักสุทธิ", vi = "Trọng lượng tịnh", "zh-Hant" = "淨重" }
 type = "number"
 description = "这一行的净重合计。单据只写了每箱净重的，照抄每箱净重，审核时再看"
+descriptions = { en = "The total net weight of this row. If the document only gives the net weight per carton, copy that and check it during review" }
 aliases = ["净重", "N.W.", "Net Weight"]
 
 [[tables.columns]]
@@ -220,6 +246,7 @@ label = "毛重"
 names = { en = "Gross Weight", ar = "الوزن القائم", de = "Bruttogewicht", es = "Peso bruto", fr = "Poids brut", hi = "सकल वजन", id = "Berat kotor", it = "Peso lordo", ja = "総重量", ko = "총중량", ms = "Berat kasar", nl = "Brutogewicht", pl = "Masa brutto", th = "น้ำหนักรวม", vi = "Trọng lượng cả bì", "zh-Hant" = "毛重" }
 type = "number"
 description = "这一行的毛重合计（同上）"
+descriptions = { en = "The total gross weight of this row (as above)" }
 aliases = ["毛重", "G.W.", "Gross Weight"]
 
 [[tables.columns]]
@@ -228,4 +255,5 @@ label = "体积"
 names = { en = "Volume", ar = "الحجم", de = "Volumen", es = "Volumen", fr = "Volume", hi = "आयतन", id = "Volume", it = "Volume", ja = "容積", ko = "용적", ms = "Isipadu", nl = "Volume", pl = "Objętość", th = "ปริมาตร", vi = "Thể tích", "zh-Hant" = "材積" }
 type = "number"
 description = "这一行的体积（立方米）"
+descriptions = { en = "The volume of this row (cubic meters)" }
 aliases = ["体积", "Measurement", "MEAS", "CBM", "Volume"]

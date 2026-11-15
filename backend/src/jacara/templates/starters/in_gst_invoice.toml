@@ -13,7 +13,17 @@ titles = { en = "GST Tax Invoice (India)", hi = "कर बीजक" }
 countries = ["IN"]
 domains = ["发票"]
 description = "印度的 GST tax invoice：供应商和收货方的名称地址 GSTIN、发票号、日期、HSN、描述、数量、应税价值、税率、CGST / SGST / IGST、place of supply、reverse charge、IRN。GSTIN 校验位不对、发票号超过 16 位、IGST 和 CGST/SGST 同时出现会提醒。"
+descriptions = { en = "Indian GST tax invoices: names, addresses and GSTINs of the supplier and recipient, invoice number, date, HSN, description, quantity, taxable value, rate, CGST / SGST / IGST, place of supply, reverse charge, IRN. Invalid GSTIN check digits, invoice numbers longer than 16 characters, and IGST together with CGST/SGST are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "in_seller_gstin", "in_buyer_gstin", "in_invoice_no", "in_tax_split"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Indian GST tax invoices.",
+  "Basis: CGST Rules 2017 rule 46 ((a) supplier name/address/GSTIN; (b) invoice number of at most 16 characters, unique within the financial year; (c) date; (d)(e) recipient; (g) HSN; (h)–(m) description, quantity, value, taxable value, rate and tax (central / state / integrated / cess); (n) place of supply; (p) reverse charge; (q) signature; (r) IRN QR code of e-invoices). 15-character GSTIN with a check digit.",
+  "Use: issued by GST-registered suppliers; buyers claim ITC with it in GSTR-2B.",
+  "Source: CBIC Tax Information Portal \"Rule 46. Tax invoice\".",
+]
 
 [[fields]]
 name = "document_title"
@@ -21,6 +31,7 @@ label = "单据标题"
 names = { en = "Document Title", hi = "कर बीजक" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 aliases = ["कर बीजक"]
 
 [[fields]]
@@ -31,6 +42,7 @@ type = "string"
 required = true
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 aliases = ["बीजक संख्या"]
 
 [[fields]]
@@ -90,6 +102,7 @@ label = "供应地"
 names = { en = "Place of Supply", hi = "आपूर्ति का स्थान" }
 type = "string"
 description = "邦名和代码，照抄"
+descriptions = { en = "State name and code; copy it as written" }
 aliases = ["आपूर्ति का स्थान"]
 
 [[fields]]
@@ -98,6 +111,7 @@ label = "反向征税"
 names = { en = "Reverse Charge", hi = "रिवर्स चार्ज" }
 type = "string"
 description = "照抄 Yes / No"
+descriptions = { en = "Copy Yes / No as written" }
 aliases = ["रिवर्स चार्ज"]
 
 [[fields]]
@@ -147,12 +161,14 @@ names = { en = "IRN" }
 type = "string"
 unique = true
 description = "电子发票的 64 位 IRN，照抄"
+descriptions = { en = "The 64-character IRN of the e-invoice; copy it as written" }
 
 [[tables]]
 name = "items"
 label = "明细"
 names = { en = "Items", hi = "विवरण" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -188,6 +204,7 @@ label = "金额"
 names = { en = "Amount", hi = "राशि" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["राशि"]
 
 [[tables.columns]]

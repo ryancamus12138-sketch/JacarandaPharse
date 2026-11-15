@@ -1,0 +1,31 @@
+# Tauri shell of the JacarandaParse desktop app: one window that shows
+# the pages served by the packaged backend (jacara-backend desktop), which it starts and stops.
+[package]
+name = "jacaranda-parse"
+version = "1.0.0"
+description = "JacarandaParse desktop app"
+authors = ["Ryan Camus"]
+license = "Apache-2.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[lib]
+name = "jacaranda_parse_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.5", features = [] }
+tauri-plugin-single-instance = "2.5.5"
+tauri-plugin-opener = "2.7.3"
+dirs = "7.0.0"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

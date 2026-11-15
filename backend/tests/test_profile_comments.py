@@ -1,4 +1,4 @@
-"""v3 第 1 批：个人资料（昵称、头像）、按字段内容找文档、先跳过、备注。"""
+"""Profiles (display name, avatar), searching documents by field value, skipping, comments."""
 
 import io
 
@@ -13,7 +13,7 @@ from jacara.modules.auth.repository import AuthRepository
 from jacara.modules.auth.schemas import UserCreate
 from jacara.modules.auth.service import add_user
 
-from .test_workbench import docs, names  # noqa: F401  docs 是 fixture
+from .test_workbench import docs, names  # noqa: F401  docs is a fixture.
 
 PASSWORD = "correct-horse-1"
 
@@ -24,13 +24,13 @@ def png(width: int, height: int, color: str = "red", fmt: str = "PNG") -> bytes:
     return out.getvalue()
 
 
-# ---- 个人资料：个人模式 ----
+# ---- Profile: personal mode ----
 
 
 def test_personal_profile_name_and_avatar(client, storage):
     profile = client.get("/api/v1/auth/profile").json()
     assert profile["mode"] == "personal"
-    assert profile["shown_name"] == "本机用户"
+    assert profile["shown_name"] == "我"
     assert profile["avatar_at"] is None
     assert client.get("/api/v1/auth/profile/avatar").status_code == 404
 
@@ -38,7 +38,7 @@ def test_personal_profile_name_and_avatar(client, storage):
     assert changed["display_name"] == "小王"
     assert client.get("/api/v1/auth/me").json()["shown_name"] == "小王"
 
-    # 长方形照片 → 裁成 256 × 256 的 PNG
+    # Rectangular photo → cropped to a 256 × 256 PNG.
     response = client.put(
         "/api/v1/auth/profile/avatar",
         files={"file": ("me.jpg", png(800, 400, fmt="JPEG"), "image/jpeg")},
@@ -61,7 +61,7 @@ def test_avatar_rejects_bad_files(client):
         "/api/v1/auth/profile/avatar", files={"file": ("x.png", b"not an image", "image/png")}
     )
     assert bad.status_code == 422
-    assert "打不开" in bad.json()["detail"]
+    assert "无法打开" in bad.json()["detail"]
     gif = io.BytesIO()
     Image.new("RGB", (10, 10)).save(gif, format="GIF")
     wrong = client.put(
@@ -75,7 +75,7 @@ def test_avatar_rejects_bad_files(client):
     assert "5 MB" in big.json()["detail"]
 
 
-# ---- 个人资料：团队模式 ----
+# ---- Profile: team mode ----
 
 
 @pytest.fixture
@@ -104,16 +104,16 @@ def test_team_profile_uses_account(client, team, factory):
     profile = client.get("/api/v1/auth/profile", headers=me).json()
     assert profile["mode"] == "team"
     assert profile["username"] == "xiaowang"
-    assert profile["shown_name"] == "xiaowang"  # 没有昵称就显示用户名
+    assert profile["shown_name"] == "xiaowang"  # Without a display name, the user name is shown.
     assert profile["role"] == "member"
-    assert profile["permissions"] == []  # 还没开通任何权限
+    assert profile["permissions"] == []  # No permissions granted yet.
     assert profile["member_since"] is not None
 
     client.patch("/api/v1/auth/profile", json={"display_name": "王小明"}, headers=me)
     assert client.get("/api/v1/auth/me", headers=me).json()["user"]["display_name"] == "王小明"
     assert client.get("/api/v1/auth/me", headers=me).json()["shown_name"] == "王小明"
 
-    # 两个人的头像分开存
+    # Avatars of two users are stored separately.
     other = team("xiaoli")
     client.put(
         "/api/v1/auth/profile/avatar",
@@ -132,19 +132,19 @@ def test_profile_needs_login(client, team):
     assert client.get("/api/v1/auth/profile").status_code == 401
 
 
-# ---- 按字段内容找文档 ----
+# ---- Searching documents by field value ----
 
 
 def test_search_field_values(client, docs, factory):  # noqa: F811
-    # report 里：商家 BOOK TA _K (TAMAN DAYA) SDN BHD，总额 9.0，找零 100.0
+    # In report: merchant BOOK TA _K (TAMAN DAYA) SDN BHD, total 9.0, change 100.0.
     assert names(client, "value_q=taman") == ["a", "b", "c", "d", "e"]
     assert names(client, "value_q=taman&field=merchant") == ["a", "b", "c", "d", "e"]
     assert names(client, "value_q=taman&field=total") == []
-    assert names(client, "value_q=costco") == []  # 文件名里有，字段里没有
-    assert names(client, "value_q=_K") == ["a", "b", "c", "d", "e"]  # _ 是普通字符
+    assert names(client, "value_q=costco") == []  # In the file name, not in the fields.
+    assert names(client, "value_q=_K") == ["a", "b", "c", "d", "e"]  # _ is a literal character.
     assert names(client, "value_q=%25") == []
 
-    # 人改过的值也能找到
+    # Values edited by a person are found too.
     detail = client.get(f"/api/v1/documents/{docs['a']}").json()
     merchant = next(
         v for e in detail["extractions"] for v in e["values"] if v["name"] == "merchant"
@@ -157,29 +157,30 @@ def test_search_field_values(client, docs, factory):  # noqa: F811
     assert names(client, "value_q=海底捞") == ["a"]
 
 
-# ---- 先跳过 ----
+# ---- Skipping ----
 
 
 def test_skip_and_unskip(client, docs, factory):  # noqa: F811
     a, b, d = docs["a"], docs["b"], docs["d"]
-    assert client.get(f"/api/v1/documents/{a}/neighbors").json()["next"] == str(b)
+    assert client.get(f"/api/v1/documents/{a}/neighbors").json()["next_to_review"] == str(b)
 
     skipped = client.post(f"/api/v1/documents/{b}/skip", json={"reason": "看不清，问财务"}).json()
     assert skipped["skipped_at"] is not None
     assert skipped["skip_reason"] == "看不清，问财务"
-    # 跳过的不算进"下一份"
-    assert client.get(f"/api/v1/documents/{a}/neighbors").json()["next"] == str(d)
+    # Skipped documents are not opened next after a review.
+    assert client.get(f"/api/v1/documents/{a}/neighbors").json()["next_to_review"] == str(d)
     assert names(client, "skipped=true") == ["b"]
     assert names(client, "skipped=false") == ["a", "c", "d", "e"]
     dashboard = client.get("/api/v1/dashboard").json()
     assert dashboard["counts"]["skipped"] == 1
-    assert str(b) not in [x["id"] for x in dashboard["to_review"]]  # 先跳过的不在"需要先处理"里
+    # Skipped documents are not under "Needs attention".
+    assert str(b) not in [x["id"] for x in dashboard["to_review"]]
 
     back = client.post(f"/api/v1/documents/{b}/unskip").json()
     assert back["skipped_at"] is None
-    assert client.get(f"/api/v1/documents/{a}/neighbors").json()["next"] == str(b)
+    assert client.get(f"/api/v1/documents/{a}/neighbors").json()["next_to_review"] == str(b)
 
-    # 只有待审核的能跳过
+    # Only documents awaiting review can be skipped.
     assert client.post(f"/api/v1/documents/{docs['c']}/skip", json={}).status_code == 409
     assert client.post(f"/api/v1/documents/{docs['e']}/skip", json={}).status_code == 409
 
@@ -196,7 +197,7 @@ def test_review_clears_skip(client, docs, factory):  # noqa: F811
     assert client.get("/api/v1/documents?skipped=true").json()["items"] == []
 
 
-# ---- 备注 ----
+# ---- Comments ----
 
 
 def test_comments(client, docs, factory):  # noqa: F811
@@ -214,20 +215,21 @@ def test_comments(client, docs, factory):  # noqa: F811
     no_page = client.post(url, json={"body": "x", "field_name": "total"})
     assert no_page.status_code == 422
     past_end = client.post(url, json={"body": "x", "field_name": "total", "page": 9})
-    assert "只有 1 页" in past_end.json()["detail"]
-    assert on_field["author"] == "本机用户"
+    assert "仅有 1 页" in past_end.json()["detail"]
+    assert on_field["author"] == "我"
     assert on_field["mine"] is True
     assert client.post(url, json={"body": "   "}).status_code == 422
 
     listed = client.get(url).json()
-    # 先写的在前（测试用的 SQLite 时间只到秒，两条可能同一秒，这里只比内容）
+    # Oldest first (SQLite in tests has second precision, so two comments may share a timestamp;
+    # only content is compared).
     assert sorted(c["body"] for c in listed) == sorted(["这张要问财务", "总额好像不对"])
     item = next(d for d in client.get("/api/v1/documents").json()["items"] if d["id"] == str(a))
     assert item["open_comments"] == 2
 
     resolved = client.post(f"/api/v1/comments/{on_field['id']}/resolve").json()
     assert resolved["resolved_at"] is not None
-    assert resolved["resolved_by"] == "本机用户"
+    assert resolved["resolved_by"] == "我"
     item = next(d for d in client.get("/api/v1/documents").json()["items"] if d["id"] == str(a))
     assert item["open_comments"] == 1
     reopened = client.post(f"/api/v1/comments/{on_field['id']}/reopen").json()
@@ -236,7 +238,7 @@ def test_comments(client, docs, factory):  # noqa: F811
     assert client.delete(f"/api/v1/comments/{on_field['id']}").status_code == 204
     assert len(client.get(url).json()) == 1
 
-    # 审计日志只记谁在哪份文档上写了，不记内容
+    # The audit log records who commented on which document, never the content.
     with session_scope(factory) as session:
         logs = list(session.scalars(select(AuditLog).where(AuditLog.action.like("comment:%"))))
         assert {log.action for log in logs} == {

@@ -1,4 +1,5 @@
-"""成对测评的统计（ADR 0042）：配对重采样、退化和修复计数、分批结果合并。"""
+"""Paired evaluation statistics: paired bootstrap, regression and fix counts, merging partial
+results."""
 
 from pathlib import Path
 
@@ -52,6 +53,6 @@ def test_parts_merge_and_summary(tmp_path: Path):
     s = summary(merged, docs, "oracle")
     row = {r["arm"]: r for r in s["arms"]}
     assert row["A"]["accuracy"] == 1.0 and row["D"]["accuracy"] == 0.0
-    assert row["D"]["silent_wrong"] == 0  # 错了但标黄了
+    assert row["D"]["silent_wrong"] == 0  # Wrong but flagged.
     assert s["photo_to_pdf"] == {"worse": 1, "better": 0}
     assert "成对测评" in to_markdown(s)

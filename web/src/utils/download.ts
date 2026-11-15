@@ -1,17 +1,48 @@
+import { api, type DownloadedFile } from '../api/client'
+import { isDesktop } from '../desktop'
+
+/** Event announcing a file saved to the Downloads folder by the desktop app (see SavedNotice). */
+export const SAVED_EVENT = 'jacara:saved'
+
+export interface SavedFile {
+  name: string
+  path: string
+}
+
 /**
- * 把内存里的文件交给浏览器"下载"，和点普通下载链接一样，会存到"下载"文件夹。
+ * Save a downloaded file, like clicking a regular download link: it goes to the Downloads folder.
  *
- * 为什么不直接 <a href="/api/...xlsx">？浏览器点链接时不会带登录 token。
- * 所以先用 fetch（带 token）取回来，再造一个临时链接让浏览器保存。
+ * Why not <a href="/api/...xlsx">? Browsers do not send the login token when following links. The file is
+ * therefore fetched with the token first, then saved through a temporary link.
+ *
+ * The desktop app's web view does not save downloads (WKWebView ignores the download attribute unless the app
+ * handles it), so there the service writes the file: files from the service are already saved
+ * (file.savedTo), and files made in the page are sent to the service. Either way the page announces where the
+ * file went.
  */
-export function saveFile(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
+export async function saveFile(file: DownloadedFile): Promise<void> {
+  if (file.savedTo !== undefined) {
+    announce({ name: file.filename, path: file.savedTo })
+    return
+  }
+  if (isDesktop()) {
+    const form = new FormData()
+    form.append('file', file.blob, file.filename)
+    form.append('filename', file.filename)
+    announce(await api<SavedFile>('/desktop/downloads', { method: 'POST', body: form }))
+    return
+  }
+  const url = URL.createObjectURL(file.blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = filename
+  link.download = file.filename
   document.body.appendChild(link)
   link.click()
   link.remove()
-  // 给浏览器一点时间开始下载，再释放这块内存
+  // Give the browser time to start the download before releasing the memory.
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
+function announce(saved: SavedFile): void {
+  window.dispatchEvent(new CustomEvent<SavedFile>(SAVED_EVENT, { detail: saved }))
 }

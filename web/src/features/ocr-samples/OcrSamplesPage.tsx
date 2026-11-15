@@ -29,11 +29,13 @@ import { Link, useSearchParams } from 'react-router'
 import { ApiError } from '../../api/client'
 import {
   CATEGORIES,
+  type Distribution,
   type ExportKind,
   type OcrSample,
   type SampleCategory,
   type SampleFilters,
   type SampleStatus,
+  type SampleTemplate,
   type SourceFormat,
   TAGS,
   downloadSamples,
@@ -56,6 +58,7 @@ import { formatTime } from '../../utils/format'
 import { DetPagesTab } from './DetPagesTab'
 import { ExportsTab } from './ExportsTab'
 import { GroupsTab } from './GroupsTab'
+import { useTranslation } from 'react-i18next'
 
 const PAGE_SIZE = 20
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }
@@ -65,8 +68,9 @@ function errorText(err: unknown): string {
   return err instanceof ApiError ? err.message : String(err)
 }
 
-/** 一条样本的小图：带登录 token 取回来，再变成浏览器内部地址。点开放大。 */
+/** Crop of a sample: fetched with the login token and turned into an object URL. Click to enlarge. */
 function SampleImage({ sample }: { sample: OcrSample }) {
+  const { t } = useTranslation()
   const image = useQuery({
     queryKey: ['ocr-sample-image', sample.id, sample.status === 'failed'],
     queryFn: async () => URL.createObjectURL(await getSampleImage(sample.id)),
@@ -76,7 +80,7 @@ function SampleImage({ sample }: { sample: OcrSample }) {
   if (sample.status === 'failed') {
     return (
       <Tooltip title={sample.error}>
-        <Tag color="error">裁图失败</Tag>
+        <Tag color="error">{t('裁图失败')}</Tag>
       </Tooltip>
     )
   }
@@ -86,15 +90,16 @@ function SampleImage({ sample }: { sample: OcrSample }) {
   return (
     <Image
       src={image.data}
-      alt="样本小图"
+      alt={t('样本图像')}
       height={36}
       style={{ maxWidth: 280, objectFit: 'contain', objectPosition: 'left', border: '1px solid #f0f0f0' }}
     />
   )
 }
 
-/** 开关：只有管理员能改。 */
+/** Switch: administrators only. */
 function CollectSwitch() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const settings = useQuery({ queryKey: ['ocr-sample-settings'], queryFn: getSampleSettings })
@@ -102,7 +107,7 @@ function CollectSwitch() {
     mutationFn: setSampleSettings,
     onSuccess: (data) => {
       queryClient.setQueryData(['ocr-sample-settings'], data)
-      void message.success(data.collect ? '已打开：审核时会收集 OCR 样本' : '已关掉，不再收集新样本')
+      void message.success(data.collect ? t('已开启：审核时将收集 OCR 样本') : t('已关闭：不再收集新样本'))
     },
     onError: (err) => void message.error(errorText(err)),
   })
@@ -118,13 +123,11 @@ function CollectSwitch() {
   return (
     <Card size="small">
       <Flex gap={16} align="flex-start">
-        {settings.data?.can_change ? toggle : <Tooltip title="只有管理员能改">{toggle}</Tooltip>}
+        {settings.data?.can_change ? toggle : <Tooltip title={t('仅管理员可修改')}>{toggle}</Tooltip>}
         <Flex vertical gap={4} style={{ flex: 1 }}>
-          <Typography.Text strong>自动收集纠错样本{on ? '（开着）' : '（关着）'}</Typography.Text>
+          <Typography.Text strong>{t('自动收集纠错样本')}{on ? t('（已开启）') : t('（已关闭）')}</Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-            打开后，审核页点一块原文会先弹出「图中原文」：按图上原样改对，回车填入。保存审核的同时，系统把这一行裁成小图，
-            连同图上原样的文字存成一条样本；框选重新识别的也一样。攒够了可以导出，用 PaddleOCR 微调文字识别模型。
-            敏感字段、PDF 自带的文字不收集。关着时审核和以前一样。
+            {t('开启后，在审核页点击原文区域会先弹出「图中原文」输入框：按图像内容逐字校正后按回车填入。保存审核时，系统将该行裁剪为图像，与校正后的文字一并保存为一条样本；框选重新识别同样适用。样本可导出，用于 PaddleOCR 文字识别模型的微调。敏感字段及 PDF 文本层中的文字不采集。关闭时审核流程不受影响。')}
           </Typography.Text>
         </Flex>
       </Flex>
@@ -132,8 +135,12 @@ function CollectSwitch() {
   )
 }
 
-/** 导出：选范围、看预览（训练和验证各几组几行、够不够、不导出的原因），下载 ZIP。 */
-function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: () => void; templates: string[] }) {
+/**
+ * Export: choose the scope, preview (groups and lines in training and validation, sufficiency, excluded
+ * reasons) and download the ZIP.
+ */
+function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: () => void; templates: SampleTemplate[] }) {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const { can } = useAuth()
   const canStore = can('value:review')
@@ -155,8 +162,8 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
   })
   const download = useMutation({
     mutationFn: () => downloadSamples(filters, kind),
-    onSuccess: ({ blob, filename }) => {
-      saveFile(blob, filename)
+    onSuccess: (file) => {
+      void saveFile(file)
       void queryClient.invalidateQueries({ queryKey: ['ocr-exports'] })
       void queryClient.invalidateQueries({ queryKey: ['ocr-groups'] })
       onClose()
@@ -165,9 +172,9 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
   })
   const store = useMutation({
     mutationFn: () =>
-      saveSamplesAsDataset(filters, kind, { name: datasetName.trim(), description: 'OCR 样本导出（ADR 0050）' }),
+      saveSamplesAsDataset(filters, kind, { name: datasetName.trim(), description: t('OCR 样本导出') }),
     onSuccess: (d) => {
-      void message.success(`已存进数据集库：${d.name} v${d.version}，可以在“模型和数据集”页拿它比较识别模型`)
+      void message.success(t('已保存为数据集：{{name}} v{{version}}，可在“模型和数据集”页用于对比识别模型', { name: d.name, version: d.version }))
       void queryClient.invalidateQueries({ queryKey: ['ocr-exports'] })
       void queryClient.invalidateQueries({ queryKey: ['ocr-groups'] })
       void queryClient.invalidateQueries({ queryKey: ['hub-datasets'] })
@@ -178,26 +185,26 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
   const data = preview.data
   const ready = categories.length > 0 && (data?.included ?? 0) > 0
   const parts = kind === 'test' ? (['test'] as const) : (['train', 'val'] as const)
-  const partNames = { train: '训练集', val: '验证集', test: '锁定测试集' }
+  const partNames = { train: t('训练集'), val: t('验证集'), test: t('锁定测试集') }
   const evidenceType = { process: 'warning', thin: 'warning', trend: 'success', none: 'info' } as const
   return (
     <Modal
-      title="导出 OCR 样本"
+      title={t('导出 OCR 样本')}
       open={open}
       onCancel={onClose}
       width={620}
       footer={[
         <Button key="cancel" onClick={onClose}>
-          取消
+          {t('取消')}
         </Button>,
-        <Tooltip key="dataset" title={datasetName.trim() ? '' : '先在下面填数据集的名字'}>
+        <Tooltip key="dataset" title={datasetName.trim() ? '' : t('请先在下方填写数据集名称')}>
           <Button
             icon={<DatabaseOutlined />}
             disabled={!ready || !datasetName.trim() || !canStore}
             loading={store.isPending}
             onClick={() => store.mutate()}
           >
-            存进数据集库
+            {t('保存为数据集')}
           </Button>
         </Tooltip>,
         <Button
@@ -208,7 +215,7 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
           loading={download.isPending}
           onClick={() => download.mutate()}
         >
-          下载 ZIP{data && categories.length > 0 ? `（${data.included} 条）` : ''}
+          {t('下载 ZIP')}{data && categories.length > 0 ? t('（{{included}} 条）', { included: data.included }) : ''}
         </Button>,
       ]}
     >
@@ -219,26 +226,26 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
           value={kind}
           onChange={(e) => setKind(e.target.value as ExportKind)}
           options={[
-            { value: 'train_val', label: '训练集和验证集' },
-            { value: 'test', label: '锁定测试集' },
+            { value: 'train_val', label: t('训练集和验证集') },
+            { value: 'test', label: t('锁定测试集') },
           ]}
         />
         <Typography.Text type="secondary" style={{ fontSize: 13 }}>
           {kind === 'test' ? (
             <>
-              只导出锁定成测试集的组（<Typography.Text code>rec_gt_test.txt</Typography.Text>）。正式验收用它，平时别反复看。
+              {t('仅导出已锁定为测试集的分组（')}<Typography.Text code>rec_gt_test.txt</Typography.Text>{t('）。仅用于正式验收，日常请勿反复查看。')}
             </>
           ) : (
             <>
-              PaddleOCR 识别训练的格式：<Typography.Text code>crop_img/</Typography.Text>、
-              <Typography.Text code>rec_gt_train.txt</Typography.Text>、<Typography.Text code>rec_gt_val.txt</Typography.Text>
-              （同一张单据整组在同一边）、<Typography.Text code>manifest.jsonl</Typography.Text> 和 README。
+              {t('PaddleOCR 识别训练格式：')}<Typography.Text code>crop_img/</Typography.Text>{t('、')}
+              <Typography.Text code>rec_gt_train.txt</Typography.Text>{t('、')}<Typography.Text code>rec_gt_val.txt</Typography.Text>
+              {t('（同一张单据的样本位于同一划分）、')}<Typography.Text code>manifest.jsonl</Typography.Text>{' '}{t('和 README。')}
             </>
           )}
-          不带原文件、文件名和审核人。这是你的业务数据，不要放进代码仓库。
+          {t('不包含原文件、文件名和审核人。导出内容属于业务数据，请勿提交到代码仓库。')}
         </Typography.Text>
         <div>
-          <Typography.Text strong>分类</Typography.Text>
+          <Typography.Text strong>{t('分类')}</Typography.Text>
           <Checkbox.Group
             style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}
             value={categories}
@@ -256,28 +263,28 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
         </div>
         <Flex gap={24} wrap>
           <div>
-            <Typography.Text strong>来源　</Typography.Text>
+            <Typography.Text strong>{t('来源')}{' '}</Typography.Text>
             <Radio.Group
               value={format}
               onChange={(e) => setFormat(e.target.value as SourceFormat | '')}
               options={[
-                { value: '', label: '全部' },
+                { value: '', label: t('全部') },
                 { value: 'pdf', label: 'PDF' },
-                { value: 'image', label: '照片' },
+                { value: 'image', label: t('照片') },
               ]}
             />
           </div>
           <Select
             style={{ minWidth: 180 }}
             allowClear
-            placeholder="全部模板"
+            placeholder={t('全部模板')}
             value={template}
             onChange={setTemplate}
-            options={templates.map((t) => ({ value: t, label: t }))}
+            options={templates.map((o) => ({ value: o.key, label: o.title }))}
           />
         </Flex>
         {categories.length === 0 ? (
-          <Alert type="warning" showIcon title="至少选一种分类" />
+          <Alert type="warning" showIcon title={t('至少选一种分类')} />
         ) : preview.isError ? (
           <Alert type="error" showIcon title={errorText(preview.error)} />
         ) : (
@@ -290,7 +297,7 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
                 items={parts.map((p) => ({
                   key: p,
                   label: partNames[p],
-                  children: `${data.splits[p]?.groups ?? 0} 组 · ${data.splits[p]?.rows ?? 0} 行`,
+                  children: t('{{value}} 组 · {{value2}} 行', { value: data.splits[p]?.groups ?? 0, value2: data.splits[p]?.rows ?? 0 }),
                 }))}
               />
               {data.evidence && (
@@ -300,10 +307,12 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
                   title={data.evidence.message}
                   description={
                     Object.keys(data.val_category_groups).length > 0
-                      ? `验证集里：${ORDER.filter((c) => data.val_category_groups[c])
-                          .map((c) => `${CATEGORIES[c].name}来自 ${data.val_category_groups[c]} 组`)
-                          .join('，')}。至少 10 组、50 行才不只是检查流程；15 组、100 行以上才看得出趋势。`
-                      : '至少 10 组、50 行才不只是检查流程；15 组、100 行以上才看得出趋势。'
+                      ? t('验证集：{{groups}}。至少 10 组、50 行时结果才超出流程验证的意义；15 组、100 行以上可参考趋势。', {
+                          groups: ORDER.filter((c) => data.val_category_groups[c])
+                            .map((c) => t('{{name}}来自 {{value}} 组', { name: CATEGORIES[c].name, value: data.val_category_groups[c] }))
+                            .join(t('，')),
+                        })
+                      : t('至少 10 组、50 行时结果才超出流程验证的意义；15 组、100 行以上可参考趋势。')
                   }
                 />
               )}
@@ -311,8 +320,8 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
                 <Alert
                   type="info"
                   showIcon
-                  title={`PaddleOCR 微调建议至少 ${data.paddle_minimum} 行，现在 ${data.included} 行，还差 ${data.paddle_minimum - data.included} 行`}
-                  description="可以先导出看流程；正式训练前多攒一些（审核时收集、补收、收认对的行），或按 README 用真实语料合成补充。"
+                  title={t('PaddleOCR 微调建议至少 {{paddle_minimum}} 行，当前 {{included}} 行，尚缺 {{value}} 行', { paddle_minimum: data.paddle_minimum, included: data.included, value: data.paddle_minimum - data.included })}
+                  description={t('可先导出以验证流程；正式训练前请积累更多样本（审核时收集、补收、收集识别正确的行），或按 README 使用真实语料合成补充。')}
                 />
               )}
               <Alert
@@ -320,14 +329,19 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
                 showIcon
                 title={
                   data.included > 0
-                    ? `会导出 ${data.included} 条：${ORDER.filter((c) => data.categories[c])
-                        .map((c) => `${CATEGORIES[c].name} ${data.categories[c]}`)
-                        .join('，')}`
-                    : '按这个范围没有能导出的样本'
+                    ? t('将导出 {{included}} 条：{{categories}}', {
+                        included: data.included,
+                        categories: ORDER.filter((c) => data.categories[c])
+                          .map((c) => `${CATEGORIES[c].name} ${data.categories[c]}`)
+                          .join(t('，')),
+                      })
+                    : t('当前筛选范围内没有可导出的样本')
                 }
                 description={
                   data.excluded.length > 0
-                    ? `不导出：${data.excluded.map((e) => `${e.reason} ${e.count} 条`).join('；')}`
+                    ? t('不导出：{{reasons}}', {
+                        reasons: data.excluded.map((e) => t('{{reason}} {{count}} 条', { reason: e.reason, count: e.count })).join(t('；')),
+                      })
                     : undefined
                 }
               />
@@ -337,7 +351,7 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
                   items={[
                     {
                       key: 'dist',
-                      label: '分布（只报告，不为凑比例挪组）',
+                      label: t('分布（仅供参考，不为平衡比例调整分组）'),
                       children: (
                         <Table
                           size="small"
@@ -346,17 +360,18 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
                           dataSource={data.distributions}
                           columns={[
                             {
-                              title: '按',
+                              title: t('按'),
                               dataIndex: 'by',
                               width: 70,
-                              render: (by: string) => ({ template: '模板', category: '分类', source_format: '来源' })[by] ?? by,
+                              render: (by: string) => ({ template: t('模板'), category: t('分类'), source_format: t('来源') })[by] ?? by,
                             },
                             {
                               title: '',
                               dataIndex: 'key',
-                              render: (k: string) =>
-                                ({ pdf: 'PDF', image: '照片' } as Record<string, string>)[k] ??
-                                CATEGORIES[k as SampleCategory]?.name ??
+                              render: (k: string, d: Distribution) =>
+                                d.label ||
+                                ({ pdf: 'PDF', image: t('照片') } as Record<string, string>)[k] ||
+                                CATEGORIES[k as SampleCategory]?.name ||
                                 k,
                             },
                             ...parts.map((p) => ({
@@ -379,13 +394,13 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
           <Input
             value={datasetName}
             onChange={(e) => setDatasetName(e.target.value)}
-            placeholder="存进数据集库（给 OCR 模型评测用）时的名字，例如 收据识别"
+            placeholder={t('保存为数据集（用于 OCR 模型评测）时的名称，例如“收据识别”')}
             maxLength={64}
           />
         )}
         {kind === 'train_val' && categories.includes('rec_error') && !categories.includes('correct') && (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            只用错例微调，模型容易把原来认得好的字"忘掉"。建议把「认对的行」一起导出。
+            {t('仅使用错例微调会导致模型遗忘原本识别正确的字符（灾难性遗忘）。建议同时导出「识别正确的行」。')}
           </Typography.Text>
         )}
       </Flex>
@@ -393,8 +408,11 @@ function ExportDialog({ open, onClose, templates }: { open: boolean; onClose: ()
   )
 }
 
-/** OCR 样本页（ADR 0050）：开关、样本列表（看图、改原文和分类、撤回）、导出 ZIP。 */
+/**
+ * OCR samples page: switch, sample list (view crops, edit transcription and category, withdraw), ZIP export.
+ */
 export function OcrSamplesPage() {
+  const { t } = useTranslation()
   const { can } = useAuth()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
@@ -435,7 +453,7 @@ export function OcrSamplesPage() {
     mutationFn: retrySample,
     onSuccess: () => {
       refresh()
-      void message.success('裁好了')
+      void message.success(t('已裁剪'))
     },
     onError: (err) => void message.error(errorText(err)),
   })
@@ -445,10 +463,14 @@ export function OcrSamplesPage() {
       refresh()
       void queryClient.invalidateQueries({ queryKey: ['ocr-sample-templates'] })
       if (r.created > 0) {
-        void message.success(`补收了 ${r.created} 条，在"待复核"里：对着小图确认图里的原文`)
+        void message.success(t('已补收 {{created}} 条，位于“待复核”：请对照图像确认图中原文', { created: r.created }))
         reset(() => setStatus('pending'))
       } else {
-        void message.info(r.skipped.length ? `没有能补收的（${r.skipped.map((s) => `${s.reason} ${s.count}`).join('；')}）` : '没有能补收的')
+        void message.info(
+          r.skipped.length
+            ? t('没有可补收的样本（{{reasons}}）', { reasons: r.skipped.map((s) => `${s.reason} ${s.count}`).join(t('；')) })
+            : t('没有可补收的样本'),
+        )
       }
     },
     onError: (err) => void message.error(errorText(err)),
@@ -458,10 +480,10 @@ export function OcrSamplesPage() {
     onSuccess: (r) => {
       refresh()
       if (r.created > 0) {
-        void message.success(`收了 ${r.created} 条认对的行，在"待复核"里：看过小图再通过`)
+        void message.success(t('已收集 {{created}} 条识别正确的行，位于“待复核”：请核对图像后通过', { created: r.created }))
         reset(() => setStatus('pending'))
       } else {
-        void message.info('没有新的认对的行可收')
+        void message.info(t('没有新的识别正确的行可收集'))
       }
     },
     onError: (err) => void message.error(errorText(err)),
@@ -470,7 +492,7 @@ export function OcrSamplesPage() {
     mutationFn: verifySamples,
     onSuccess: (r) => {
       refresh()
-      void message.success(`通过了 ${r.verified} 条`)
+      void message.success(t('已通过 {{verified}} 条', { verified: r.verified }))
     },
     onError: (err) => void message.error(errorText(err)),
   })
@@ -485,15 +507,15 @@ export function OcrSamplesPage() {
   }
 
   const columns: TableProps<OcrSample>['columns'] = [
-    { title: '小图', key: 'image', width: 300, render: (_, s) => <SampleImage sample={s} /> },
+    { title: t('图像'), key: 'image', width: 300, render: (_, s) => <SampleImage sample={s} /> },
     {
-      title: 'OCR 读的',
+      title: t('OCR 结果'),
       dataIndex: 'ocr_text',
       render: (text: string | null) =>
         text === null ? (
-          <Typography.Text type="secondary">（这里没有文字块）</Typography.Text>
+          <Typography.Text type="secondary">{t('（此处无文字块）')}</Typography.Text>
         ) : text === '' ? (
-          <Typography.Text type="secondary">（没认出）</Typography.Text>
+          <Typography.Text type="secondary">{t('（未识别）')}</Typography.Text>
         ) : (
           <Typography.Text type="secondary" style={MONO}>
             {text}
@@ -501,15 +523,17 @@ export function OcrSamplesPage() {
         ),
     },
     {
-      title: <Tooltip title="图上原样的文字，训练用的标签">图中原文</Tooltip>,
+      title: <Tooltip title={t('与图像一致的文字，作为训练标签')}>{t('图中原文')}</Tooltip>,
       dataIndex: 'transcription',
       render: (text: string, s) => (
         <Flex vertical gap={2}>
         {s.status === 'pending' && (
           <Typography.Text type="warning" style={{ fontSize: 12 }}>
             {s.origin === 'confirmed'
-              ? '自动收的认对的行：小图里的字和下面一样就通过，不一样先改'
-              : `补收的，先猜的${s.reviewed_value ? `；当时字段改成了 ${s.reviewed_value}` : ''}。对着小图写出图里的原文`}
+              ? t('自动收集的识别正确的行：图像中的文字与下方一致时通过，不一致时请先修改')
+              : s.reviewed_value
+                ? t('补收样本，原文为推测值；当时字段修改为 {{reviewed_value}}。请对照图像填写图中原文', { reviewed_value: s.reviewed_value })
+                : t('补收样本，原文为推测值。请对照图像填写图中原文')}
           </Typography.Text>
         )}
         <Typography.Text
@@ -517,7 +541,7 @@ export function OcrSamplesPage() {
           editable={
             canReview
               ? {
-                  tooltip: '改图中原文',
+                  tooltip: t('修改图中原文'),
                   onChange: (next) => {
                     if (next.trim() && next !== text) update.mutate({ id: s.id, change: { transcription: next } })
                   },
@@ -531,7 +555,7 @@ export function OcrSamplesPage() {
       ),
     },
     {
-      title: '分类',
+      title: t('分类'),
       key: 'category',
       width: 170,
       render: (_, s) => (
@@ -554,18 +578,19 @@ export function OcrSamplesPage() {
           )}
           {s.error_tags.length > 0 && (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {s.error_tags.map((t) => TAGS[t] ?? t).join('、')}
+              {s.error_tags.map((tag) => TAGS[tag] ?? tag).join(t('、'))}
             </Typography.Text>
           )}
         </Flex>
       ),
     },
     {
-      title: '字段',
+      title: t('字段'),
       key: 'field',
       render: (_, s) => (
         <Flex vertical>
-          <span>
+          {/* Names follow the reader's language; the field ID is the same in every language. */}
+          <span title={t('字段 ID：{{field}}', { field: s.field })}>
             {s.field_label}
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {' '}
@@ -573,17 +598,17 @@ export function OcrSamplesPage() {
             </Typography.Text>
           </span>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            <Link to={`/documents/${s.document_id}`}>{s.filename}</Link> · 第 {s.page} 页 ·{' '}
-            {s.source_format === 'pdf' ? 'PDF' : '照片'}
+            <Link to={`/documents/${s.document_id}`}>{s.filename}</Link>{' '}{t('· 第 {{page}} 页 ·', { page: s.page })}{' '}
+            {s.source_format === 'pdf' ? 'PDF' : t('照片')}
           </Typography.Text>
         </Flex>
       ),
     },
     {
-      title: '收集时间',
+      title: t('收集时间'),
       dataIndex: 'created_at',
       width: 150,
-      render: (t: string) => <Typography.Text type="secondary">{formatTime(t)}</Typography.Text>,
+      render: (at: string) => <Typography.Text type="secondary">{formatTime(at)}</Typography.Text>,
     },
     {
       title: '',
@@ -592,9 +617,9 @@ export function OcrSamplesPage() {
       render: (_, s) =>
         !canReview ? null : s.status === 'pending' ? (
           <Flex vertical gap={4}>
-            <Tooltip title="图中原文对了就通过（不对先点原文旁边的笔改），通过后才能导出">
+            <Tooltip title={t('图中原文正确时通过（不正确时先点击原文旁的编辑图标修改）；通过后方可导出')}>
               <Button size="small" type="primary" icon={<CheckOutlined />} onClick={() => update.mutate({ id: s.id, change: { status: 'ready' } })}>
-                通过
+                {t('通过')}
               </Button>
             </Tooltip>
             <Button
@@ -603,26 +628,26 @@ export function OcrSamplesPage() {
               icon={<RollbackOutlined />}
               onClick={() => update.mutate({ id: s.id, change: { status: 'withdrawn' } })}
             >
-              不要
+              {t('排除')}
             </Button>
           </Flex>
         ) : s.status === 'failed' ? (
           <Button size="small" icon={<ReloadOutlined />} loading={retry.isPending} onClick={() => retry.mutate(s.id)}>
-            重试
+            {t('重试')}
           </Button>
         ) : s.status === 'withdrawn' ? (
           <Button size="small" icon={<UndoOutlined />} onClick={() => update.mutate({ id: s.id, change: { status: 'ready' } })}>
-            恢复
+            {t('恢复')}
           </Button>
         ) : (
-          <Tooltip title="撤回：不导出这一条（可以恢复）">
+          <Tooltip title={t('撤回：不导出此条（可恢复）')}>
             <Button
               size="small"
               type="text"
               icon={<RollbackOutlined />}
               onClick={() => update.mutate({ id: s.id, change: { status: 'withdrawn' } })}
             >
-              撤回
+              {t('撤回')}
             </Button>
           </Tooltip>
         ),
@@ -633,26 +658,26 @@ export function OcrSamplesPage() {
     <Flex vertical gap={16}>
       <Flex justify="space-between" align="center" wrap gap={8}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          OCR 样本
+          {t('OCR 样本')}
         </Typography.Title>
         <Flex gap={8} wrap>
           {canReview && (
-            <Tooltip title="审核完成的单据里，人没改过、出处正好一整块且只有这个值的：OCR 读对了。训练要有认对的行，只学错例会把认得好的字忘掉">
+            <Tooltip title={t('从已完成审核的单据中收集：值未经人工修改、出处恰好是一整块且仅包含该值，即 OCR 识别正确的行。训练需要包含识别正确的行，仅使用错例会导致模型遗忘原本识别正确的字符')}>
               <Button icon={<CheckOutlined />} loading={confirmed.isPending} onClick={() => confirmed.mutate()}>
-                收认对的行
+                {t('收集识别正确的行')}
               </Button>
             </Tooltip>
           )}
           {canReview && (
-            <Tooltip title="开关打开之前审核过的：点了原文或框了一块、改了值的，裁出小图进待复核。手打的不收，同一次修改不会重复收">
+            <Tooltip title={t('针对开启收集前已审核的单据：通过点击原文或框选并修改过值的字段，裁剪图像后进入待复核。手动输入的值不收集，同一次修改不会重复收集')}>
               <Button icon={<HistoryOutlined />} loading={backfill.isPending} onClick={() => backfill.mutate()}>
-                从以前的修改补收
+                {t('从历史修改中补收')}
               </Button>
             </Tooltip>
           )}
           {can('document:export') && (
             <Button type="primary" icon={<DownloadOutlined />} disabled={all === 0} onClick={() => setExporting(true)}>
-              导出 ZIP
+              {t('导出 ZIP')}
             </Button>
           )}
         </Flex>
@@ -664,7 +689,7 @@ export function OcrSamplesPage() {
         items={[
           {
             key: 'samples',
-            label: `样本 ${data?.total ?? ''}`,
+            label: t('样本 {{value}}', { value: data?.total ?? '' }),
             children: (
           <Card size="small">
             <Flex vertical gap={12}>
@@ -673,7 +698,7 @@ export function OcrSamplesPage() {
                   value={category}
                   onChange={(v) => reset(() => setCategory(v as SampleCategory | ''))}
                   options={[
-                    { value: '', label: `全部 ${all}` },
+                    { value: '', label: t('全部 {{all}}', { all }) },
                     ...ORDER.map((c) => ({
                       value: c,
                       label: (
@@ -690,11 +715,11 @@ export function OcrSamplesPage() {
                     value={status}
                     onChange={(v) => reset(() => setStatus(v))}
                     options={[
-                      { value: '', label: '全部状态' },
-                      { value: 'ready', label: `可以导出 ${data?.statuses.ready ?? 0}` },
-                      { value: 'pending', label: `待复核 ${data?.statuses.pending ?? 0}` },
-                      { value: 'failed', label: `裁图失败 ${data?.statuses.failed ?? 0}` },
-                      { value: 'withdrawn', label: `撤回了 ${data?.statuses.withdrawn ?? 0}` },
+                      { value: '', label: t('全部状态') },
+                      { value: 'ready', label: t('可导出 {{value}}', { value: data?.statuses.ready ?? 0 }) },
+                      { value: 'pending', label: t('待复核 {{value}}', { value: data?.statuses.pending ?? 0 }) },
+                      { value: 'failed', label: t('裁图失败 {{value}}', { value: data?.statuses.failed ?? 0 }) },
+                      { value: 'withdrawn', label: t('已撤回 {{value}}', { value: data?.statuses.withdrawn ?? 0 }) },
                     ]}
                   />
                   <Select
@@ -702,35 +727,35 @@ export function OcrSamplesPage() {
                     value={format}
                     onChange={(v) => reset(() => setFormat(v))}
                     options={[
-                      { value: '', label: '全部来源' },
+                      { value: '', label: t('全部来源') },
                       { value: 'pdf', label: 'PDF' },
-                      { value: 'image', label: '照片' },
+                      { value: 'image', label: t('照片') },
                     ]}
                   />
                   <Select
                     style={{ minWidth: 160 }}
                     allowClear
-                    placeholder="全部模板"
+                    placeholder={t('全部模板')}
                     value={template}
                     onChange={(v) => reset(() => setTemplate(v))}
-                    options={(templates.data ?? []).map((t) => ({ value: t, label: t }))}
+                    options={(templates.data ?? []).map((o) => ({ value: o.key, label: o.title }))}
                   />
                 </Flex>
               </Flex>
               {canReview && status === 'pending' && pendingHere.length > 0 && (
                 <Flex justify="space-between" align="center" gap={8} wrap>
-                  <Typography.Text type="secondary">逐张看过这一页的小图和"图中原文"，都对就一起通过；有不对的先改或点"不要"。</Typography.Text>
+                  <Typography.Text type="secondary">{t('逐张核对本页的图像与“图中原文”，全部正确时可一并通过；有误的请先修改或点击“排除”。')}</Typography.Text>
                   <Button
                     type="primary"
                     icon={<CheckOutlined />}
                     loading={verifyPage.isPending}
                     onClick={() => verifyPage.mutate(pendingHere.map((s) => s.id))}
                   >
-                    通过这一页（{pendingHere.length} 条）
+                    {t('通过本页（{{length}} 条）', { length: pendingHere.length })}
                   </Button>
                 </Flex>
               )}
-              {list.isError && <Alert type="error" showIcon title="样本读不出来" description={errorText(list.error)} />}
+              {list.isError && <Alert type="error" showIcon title={t('无法读取样本')} description={errorText(list.error)} />}
               <Table
                 rowKey="id"
                 size="middle"
@@ -744,7 +769,7 @@ export function OcrSamplesPage() {
                   pageSize: PAGE_SIZE,
                   total: data?.total ?? 0,
                   showSizeChanger: false,
-                  showTotal: (n) => `共 ${n} 条`,
+                  showTotal: (n) => t('共 {{n}} 条', { n }),
                   onChange: setPageNo,
                 }}
                 locale={{
@@ -752,8 +777,8 @@ export function OcrSamplesPage() {
                     <Empty
                       description={
                         filtered
-                          ? '没有符合条件的样本'
-                          : '还没有样本。打开上面的开关后，审核时核对「图中原文」并保存，就会收集。'
+                          ? t('没有符合条件的样本')
+                          : t('暂无样本。开启上方开关后，审核时核对「图中原文」并保存即可收集。')
                       }
                     />
                   ),
@@ -765,16 +790,16 @@ export function OcrSamplesPage() {
           },
           {
             key: 'det',
-            label: '检测样本',
+            label: t('检测样本'),
             children: <DetPagesTab canExport={can('document:export')} />,
           },
           {
             key: 'groups',
-            label: '单据分组',
+            label: t('单据分组'),
             children: <GroupsTab canChange={settings.data?.can_change ?? false} canReview={canReview} />,
           },
           ...(can('document:export')
-            ? [{ key: 'exports', label: '导出记录', children: <ExportsTab /> }]
+            ? [{ key: 'exports', label: t('导出记录'), children: <ExportsTab /> }]
             : []),
         ]}
       />

@@ -1,5 +1,5 @@
-# ruff: noqa: E501
-"""模型和数据集库（ADR 0059）、OCR 模型评测（ADR 0060）的业务逻辑：权限、检查、审计日志。"""
+"""Business logic of the model and dataset library and OCR model evaluation: permissions,
+validation, audit logging."""
 
 from __future__ import annotations
 
@@ -18,7 +18,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from jacara.core import config
+from jacara.core.advice import pick
 from jacara.core.config import Settings
+from jacara.core.i18n import N_, join_items, render, stored, tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.queue import QueueError, TaskQueue
@@ -29,6 +31,8 @@ from jacara.modules.hub import registry
 from jacara.modules.hub.models import Dataset, OcrEvalRun
 from jacara.modules.hub.registry import HubError, ModelVersion
 from jacara.modules.hub.schemas import (
+    RESTART_HINT,
+    RESTART_HINT_DESKTOP,
     CardIn,
     DatasetOut,
     EvalIn,
@@ -43,9 +47,14 @@ from jacara.modules.hub.schemas import (
     VersionOut,
 )
 
+EVAL_NOT_QUEUED = N_("无法连接任务队列（Valkey），评测未开始")
+EVAL_NOT_QUEUED_DESKTOP = N_("无法写入任务队列，评测未开始")
+QUEUE_DOWN = N_("无法连接任务队列（Valkey），请确认 jacara start 正在运行")
+QUEUE_DOWN_DESKTOP = N_("无法写入任务队列，请重新启动 JacarandaParse")
+
 UPLOAD_ID = re.compile(r"^[0-9a-f]{32}$")
 STALE_SECONDS = 24 * 3600
-"""传了一半、一天都没完成的上传文件夹，下次有人开始上传时清掉。"""
+"""Upload folders left incomplete for more than a day are removed when the next upload starts."""
 
 SLOT_ENV = {
     "model": "jacara_model",
@@ -86,9 +95,13 @@ def import_files(
     meta: dict[str, Any],
     description: str = "",
 ) -> ModelVersion:
-    """命令行导入（jacara models import，权重离线导入）：把本机的文件拷进模型库，检查后成为新版本。"""
+    """CLI import (`jacara models import`, offline weight import): copy local files into the library
+    and, after validation, create a new version."""
     if kind not in registry.KINDS:
-        raise HubError("invalid", f"不认识的种类：{kind}，可选：{'、'.join(registry.KINDS)}")
+        raise HubError(
+            "invalid",
+            tr("未知种类：{kind}，可选值：{kinds}", kind=kind, kinds=join_items(registry.KINDS)),
+        )
     weights_name = registry.safe_filename(weights.name, registry.FORMATS[kind])
     dict_name = registry.safe_filename(dictionary.name, ".txt") if dictionary else None
     registry.check_space(weights.stat().st_size + (dictionary.stat().st_size if dictionary else 0))
@@ -114,17 +127,19 @@ class HubService:
         self.storage = storage
         self.queue = queue
 
-    # ---- 模型库 ----
+    # ---- Model library ----
 
     def _who(self) -> str:
-        """模型卡上写的导入人：用户名；个人模式没有用户，写"个人模式"。"""
+        """Importer recorded on the model card: the user name; "personal" in personal mode, which
+        has no users."""
         from jacara.modules.auth.models import User
 
         user = self.session.get(User, self.owner.user_id)
-        return user.username if user is not None else "个人模式"
+        return user.username if user is not None else tr("个人模式")
 
     def _in_use(self) -> set[str]:
-        """现在生效的模型文件（相对路径）：.env、selected.json、自动找到的，和换模型页一样算。"""
+        """Model files currently in effect (relative paths), resolved from .env, selected.json and
+        auto-detection as on the model selection page."""
         s = self.settings
         found = [s.find_model(), s.find_mmproj(), s.table_model(), *s.ocr_models().values()]
         used: set[str] = set()
@@ -132,7 +147,7 @@ class HubService:
             if path is None:
                 continue
             try:
-                used.add(path.resolve().relative_to(config.PROJECT_ROOT.resolve()).as_posix())
+                used.add(path.resolve().relative_to(config.data_home().resolve()).as_posix())
             except ValueError:
                 continue
         return used
@@ -150,7 +165,7 @@ class HubService:
             ModelOut(
                 name=name,
                 kind=versions[-1].kind,  # type: ignore[arg-type]
-                kind_label=registry.KINDS[versions[-1].kind],
+                kind_label=tr(registry.KINDS[versions[-1].kind]),
                 versions=[
                     version_out(v, registry.relative(v.weights) in used)
                     for v in sorted(versions, key=lambda v: -v.version)
@@ -158,14 +173,19 @@ class HubService:
             )
             for name, versions in grouped.items()
         ]
-        return HubModels(models=models, kinds=registry.KINDS, env_locked=self._env_locked())
+        return HubModels(
+            models=models,
+            kinds={key: tr(name) for key, name in registry.KINDS.items()},
+            env_locked=self._env_locked(),
+            restart_hint=tr(pick(RESTART_HINT_DESKTOP, RESTART_HINT)),
+        )
 
     def _upload_dir(self, upload_id: str) -> Path:
         if not UPLOAD_ID.fullmatch(upload_id):
-            raise HubError("not_found", "没有这次上传")
+            raise HubError("not_found", tr("上传不存在"))
         path = registry.hub_root() / registry.INCOMING / upload_id
         if not path.is_dir():
-            raise HubError("not_found", "没有这次上传（可能已经完成、取消或过期了）")
+            raise HubError("not_found", tr("上传不存在（可能已完成、取消或过期）"))
         return path
 
     def start_upload(self) -> UploadOut:
@@ -181,13 +201,16 @@ class HubService:
     async def receive_file(
         self, upload_id: str, filename: str, chunks: AsyncIterator[bytes], length: int | None
     ) -> UploadedFile:
-        """收一个文件：请求体就是文件本身（不经过 multipart），边收边写进这次上传的文件夹、边算 SHA-256，
-        几个 GB 的大模型也不会先在系统临时目录里存一份。"""
+        """Receive one file: the request body is the file itself (no multipart). It is written to
+        this upload's folder while computing SHA-256, so multi-gigabyte models are never staged
+        in the system temporary directory first."""
         require(self.owner, "system:manage")
         work = self._upload_dir(upload_id)
         suffix = Path(filename).suffix.lower()
         if suffix not in (".gguf", ".onnx", ".txt", ".zip"):
-            raise HubError("invalid", "只收 .gguf、.onnx、识别字典 .txt，或模型库导出的 .zip")
+            raise HubError(
+                "invalid", tr("仅支持 .gguf、.onnx、识别字典 .txt，或本程序导出的模型 .zip")
+            )
         name = registry.safe_filename(filename, suffix)
         if length:
             registry.check_space(length)
@@ -205,7 +228,7 @@ class HubService:
             raise
         if size == 0:
             target.unlink(missing_ok=True)
-            raise HubError("invalid", "文件是空的")
+            raise HubError("invalid", tr("文件为空"))
         return UploadedFile(name=name, size=size, sha256=digest.hexdigest())
 
     def cancel_upload(self, upload_id: str) -> None:
@@ -225,7 +248,7 @@ class HubService:
         if data.archive:
             archive = work / registry.safe_filename(data.archive, ".zip")
             if not archive.is_file():
-                raise HubError("invalid", f"还没传 {data.archive}")
+                raise HubError("invalid", tr("尚未上传 {archive}", archive=data.archive))
             weights, dictionary, card, body = registry.unpack(archive, work)
             archive.unlink()
             kind = str(card.pop("kind", ""))
@@ -234,18 +257,21 @@ class HubService:
             description = description or body
         else:
             if data.kind is None or data.weights is None:
-                raise HubError("invalid", "要选种类和权重文件")
+                raise HubError("invalid", tr("请选择种类和权重文件"))
             kind, weights, dictionary = data.kind, data.weights, data.dict_file
             for name in (weights, dictionary):
                 if name is not None and not (work / name).is_file():
-                    raise HubError("invalid", f"还没传 {name}")
+                    raise HubError("invalid", tr("尚未上传 {name}", name=name))
             suffix = registry.FORMATS[kind]
             if not weights.lower().endswith(suffix):
-                raise HubError("invalid", f"{registry.KINDS[kind]}要 {suffix} 文件")
+                raise HubError(
+                    "invalid",
+                    tr("{kind}需要 {suffix} 文件", kind=tr(registry.KINDS[kind]), suffix=suffix),
+                )
             if dictionary is not None and not dictionary.lower().endswith(".txt"):
-                raise HubError("invalid", "字典要 .txt 文件")
+                raise HubError("invalid", tr("字典需为 .txt 文件"))
         extra = {p.name for p in work.iterdir()} - {weights, dictionary}
-        for name in extra:  # 传了但没用上的文件
+        for name in extra:  # Files uploaded but not used.
             (work / name).unlink(missing_ok=True)
         version = registry.add_version(
             data.name, kind, work, weights, dictionary, meta, description
@@ -280,7 +306,8 @@ class HubService:
         return registry.relative(version.weights) in self._in_use()
 
     def use(self, name: str, number: int) -> HubModels:
-        """用这个版本：写进 models/selected.json（ADR 0046），识别模型连字典一起换。"""
+        """Use this version: write it to models/selected.json; recognition models switch their
+        dictionary too."""
         from jacara.modules.model_admin.service import ModelAdminService, ModelError, ModelsIn
 
         require(self.owner, "system:manage")
@@ -288,7 +315,10 @@ class HubService:
         if version.kind in self._env_locked() or (
             version.kind == "ocr_rec" and self.settings.jacara_ocr_dict is not None
         ):
-            raise HubError("invalid", f"{registry.KINDS[version.kind]}由 .env 指定，网页上换不了")
+            raise HubError(
+                "invalid",
+                tr("{kind}由 .env 指定，无法在网页中更换", kind=tr(registry.KINDS[version.kind])),
+            )
         choice: dict[str, str] = {version.kind: registry.relative(version.weights)}
         if version.kind == "ocr_rec":
             dictionary = version.dictionary
@@ -304,7 +334,7 @@ class HubService:
         require(self.owner, "system:manage")
         version = registry.get_version(name, number)
         if self._is_used(version):
-            raise HubError("invalid", "这个版本正在用，先换成别的再删")
+            raise HubError("invalid", tr("此版本正在使用，请先切换到其他版本再删除"))
         registry.remove(version)
         record(
             self.session,
@@ -316,7 +346,8 @@ class HubService:
         )
 
     def pack(self, name: str, number: int) -> tuple[str, Path]:
-        """打包下载一个版本。返回 (下载文件名, 临时 zip 的路径)：调用方发完以后删掉。"""
+        """Package one version for download. Returns (download file name, temporary zip path); the
+        caller deletes it after sending."""
         require(self.owner, "system:manage")
         version = registry.get_version(name, number)
         tmp = Path(tempfile.mkdtemp(prefix="jacara-model-")) / f"{name}-v{number}.zip"
@@ -324,7 +355,7 @@ class HubService:
         record(self.session, self.owner, "hub:model_export", "model", f"{name}@v{number}")
         return tmp.name, tmp
 
-    # ---- 数据集库 ----
+    # ---- Dataset library ----
 
     def dataset_out(self, d: Dataset) -> DatasetOut:
         return DatasetOut(
@@ -339,7 +370,7 @@ class HubService:
             counts={k: int(v) for k, v in (d.counts or {}).items()},
             groups={k: int(v) for k, v in (d.groups or {}).items()},
             files=list(d.files or []),
-            problems={k: int(v) for k, v in (d.problems or {}).items()},
+            problems={render(k) or k: int(v) for k, v in (d.problems or {}).items()},
             created_at=d.created_at,
         )
 
@@ -355,13 +386,13 @@ class HubService:
     def _get_dataset(self, dataset_id: uuid.UUID) -> Dataset:
         found = self.session.get(Dataset, dataset_id)
         if found is None or found.team_id != self.owner.team_id:
-            raise HubError("not_found", "没有这个数据集")
+            raise HubError("not_found", tr("数据集不存在"))
         return found
 
     def import_dataset(self, name: str, kind: str, description: str, data: bytes) -> DatasetOut:
         require(self.owner, "value:review")
         if len(data) > dataset_files.MAX_BYTES:
-            raise HubError("invalid", "数据集 zip 最大 1 GB")
+            raise HubError("invalid", tr("数据集 zip 最大 1 GB"))
         dataset = self.save_dataset(name, kind, "upload", description, data)
         return self.dataset_out(dataset)
 
@@ -374,12 +405,13 @@ class HubService:
         data: bytes,
         export_id: uuid.UUID | None = None,
     ) -> Dataset:
-        """检查 zip、先存对象存储再写数据库（CLAUDE.md 的写入顺序）。调用方负责权限检查。"""
+        """Validate the zip, store it in object storage, then write the database (storage before
+        database). The caller checks permissions."""
         name = " ".join(name.split())
         if not name or len(name) > 64 or "/" in name:
-            raise HubError("invalid", "名字要 1～64 个字，不能有 /")
+            raise HubError("invalid", tr("名称需为 1～64 个字符，且不能包含 /"))
         if self.storage is None:
-            raise HubError("storage", "对象存储暂时不可用，请稍后再试")
+            raise HubError("storage", tr("对象存储暂时不可用，请稍后再试"))
         parsed = dataset_files.parse(data, kind)
         team = self.owner.team_id
         version = 1 + (
@@ -395,7 +427,7 @@ class HubService:
         try:
             self.storage.put(key, data, "application/zip")
         except StorageError as err:
-            raise HubError("storage", "对象存储暂时不可用，请稍后再试") from err
+            raise HubError("storage", tr("对象存储暂时不可用，请稍后再试")) from err
         dataset = Dataset(
             id=dataset_id,
             name=name,
@@ -435,26 +467,30 @@ class HubService:
         require(self.owner, "document:export")
         dataset = self._get_dataset(dataset_id)
         if self.storage is None:
-            raise HubError("storage", "对象存储暂时不可用，请稍后再试")
+            raise HubError("storage", tr("对象存储暂时不可用，请稍后再试"))
         try:
             data = self.storage.get(dataset.storage_key)
         except StorageError as err:
-            raise HubError("storage", "对象存储里取不到这个数据集") from err
+            raise HubError("storage", tr("无法从对象存储读取此数据集")) from err
         record(self.session, self.owner, "hub:dataset_download", "dataset", dataset.id)
         return f"{dataset.name}-v{dataset.version}.zip", data
 
     def delete_dataset(self, dataset_id: uuid.UUID) -> None:
-        """删数据集，连同用它做的评测（先删数据库并提交，再删对象存储，和删文档一样）。"""
+        """Delete a dataset together with its evaluations (database first and committed, then object
+        storage, as with documents)."""
         require(self.owner, "value:review")
         dataset = self._get_dataset(dataset_id)
         runs = self.session.scalars(
             select(OcrEvalRun).where(OcrEvalRun.dataset_id == dataset.id)
         ).all()
         if any(r.status in ("queued", "running") for r in runs):
-            raise HubError("invalid", "这个数据集有评测正在跑，等它跑完再删")
+            raise HubError("invalid", tr("此数据集有正在运行的评测，请在评测结束后删除"))
         keys = [dataset.storage_key, *(r.lines_key for r in runs if r.lines_key)]
         for run in runs:
             self.session.delete(run)
+        # The runs reference the dataset and there is no relationship() between them, so the unit
+        # of work does not order these deletes; remove the runs first, as the foreign key requires.
+        self.session.flush()
         record(
             self.session,
             self.owner,
@@ -469,16 +505,17 @@ class HubService:
         self.session.commit()
         if self.storage is not None:
             for key in keys:
-                with contextlib.suppress(StorageError):  # 数据库里已经没有了；剩下的文件不影响使用
+                # Already removed from the database; leftover files are harmless.
+                with contextlib.suppress(StorageError):
                     self.storage.delete(key)
 
-    # ---- 评测 ----
+    # ---- Evaluation ----
 
     def create_eval(self, data: EvalIn) -> EvalOut:
         require(self.owner, "value:review")
         dataset = self._get_dataset(data.dataset_id)
         if not (dataset.counts or {}).get(data.split):
-            raise HubError("invalid", f"这个数据集没有 {data.split} 这一边")
+            raise HubError("invalid", tr("此数据集没有 {split} 划分", split=data.split))
         task = "rec" if dataset.kind == "ocr_rec" else "det"
         arms = [
             resolve_arm(self.settings, "A", data.a, task),
@@ -487,9 +524,9 @@ class HubService:
         if {k: arms[0][k] for k in ("det", "rec", "dict")} == {
             k: arms[1][k] for k in ("det", "rec", "dict")
         }:
-            raise HubError("invalid", "两边是同一个模型，没什么可比的")
+            raise HubError("invalid", tr("两侧为同一模型，无需对比"))
         if self.queue is None:
-            raise HubError("queue", "任务队列暂时不可用，请稍后再试")
+            raise HubError("queue", tr("任务队列暂时不可用，请稍后再试"))
         run = OcrEvalRun(
             dataset_id=dataset.id,
             split=data.split,
@@ -511,14 +548,15 @@ class HubService:
             split=data.split,
             arms=[{"label": a["label"], "sha256": a["sha256"]} for a in arms],
         )
-        self.session.commit()  # 放进队列之前先提交：worker 用自己的连接查
+        # Commit before enqueueing: the worker queries over its own connection.
+        self.session.commit()
         try:
             self.queue.enqueue_eval(run.id)
         except QueueError as err:
             run.status = "failed"
-            run.error = "任务队列（Valkey）连不上，没有开始"
+            run.error = stored(pick(EVAL_NOT_QUEUED_DESKTOP, EVAL_NOT_QUEUED))
             self.session.commit()
-            raise HubError("queue", "任务队列（Valkey）连不上，请确认 jacara start 在运行") from err
+            raise HubError("queue", tr(pick(QUEUE_DOWN_DESKTOP, QUEUE_DOWN))) from err
         return self._eval_out(run, dataset)
 
     def _eval_out(self, run: OcrEvalRun, dataset: Dataset | None = None) -> EvalOut:
@@ -526,7 +564,7 @@ class HubService:
         return EvalOut(
             id=run.id,
             dataset_id=run.dataset_id,
-            dataset=f"{dataset.name} v{dataset.version}" if dataset else "（已删除）",
+            dataset=f"{dataset.name} v{dataset.version}" if dataset else tr("（已删除）"),
             split=run.split,
             task=run.task,
             arms=list(run.arms or []),
@@ -552,7 +590,7 @@ class HubService:
     def _get_run(self, run_id: uuid.UUID) -> OcrEvalRun:
         run = self.session.get(OcrEvalRun, run_id)
         if run is None or run.team_id != self.owner.team_id:
-            raise HubError("not_found", "没有这次评测")
+            raise HubError("not_found", tr("评测不存在"))
         return run
 
     def eval_run(self, run_id: uuid.UUID) -> EvalOut:
@@ -563,33 +601,38 @@ class HubService:
         require(self.owner, "document:export")
         run = self._get_run(run_id)
         if not run.lines_key or self.storage is None:
-            raise HubError("not_found", "这次评测还没有逐条结果")
+            raise HubError("not_found", tr("此次评测尚无逐条结果"))
         try:
             data = self.storage.get(run.lines_key)
         except StorageError as err:
-            raise HubError("storage", "对象存储里取不到逐条结果") from err
-        return f"OCR评测-{run.id.hex[:8]}.jsonl", data
+            raise HubError("storage", tr("无法从对象存储读取逐条结果")) from err
+        return tr("OCR评测-{run}.jsonl", run=run.id.hex[:8]), data
 
 
 def resolve_arm(settings: Settings, name: str, ref: ModelRef, task: str) -> dict[str, Any]:
-    """把"在用 / 自带 / 模型库某版本"解析成具体文件，记下 SHA-256。"""
+    """Resolve "in use / bundled / library version" to concrete files and record their SHA-256."""
     slot = "ocr_rec" if task == "rec" else "ocr_det"
     det = rec = dictionary = None
     if ref.source == "current":
         own = settings.ocr_models()
         det = own.get("det")
         rec, dictionary = own.get("rec"), own.get("dict")
-        label = "现在用的"
+        label = tr("当前使用")
     elif ref.source == "builtin":
-        label = "RapidOCR 自带的"
+        label = tr("默认模型")
     else:
         if ref.name is None or ref.version is None:
-            raise HubError("invalid", "要选模型库里的模型和版本")
+            raise HubError("invalid", tr("请选择已导入的模型和版本"))
         version = registry.get_version(ref.name, ref.version)
         if version.kind != slot:
             raise HubError(
                 "invalid",
-                f"{ref.name} 是{registry.KINDS[version.kind]}，这个数据集要比{registry.KINDS[slot]}",
+                tr(
+                    "{name} 是{kind}，此数据集需对比{wanted}",
+                    name=ref.name,
+                    kind=tr(registry.KINDS[version.kind]),
+                    wanted=tr(registry.KINDS[slot]),
+                ),
             )
         if slot == "ocr_rec":
             rec, dictionary = version.weights, version.dictionary
@@ -598,7 +641,7 @@ def resolve_arm(settings: Settings, name: str, ref: ModelRef, task: str) -> dict
         label = f"{ref.name} v{ref.version}"
     paths = {"det": det, "rec": rec, "dict": dictionary}
     if task == "rec":
-        paths["det"] = None  # 识别评测不用检测模型
+        paths["det"] = None  # Recognition evaluation does not use a detection model.
     else:
         paths["rec"] = paths["dict"] = None
     arm: dict[str, Any] = {"name": name, "label": label, "sha256": {}}
@@ -610,7 +653,7 @@ def resolve_arm(settings: Settings, name: str, ref: ModelRef, task: str) -> dict
 
 
 def _shown(path: Path) -> str:
-    """相对项目根目录的路径；.env 指到项目外面的，用绝对路径。"""
+    """Path relative to the project root; absolute for .env paths outside the project."""
     try:
         return registry.relative(path)
     except ValueError:

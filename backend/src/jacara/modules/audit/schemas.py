@@ -1,12 +1,14 @@
-"""审计日志的对外格式。"""
+"""Public schema of audit log entries."""
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AfterValidator, BaseModel, ConfigDict
+
+from jacara.core.i18n import render_stored
 
 
 class AuditOut(BaseModel):
@@ -18,7 +20,9 @@ class AuditOut(BaseModel):
     action: str
     target_type: str | None
     target_id: str | None
-    detail: dict[str, Any]
+    detail: Annotated[dict[str, Any], AfterValidator(render_stored)]
+    """Details of the operation; reasons written by the system are rendered in the reader's
+    language."""
 
 
 class AuditPage(BaseModel):

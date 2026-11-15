@@ -1,26 +1,27 @@
-/** 重新处理的选项（单份和批量共用）。 */
+import { t } from '../../i18n'
+/** Reprocessing options (shared by single and bulk reprocessing). */
 
 export const SAME = '__same__'
 
 export const SPLITS = [
-  { value: 'auto', label: '自动判断' },
-  { value: 'one', label: '整个文件是一张单据' },
-  { value: 'pages', label: '每页是一张单据' },
-  { value: 'ranges', label: '自己写页码' },
+  { value: 'auto', get label() { return t('自动判断') } },
+  { value: 'one', get label() { return t('整个文件是一张单据') } },
+  { value: 'pages', get label() { return t('每页是一张单据') } },
+  { value: 'ranges', get label() { return t('手动指定页码') } },
 ]
 
 export type Vision = 'default' | 'always' | 'off'
 
 export const VISION_CHOICES: { value: Vision; label: string }[] = [
-  { value: 'default', label: '系统决定（推荐）' },
-  { value: 'always', label: '每页都对照原图' },
-  { value: 'off', label: '只看文字（最快）' },
+  { value: 'default', get label() { return t('系统决定（推荐）') } },
+  { value: 'always', get label() { return t('每页均对照原图') } },
+  { value: 'off', get label() { return t('仅读取文字（最快）') } },
 ]
 
 export type PdfRead = 'default' | 'image' | 'text'
 
 export const PDF_READ_CHOICES: { value: PdfRead; label: string }[] = [
-  { value: 'default', label: '系统决定（推荐）' },
-  { value: 'image', label: '画成图识别' },
-  { value: 'text', label: '只读 PDF 自带的文字（最快）' },
+  { value: 'default', get label() { return t('系统决定（推荐）') } },
+  { value: 'image', get label() { return t('渲染为图像识别') } },
+  { value: 'text', get label() { return t('仅读取 PDF 文本层（最快）') } },
 ]

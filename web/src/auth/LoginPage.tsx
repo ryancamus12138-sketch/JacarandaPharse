@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router'
 import { ApiError } from '../api/client'
 import { useAuth } from './useAuth'
+import { useTranslation } from 'react-i18next'
+import { LanguageSwitch } from '../components/LanguageSwitch'
 
 interface LoginForm {
   username: string
@@ -11,17 +13,18 @@ interface LoginForm {
 }
 
 export function LoginPage() {
+  const { t } = useTranslation()
   const { me, login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // 登录前想去的地址（RequireAuth 记下的），没有就去首页
+  // Destination before login (recorded by RequireAuth); the home page otherwise.
   const from = (location.state as { from?: string } | null)?.from ?? '/'
 
   if (me !== null) {
-    // 已经登录了，或者是个人模式（不用登录）：不显示登录页
+    // Already logged in, or personal mode (no login): do not show the login page.
     return <Navigate to={from} replace />
   }
 
@@ -39,35 +42,38 @@ export function LoginPage() {
   }
 
   return (
-    <Flex justify="center" align="center" style={{ minHeight: '100vh', background: '#f5f3fa' }}>
+    <Flex justify="center" align="center" style={{ minHeight: '100vh', background: '#f5f3fa', position: 'relative' }}>
+      <div style={{ position: 'absolute', top: 16, right: 16 }}>
+        <LanguageSwitch />
+      </div>
       <Card style={{ width: 380 }}>
         <Typography.Title level={3} style={{ marginTop: 0 }}>
           JacarandaParse
         </Typography.Title>
-        <Typography.Paragraph type="secondary">用你的账号登录</Typography.Paragraph>
+        <Typography.Paragraph type="secondary">{t('使用你的账号登录')}</Typography.Paragraph>
         {error && <Alert type="error" showIcon title={error} style={{ marginBottom: 16 }} />}
         <Form<LoginForm> layout="vertical" onFinish={(values) => void submit(values)}>
           <Form.Item
             name="username"
-            label="用户名"
-            rules={[{ required: true, message: '请输入用户名' }]}
+            label={t('用户名')}
+            rules={[{ required: true, message: t('请输入用户名') }]}
           >
             <Input prefix={<UserOutlined />} autoComplete="username" autoFocus />
           </Form.Item>
           <Form.Item
             name="password"
-            label="密码"
-            rules={[{ required: true, message: '请输入密码' }]}
+            label={t('密码')}
+            rules={[{ required: true, message: t('请输入密码') }]}
           >
             <Input.Password prefix={<LockOutlined />} autoComplete="current-password" />
           </Form.Item>
           <Button type="primary" htmlType="submit" block loading={submitting}>
-            登录
+            {t('登录')}
           </Button>
         </Form>
         <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
-          忘了密码？请管理员给你一个重设码，然后在这里
-          <Link to="/reset-password">用重设码设新密码</Link>（重设码不能直接当密码登录）
+          {t('忘记密码？请向管理员获取重设码，然后在此')}
+          <Link to="/reset-password">{t('使用重设码设置新密码')}</Link>{t('（重设码不能直接作为密码登录）')}
         </Typography.Paragraph>
       </Card>
     </Flex>

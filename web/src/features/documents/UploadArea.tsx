@@ -2,35 +2,43 @@ import { FolderOpenOutlined, InboxOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, App, Button, Checkbox, Flex, Input, Progress, Select, Tooltip, Typography, Upload } from 'antd'
 import type { RcFile } from 'antd/es/upload'
-import { useRef, useState } from 'react'
+import { type DragEvent, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { uploadDocument } from '../../api/documents'
+import { filesInFolders } from './folderDrop'
 import { listTemplates } from '../../api/templates'
 import { TemplatePicker } from '../templates/TemplatePicker'
 import { DISCOVER, loadUploadTemplate, saveUploadTemplate } from '../templates/uploadChoice'
+import { useTranslation } from 'react-i18next'
+import { t } from '../../i18n'
 
 const ACCEPT = '.jpg,.jpeg,.png,.webp,.tif,.tiff,.pdf'
 const SUFFIXES = ACCEPT.split(',')
-const MAX_MB = 50 // 和后端 .env 的 MAX_UPLOAD_MB 默认值一样；真正的限制在后端
-const PARALLEL = 3 // 同时传几个：太多会把后端和浏览器都堵住
+const MAX_MB = 50 // Same as the backend default of MAX_UPLOAD_MB in .env; the backend enforces the actual limit.
+const PARALLEL = 3 // Concurrent uploads: more would congest both backend and browser.
 
-/** 一个文件里有几张单据（ADR 0036）。自己写页码范围在审核页"重新处理"里。 */
+/** Number of documents per file. Custom page ranges are set under "Reprocess" on the review page. */
 const SPLIT_OPTIONS = [
-  { value: 'auto', label: '自动判断（推荐）' },
-  { value: 'one', label: '整个文件是一张单据' },
-  { value: 'pages', label: '每页是一张单据' },
+  { value: 'auto', get label() { return t('自动判断（推荐）') } },
+  { value: 'one', get label() { return t('整个文件是一张单据') } },
+  { value: 'pages', get label() { return t('每页是一张单据') } },
 ]
 
 interface Batch {
   total: number
   done: number
   skipped: number
+  /** Files withdrawn with "Stop uploading" before they were sent. */
+  cancelled: number
   failed: { name: string; reason: string }[]
 }
 
-const EMPTY: Batch = { total: 0, done: 0, skipped: 0, failed: [] }
+const EMPTY: Batch = { total: 0, done: 0, skipped: 0, cancelled: 0, failed: [] }
 
-/** 文件所在的文件夹：选整个文件夹时浏览器给出 "出差/酒店/a.pdf"，取 "出差/酒店"。 */
+/**
+ * Source folder of the file: when a whole folder is selected the browser reports "trip/hotel/a.pdf"; take
+ * "trip/hotel".
+ */
 function folderOf(file: RcFile, extra: string): string | undefined {
   const relative = file.webkitRelativePath || ''
   const parts = relative.split('/').slice(0, -1)
@@ -39,11 +47,12 @@ function folderOf(file: RcFile, extra: string): string | undefined {
 }
 
 /**
- * 上传：先选模板，再拖进文件，或者选整个文件夹（ADR 0036 批量导入）。
- * 一次几百个文件也可以：同时传 3 个，上面显示传了多少、跳过多少重复的、哪些失败了。
- * 选文件夹时记下每个文件在哪个子文件夹，列表可以按文件夹筛选。
+ * Upload: choose a template, then drop files or select a whole folder (batch import). Hundreds of files at
+ * once are fine: 3 upload concurrently, with counts of uploaded, skipped duplicates and failures shown above.
+ * When a folder is selected, each file's subfolder is recorded so the list can filter by folder.
  */
 export function UploadArea() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const [template, setTemplate] = useState(loadUploadTemplate)
@@ -52,10 +61,13 @@ export function UploadArea() {
   const [group, setGroup] = useState('')
   const [batch, setBatch] = useState<Batch>(EMPTY)
   const templates = useQuery({ queryKey: ['templates'], queryFn: listTemplates })
-  // 还没有自己的模板、也没选：抽出所有键值对（内置的收据模板不再给网页用）
-  const hasOwn = (templates.data ?? []).some((t) => t.kind === 'mine' && !t.archived)
+  // No templates of one's own and none selected: extract all key-value pairs (the built-in receipt template
+  // is no longer offered in the web UI).
+  const hasOwn = (templates.data ?? []).some((tpl) => tpl.kind === 'mine' && !tpl.archived)
   const chosen = template ?? (templates.isSuccess && !hasOwn ? DISCOVER : undefined)
-  const queue = useRef<{ file: RcFile; folder?: string }[]>([])
+  const queue = useRef<{ file: File; folder?: string }[]>([])
+  /** Names of folders dropped onto the drop area: their placeholder entries in the file list are ignored. */
+  const droppedFolders = useRef(new Set<string>())
   const running = useRef(0)
 
   const pump = () => {
@@ -80,19 +92,56 @@ export function UploadArea() {
     }
   }
 
-  const add = (file: RcFile) => {
+  const enqueue = (file: File, folder: string | undefined) => {
     const wanted = SUFFIXES.some((s) => file.name.toLowerCase().endsWith(s))
-    // 文件夹里的别的文件（.DS_Store、Word）不传，也不报错
+    // Other files in the folder (.DS_Store, Word documents) are skipped without errors.
     if (!wanted || file.name.startsWith('.')) return Upload.LIST_IGNORE
     if (file.size > MAX_MB * 1024 * 1024) {
-      void message.error(`${file.name} 超过 ${MAX_MB} MB`)
+      void message.error(t('{{name}} 超过 {{MAX_MB}} MB', { name: file.name, MAX_MB }))
       return Upload.LIST_IGNORE
     }
-    // 上一批传完了才清零，否则接着累计
+    // Reset only after the previous batch finished; otherwise keep accumulating.
     setBatch((b) => (b.done === b.total ? { ...EMPTY, total: 1 } : { ...b, total: b.total + 1 }))
-    queue.current.push({ file, folder: folderOf(file, group) })
+    queue.current.push({ file, folder })
     setTimeout(pump)
-    return false // 不用 Ant Design 自己的上传，交给上面的队列
+    return false // Ant Design's own upload is not used; the queue above handles it.
+  }
+
+  const add = (file: RcFile) => {
+    // A dropped folder also arrives as a placeholder "file" with the folder's name (its size depends on the
+    // system); a real file cannot share that name with a folder dropped from the same place.
+    if (!file.webkitRelativePath && droppedFolders.current.has(file.name)) {
+      return Upload.LIST_IGNORE
+    }
+    return enqueue(file, folderOf(file, group))
+  }
+
+  /**
+   * Folders dropped onto the drop area (the drop area itself takes only files): import every file in them, at
+   * every depth, recording each file's folder as "Select whole folder" does. Files dropped together with the
+   * folders are left to the drop area.
+   */
+  const dropFolders = (event: DragEvent<HTMLDivElement>) => {
+    const folders = [...event.dataTransfer.items]
+      .map((item) => item.webkitGetAsEntry())
+      .filter((entry): entry is FileSystemDirectoryEntry => entry !== null && entry.isDirectory)
+    droppedFolders.current = new Set(folders.map((f) => f.name))
+    if (folders.length === 0) return
+    void filesInFolders(folders).then((files) => {
+      for (const { file, folder } of files) {
+        enqueue(file, [group.trim(), folder].filter(Boolean).join('/') || undefined)
+      }
+    })
+  }
+
+  /**
+   * Stop uploading: files not yet sent are withdrawn; the few already being sent (at most PARALLEL) finish,
+   * since the server may already have received them.
+   */
+  const stopUploading = () => {
+    const withdrawn = queue.current.length
+    queue.current = []
+    setBatch((b) => ({ ...b, total: b.total - withdrawn, cancelled: b.cancelled + withdrawn }))
   }
 
   const busy = batch.total > 0 && batch.done < batch.total
@@ -107,22 +156,25 @@ export function UploadArea() {
       />
       <Flex gap={12} wrap align="center" style={{ marginBottom: 12 }}>
         <Flex align="center" gap={8}>
-          <Tooltip title="一个 PDF 里扫了好几张发票，或者一张账单有好几页。自动判断：看页上的“第 2 页 共 3 页”，没有就让模型判断这一页是不是上一页的续页">
-            <Typography.Text>一个文件里有几张单据：</Typography.Text>
+          <Tooltip title={t('适用于一个 PDF 中扫描了多张发票，或一张账单包含多页的情况。自动判断：依据页面上的“第 2 页 共 3 页”等页码信息；无页码时由模型判断该页是否为上一页的续页')}>
+            <Typography.Text>{t('每个文件的单据数：')}</Typography.Text>
           </Tooltip>
-          <Select value={split} onChange={setSplit} options={SPLIT_OPTIONS} style={{ width: 200 }} />
+          <Select value={split} onChange={setSplit} options={SPLIT_OPTIONS} style={{ width: 240 }} />
         </Flex>
         <Checkbox checked={skipDuplicate} onChange={(e) => setSkipDuplicate(e.target.checked)}>
-          跳过以前传过的文件（内容一样的）
+          {t('跳过已上传过的文件（内容相同）')}
         </Checkbox>
         <Input
           value={group}
           onChange={(e) => setGroup(e.target.value)}
-          placeholder="归到文件夹（可以不填），如 2026-10 出差"
+          placeholder={t('归入文件夹（选填），如“2026-10 出差”')}
           allowClear
           style={{ width: 280 }}
         />
       </Flex>
+      {/* Capture phase: the folder entries must be read during the drop event; the drop area then gets the
+          event as usual (and its drag-over highlight ends). */}
+      <div onDropCapture={dropFolders}>
       <Upload.Dragger
         accept={ACCEPT}
         multiple
@@ -133,17 +185,18 @@ export function UploadArea() {
         <p className="ant-upload-drag-icon">
           <InboxOutlined />
         </p>
-        <p className="ant-upload-text">把收据、发票拖到这里，或者点击选择文件（一次可以选几百个）</p>
+        <p className="ant-upload-text">{t('将收据、发票或整个文件夹拖到此处，或点击选择文件（单次可选择数百个）')}</p>
         <p className="ant-upload-hint">
-          支持图片（JPG、PNG、WebP、TIFF）和 PDF，单个文件最大 {MAX_MB} MB
+          {t('支持图片（JPG、PNG、WebP、TIFF）和 PDF，单个文件最大 {{MAX_MB}} MB', { MAX_MB })}
         </p>
       </Upload.Dragger>
+      </div>
       <Flex gap={8} align="center" wrap style={{ marginBottom: 16 }}>
         <Upload directory multiple accept={ACCEPT} showUploadList={false} beforeUpload={add}>
-          <Button icon={<FolderOpenOutlined />}>选择整个文件夹</Button>
+          <Button icon={<FolderOpenOutlined />}>{t('选择整个文件夹')}</Button>
         </Upload>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          子文件夹也会一起导入，列表里可以按文件夹筛选。要自动导入一个文件夹，见“系统信息”里的监视文件夹。
+          {t('各层子文件夹中的文件都会导入，并记录所在的文件夹，可在列表中按文件夹筛选。如需自动导入某个文件夹，请在「设置 → 识别和处理」中设置监视文件夹。')}
         </Typography.Text>
       </Flex>
       {batch.total > 0 && (
@@ -155,8 +208,15 @@ export function UploadArea() {
           style={{ marginBottom: 16 }}
           title={
             busy
-              ? `正在上传 ${batch.done} / ${batch.total}`
-              : `传完了 ${batch.total} 个文件，正在排队处理`
+              ? t('正在上传 {{done}} / {{total}}', { done: batch.done, total: batch.total })
+              : t('已上传 {{total}} 个文件，正在排队处理', { total: batch.total })
+          }
+          action={
+            busy ? (
+              <Button size="small" onClick={stopUploading}>
+                {t('停止上传')}
+              </Button>
+            ) : undefined
           }
           description={
             <>
@@ -165,13 +225,14 @@ export function UploadArea() {
                 size="small"
                 status={busy ? 'active' : batch.failed.length ? 'exception' : 'success'}
               />
-              {batch.skipped > 0 && <div>跳过 {batch.skipped} 个以前传过的文件</div>}
+              {batch.skipped > 0 && <div>{t('已跳过 {{skipped}} 个已上传过的文件', { skipped: batch.skipped })}</div>}
+              {batch.cancelled > 0 && <div>{t('已停止上传，{{cancelled}} 个文件未上传', { cancelled: batch.cancelled })}</div>}
               {batch.failed.length > 0 && (
                 <div>
-                  {batch.failed.length} 个没传上：
+                  {t('{{length}} 个文件上传失败：', { length: batch.failed.length })}
                   {batch.failed.slice(0, 5).map((f) => (
                     <div key={f.name}>
-                      {f.name}：{f.reason}
+                      {t('{{name}}：{{reason}}', { name: f.name, reason: f.reason })}
                     </div>
                   ))}
                   {batch.failed.length > 5 && <div>……</div>}

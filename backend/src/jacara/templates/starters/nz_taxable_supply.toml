@@ -12,7 +12,17 @@ titles = { en = "Taxable Supply Information (New Zealand)" }
 countries = ["NZ"]
 domains = ["发票"]
 description = "新西兰的 taxable supply information：供应商名称和 GST 号、日期、描述、不含 GST 金额、GST、含 GST 金额，超过 $1,000 时的买方信息。GST 号校验位不对、GST 超过含税总额的 3/23、超过 $1,000 没有买方名称会提醒。"
+descriptions = { en = "New Zealand taxable supply information: supplier name and GST number, date, description, amount excluding GST, GST, amount including GST, and buyer information above $1,000. Invalid GST number check digits, GST above 3/23 of the total including tax, and amounts above $1,000 without the buyer name are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "nz_gst_no", "nz_gst_3_23", "nz_buyer_over_1000"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: New Zealand taxable supply information (replaced tax invoices from 2023-04-01).",
+  "Basis: Goods and Services Tax Act 1985 s. 19F–19N; IRD: $200 or less requires only the supplier name, date, description and amount; $200–$1,000 adds the GST number and GST amount (or a statement that GST is included); above $1,000 adds the buyer name and one identifier (address, phone, email, NZBN, etc.). GST 15%.",
+  "Use: GST-registered businesses claim input tax with it; GST is checked in expense claims.",
+  "Source: IRD \"How taxable supply information for GST works\" (ird.govt.nz).",
+]
 
 [[fields]]
 name = "document_title"
@@ -20,6 +30,7 @@ label = "单据标题"
 names = { en = "Document Title" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 
 [[fields]]
 name = "invoice_no"
@@ -28,6 +39,7 @@ names = { en = "Invoice No." }
 type = "string"
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 
 [[fields]]
 name = "issue_date"
@@ -62,6 +74,7 @@ label = "买方识别信息"
 names = { en = "Recipient Identifier" }
 type = "string"
 description = "地址、电话、邮箱、NZBN、网址中的一项，照抄"
+descriptions = { en = "One of address, phone, email, NZBN or website; copy it as written" }
 
 [[fields]]
 name = "net_total"
@@ -87,6 +100,7 @@ name = "items"
 label = "明细"
 names = { en = "Items" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -112,3 +126,4 @@ label = "金额"
 names = { en = "Amount" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }

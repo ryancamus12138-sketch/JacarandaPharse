@@ -1,4 +1,5 @@
-"""在原文里找一个数（core/numbers.py）：原文里的数读出来按数值比，不再猜写法。"""
+"""Locating numbers in the source text (core/numbers.py): numbers are parsed and compared
+numerically instead of guessing notations."""
 
 import pytest
 
@@ -8,20 +9,21 @@ from jacara.core.numbers import number_pattern, numbers_in, readings
 @pytest.mark.parametrize(
     ("value", "text"),
     [
-        (78.5, "NEUT% 78.5 ↑"),  # 化验单的一位小数（以前只找 78.50）
-        (78.5, "78.50"),  # 写了两位小数
+        # One decimal place on lab reports (previously only 78.50 was searched).
+        (78.5, "NEUT% 78.5 ↑"),
+        (78.5, "78.50"),  # Two decimal places written.
         (0.9, "EO% 0.9"),
-        (1.234, "单价 1.234"),  # 三位小数（以前只找 1.23）
-        (0.123456789, "0.123456789"),  # 位数再多也行
-        (1234.5, "RM 1,234.50"),  # 千分位
-        (1234.56, "1.234,56 €"),  # 欧洲写法：句号千分位、逗号小数点
-        (12.5, "12,5 %"),  # 欧洲的小数逗号
+        (1.234, "单价 1.234"),  # Three decimal places (previously only 1.23 was searched).
+        (0.123456789, "0.123456789"),  # More digits work too.
+        (1234.5, "RM 1,234.50"),  # Thousands separators.
+        (1234.56, "1.234,56 €"),  # European notation: period for thousands, comma for decimals.
+        (12.5, "12,5 %"),  # European decimal comma.
         (1234567.0, "1,234,567.00"),
-        (6.0, "SUMMERINA 6.00-"),  # 折扣：不管正负号
+        (6.0, "SUMMERINA 6.00-"),  # Discounts: sign ignored.
         (-6.0, "(6.00)"),
         (9.0, "Total :  9.00"),
         (9.0, "9.0"),
-        (9.0, "9.00,"),  # 句尾的逗号不算
+        (9.0, "9.00,"),  # A trailing comma is not part of the number.
     ],
 )
 def test_found(value, text):
@@ -31,14 +33,14 @@ def test_found(value, text):
 @pytest.mark.parametrize(
     ("value", "text"),
     [
-        (9.0, "19.00"),  # 只认完整的数，不从中间截
-        (9.0, "9.000"),  # 9 不认 9.000（常常是重量、数量）
+        (9.0, "19.00"),  # Only complete numbers; no substrings.
+        (9.0, "9.000"),  # 9 does not match 9.000 (often a weight or quantity).
         (0.9, "0.95"),
         (78.5, "178.5"),
-        (55.0, "NO.55"),  # 前面紧挨着句号：不是一个独立的数
-        (25.0, "25.12.2018"),  # 日期不是数
-        (7.0, "007"),  # 前导 0：编号
-        (9.0, "9"),  # 写成整数的只在 loose 时认
+        (55.0, "NO.55"),  # Immediately preceded by a period: not a standalone number.
+        (25.0, "25.12.2018"),  # Dates are not numbers.
+        (7.0, "007"),  # Leading zero: an identifier.
+        (9.0, "9"),  # Integers match only with loose.
     ],
 )
 def test_not_found(value, text):
@@ -48,7 +50,7 @@ def test_not_found(value, text):
 def test_whole_numbers_only_when_loose():
     assert number_pattern(9.0, loose=True).search("Qty 9")
     assert number_pattern(1234.0, loose=True).search("1,234")
-    assert number_pattern(1234.0, loose=True).search("1.234")  # 欧洲的千分位
+    assert number_pattern(1234.0, loose=True).search("1.234")  # European thousands separator.
     assert not number_pattern(9.5, loose=True).search("9")
 
 

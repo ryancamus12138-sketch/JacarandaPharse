@@ -1,12 +1,13 @@
-"""模型后端扩展点：规定"怎么跟本地大模型说话"。
+"""Model backend extension point: defines how to talk to the local LLM.
 
-抽取、校验等步骤只认这里的类型，不关心背后是 llama-server、Ollama 还是以后的 vLLM。
+Extraction, validation and other steps depend only on these types, regardless of whether
+llama-server, Ollama or a future vLLM runs behind them.
 
-换模型有两种情况：
-1. 同一个服务，换模型文件（例如 9B 换成 4B）：启动服务时换 .gguf 文件，代码不用改。
-2. 换一种服务（例如 vLLM）：在本目录新建一个文件实现 ModelBackend，
-   再在 __init__.py 里登记一行。其他代码都不用改。
-"""
+Two ways to change the model:
+1. Same server, different model file (for example 9B to 4B): start the server with another .gguf
+   file; no code changes.
+2. Different server (for example vLLM): implement ModelBackend in a new module in this package
+   and register it in __init__.py. No other code changes."""
 
 from __future__ import annotations
 
@@ -17,57 +18,65 @@ Role = Literal["system", "user", "assistant"]
 
 
 class ModelBackendError(RuntimeError):
-    """连不上模型服务，或服务返回了错误。报错信息直接给人看，所以写清楚怎么解决。"""
+    """The model server is unreachable or returned an error. The message is shown to the user as is,
+    so it explains the remedy."""
 
 
 @dataclass(frozen=True)
 class ModelConfig:
-    """模型后端的通用配置。"""
+    """Common model backend configuration."""
 
     backend: str = "llama-server"
-    """用哪个后端插件，名字要在 __init__.py 的登记表里。"""
+    """Backend plugin to use; the name must be registered in __init__.py."""
 
     base_url: str = "http://127.0.0.1:8080"
-    """模型服务的地址。只用本机地址，符合"完全离线"的规则。"""
+    """Model server address. Local addresses only, keeping the system fully offline."""
 
     timeout_s: float = 600.0
-    """等模型回答最多多少秒。回答不设上限，商品很多的收据可能要写好几分钟。"""
+    """Maximum seconds to wait for an answer. Answers are unbounded; receipts with many items may
+    take several minutes."""
 
     temperature: float = 0.0
-    """随机程度。抽字段要稳定、可重复，所以默认 0。"""
+    """Sampling temperature. Field extraction must be stable and reproducible, hence 0 by
+    default."""
 
     max_tokens: int | None = None
-    """最多生成多少个 token。None：不设上限，一直写到回答完整为止（只受上下文长度限制）。
+    """Maximum tokens to generate. None: unbounded; the model writes until the answer is complete
+    (limited only by the context length).
 
-    曾经是 1024、4096：商品多的收据回答写到一半被截断，表格不完整，整张单据处理失败。
-    表格必须完整，所以不再限制；JSON Schema 保证模型写完 JSON 就停。
-    """
+        Earlier limits of 1024 and 4096 truncated answers for receipts with many items, leaving
+    tables incomplete and failing the whole document. Tables must be complete, so there is no
+    limit; the JSON Schema guarantees the model stops once the JSON is complete."""
 
     enable_thinking: bool = False
-    """是否让模型先"思考"再回答。抽字段不需要，关掉更快。"""
+    """Whether the model "thinks" before answering. Unnecessary for field extraction; disabled for
+    speed."""
 
     extra: dict[str, object] = field(default_factory=dict)
     api_key: str | None = None
-    """模型服务的密钥（jacara start 启动的 llama-server 要它）。请求时放在 Authorization 头里。"""
-    """各后端特有的高级参数，原样放进请求里。"""
+    """Model server API key (required by the llama-server started by `jacara start`), sent in the
+    Authorization header."""
+    """Backend-specific advanced parameters, passed into the request unchanged."""
 
 
 @dataclass(frozen=True)
 class ChatMessage:
-    """对话里的一条消息。system 是给模型的规则，user 是问题，assistant 是模型的回答。"""
+    """One chat message. system holds rules for the model, user the question, assistant the model
+    answer."""
 
     role: Role
     content: str
     images: tuple[bytes, ...] = ()
-    """附带的图片（PNG），放在文字后面（ADR 0038）。模型服务要加载了视觉模型才看得懂。"""
+    """Attached images (PNG), placed after the text. Understood only when the model server has a
+    vision projector loaded."""
 
 
 @dataclass(frozen=True)
 class ChatResult:
-    """模型的一次回答，以及"它是怎么来的"。
+    """One model answer and its provenance.
 
-    model 和 backend 必须记录：项目规则要求每次抽取都能追溯到用的是哪个模型。
-    """
+        model and backend must be recorded so that every extraction can be traced to the model
+    used."""
 
     text: str
     model: str
@@ -78,17 +87,19 @@ class ChatResult:
 
 
 class ModelBackend(Protocol):
-    """模型后端接口：任何类只要有 name 属性和 chat 方法，就是一个模型后端。
+    """Model backend interface: any class with a name attribute and a chat method is a model
+    backend.
 
-    能看图的后端另外有 sees_images() -> bool（ADR 0038），没有就当不能看图。"""
+        Backends that can process images also implement sees_images() -> bool; without it they
+    are assumed not to."""
 
     name: str
 
     def chat(
         self, messages: list[ChatMessage], *, json_schema: dict[str, object] | None = None
     ) -> ChatResult:
-        """发一组消息，拿回模型的回答。
+        """Send messages and return the model answer.
 
-        给了 json_schema 时，模型只能输出符合这个格式的 JSON（由服务端在生成时强制保证）。
-        """
+                With json_schema, the model can only output JSON matching the schema (enforced by
+        the server during generation)."""
         ...

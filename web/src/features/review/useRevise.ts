@@ -3,6 +3,7 @@ import { App } from 'antd'
 import { ApiError } from '../../api/client'
 import type { RevisionIn } from '../../api/types'
 import { reviseValue } from '../../api/values'
+import { useTranslation } from 'react-i18next'
 
 export interface ReviseVars {
   valueId: string
@@ -10,10 +11,11 @@ export interface ReviseVars {
 }
 
 /**
- * 修改或确认一个字段。成功后让三份数据重新取：
- * 这个文档（框的颜色、标签）、文档列表（"待确认"的数字）、这个字段的修改历史。
+ * Edit or confirm a field. On success three queries are refetched: the document (box colors, tags), the
+ * document list (pending counts), and the field's history.
  */
 export function useRevise(documentId: string) {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { message } = App.useApp()
   return useMutation({
@@ -21,10 +23,10 @@ export function useRevise(documentId: string) {
     onSuccess: (_, { valueId, change }) => {
       void message.success(
         change.action === 'confirm'
-          ? '已确认'
+          ? t('已确认')
           : change.source_lines
-            ? '已从原文填入'
-            : '已保存修改',
+            ? t('已从原文填入')
+            : t('已保存修改'),
       )
       void queryClient.invalidateQueries({ queryKey: ['document', documentId] })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
@@ -32,7 +34,7 @@ export function useRevise(documentId: string) {
       void queryClient.invalidateQueries({ queryKey: ['value-history', valueId] })
     },
     onError: (err) => {
-      // 新值格式不对、和当前值一样、别人刚改过……后端都会说清楚原因
+      // Invalid format, unchanged value, a concurrent edit: the backend explains the cause.
       void message.error(err instanceof ApiError ? err.message : String(err))
     },
   })

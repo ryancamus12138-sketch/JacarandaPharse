@@ -1,4 +1,5 @@
-"""换模型（ADR 0046）：只能选 models/ 里的文件，.env 写了的优先，改完提醒重启。"""
+"""Model selection: only files in models/ can be selected, .env takes precedence, and a restart
+reminder follows changes."""
 
 from __future__ import annotations
 
@@ -21,8 +22,6 @@ def models(tmp_path, monkeypatch):
     (root / "models" / "ocr" / "my_rec.onnx").write_bytes(b"x")
     (root / "models" / "ocr" / "keys.txt").write_text("a")
     monkeypatch.setattr(config, "PROJECT_ROOT", root)
-    monkeypatch.setattr(service, "PROJECT_ROOT", root)
-    monkeypatch.setattr(service, "MODELS", root / "models")
     monkeypatch.setattr(service, "model_props", lambda _s: {})
     return root
 
@@ -36,7 +35,7 @@ def slots(client) -> dict[str, dict]:
 def test_lists_files_and_choices(client, models):
     found = slots(client)
     assert [f["name"] for f in found["model"]["files"]] == ["A-Q4.gguf", "B-Q8.gguf"]
-    assert found["model"]["source"] == "none"  # 两个大模型不猜
+    assert found["model"]["source"] == "none"  # Two LLMs: no guessing.
     assert found["mmproj"]["source"] == "auto"
     assert found["ocr_det"]["source"] == "builtin"
     response = client.put(
@@ -46,7 +45,7 @@ def test_lists_files_and_choices(client, models):
     assert response.status_code == 200, response.text
     found = {s["key"]: s for s in response.json()["slots"]}
     assert found["model"]["current"] == "models/B-Q8.gguf" and found["model"]["source"] == "choice"
-    assert found["mmproj"]["current"] is None  # 选了不用视觉模型
+    assert found["mmproj"]["current"] is None  # Vision projector disabled.
     assert found["ocr_det"]["current"] == "models/ocr/my_det.onnx"
     saved = json.loads((models / "models" / "selected.json").read_text())
     assert saved["model"] == "models/B-Q8.gguf"
@@ -65,3 +64,42 @@ def test_env_wins(client, models, monkeypatch):
     client.put("/api/v1/models", json={"model": "models/B-Q8.gguf"})
     found = slots(client)
     assert found["model"]["source"] == "env" and found["model"]["current"] == "models/A-Q4.gguf"
+
+
+def test_a_model_file_that_is_a_link_shows_as_its_list_entry(client, tmp_path, monkeypatch):
+    # The model was downloaded elsewhere and linked into models/ (as when one copy of a 5 GB file
+    # serves two data folders): the current file must still match its entry in the list.
+    home = tmp_path / "home"
+    (home / "models").mkdir(parents=True)
+    elsewhere = tmp_path / "downloads"
+    elsewhere.mkdir()
+    for name in ("Q-Q4.gguf", "mmproj-F16.gguf"):
+        (elsewhere / name).write_bytes(b"x")
+        (home / "models" / name).symlink_to(elsewhere / name)
+    monkeypatch.setattr(config, "PROJECT_ROOT", home)
+    monkeypatch.setattr(service, "model_props", lambda _s: {})
+    found = slots(client)
+    for key in ("model", "mmproj"):
+        assert found[key]["current"] in [f["path"] for f in found[key]["files"]]
+    assert found["model"]["current"] == "models/Q-Q4.gguf"
+
+
+def test_the_table_model_shipped_with_the_program_is_used(client, tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / "models").mkdir(parents=True)
+    program = tmp_path / "program"
+    (program / "models" / "table").mkdir(parents=True)
+    shipped = program / "models" / "table" / "slanet-plus.onnx"
+    shipped.write_bytes(b"x")
+    monkeypatch.setattr(config, "PROJECT_ROOT", home)
+    monkeypatch.setattr(config, "resource_dir", lambda: program)
+    monkeypatch.setattr(service, "model_props", lambda _s: {})
+    assert config.get_settings().table_model() == shipped
+    table = slots(client)["table"]
+    assert table["source"] == "bundled"
+    assert table["current"] in [f["path"] for f in table["files"]]
+    # The user's own copy in the data folder takes precedence.
+    (home / "models" / "table").mkdir()
+    (home / "models" / "table" / "slanet-plus.onnx").write_bytes(b"y")
+    table = slots(client)["table"]
+    assert table["source"] == "auto" and table["current"] == "models/table/slanet-plus.onnx"

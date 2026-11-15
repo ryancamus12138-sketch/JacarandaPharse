@@ -1,18 +1,22 @@
-# ruff: noqa: E501
-"""读 PaddleOCR / PaddleX 格式的数据集 zip（ADR 0059）：识别（图片路径<Tab>文字）和检测
-（图片路径<Tab>[{"transcription", "points"}]）。导入时检查、评测时读（ADR 0060）都用这里。
+"""Read PaddleOCR / PaddleX dataset archives: recognition (image path<Tab>text) and detection (image
+path<Tab>[{"transcription", "points"}]). Used both for validation on import and for reading
+during evaluation.
 
-认的标注文件（格式见 PaddleX 文档"文本检测/文本识别 标注"、PaddleOCR 的 SimpleDataSet）：
+Recognized label files (formats per the PaddleX documentation on text detection and recognition
+annotation, and PaddleOCR SimpleDataSet):
 
-| | 训练 | 验证 | 锁定测试 | 不分边 |
-|---|---|---|---|---|
-| 识别 | rec_gt_train.txt、train.txt | rec_gt_val.txt、val.txt | rec_gt_test.txt | rec_gt.txt（PPOCRLabel） |
-| 检测 | det_gt_train.txt、train.txt | det_gt_val.txt、val.txt | det_gt_test.txt | Label.txt（PPOCRLabel） |
+| Task | Train                       | Val                     | Locked test     | Unsplit
+|
+|------|-----------------------------|-------------------------|-----------------|-------------------------|
+| rec  | rec_gt_train.txt, train.txt | rec_gt_val.txt, val.txt | rec_gt_test.txt | rec_gt.txt
+(PPOCRLabel) |
+| det  | det_gt_train.txt, train.txt | det_gt_val.txt, val.txt | det_gt_test.txt | Label.txt
+(PPOCRLabel)  |
 
-有分边的文件时不读"不分边"的（本系统导出的 rec_gt.txt 是训练 + 验证合起来的）。
-图片路径先按标注文件所在的文件夹找，找不到再按上一层找（PPOCRLabel 的 Label.txt 在图片文件夹里，
-路径却带着图片文件夹的名字）。
-"""
+When split files exist, unsplit files are ignored (rec_gt.txt exported by this system combines
+train and val). Image paths are resolved relative to the folder of the label file first and then
+its parent (PPOCRLabel's Label.txt sits inside the image folder but its paths include the image
+folder name)."""
 
 from __future__ import annotations
 
@@ -27,6 +31,7 @@ from typing import Any
 
 from PIL import Image
 
+from jacara.core.i18n import join_items, join_notes, stored
 from jacara.modules.hub.registry import HubError
 
 SPLIT_FILES: dict[str, dict[str, tuple[str, ...]]] = {
@@ -47,15 +52,18 @@ SPLIT_FILES: dict[str, dict[str, tuple[str, ...]]] = {
 SPLITS = ("train", "val", "test", "all")
 
 IGNORE = "###"
-"""检测标注里文字是 ### 的框不参与训练和评测（PaddleX 文档）。"""
+"""Detection boxes whose text is ### are excluded from training and evaluation (PaddleX
+documentation)."""
 
 MAX_BYTES = 1024**3
-"""数据集 zip 最大 1 GB（整个放进对象存储，读的时候也整个读进内存）。"""
+"""Maximum dataset archive size: 1 GB (stored whole in object storage and read whole into
+memory)."""
 MAX_UNPACKED = 4 * 1024**3
-"""解压后合计最多 4 GB。"""
+"""Maximum total uncompressed size: 4 GB."""
 MAX_RATIO = 200
-"""单个文件的压缩比上限：图片、文字压不到这么小，超过的当成 zip 炸弹（Python 文档 zipfile
-"Decompression pitfalls" 提醒的风险）。"""
+"""Maximum compression ratio per member: images and text never compress this far, so anything above
+is treated as a zip bomb (the risk described under "Decompression pitfalls" in the Python zipfile
+documentation)."""
 MAX_MEMBERS = 200_000
 
 
@@ -73,13 +81,14 @@ class Box:
 class Item:
     split: str
     image: str
-    """zip 里的成员名。"""
+    """Member name in the archive."""
     text: str | None = None
-    """识别：图上的文字。"""
+    """Recognition: text in the image."""
     boxes: tuple[Box, ...] = ()
-    """检测：这张图上所有的框。"""
+    """Detection: all boxes in the image."""
     group: str | None = None
-    """业务单据组号（本系统导出的 manifest.jsonl 里的 document_group）；外部数据集没有。"""
+    """Business document group (document_group in manifest.jsonl exported by this system); absent in
+    external datasets."""
 
 
 @dataclass
@@ -107,30 +116,37 @@ class Parsed:
 
 
 def safe_members(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
-    """zip 里每个文件都要安全：不能是绝对路径、不能带 ..（zip slip）；总大小、压缩比、文件数有上限。"""
+    """Every member must be safe: no absolute paths, no .. (zip slip); limits on total size,
+    compression ratio and member count."""
     infos = [i for i in archive.infolist() if not i.is_dir()]
     if len(infos) > MAX_MEMBERS:
-        raise HubError("invalid", f"zip 里文件太多（超过 {MAX_MEMBERS} 个）")
+        raise HubError("invalid", stored("zip 中文件过多（超过 {limit} 个）", limit=MAX_MEMBERS))
     total = 0
     members: dict[str, zipfile.ZipInfo] = {}
     for info in infos:
         name = info.filename.replace("\\", "/")
         parts = name.split("/")
         if name.startswith("/") or ".." in parts or ":" in parts[0]:
-            raise HubError("invalid", f"zip 里有不安全的路径：{info.filename}")
+            raise HubError(
+                "invalid", stored("zip 中存在不安全的路径：{filename}", filename=info.filename)
+            )
         total += info.file_size
         if info.compress_size and info.file_size / info.compress_size > MAX_RATIO:
-            raise HubError("invalid", f"zip 里 {info.filename} 的压缩比异常，可能是 zip 炸弹")
+            raise HubError(
+                "invalid",
+                stored("zip 中 {filename} 的压缩比异常，可能为 zip 炸弹", filename=info.filename),
+            )
         if name.startswith("__MACOSX/") or posixpath.basename(name).startswith("._"):
-            continue  # macOS 压缩时带的附加信息
+            continue  # Metadata added by the macOS archiver.
         members[name] = info
     if total > MAX_UNPACKED:
-        raise HubError("invalid", "zip 解压后太大（超过 4 GB）")
+        raise HubError("invalid", stored("zip 解压后过大（超过 4 GB）"))
     return members
 
 
 def _label_files(kind: str, members: dict[str, zipfile.ZipInfo]) -> list[tuple[str, str]]:
-    """(标注文件, 哪一边)。只看最浅一层有标注文件的地方；有分边的就不读不分边的。"""
+    """(Label file, split). Only the shallowest level containing label files is considered; split
+    files take precedence over unsplit ones."""
     known = {name: split for split, names in SPLIT_FILES[kind].items() for name in names}
     found = [(m, known[posixpath.basename(m)]) for m in members if posixpath.basename(m) in known]
     if not found:
@@ -157,7 +173,7 @@ def _resolve(label: str, path: str, members: dict[str, zipfile.ZipInfo]) -> str 
 
 
 def _groups(members: dict[str, zipfile.ZipInfo], archive: zipfile.ZipFile) -> dict[str, str]:
-    """manifest.jsonl（本系统导出的）：图片 → 业务单据组号。"""
+    """manifest.jsonl (exported by this system): image → business document group."""
     found: dict[str, str] = {}
     for name in members:
         if posixpath.basename(name) != "manifest.jsonl":
@@ -198,20 +214,21 @@ def _boxes(raw: str) -> tuple[Box, ...] | None:
 def parse(
     data: bytes | io.BufferedIOBase | Any, kind: str, *, verify_images: bool = True
 ) -> Parsed:
-    """读一个数据集 zip。格式不对的行跳过并计数；一条有效的都没有时报错。"""
+    """Read a dataset archive. Malformed lines are skipped and counted; raises if no valid entry
+    remains."""
     if kind not in SPLIT_FILES:
-        raise HubError("invalid", f"不认识的数据集种类：{kind}")
+        raise HubError("invalid", stored("未知的数据集种类：{kind}", kind=kind))
     source = io.BytesIO(data) if isinstance(data, bytes) else data
     try:
         archive = zipfile.ZipFile(source)
     except zipfile.BadZipFile as err:
-        raise HubError("invalid", "不是 zip 文件") from err
+        raise HubError("invalid", stored("不是 zip 文件")) from err
     with archive:
         members = safe_members(archive)
         labels = _label_files(kind, members)
         if not labels:
-            names = "、".join(n for names in SPLIT_FILES[kind].values() for n in names)
-            raise HubError("invalid", f"zip 里没找到标注文件（{names}）")
+            names = join_items(n for names in SPLIT_FILES[kind].values() for n in names)
+            raise HubError("invalid", stored("zip 中未找到标注文件（{names}）", names=names))
         groups = _groups(members, archive)
         parsed = Parsed(kind, [], [{"file": m, "split": s} for m, s in labels])
         seen: set[tuple[str, str]] = set()
@@ -223,34 +240,39 @@ def parse(
                     continue
                 path, tab, rest = line.partition("\t")
                 if not tab:
-                    parsed.problems["不是用 Tab 分开的"] += 1
+                    parsed.problems[stored("未使用 Tab 分隔")] += 1
                     continue
                 image = _resolve(label, path, members)
                 if image is None:
-                    parsed.problems["图片在 zip 里找不到"] += 1
+                    parsed.problems[stored("zip 中缺少该图片")] += 1
                     continue
                 if (split, image) in seen:
-                    parsed.problems["同一张图在同一边出现了两次（只留第一次）"] += 1
+                    parsed.problems[stored("同一图像在同一划分中出现两次（仅保留首次）")] += 1
                     continue
                 if verify_images and not checked.setdefault(image, _opens(archive, image)):
-                    parsed.problems["图片打不开"] += 1
+                    parsed.problems[stored("无法打开图片")] += 1
                     continue
                 if kind == "ocr_rec":
                     if not rest or "\t" in rest:
-                        parsed.problems["文字是空的或带 Tab"] += 1
+                        parsed.problems[stored("文字为空或包含 Tab")] += 1
                         continue
                     item = Item(split, image, text=rest, group=groups.get(image))
                 else:
                     boxes = _boxes(rest)
                     if boxes is None:
-                        parsed.problems["框的格式不对"] += 1
+                        parsed.problems[stored("文本框格式错误")] += 1
                         continue
                     item = Item(split, image, boxes=boxes, group=groups.get(image))
                 seen.add((split, image))
                 parsed.items.append(item)
     if not parsed.items:
-        reasons = "；".join(f"{r} {n} 行" for r, n in parsed.problems.most_common()) or "没有内容"
-        raise HubError("invalid", f"一条能用的都没有：{reasons}")
+        reasons = join_notes(
+            *(stored("{reason} {n} 行", reason=r, n=n) for r, n in parsed.problems.most_common())
+        )
+        raise HubError(
+            "invalid",
+            stored("没有可用的数据：{reasons}", reasons=reasons) if reasons else stored("没有内容"),
+        )
     return parsed
 
 
@@ -259,12 +281,12 @@ def _opens(archive: zipfile.ZipFile, name: str) -> bool:
         with Image.open(io.BytesIO(archive.read(name))) as picture:
             picture.verify()
         return True
-    except Exception:  # Pillow 打不开时的错误种类很多
+    except Exception:  # Pillow raises many error types for unreadable images.
         return False
 
 
 def images(data: bytes, items: list[Item]) -> Iterator[tuple[Item, bytes]]:
-    """按顺序取出每一条的图片字节（评测时用）。"""
+    """Image bytes of each entry in order (for evaluation)."""
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         for item in items:
             yield item, archive.read(item.image)

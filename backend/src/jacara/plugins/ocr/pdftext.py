@@ -1,9 +1,10 @@
-"""用 pdfium 读 PDF 一页上的文字层和表单字段，坐标换成渲染图上的像素（ADR 0042）。
+"""Read the text layer and form fields of a PDF page with pdfium, converting coordinates to pixels
+of the rendered image.
 
-为什么不用 pdfplumber：要分出"看不见的字"（渲染模式 3，扫描件上别的软件留下的旧 OCR），
-pdfplumber 读不出渲染模式；pdfium 能，而且它的坐标换算（PdfPosConv）和渲染用的是同一套，
-旋转的页面也能对准。
-"""
+Why not pdfplumber: invisible text (render mode 3, an old OCR layer left on scans by other
+software) must be told apart, and pdfplumber cannot read the render mode. pdfium can, and its
+coordinate conversion (PdfPosConv) is the same one used for rendering, so rotated pages align
+too."""
 
 from __future__ import annotations
 
@@ -16,14 +17,16 @@ import pypdfium2.raw as raw
 from jacara.plugins.ocr.base import FormValue, OcrLine, Point
 
 _INVISIBLE = (3, 7)
-"""渲染模式 3（不画）和 7（只当裁剪路径）：字在文字层里，页面上看不见。"""
+"""Render modes 3 (invisible) and 7 (clip only): the text is in the text layer but not visible on
+the page."""
 
 _HIDDEN_FLAGS = 1 | 2 | 32
-"""控件标志：1 不可见、2 隐藏、32 不显示（只打印）。"""
+"""Widget flags: 1 invisible, 2 hidden, 32 no view (print only)."""
 
 
 def _box(conv: Any, left: float, bottom: float, right: float, top: float) -> tuple[float, ...]:
-    """PDF 坐标的框 → 渲染图上的框 (x0, y0, x1, y1)。四个角都换算，旋转的页面也对。"""
+    """Box in PDF coordinates → box (x0, y0, x1, y1) on the rendered image. All four corners are
+    converted, so rotated pages are correct."""
     corners = [
         conv.to_bitmap(x, y)
         for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))
@@ -34,8 +37,8 @@ def _box(conv: Any, left: float, bottom: float, right: float, top: float) -> tup
 
 
 def text_words(page: pdfium.PdfPage, conv: Any) -> tuple[list[dict[str, Any]], int]:
-    """这一页文字层里看得见的词：[{text, x0, top, x1, bottom}]（渲染图上的像素），
-    以及看不见的字有几个。"""
+    """Visible words in this page's text layer: [{text, x0, top, x1, bottom}] (pixels of the
+    rendered image), and the number of invisible characters."""
     textpage = page.get_textpage()
     try:
         count = raw.FPDFText_CountChars(textpage.raw)
@@ -62,17 +65,18 @@ def text_words(page: pdfium.PdfPage, conv: Any) -> tuple[list[dict[str, Any]], i
             char = chr(raw.FPDFText_GetUnicode(textpage.raw, i))
             obj = raw.FPDFText_GetTextObject(textpage.raw, i)
             if not obj or char.isspace() or raw.FPDFText_IsGenerated(textpage.raw, i) == 1:
-                flush()  # 空格、换行、pdfium 自己补的分隔：一个词结束
+                flush()  # Space, newline or a separator inserted by pdfium: end of a word.
                 continue
             if raw.FPDFTextObj_GetTextRenderMode(obj) in _INVISIBLE:
                 hidden += 1
                 flush()
                 continue
-            # 宽松的框（按字体的上下高度、字的步进宽度）：相邻的字首尾相接，不会被误拆开
+            # Loose box (font ascent and descent, character advance): adjacent characters touch end
+            # to end and are not split by mistake.
             raw.FPDFText_GetLooseCharBox(textpage.raw, i, rect)
             box = _box(conv, rect.left, rect.bottom, rect.right, rect.top)
             if current and _gap(current[-1][1], box) > 0.5 * min(_size(box), _size(current[-1][1])):
-                flush()  # 同一个对象里隔得远（排版用的距离），也分开
+                flush()  # Far apart within the same object (layout spacing): split too.
             current.append((char, box))
         flush()
         return words, hidden
@@ -81,17 +85,20 @@ def text_words(page: pdfium.PdfPage, conv: Any) -> tuple[list[dict[str, Any]], i
 
 
 def _size(box: tuple[float, ...]) -> float:
-    """字的大小：框的短边（横排是高，竖排、旋转 90 度的页是宽）。"""
+    """Character size: the shorter side of the box (height for horizontal text, width for vertical
+    text and pages rotated 90 degrees)."""
     return max(1.0, min(box[2] - box[0], box[3] - box[1]))
 
 
 def _gap(a: tuple[float, ...], b: tuple[float, ...]) -> float:
-    """两个字之间的空隙（横向、纵向取大的；重叠是负数）。"""
+    """Gap between two characters (the larger of horizontal and vertical; negative when
+    overlapping)."""
     return max(b[0] - a[2], a[0] - b[2], b[1] - a[3], a[1] - b[3])
 
 
 def form_values(document: pdfium.PdfDocument, page: pdfium.PdfPage, conv: Any) -> list[FormValue]:
-    """这一页上的表单字段（文本框、下拉框等）存的值。要先调用过 document.init_forms()。"""
+    """Values stored in the form fields of this page (text fields, combo boxes, …).
+    document.init_forms() must have been called."""
     env = document.formenv
     if env is None:
         return []
@@ -116,7 +123,7 @@ def form_values(document: pdfium.PdfDocument, page: pdfium.PdfPage, conv: Any) -
 
 
 def _utf16(call: Any, env: Any, annot: Any) -> str:
-    """pdfium 返回 UTF-16 字符串的函数：先问要多大，再取。"""
+    """pdfium functions returning UTF-16 strings: query the size first, then fetch."""
     size = call(env, annot, None, 0)
     if size <= 2:
         return ""
@@ -126,7 +133,7 @@ def _utf16(call: Any, env: Any, annot: Any) -> str:
 
 
 def as_lines(phrases: list[tuple[str, float, float, float, float]]) -> tuple[OcrLine, ...]:
-    """(文字, x0, top, x1, bottom) → OcrLine。文字层没有置信度，记 1.0。"""
+    """(text, x0, top, x1, bottom) → OcrLine. The text layer has no confidence; 1.0 is recorded."""
     return tuple(
         OcrLine(
             text=text,

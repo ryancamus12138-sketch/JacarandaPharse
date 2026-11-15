@@ -1,11 +1,11 @@
-"""人工审核的业务逻辑：修改字段、确认字段、从原文选取、表格增删行、查看修改历史。
+"""Review business logic: editing and confirming fields, selecting from source text, adding and
+removing table rows, viewing history.
 
-原值永远不改（项目规则 2）：每次审核都新增一条 value_revisions，当前值取最新一条。
-删除一行也是新增记录（action="delete"），不真的删；
-增加一行是新增 origin="manual" 的字段（ADR 0027）。
-计算字段（ADR 0035）：参与计算的值改了、增删了行，按公式重算，记一条 action="compute" 的记录；
-人直接改过的计算字段不再跟着变。
-"""
+Original values never change: each review inserts a value_revisions row and the current value is
+the latest one. Deleting a row also inserts revisions (action="delete") instead of deleting;
+adding a row inserts fields with origin="manual". Computed fields are recalculated by formula
+when inputs change or rows are added or removed, recording action="compute"; computed fields
+edited directly by a person no longer follow their inputs."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from jacara.core.i18n import stored, tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.storage import ObjectStorage
@@ -37,11 +38,11 @@ from jacara.pipeline.store import evidence_from_ocr
 from jacara.plugins.extractors.base import cell_name, split_cell_name
 
 REVIEWABLE = {"done", "reviewed"}
-"""这些状态的文档才能审核：处理完了、有结果。"""
+"""Statuses in which a document can be reviewed: processed, with results."""
 
 
 class FieldError(Exception):
-    """业务错误。code 让 router 知道该返回哪种 HTTP 状态。"""
+    """Business error. code tells the router which HTTP status to return."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -57,7 +58,7 @@ class FieldService:
         self.repo = ValueRepository(session)
         self.owner = owner
         self.storage = storage
-        """收集 OCR 样本时存裁图用（ADR 0050）。没有就不收集。"""
+        """Stores crops when collecting OCR samples. No collection without it."""
 
     def history(self, value_id: uuid.UUID) -> ValueHistory:
         value = self._find(value_id)
@@ -72,26 +73,29 @@ class FieldService:
         require(self.owner, "value:review", value.team_id)
         document = value.extraction.document
         if document.status not in REVIEWABLE:
-            raise FieldError("not_ready", f"文档状态是 {document.status}，处理完成后才能审核")
+            raise FieldError(
+                "not_ready", tr("文档状态为 {status}，处理完成后方可审核", status=document.status)
+            )
         _check_current(value.extraction)
         if value.deleted:
-            raise FieldError("invalid", "这一行已经删除了，要改的话先恢复这一行")
+            raise FieldError("invalid", tr("此行已删除，如需修改请先恢复"))
 
         evidence: dict[str, Any] | None = None
         if change.source_lines is not None and change.source_box is not None:
-            raise FieldError("invalid", "从原文选取和框选只能用一种")
+            raise FieldError("invalid", tr("从原文选取与框选只能二选一"))
         if change.transcription is not None and (
             change.action != "edit"
             or (change.source_box is None and len(change.source_lines or []) != 1)
         ):
-            raise FieldError("invalid", "图中原文要对应原图上的一块原文或一个框")
+            raise FieldError("invalid", tr("图中原文需对应原图上的一块原文或一个框选区域"))
         sample_line: dict[str, Any] | None = None
         page = self._page(value.extraction, change.page)
         if change.action == "edit" and change.source_box is not None:
-            # 框选重新识别：值是人看过、确认的；出处就是框出的区域
+            # Region re-recognition: the value was checked and confirmed by a person; the evidence
+            # is the selected region.
             new_value = normalize(value.type, change.value)
             if new_value is None:
-                raise FieldError("invalid", "框里没有要填的值，请框住要识别的文字")
+                raise FieldError("invalid", tr("框选区域内没有可填写的值，请框选需要识别的文字"))
             x0, y0, x1, y1 = change.source_box
             evidence = {
                 "page": page,
@@ -104,13 +108,14 @@ class FieldService:
                     round(max(x0, x1), 1),
                     round(max(y0, y1), 1),
                 ],
-                "confidence": 1.0,  # 人确认过
+                "confidence": 1.0,  # Confirmed by a person.
                 "similarity": 1.0,
                 "drawn": True,
             }
-            reason = change.reason.strip() or "框选重新识别"
+            reason = change.reason.strip() or stored("框选重新识别")
         elif change.action == "edit" and change.source_lines is not None:
-            # 从原文选取：值从选的文字读出来，出处换成选的这几块
+            # Select from source text: the value is parsed from the selected text and the evidence
+            # becomes the selected blocks.
             lines = self._ocr_lines(value.extraction, change.source_lines, page)
             evidence = {"page": page, **evidence_from_ocr(lines)}
             if change.transcription is not None:
@@ -120,14 +125,16 @@ class FieldService:
                 new_value = value_from_text(value.type, text)
             else:
                 new_value = normalize(value.type, change.value)
-            reason = change.reason.strip() or "从原文选取"
+            reason = change.reason.strip() or stored("从原文选取")
         elif change.action == "edit":
             new_value = normalize(value.type, change.value)
             reason = change.reason.strip()
             if not reason:
-                raise FieldError("invalid", "修改时请写明原因，以后查记录时能看懂")
+                raise FieldError("invalid", tr("修改时请填写原因，以便日后查阅记录"))
             if new_value == value.current_value:
-                raise FieldError("invalid", "新值和当前值一样。如果值是对的，请用 confirm（确认）")
+                raise FieldError(
+                    "invalid", tr("新值与当前值相同。如值正确，请使用 confirm（确认）")
+                )
         else:
             new_value, reason = value.current_value, change.reason.strip()
 
@@ -163,18 +170,20 @@ class FieldService:
         return ValueOut.model_validate(value)
 
     def confirm_many(self, ids: list[uuid.UUID], reason: str) -> ConfirmManyOut:
-        """一次确认好几个字段：每个字段各记一条 confirm 记录，审计日志记一条（带上全部 id）。
+        """Confirm several fields at once: one confirm revision per field and one audit log entry
+        (with all ids).
 
-        删掉的行跳过；同一个字段只确认一次。
-        """
+                Deleted rows are skipped; each field is confirmed only once."""
         values = [self._find(i) for i in dict.fromkeys(ids)]
         for value in values:
             require(self.owner, "value:review", value.team_id)
             if value.extraction.document.status not in REVIEWABLE:
                 status = value.extraction.document.status
-                raise FieldError("not_ready", f"文档状态是 {status}，处理完成后才能审核")
+                raise FieldError(
+                    "not_ready", tr("文档状态为 {status}，处理完成后方可审核", status=status)
+                )
             _check_current(value.extraction)
-        reason = reason.strip() or "批量确认"
+        reason = reason.strip() or stored("批量确认")
         done = [v for v in values if not v.deleted]
         for value in done:
             self._add(value, "confirm", value.current_value, reason, None)
@@ -193,10 +202,11 @@ class FieldService:
             )
         return ConfirmManyOut(confirmed=len(done), skipped=len(values) - len(done))
 
-    # ---- 表格的行 ----
+    # ---- Table rows ----
 
     def add_row(self, extraction_id: uuid.UUID, table: str, row: RowIn) -> list[ValueOut]:
-        """在表格里加一行：每一列一个空字段（origin="manual"），之后用修改或"从原文选取"填值。"""
+        """Add a table row: one empty field per column (origin="manual"), filled later by editing or
+        "select from source text"."""
         extraction = self._extraction(extraction_id)
         require(self.owner, "value:review", extraction.team_id)
         self._check_reviewable(extraction)
@@ -204,9 +214,12 @@ class FieldService:
         computed = _computed_columns(extraction, table)
         rows = _rows(extraction, table)
         if row.after not in (None, 0) and row.after not in rows:
-            raise FieldError("not_found", f"表格 {table} 里没有第 {row.after} 行")
+            raise FieldError(
+                "not_found", tr("表格 {table} 中不存在第 {after} 行", table=table, after=row.after)
+            )
 
-        index = max(rows, default=0) + 1  # 新行的编号：比现有的都大，不和任何一行重名
+        # Number of the new row: larger than all existing rows, so it never collides.
+        index = max(rows, default=0) + 1
         start, end = _gap(extraction, table, rows, row.after)
         position = max((v.position for v in extraction.values), default=-1) + 1
         created: list[ExtractedValue] = []
@@ -222,7 +235,7 @@ class FieldService:
                 row_no=None,
                 status="empty",
                 needs_review=False,
-                note="审核时人工增加的行" if column not in computed else "按公式算",
+                note=stored("审核时人工增加的行") if column not in computed else stored("公式计算"),
                 evidence=None,
                 user_id=self.owner.user_id,
                 team_id=extraction.team_id,
@@ -250,13 +263,15 @@ class FieldService:
     def delete_row(
         self, extraction_id: uuid.UUID, table: str, index: int, change: RowChange
     ) -> list[ValueOut]:
-        """删除一行：每一格新增一条 delete 记录。不真的删，可以恢复。"""
+        """Delete a row: a delete revision is added for each cell. Nothing is deleted, so the row
+        can be restored."""
         return self._row_action(extraction_id, table, index, change, "delete")
 
     def restore_row(
         self, extraction_id: uuid.UUID, table: str, index: int, change: RowChange
     ) -> list[ValueOut]:
-        """恢复删掉的一行：每一格新增一条 restore 记录，值是删除前的值。"""
+        """Restore a deleted row: a restore revision is added for each cell, with the value before
+        deletion."""
         return self._row_action(extraction_id, table, index, change, "restore")
 
     def _row_action(
@@ -267,16 +282,22 @@ class FieldService:
         self._check_reviewable(extraction)
         cells = _rows(extraction, table).get(index)
         if not cells:
-            raise FieldError("not_found", f"表格 {table} 里没有第 {index} 行")
+            raise FieldError(
+                "not_found", tr("表格 {table} 中不存在第 {index} 行", table=table, index=index)
+            )
         reason = change.reason.strip()
         if not reason:
-            what = "删除" if action == "delete" else "恢复"
-            raise FieldError("invalid", f"{what}一行时请写明原因，以后查记录时能看懂")
+            raise FieldError(
+                "invalid",
+                tr("删除行时请填写原因，以便日后查阅记录")
+                if action == "delete"
+                else tr("恢复行时请填写原因，以便日后查阅记录"),
+            )
         deleted = all(v.deleted for v in cells)
         if action == "delete" and deleted:
-            raise FieldError("invalid", "这一行已经删除了")
+            raise FieldError("invalid", tr("此行已删除"))
         if action == "restore" and not deleted:
-            raise FieldError("invalid", "这一行没有被删除")
+            raise FieldError("invalid", tr("此行未被删除"))
         for value in cells:
             self._add(value, action, value.current_value, reason, None)
         record(
@@ -293,7 +314,7 @@ class FieldService:
         self._touch(extraction)
         return [ValueOut.model_validate(v) for v in cells]
 
-    # ---- 共用 ----
+    # ---- Shared ----
 
     def _add(
         self,
@@ -316,12 +337,14 @@ class FieldService:
         try:
             self.repo.add_revision(revision)
         except IntegrityError as err:
-            # 两个人同时审核同一个字段：seq 一样，数据库只让一个写进去
-            raise FieldError("conflict", "这个字段刚被别人审核过，请刷新后再试") from err
+            # Two people reviewing the same field concurrently produce the same seq; the database
+            # accepts only one.
+            raise FieldError("conflict", tr("此字段刚被他人审核，请刷新后重试")) from err
         return revision
 
     def apply(self, value: ExtractedValue, action: str, new_value: str | None, reason: str) -> None:
-        """沿用上一轮的审核时用：记一条审核记录（审计日志由调用方统一记一条）。"""
+        """Record one revision when carrying over a previous review (the caller writes a single
+        audit log entry)."""
         _check_current(value.extraction)
         self._add(value, action, new_value, reason, None)
 
@@ -329,13 +352,15 @@ class FieldService:
         self._recompute(extraction)
         document = extraction.document
         if document.status == "reviewed":
-            document.status = "done"  # 审核完的文档又改了，要重新点"完成审核"
+            # A reviewed document was changed again; review must be completed again.
+            document.status = "done"
 
     def _recompute(self, extraction: Extraction) -> None:
-        """按当前值重算计算字段（ADR 0035），值变了就记一条 compute 记录。
+        """Recalculate computed fields from the current values and record a compute revision when a
+        value changes.
 
-        人直接改过的计算字段（最后一条是 edit）不再跟着变：人改的值说了算。
-        """
+                Computed fields edited directly by a person (latest revision is edit) no longer
+        change: the person's value prevails."""
         from jacara.pipeline.compute import compute
         from jacara.pipeline.current import template_of, typed_value
 
@@ -369,21 +394,23 @@ class FieldService:
     def _check_reviewable(self, extraction: Extraction) -> None:
         status = extraction.document.status
         if status not in REVIEWABLE:
-            raise FieldError("not_ready", f"文档状态是 {status}，处理完成后才能审核")
+            raise FieldError(
+                "not_ready", tr("文档状态为 {status}，处理完成后方可审核", status=status)
+            )
         _check_current(extraction)
 
     def _extraction(self, extraction_id: uuid.UUID) -> Extraction:
         extraction = self.repo.get_extraction(extraction_id, self.owner.team_id)
         if extraction is None:
-            raise FieldError("not_found", "找不到这一页的抽取结果")
+            raise FieldError("not_found", tr("此页的抽取结果不存在"))
         return extraction
 
     def _page(self, extraction: Extraction, page: int | None) -> int:
-        """选的是第几页：要在这张单据的页里（ADR 0036）。"""
+        """The selected page must belong to this document."""
         if page is None:
             return extraction.page
         if not extraction.page <= page <= (extraction.last_page or extraction.page):
-            raise FieldError("invalid", f"第 {page} 页不属于这张单据")
+            raise FieldError("invalid", tr("第 {page} 页不属于这张单据", page=page))
         return page
 
     def _ocr_lines(
@@ -395,74 +422,84 @@ class FieldService:
         lines: list[dict[str, Any]] = (ocr or {}).get("lines", [])
         if not lines:
             raise FieldError(
-                "invalid", "这一页没有保存 OCR 结果（新功能上线前处理的），不能从原文选取"
+                "invalid", tr("此页未保存 OCR 结果（在新功能上线前处理），无法从原文选取")
             )
         if not indexes:
-            raise FieldError("invalid", "请至少选一块文字")
+            raise FieldError("invalid", tr("请至少选择一块文字"))
         if any(not 0 <= i < len(lines) for i in indexes):
-            raise FieldError("invalid", "选的文字块不存在，请刷新后再试")
+            raise FieldError("invalid", tr("所选文字块不存在，请刷新后重试"))
         return [lines[i] for i in dict.fromkeys(indexes)]
 
     def _find(self, value_id: uuid.UUID) -> ExtractedValue:
         value = self.repo.get(value_id, self.owner.team_id)
         if value is None:
-            raise FieldError("not_found", "找不到这个字段")
+            raise FieldError("not_found", tr("字段不存在"))
         return value
 
 
 def _check_current(extraction: Extraction) -> None:
-    """旧的几轮只能看，不能改（ADR 0030）：审核只对现在用的这一轮。"""
+    """Earlier runs are read-only: review applies only to the current run."""
     current = extraction.document.current_run
     if extraction.run != current:
         raise FieldError(
-            "invalid", f"这是第 {extraction.run} 轮的旧结果，只能查看；现在用的是第 {current} 轮"
+            "invalid",
+            tr(
+                "此为第 {run} 轮的历史结果，仅供查看；当前为第 {current} 轮",
+                run=extraction.run,
+                current=current,
+            ),
         )
 
 
 def normalize(type_: str, raw: str | None) -> str | None:
-    """按字段类型检查并整理新值，存成和模型原值一样的格式（数字 "9.0"、日期 "2018-12-25"）。"""
+    """Validate and normalize a new value by field type, stored in the same format as model values
+    (numbers "9.0", dates "2018-12-25")."""
     if raw is None or not raw.strip():
-        return None  # 原文里确实没有这个值
+        return None  # The value is indeed absent from the source.
     text = raw.strip()
     if type_ == "number":
         try:
-            number = float(text.replace(",", ""))  # 允许 1,234.50 这种写法
+            number = float(text.replace(",", ""))  # Accept forms such as 1,234.50.
         except ValueError:
-            raise FieldError("invalid", f"{text!r} 不是数字") from None
+            raise FieldError("invalid", tr("{text} 不是数字", text=repr(text))) from None
         if not math.isfinite(number):
-            raise FieldError("invalid", f"{text!r} 不是有效的数字")
+            raise FieldError("invalid", tr("{text} 不是有效的数字", text=repr(text)))
         return str(number)
     if type_ == "date":
         try:
             return date.fromisoformat(text).isoformat()
         except ValueError:
-            # 照原文写的也行（August 3 , 2014、25/12/2018），读出来存成 YYYY-MM-DD
+            # Source spellings are accepted too (August 3 , 2014, 25/12/2018) and stored as
+            # YYYY-MM-DD.
             day = parse_date(text)
             if day is None:
                 raise FieldError(
-                    "invalid", f"{text!r} 读不出日期，请写成 2018-12-25 这样的格式"
+                    "invalid",
+                    tr("无法从 {text} 读取日期，请使用 2018-12-25 格式", text=repr(text)),
                 ) from None
             return day.isoformat()
     return text
 
 
 def value_from_text(type_: str, text: str) -> str | None:
-    """从原文选的文字里读出值，存成和模型原值一样的格式。"""
+    """Parse a value from the selected source text, stored in the same format as model values."""
     if type_ == "number":
         number = parse_number(text)
         if number is None:
-            raise FieldError("invalid", f"选的文字「{text}」里没有数字")
+            raise FieldError("invalid", tr("所选文字「{text}」中没有数字", text=text))
         return str(number)
     if type_ == "date":
         day = parse_date(text)
         if day is None:
-            raise FieldError("invalid", f"选的文字「{text}」读不出日期，请手动填写")
+            raise FieldError(
+                "invalid", tr("无法从所选文字「{text}」读取日期，请手动填写", text=text)
+            )
         return day.isoformat()
     return " ".join(text.split()) or None
 
 
 def _rows(extraction: Extraction, table: str) -> dict[int, list[ExtractedValue]]:
-    """表格的每一行（按行编号）：这一行的所有格子。"""
+    """Every table row (by row number): all cells of that row."""
     rows: dict[int, list[ExtractedValue]] = {}
     for value in extraction.values:
         cell = split_cell_name(value.name)
@@ -472,7 +509,7 @@ def _rows(extraction: Extraction, table: str) -> dict[int, list[ExtractedValue]]
 
 
 def _computed_columns(extraction: Extraction, table: str) -> set[str]:
-    """这张表里按公式算的列。"""
+    """Formula columns of this table."""
     from jacara.pipeline.current import template_of
 
     template = template_of(extraction)
@@ -480,7 +517,8 @@ def _computed_columns(extraction: Extraction, table: str) -> set[str]:
 
 
 def _columns(extraction: Extraction, table: str) -> list[tuple[str, str]]:
-    """新行有哪些列（列名、类型）：按模板；模板找不到就照表格里已有的行。"""
+    """Columns of a new row (name, type): from the template, or from existing rows if the template
+    is unavailable."""
     from jacara.pipeline.current import template_of
 
     template = template_of(extraction)
@@ -494,7 +532,7 @@ def _columns(extraction: Extraction, table: str) -> list[tuple[str, str]]:
         if cell and cell[0] == table:
             columns.setdefault(cell[2], value.type)
     if not columns:
-        raise FieldError("not_found", f"这一页没有叫 {table} 的表格")
+        raise FieldError("not_found", tr("此页没有名为 {table} 的表格", table=table))
     return list(columns.items())
 
 
@@ -504,10 +542,10 @@ def _gap(
     rows: dict[int, list[ExtractedValue]],
     after: int | None,
 ) -> tuple[float, float]:
-    """新行的显示顺序放在哪两个数之间：after 那一行的最后一格，和它后面紧接着的字段。
+    """Bounds for the display order of a new row: the last cell of row after and the field
+    immediately following it.
 
-    after=0 表示插在表格最前面：放在第一行的第一格之前。
-    """
+        after=0 inserts at the top of the table, before the first cell of the first row."""
     keys = sorted(v.sort_key for v in extraction.values)
     if after == 0 and rows:
         first = min(v.sort_key for cells in rows.values() for v in cells)

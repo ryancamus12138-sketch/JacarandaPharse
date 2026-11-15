@@ -1,18 +1,25 @@
-"""分析一个业务 Excel：每张 sheet 的表头在哪、一行代表什么（角色）、每一列像什么（ADR 0031）。
+"""Analyze a business workbook: header row of each sheet, what a row represents (role), and what
+each column looks like.
 
-只是"猜"：结果给人在预览里确认、修改，确认之后才建模板（build.py）。
-规律：
-- 表头行：前 20 行里第一行"文字格够多、都不像数字或日期"的；上面一行有横向合并的格子，就是两层表头。
-- 数据行：表头下面到连着三行空行为止；"合计""总计"开头的行不算。
-- 编号列：表头像编号（编号、号码、ID、No、代码），或者值都不重复。
-- 角色：
-  · 没有表头、只有一两列、或者名字像"说明""选项"的 → 说明 / 选项；被下拉框引用的 → 选项
-  · 名字像"名单""字典""代码表""基础资料"的 → 参照表
-  · 和别的 sheet 有同名编号列：这边每个编号一行、那边一个编号好几行 → 那边是明细表
-  · 别的 sheet 里一个编号出现好几次、这边一个编号一行，而且表头像人或单位 → 对象表
-  · 其余有数据的 → 单据表
-- 表头完全一样的几张 sheet（按月分的） → 后面的记成 same_as 第一张。
-"""
+Only a guess: the result is confirmed or corrected by a person in the preview, and the template
+is created afterwards (build.py).
+Heuristics:
+- Header row: within the first 20 rows, the first row with enough text cells, none of which look
+  like numbers or dates; horizontally merged cells in the row above indicate a two-level header.
+- Data rows: from below the header until three consecutive empty rows; rows starting with
+  "合计" or "总计" (totals) are excluded.
+- Identifier column: a header that looks like an identifier (编号, 号码, ID, No, 代码), or values
+  that are all unique.
+- Roles:
+  · No header, only one or two columns, or a name like "说明" or "选项" → notes / options;
+referenced by drop-downs → options
+  · Names like "名单", "字典", "代码表", "基础资料" → reference
+  · Sharing an identifier column name with another sheet, one row per identifier here and several
+there → the other sheet holds line items
+  · An identifier appearing several times in another sheet but once here, with headers that look
+like a person or organization → entity
+  · Any other sheet with data → document
+- Sheets with identical headers (monthly sheets) → later ones are recorded as same_as the first."""
 
 from __future__ import annotations
 
@@ -27,12 +34,13 @@ from openpyxl import load_workbook
 from openpyxl.utils import column_index_from_string, range_boundaries
 from openpyxl.worksheet.worksheet import Worksheet
 
+from jacara.core.i18n import language, tr
 from jacara.core.textvalue import parse_date
-from jacara.templates import STARTERS, TemplateField, load_starter
+from jacara.templates import STARTERS, TemplateField, load_starter_in
 from jacara.templates.extras import normalize
 
 MAX_ROWS = 2000
-"""每张 sheet 最多读多少行来分析（参照表的数据另外全读）。"""
+"""Maximum rows read per sheet for analysis (reference table data is read in full separately)."""
 MAX_COLUMNS = 80
 
 _ID_HEADER = re.compile(
@@ -70,8 +78,9 @@ class ColumnGuess:
     samples: list[str] = dc_field(default_factory=list)
     type: str = "string"
     source: str = "extract"
-    """extract 从单据抽 / manual 人工填 / doc 单据上的字段（明细表里每行重复）/ auto 系统自动 /
-    lookup 从参照表对照 / none 不填。"""
+    """extract from the document / manual entry / doc: a document-level field (repeated on every
+    line-item row) / auto: filled by the system / lookup: from a reference table / none: left
+    empty."""
     field: str = ""
     label: str = ""
     auto: str = ""
@@ -94,9 +103,10 @@ class SheetGuess:
     hidden: bool = False
     same_as: str = ""
     key_header: str = ""
-    """对象表、参照表：哪一列是编号；明细表：哪一列连到单据。"""
+    """Entity and reference sheets: the identifier column; line-item sheets: the column linking to
+    the document."""
     match_field: str = ""
-    """参照表：拿模板里哪个字段来对照。"""
+    """Reference sheets: the template field used for matching."""
     reason: str = ""
     columns: list[ColumnGuess] = dc_field(default_factory=list)
 
@@ -118,7 +128,7 @@ def open_workbook(data: bytes) -> Any:
         return load_workbook(io.BytesIO(data), data_only=True)
     except Exception as err:
         raise WorkbookError(
-            "打不开这个 Excel。只支持 .xlsx；老的 .xls 请先在 Excel 里另存为 .xlsx"
+            tr("无法打开此 Excel 文件。仅支持 .xlsx；旧版 .xls 请先在 Excel 中另存为 .xlsx")
         ) from err
 
 
@@ -133,11 +143,11 @@ def analyze(data: bytes, filename: str) -> Analysis:
         filename=filename,
         sheets=sheets,
         starter=starter or "",
-        starter_title=load_starter(starter).title if starter else "",
+        starter_title=load_starter_in(starter, language()).title if starter else "",
     )
 
 
-# ---------- 读一张 sheet ----------
+# ---------- Reading a sheet ----------
 
 
 def _cells(ws: Worksheet) -> list[list[Any]]:
@@ -181,7 +191,7 @@ def _is_date(value: Any) -> bool:
 
 
 def _is_label(value: Any) -> bool:
-    """像表头的格子：文字、不太长、不是数字或日期。"""
+    """A header-like cell: text, not too long, not a number or date."""
     if not isinstance(value, str):
         return False
     text = value.strip()
@@ -191,7 +201,7 @@ def _is_label(value: Any) -> bool:
 
 
 def find_header_row(rows: list[list[Any]]) -> int:
-    """表头在第几行（从 1 开始）。找不到返回 0。"""
+    """Header row (1-based). 0 if not found."""
     widest = max((sum(v is not None and _text(v) != "" for v in r) for r in rows[:30]), default=0)
     for i, row in enumerate(rows[:20]):
         labels = sum(_is_label(v) for v in row)
@@ -202,7 +212,7 @@ def find_header_row(rows: list[list[Any]]) -> int:
 
 
 def _headers(ws: Worksheet, rows: list[list[Any]], header_row: int) -> list[tuple[int, str]]:
-    """（第几列，表头文字）。两层表头合成"上-下"。"""
+    """(column number, header text). Two-level headers are joined as "upper-lower"."""
     parents: dict[int, str] = {}
     if header_row > 1:
         for merged in ws.merged_cells.ranges:
@@ -224,7 +234,8 @@ def _headers(ws: Worksheet, rows: list[list[Any]], header_row: int) -> list[tupl
 
 
 def data_rows(rows: list[list[Any]], header_row: int) -> list[list[Any]]:
-    """表头下面的数据行：连着三行空行就算结束，合计行不算。"""
+    """Data rows below the header: three consecutive empty rows end the data; total rows are
+    excluded."""
     result: list[list[Any]] = []
     blank = 0
     for row in rows[header_row:]:
@@ -248,7 +259,8 @@ def _guess_type(values: list[Any]) -> str:
     if all(_is_date(v) for v in present):
         return "date"
     if all(_is_number(v) for v in present):
-        # 编号（发票号码）也是纯数字：表头像编号就当文字
+        # Identifiers (invoice numbers) are often all digits: treat columns with identifier-like
+        # headers as text.
         return "number"
     return "string"
 
@@ -258,7 +270,9 @@ def _sheet(ws: Worksheet, column_options: dict[int, list[str]]) -> SheetGuess:
     header_row = find_header_row(rows)
     hidden = ws.sheet_state != "visible"
     if header_row == 0:
-        return SheetGuess(ws.title, "ignore", 0, 0, hidden, reason="没找到表头（说明、备注之类）")
+        return SheetGuess(
+            ws.title, "ignore", 0, 0, hidden, reason=tr("未找到表头（可能为说明、备注等）")
+        )
     body = data_rows(rows, header_row)
     columns: list[ColumnGuess] = []
     for col, header in _headers(ws, rows, header_row):
@@ -282,11 +296,12 @@ def _sheet(ws: Worksheet, column_options: dict[int, list[str]]) -> SheetGuess:
     return SheetGuess(ws.title, "document", header_row, len(body), hidden, columns=columns)
 
 
-# ---------- 下拉选项（数据验证） ----------
+# ---------- Drop-down options (data validation) ----------
 
 
 def _validation_options(book: Any) -> dict[str, dict[int, list[str]]]:
-    """每张 sheet 每一列的下拉选项：{sheet 名: {第几列: [选项]}}。"""
+    """Drop-down options of every column in every sheet: {sheet name: {column number:
+    [options]}}."""
     result: dict[str, dict[int, list[str]]] = {}
     for ws in book.worksheets:
         for dv in ws.data_validations.dataValidation:
@@ -303,7 +318,7 @@ def _validation_options(book: Any) -> dict[str, dict[int, list[str]]]:
 
 
 def _option_sources(book: Any) -> set[str]:
-    """被下拉框引用的 sheet（它们是选项表）。"""
+    """Sheets referenced by drop-downs (option sheets)."""
     names: set[str] = set()
     for ws in book.worksheets:
         for dv in ws.data_validations.dataValidation:
@@ -335,11 +350,12 @@ def _resolve_list(book: Any, ws: Worksheet, formula: str) -> list[str]:
     return list(dict.fromkeys(values))
 
 
-# ---------- 角色 ----------
+# ---------- Roles ----------
 
 
 def _key(sheet: SheetGuess) -> ColumnGuess | None:
-    """这张表的编号列：表头像编号的优先，其次值都不重复的。"""
+    """Identifier column of this sheet: headers that look like identifiers first, then columns with
+    all-unique values."""
     by_header = [c for c in sheet.columns if _ID_HEADER.search(c.header)]
     unique = (
         [c for c in by_header if c.unique] or by_header or [c for c in sheet.columns if c.unique]
@@ -350,21 +366,21 @@ def _key(sheet: SheetGuess) -> ColumnGuess | None:
 def _guess_roles(sheets: list[SheetGuess], option_sheets: set[str]) -> None:
     for s in sheets:
         if s.header_row == 0 and s.name in option_sheets:
-            s.role, s.reason = "options", "被下拉框引用（下拉选项）"
+            s.role, s.reason = "options", tr("被下拉框引用（下拉选项）")
     data = [s for s in sheets if s.header_row > 0]
     for s in data:
         if s.name in option_sheets or (len(s.columns) <= 2 and _OPTIONS_NAME.search(s.name)):
-            s.role, s.reason = "options", "被下拉框引用，或者像选项、说明"
+            s.role, s.reason = "options", tr("被下拉框引用，或疑似选项、说明")
         elif _OPTIONS_NAME.search(s.name):
-            s.role, s.reason = "ignore", "名字像填表说明"
+            s.role, s.reason = "ignore", tr("名称疑似填表说明")
         elif _REFERENCE_NAME.search(s.name):
-            s.role, s.reason = "reference", "名字像名单、字典、代码表"
+            s.role, s.reason = "reference", tr("名称疑似清单、字典或代码表")
             key = _key(s)
             s.key_header = key.header if key else (s.columns[0].header if s.columns else "")
         elif s.hidden:
-            s.role, s.reason = "ignore", "隐藏的 sheet"
+            s.role, s.reason = "ignore", tr("隐藏的 sheet")
 
-    # 表头一样的几张（按月分）
+    # Sheets with identical headers (monthly)
     seen: dict[tuple[str, ...], SheetGuess] = {}
     for s in data:
         if s.role not in ("document",):
@@ -372,12 +388,13 @@ def _guess_roles(sheets: list[SheetGuess], option_sheets: set[str]) -> None:
         signature = tuple(normalize(c.header) for c in s.columns)
         if len(signature) >= 2 and signature in seen:
             s.same_as = seen[signature].name
-            s.reason = f"表头和「{seen[signature].name}」一样"
+            s.reason = tr("表头与「{name}」相同", name=seen[signature].name)
         else:
             seen.setdefault(signature, s)
 
     candidates = [s for s in data if s.role == "document" and not s.same_as]
-    # 同名的编号列：一边一个编号一行，一边一个编号好几行
+    # Identifier columns with the same name: one row per identifier on one side, several on the
+    # other.
     for a in candidates:
         for b in candidates:
             if a is b:
@@ -390,22 +407,29 @@ def _guess_roles(sheets: list[SheetGuess], option_sheets: set[str]) -> None:
                 )
                 if cb is None or not ca.unique or cb.unique or cb.filled < 2:
                     continue
-                # a 里一个编号一行，b 里同一个编号好几行
+                # One row per identifier in a, several rows for the same identifier in b.
                 entity_like = _ENTITY_HEADER.search(ca.header) or _ENTITY_HEADER.search(a.name)
                 if entity_like and a.role == "document":
                     a.role, a.key_header = "entity", ca.header
-                    a.reason = f"「{b.name}」里同一个「{ca.header}」出现好几次，这里一个一行"
+                    a.reason = tr(
+                        "「{name}」中同一「{header}」出现多次，此表每个「{header}」一行",
+                        name=b.name,
+                        header=ca.header,
+                    )
                 if b.role == "document":
                     b.role, b.key_header = "items", cb.header
-                    b.reason = f"同一个「{cb.header}」有好几行，连到「{a.name}」"
-    # 只有明细、没有单据表：明细里连接的那一列就是单据上的字段
+                    b.reason = tr(
+                        "同一「{header}」有多行，关联至「{name}」", header=cb.header, name=a.name
+                    )
+    # Line items without a document sheet: the linking column of the line items is a document-level
+    # field.
     for s in data:
         if s.role == "items":
             for c in s.columns:
                 if normalize(c.header) == normalize(s.key_header):
                     c.source = "doc"
         if s.role == "document" and not s.reason:
-            s.reason = "一行对应一份单据（默认）"
+            s.reason = tr("一行对应一份单据（默认）")
     _guess_lookups(data)
     for s in data:
         for c in s.columns:
@@ -415,7 +439,8 @@ def _guess_roles(sheets: list[SheetGuess], option_sheets: set[str]) -> None:
             elif _MANUAL_HEADER.search(c.header) and c.source == "extract":
                 c.source = "manual"
         if s.role == "items" and any(o.role == "document" for o in data):
-            # 明细表里和单据表同名的列：是单据上的字段，每行重复
+            # Columns in a line-item sheet named like columns of the document sheet are
+            # document-level fields, repeated on every row.
             doc_headers = {
                 normalize(c.header) for o in data if o.role == "document" for c in o.columns
             }
@@ -425,7 +450,8 @@ def _guess_roles(sheets: list[SheetGuess], option_sheets: set[str]) -> None:
 
 
 def _guess_lookups(data: list[SheetGuess]) -> None:
-    """参照表：别的 sheet 里和它同名的列。第一列拿来对照（match），其余的从参照表填（lookup）。"""
+    """Reference sheets: columns with the same name in other sheets. The first is used for matching
+    (match), the rest are filled from the reference sheet (lookup)."""
     for ref in (s for s in data if s.role == "reference"):
         columns = {normalize(c.header): c.header for c in ref.columns}
         for s in data:
@@ -434,7 +460,8 @@ def _guess_lookups(data: list[SheetGuess]) -> None:
             shared = [c for c in s.columns if normalize(c.header) in columns]
             if not shared:
                 continue
-            # 优先用名称这类单据上看得到的去对照，编号往往要靠对照才知道
+            # Prefer matching by values visible on the document, such as names; identifiers are
+            # often known only after matching.
             shared.sort(key=lambda c: bool(_ID_HEADER.search(c.header)))
             if not ref.match_field:
                 ref.match_field = f"{s.name}::{shared[0].header}"
@@ -444,21 +471,25 @@ def _guess_lookups(data: list[SheetGuess]) -> None:
                 c.lookup = f"{ref.name}::{columns[normalize(c.header)]}"
 
 
-# ---------- 对照起步模板 ----------
+# ---------- Matching starter templates ----------
 
 
 def _starter_fields(name: str) -> list[TemplateField]:
-    t = load_starter(name)
+    """Fields and table columns of a starter template, in the interface language (the template built
+    from the workbook starts in it, so the descriptions carried over are in it too)."""
+    t = load_starter_in(name, language())
     return list(t.fields) + [c for table in t.tables for c in table.columns]
 
 
 def _match(field_: TemplateField, header: str) -> bool:
     wanted = normalize(header)
-    return wanted in {normalize(field_.label), *(normalize(a) for a in field_.aliases)}
+    written = [field_.label, *(name for _, name in field_.names), *field_.aliases]
+    return wanted in {normalize(w) for w in written}
 
 
 def _match_starter(sheets: list[SheetGuess]) -> str | None:
-    """表头和哪个起步模板对上的最多（至少 2 列）。对上的列带上它的字段 ID、类型和说明。"""
+    """Starter template matching the most headers (at least 2 columns). Matched columns carry its
+    field ID, type and description."""
     headers = [c for s in sheets if s.role in ("document", "items", "entity") for c in s.columns]
     best, best_score = None, 1
     for name in STARTERS:
@@ -480,7 +511,7 @@ def _match_starter(sheets: list[SheetGuess]) -> str | None:
     return best
 
 
-# ---------- 字段 ID ----------
+# ---------- Field IDs ----------
 
 
 def slug(text: str) -> str:
@@ -489,11 +520,12 @@ def slug(text: str) -> str:
 
 
 def _assign_ids(sheets: list[SheetGuess]) -> None:
-    """每一列一个字段 ID：起步模板对上的用它的，英文表头转成小写下划线，中文的编成 field_1……
+    """One field ID per column: the starter template's ID when matched, English headers converted to
+    snake_case, others numbered field_1, ….
 
-    单据表、对象表、明细表里"单据上的字段"共用一套 ID（同一个表头就是同一个字段）；
-    明细表自己的列在表里不重复就行。
-    """
+        Document-level fields in document, entity and line-item sheets share one set of IDs (the
+    same header is the same field); columns of a line-item sheet need only be unique within the
+    sheet."""
     used: dict[str, str] = {}
     counter = 0
 

@@ -1,4 +1,4 @@
-"""各国、各地区法定单据的起步模板和规则（ADR 0049）。"""
+"""Starter templates and rules for statutory documents of individual countries and regions."""
 
 from __future__ import annotations
 
@@ -25,12 +25,12 @@ COUNTRY_STARTERS = [
         "cn_quality_report",
     )
 ]
-ENGLISH = {"SG", "NZ", "US", "GB", "PH"}  # 当地语言就是英文
+ENGLISH = {"SG", "NZ", "US", "GB", "PH"}  # The local language is English.
 
 
 def test_23_regions_covered():
     regions = {load_starter(n).countries[0] for n in COUNTRY_STARTERS}
-    # 第一批 + 第二批 23 个，香港没有法定发票格式（不做）
+    # 23 countries across both rounds; Hong Kong has no statutory invoice format (not covered).
     expected = {
         "JP",
         "KR",
@@ -66,7 +66,7 @@ def test_country_template_is_grounded_and_clean(name):
     shape = {**template.definition(), "countries": list(template.countries)}
     assert template.foreign_rules() == []
     assert all(usable_rule(r, shape) for r in template.rules)
-    for rule in template.rules:  # 国家规则只给本国模板
+    for rule in template.rules:  # Country rules only for that country's templates.
         assert REGIONS.get(rule.id) in (None, template.countries[0]), rule.id
     if template.countries[0] not in ENGLISH:
         assert len(template.languages) == 3, "中文、英文、当地语言"
@@ -99,7 +99,7 @@ def test_country_template_is_grounded_and_clean(name):
 def test_ids_accept_real_numbers_and_catch_one_wrong_digit(check, good):
     assert check(good) is True
     digits = [i for i, ch in enumerate(good) if ch.isdigit()]
-    i = digits[len(digits) // 2]  # 改中间一位数字：模拟 OCR 认错一位
+    i = digits[len(digits) // 2]  # Change a middle digit to simulate an OCR misread.
     bad = good[:i] + str((int(good[i]) + 1) % 10) + good[i + 1 :]
     assert check(bad) is not True
 
@@ -133,7 +133,7 @@ def test_tax_rules_follow_current_law():
     assert RULES["in_tax_split"].check({"gross_total": 1.0, "cgst": 9.0, "igst": 18.0})
     assert (
         RULES["in_invoice_no"].check({"invoice_no": "INV/2026-27/00123"}) is not None
-    )  # 17 个字符
+    )  # 17 characters.
     assert RULES["ca_buyer_500"].check({"gross_total": 600.0, "buyer_name": "X"})
     assert RULES["gb_full_over_250"].check({"gross_total": 200.0}) is None
     assert RULES["de_kassenbeleg"].check({"gross_total": 5.0})
@@ -143,13 +143,15 @@ def test_tax_rules_follow_current_law():
 
 
 def test_jp_registration_number_format():
-    """登録番号只查格式（个人事业者的号码不一定有法人番号的校验位）。"""
+    """Registration numbers are checked for format only (sole proprietors' numbers do not
+    necessarily carry a corporate check digit)."""
     assert c.jp_registration_no("T8700110005901") is True
     assert c.jp_registration_no("8700110005901") is False
 
 
 def test_rules_only_show_up_where_they_belong():
-    """没选但"用得上"的规则只能是通用的或本国的（收银小票的 TSE 规则不出现在发票里）。"""
+    """Applicable but unselected rules can only be generic or of the template's country (TSE cash
+    register rules do not appear for invoices)."""
     from jacara.plugins.validators import ALL_RULES
 
     for name in STARTERS:
@@ -168,7 +170,8 @@ def test_rules_only_show_up_where_they_belong():
 
 
 def test_starters_show_their_basis():
-    """预览里的"依据"：模板文件开头的注释，续行接上，不要"只写字段……"这类话。"""
+    """ "Basis" in the preview: the comment at the top of the template file, with continuation lines
+    joined and "fields only …" sentences dropped."""
     basis = load_starter("de_kassenbeleg").basis
     assert basis[0].startswith("适用：")
     assert any(b.startswith("依据：") and "Zeitpunkt des Vorgangsbeginns" in b for b in basis)

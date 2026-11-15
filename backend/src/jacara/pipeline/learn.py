@@ -1,22 +1,31 @@
-"""从人改过的地方学（ADR 0045）：抽取时把同一个模板以前人工改过的例子告诉模型。
+"""Learning from corrections: include past manual corrections for the same template as examples in
+the extraction prompt.
 
-不训练模型，只在提示词里多一段"以前容易错在哪"：
-- 只用审核完成的单据、现在那一轮、模型给的值被人改过的字段；
-- 敏感字段（姓名、病历号、电话……）不用：别人的个人信息不放进另一张单据的提示词；
-- 不用这张单据自己（重新处理时）；
-- 按"改得多的字段优先、每个字段最多 2 个最近的例子、一共最多 8 条"挑；
-- 例子只说明容易错在哪，明确告诉模型"这张单据的值要按它自己的原文"。
-提示词版本记成 extract-v8+lessonsN（N 是用了几条），能追溯。
+The model is not trained; the prompt gains a section on common past errors:
+- Only reviewed documents, their current run, and fields whose model value was corrected;
+- Sensitive fields (names, medical record numbers, phone numbers, …) are excluded: personal data
+  never enters another document's prompt;
+- The document itself is excluded (when reprocessing);
+- Selection: most-corrected fields first, at most 2 recent examples per field, at most 8 in
+  total;
+- Examples only describe likely errors, and the model is told explicitly that this document's
+  values must follow its own source text.
+The prompt version is recorded as extract-v8+lessonsN (N examples), for traceability.
 
-整理过的例子（ADR 0055，B2 + B3，`JACARA_LEARN_MODE=curated`，默认还是上面的 recent）：
-- 只用错在模型这一步的修改（错误归因 B1）：OCR 认错、OCR 没认出、模型其实对了被核对丢掉的，
-  告诉模型也没用，不当例子；
-- 同一字段、同一种错合成一条，记出现过几次，次数多的、新的在前；
-- 字段在模板新版本里改了类型或说明的，旧例子不用（过期）；
-- 同一个发单方（系列）审核完成满 3 份的，先用这个系列自己的例子，不够再用同模板的；
-- 句子用固定句式按错误类型写，不让模型自己总结（本地小模型总结规则不可靠）。
-是否比 recent 好，用 jacara eval replay 在锁定测试集上比过再切换。
-"""
+Curated examples (`JACARA_LEARN_MODE=curated`; recent above remains the default):
+- Only corrections where the model was at fault (per error attribution): OCR misreads, OCR misses
+  and correct model values dropped by checks cannot be fixed by telling the model and are not
+  used;
+- Corrections of the same field and error kind are merged into one with an occurrence count;
+  frequent and recent first;
+- Examples are stale and unused when the field's type or description changed in a newer template
+  version;
+- When an issuer (series) has at least 3 reviewed documents, its own examples are used first,
+  then those of the template;
+- Sentences follow fixed patterns per error kind instead of model-written summaries (small local
+  models summarize rules unreliably).
+Whether curated beats recent should be checked with `jacara eval replay` on the locked test set
+before switching."""
 
 from __future__ import annotations
 
@@ -34,10 +43,10 @@ from sqlalchemy.orm import Session, selectinload
 from jacara.modules.insights.kinds import KIND_NAMES, error_kind
 
 LIMIT = 8
-"""一次最多给几条例子：太多会占上下文，也会让模型照抄。"""
+"""Maximum number of examples: more would consume context and invite copying."""
 PER_FIELD = 2
 SCAN = 200
-"""最多看最近多少张审核完成的单据。"""
+"""Maximum number of recent reviewed documents considered."""
 
 NOTE = """以前人工审核同一种单据时改过下面这些地方（是别的单据上的例子，只说明容易错在哪里；
 这张单据的值一律按它自己的原文，不要照抄例子里的值）：
@@ -52,25 +61,28 @@ class Lesson:
     after: str | None
     kind: str
     series: str | None = None
-    """这条例子来自哪个系列（发单方，ADR 0055）。"""
+    """Series (issuer) this example comes from."""
     stage: str | None = None
-    """错在哪一步（错误归因，人改判过的用人改的）。"""
+    """Stage at fault (error attribution; a person's override takes precedence)."""
     sig: str | None = None
-    """当时这个字段在模板里的定义（类型、说明），模板改了就过期。"""
+    """Definition of the field in the template at the time (type, description); stale once the
+    template changes."""
     document: str | None = None
     count: int = 1
-    """整理时合并了几次一样的修改。"""
+    """Number of identical corrections merged during curation."""
 
 
 MODES = ("recent", "curated")
 MIN_SERIES = 3
-"""一个系列审核完成满几份，才单独用它的例子（照 ABBYY：至少 3 份）。"""
+"""Reviewed documents a series needs before its own examples are used (following ABBYY: at least
+3)."""
 SKIP_STAGES = frozenset({"ocr_misread", "ocr_uncovered", "matching", "mixed"})
-"""这几种错不在模型：告诉模型也改不了，不当例子。"""
+"""Errors not caused by the model: telling the model cannot fix them, so they are not examples."""
 
 
 def field_sig(template: object, field: str) -> str | None:
-    """模板里这个字段（表格的列写成 items.amount）现在的定义：类型 + 说明。找不到是 None。"""
+    """Current definition of this field in the template (table columns as items.amount): type +
+    description. None if not found."""
     if template is None:
         return None
     for f in template.fields:  # type: ignore[attr-defined]
@@ -92,8 +104,8 @@ def curate(
     limit: int = LIMIT,
     per_field: int = PER_FIELD,
 ) -> list[Lesson]:
-    """整理过的例子（ADR 0055）。lessons 按新到旧排好；text 是这张单据的 OCR 文字（认系列用）；
-    template 是这次用的模板（去掉过期的）。"""
+    """Curated examples. lessons are ordered newest first; text is this document's OCR text (for
+    series detection); template is the template used now (to drop stale examples)."""
     from jacara.pipeline.series import series_in
 
     usable = [
@@ -106,14 +118,16 @@ def curate(
             or lesson.sig == field_sig(template, lesson.field)
         )
     ]
-    # 系列：满 MIN_SERIES 份的才算，再看这张单据的文字里写没写它
+    # Series: only those with at least MIN_SERIES documents, and only when this document's text
+    # mentions it.
     docs: dict[str, set[str | None]] = {}
     for lesson in usable:
         if lesson.series:
             docs.setdefault(lesson.series, set()).add(lesson.document)
     known = [key for key, found in docs.items() if len(found) >= MIN_SERIES]
     mine = series_in(text, known) if text and known else None
-    # 合并：同一字段、同一种错合成一条，留最新的那个例子，记次数
+    # Merge: one entry per field and error kind, keeping the newest example and counting
+    # occurrences.
     merged: dict[tuple[bool, str, str], Lesson] = {}
     order: list[tuple[bool, str, str]] = []
     for lesson in usable:
@@ -151,7 +165,7 @@ def lesson_line(lesson: Lesson) -> str:
 
 
 def pick(lessons: Iterable[Lesson], limit: int = LIMIT, per_field: int = PER_FIELD) -> list[Lesson]:
-    """改得多的字段优先，每个字段最多 per_field 条（lessons 按新到旧排好）。"""
+    """Most-corrected fields first, at most per_field per field (lessons ordered newest first)."""
     lessons = list(lessons)
     counts = Counter(lesson.field for lesson in lessons)
     kept: list[Lesson] = []
@@ -167,7 +181,7 @@ def pick(lessons: Iterable[Lesson], limit: int = LIMIT, per_field: int = PER_FIE
 
 
 def note_for(lessons: Sequence[Lesson]) -> str:
-    """几条例子 → 提示词里的一段。没有例子是空字符串。"""
+    """Examples → a prompt section. Empty string when there are none."""
     if not lessons:
         return ""
     return NOTE.format(lines="\n".join(lesson_line(lesson) for lesson in lessons))
@@ -183,7 +197,8 @@ def _generic(name: str) -> str:
 def from_database(
     session: Session, team_id: uuid.UUID, template: str, exclude: uuid.UUID | None = None
 ) -> list[Lesson]:
-    """这个团队、这个模板（extractions.template）审核完成的单据里，人改过的地方，新的在前。"""
+    """Corrections in reviewed documents of this team and template (extractions.template), newest
+    first."""
     from jacara.modules.documents.models import Document, Extraction
     from jacara.modules.fields.models import ExtractedValue
     from jacara.pipeline.current import label_for, labels_of, template_of
@@ -204,7 +219,8 @@ def from_database(
     from jacara.modules.ocr_samples.groups import locked_units
     from jacara.pipeline.series import series_key
 
-    locked = locked_units(session, team_id)  # 锁定测试集的单据不当例子来源（ADR 0052）
+    # Documents in the locked test split are never sources of examples.
+    locked = locked_units(session, team_id)
     edited: list[tuple[ExtractedValue, Extraction, object, str, str, str | None]] = []
     for document in session.scalars(query):
         for extraction in document.extractions:
@@ -247,7 +263,8 @@ def from_database(
 
 
 def _stages(session: Session, items: Sequence[tuple[Any, Any, Any]]) -> dict[uuid.UUID, str]:
-    """每个改过的字段错在哪一步（ADR 0053）：人改判过的用人改的，没有就按证据现判（不写数据库）。"""
+    """Stage at fault for each corrected field: a person's override if any, otherwise attributed
+    from evidence on the fly (not written to the database)."""
     from jacara.modules.insights.attribution import attribute
     from jacara.modules.insights.models import ErrorAttribution
     from jacara.modules.ocr_samples.models import OcrSample
@@ -291,8 +308,8 @@ def _sensitive(template: object) -> set[str]:
 
 
 def from_dataset(path: Path) -> dict[str, list[tuple[str, Lesson]]]:
-    """导出的审核数据（train.jsonl，ADR 0044）→ 模板 → [(文档 id, 例子)]。成对测评时用，
-    同一张单据的例子不给它自己（留一法）。"""
+    """Exported review data (train.jsonl) → template → [(document id, example)]. Used for paired
+    evaluation; a document never receives its own examples (leave-one-out)."""
     by_template: dict[str, list[tuple[str, Lesson]]] = {}
     for line in path.read_text("utf-8").splitlines():
         if not line.strip():

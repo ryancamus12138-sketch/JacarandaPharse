@@ -1,17 +1,20 @@
 # ruff: noqa: E501
-"""在原文里找一个日期：把原文里像日期的写法一个个读成日期，再和值比（不再把值猜成各种写法去搜）。
+"""Locate a date in the source text: parse every date-like span in the text and compare it with the
+value, instead of generating candidate spellings of the value and searching for them.
 
-和数字一样（core/numbers.py）：以前把 2014-08-03 猜成 03/08/2014、August 3, 2014 这些写法去搜，
-猜漏一种就找不到出处。现在原文里每一段像日期的字都读一遍：
+Same approach as numbers (core/numbers.py). Generating spellings of 2014-08-03 (03/08/2014,
+August 3, 2014, …) misses any spelling not generated. Instead every date-like span in the source
+text is parsed:
 
-- 2014-08-03、2014/8/3、2014.08.03、2014年8月3日；
-- 3/8/2014、03-08-14：日/月/年和月/日/年两种读法都留着（说不准时值等于其中一种就算）；
-- 25032018、20180304：日月年和年月日；
-- August 3, 2014、Aug 3 2014、3 Aug 2014、28 MAR 18、02/JAN/2017、3Aug2014；
-- 两位年份 18 读成 2018，也读成 1918（看值是哪一年）。
+- 2014-08-03, 2014/8/3, 2014.08.03, 2014年8月3日;
+- 3/8/2014, 03-08-14: both day/month/year and month/day/year readings are kept (when ambiguous, a
+  match with either counts);
+- 25032018, 20180304: day-month-year and year-month-day;
+- August 3, 2014, Aug 3 2014, 3 Aug 2014, 28 MAR 18, 02/JAN/2017, 3Aug2014;
+- Two-digit year 18 is read as both 2018 and 1918 (the value decides).
 
-只认完整的一段：12-01-1995 不会读出 12-01-19；读不成真实日期的（40.0-75.0）不算。
-"""
+Only complete spans match: 12-01-1995 does not yield 12-01-19; spans that are not valid dates
+(40.0-75.0) are ignored."""
 
 from __future__ import annotations
 
@@ -28,15 +31,15 @@ MONTHS = {
 _MONTH = "|".join(sorted(MONTHS, key=len, reverse=True))
 
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    # 2014-08-03、2014/8/3、2014.08.03、2014年8月3日
+    # 2014-08-03, 2014/8/3, 2014.08.03, 2014年8月3日
     ("ymd", re.compile(r"(?<![\d.,])(\d{4})\s*([/.\-]|年)\s*(\d{1,2})\s*(?:\2|月)\s*(\d{1,2})(?:\s*日)?(?![\d])")),
-    # 3/8/2014、03-08-14、5.3.2018（同一种分隔符）
+    # 3/8/2014, 03-08-14, 5.3.2018 (same separator throughout)
     ("dmy", re.compile(r"(?<![\d.,])(\d{1,2})([/.\-])(\d{1,2})\2(\d{4}|\d{2})(?![\d])")),
-    # 25032018、20180304
+    # 25032018, 20180304
     ("digits", re.compile(r"(?<![\d.,])(\d{8})(?![\d])")),
-    # 3 Aug 2014、28 MAR 18、02/JAN/2017、3-Aug-2014、3Aug2014
+    # 3 Aug 2014, 28 MAR 18, 02/JAN/2017, 3-Aug-2014, 3Aug2014
     ("d_mon_y", re.compile(rf"(?<![\d])(\d{{1,2}})(?:st|nd|rd|th)?[\s/.\-]*({_MONTH})\.?[\s/.\-,]*(\d{{4}}|\d{{2}})(?![\d])", re.IGNORECASE)),
-    # August 3, 2014、Aug 3 2014、OCT 3, 2016
+    # August 3, 2014, Aug 3 2014, OCT 3, 2016
     ("mon_d_y", re.compile(rf"(?<![a-z])({_MONTH})\.?\s*(\d{{1,2}})(?:st|nd|rd|th)?\s*,?\s*(\d{{4}})(?![\d])", re.IGNORECASE)),
 )  # fmt: skip
 
@@ -60,7 +63,7 @@ def _readings(kind: str, m: re.Match[str]) -> set[date]:
     elif kind == "dmy":
         a, b = int(m[1]), int(m[3])
         for year in _years(m[4]):
-            found |= {_day(year, b, a), _day(year, a, b)}  # 日/月/年、月/日/年
+            found |= {_day(year, b, a), _day(year, a, b)}  # day/month/year, month/day/year
     elif kind == "digits":
         t = m[1]
         found |= {
@@ -84,7 +87,7 @@ class DateToken:
 
 
 def dates_in(text: str) -> list[DateToken]:
-    """原文里每一段像日期的字和它可能的读法，按位置排好。"""
+    """Each date-like span in the source text with its possible readings, ordered by position."""
     tokens = [
         DateToken(m.start(), m.end(), m[0], frozenset(found))
         for kind, pattern in _PATTERNS
@@ -95,7 +98,8 @@ def dates_in(text: str) -> list[DateToken]:
 
 
 def target_of(value: object) -> date | None:
-    """值 → 日期：YYYY-MM-DD；模型照抄了原文的（August 3 , 2014）也读一下。读不出是 None。"""
+    """Value → date as YYYY-MM-DD. Values copied verbatim by the model (August 3 , 2014) are parsed
+    too. None if unparseable."""
     if isinstance(value, date):
         return value
     text = str(value).strip()
@@ -109,7 +113,7 @@ def target_of(value: object) -> date | None:
 
 @dataclass(frozen=True)
 class DateMatch:
-    """找到的位置（和 re.Match 一样有 start()、end()、group()）。"""
+    """Match location (like re.Match: start(), end(), group())."""
 
     token: DateToken
 
@@ -125,10 +129,10 @@ class DateMatch:
 
 @dataclass(frozen=True)
 class DatePattern:
-    """一个日期的查找规则：用法和正则一样，pattern.search(text)。
+    """Search rule for one date; used like a regular expression: pattern.search(text).
 
-    值读不成日期时（模型照抄的写法读不出），按原样（不分大小写、不管空格）找。
-    """
+        If the value cannot be parsed as a date (a spelling the parser does not understand), it
+    is searched for verbatim (case-insensitive, ignoring whitespace)."""
 
     value: str
     target: date | None

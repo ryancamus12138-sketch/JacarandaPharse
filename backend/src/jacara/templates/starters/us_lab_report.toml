@@ -13,7 +13,17 @@ titles = { en = "Clinical Laboratory Test Report (US, CLIA)" }
 countries = ["US"]
 domains = ["医疗", "检验报告"]
 description = "美国 CLIA 规定的检验报告：病人姓名和识别号、实验室名称地址和 CLIA 号、报告日期、采集时间、标本来源和状态、开单医生，每一项检验的结果、单位、参考区间、高低提示。CLIA 号格式不对、超出参考区间却没标高低会提醒。"
+descriptions = { en = "US laboratory reports under CLIA: patient name and identifier, laboratory name, address and CLIA number, report date, collection time, specimen source and condition, ordering provider, and for each test the result, unit, reference interval and high/low flag. Invalid CLIA number formats and results outside the reference interval without a flag are reported." }
 rules = ["lab_flag", "us_clia_no"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: US clinical laboratory reports. The US has no federal law on invoice formats, so for the US only laboratory reports, which have federal regulations, are covered.",
+  "Basis: 42 CFR 493.1291(c): the report must include (1) patient name and identification number (or a unique identifier), (2) name and address of the testing laboratory, (3) report date, (4) test performed, (5) specimen source (when applicable), (6) results and units or interpretation, (7) condition and disposition of unacceptable specimens; (d) reference intervals must be available to the ordering provider. CLIA certificate number: 2 digits + D + 7 digits.",
+  "Use: issued by hospitals and independent laboratories; results are checked by patients, insurance claims and follow-up visits.",
+  "Source: Cornell LII 42 CFR § 493.1291.",
+]
 
 [[fields]]
 name = "patient_name"
@@ -77,6 +87,7 @@ label = "标本状态"
 names = { en = "Specimen Condition" }
 type = "string"
 description = "不合格标本的状态和处置，照抄"
+descriptions = { en = "The condition and disposition of unacceptable specimens; copy it as written" }
 
 [[fields]]
 name = "collected_at"
@@ -97,6 +108,7 @@ label = "检验结果"
 names = { en = "Results" }
 required = true
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "name"
@@ -110,6 +122,7 @@ label = "结果"
 names = { en = "Result" }
 type = "string"
 description = "照抄"
+descriptions = { en = "Copy it as written" }
 
 [[tables.columns]]
 name = "unit"
@@ -129,3 +142,4 @@ label = "提示"
 names = { en = "Flag" }
 type = "string"
 description = "H、L、A 这类照抄"
+descriptions = { en = "Copy flags such as H, L, A as written" }

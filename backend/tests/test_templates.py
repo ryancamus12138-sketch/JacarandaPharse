@@ -1,4 +1,5 @@
-"""模板：templates/*.toml 能读、写错了说清楚哪里错、存库时记下模板版本、接口能查。"""
+"""Templates: templates/*.toml load, errors are reported precisely, the template version is recorded
+on storage, and the API can query them."""
 
 from __future__ import annotations
 
@@ -12,6 +13,8 @@ from jacara.pipeline.load import load_reports
 from jacara.pipeline.store import save_document
 from jacara.templates import TemplateError, load_template, parse_template, template_names
 
+from .conftest import raises
+
 
 def test_builtin_templates_all_load():
     assert {"receipt", "receipt_full"} <= set(template_names())
@@ -21,8 +24,9 @@ def test_builtin_templates_all_load():
 
 
 def test_receipt_template_v3():
-    """第 2 版：商家是开票的公司，另加店名（评测发现商家常多抄注册号、或选了店名）。
-    第 3 版：加商品明细表和两条明细规则。"""
+    """Version 2: merchant is the invoicing company, plus a separate shop name (evaluation showed
+    the merchant often included the registration number or picked the shop name). Version 3: line
+    item table and two line item rules."""
     receipt = load_template("receipt")
     assert receipt.version == 3
     assert [f.name for f in receipt.fields] == [
@@ -59,7 +63,7 @@ def test_full_template_starts_with_the_receipt_fields():
 
 
 def test_unknown_template_lists_what_exists():
-    with pytest.raises(TemplateError, match="receipt_full"):
+    with raises(TemplateError, "receipt_full"):
         load_template("invoice_x")
 
 
@@ -76,11 +80,11 @@ def _raw(**changes):
 @pytest.mark.parametrize(
     ("changes", "message"),
     [
-        ({"name": "other"}, "name 应该是 demo"),
+        ({"name": "other"}, "name 应为 demo"),
         ({"version": 0}, "version"),
         ({"version": "1"}, "version"),
-        ({"fields": []}, "至少要有一个字段"),
-        ({"fields": [{"name": "total", "type": "money"}]}, "type 只能是"),
+        ({"fields": []}, "至少需要一个字段"),
+        ({"fields": [{"name": "total", "type": "money"}]}, "type 只能为"),
         ({"fields": [{"name": "总额", "type": "number"}]}, "英文字母"),
         ({"fields": [{"name": "a", "type": "string"}, {"name": "a", "type": "string"}]}, "重复"),
         ({"rules": ["no_such_rule"]}, "no_such_rule"),
@@ -89,13 +93,13 @@ def _raw(**changes):
             "第 1 张表",
         ),
         ({"tables": [{"name": "total", "columns": [{"name": "a", "type": "string"}]}]}, "重名"),
-        ({"tables": [{"name": "items", "columns": []}]}, "至少要有一列"),
+        ({"tables": [{"name": "items", "columns": []}]}, "至少需要一列"),
         ({"tables": [{"name": "items", "columns": [{"name": "a", "type": "x"}]}]}, "表 items"),
         ({"tables": [{"name": "items", "columns": [{"name": "row", "type": "number"}]}]}, "row"),
     ],
 )
 def test_bad_template_says_what_is_wrong(changes, message):
-    with pytest.raises(TemplateError, match=message):
+    with raises(TemplateError, message):
         parse_template(_raw(**changes), "demo")
 
 
@@ -139,6 +143,7 @@ def test_templates_api(client):
         "range_export": "normalized",
         "range_separator": " ~ ",
         "names": {},
+        "descriptions": {},
     }
     change = next(r for r in receipt["rules"] if r["id"] == "change")
     assert change["title"] == "现金 − 总额 = 找零"

@@ -1,4 +1,4 @@
-"""审计日志接口：/api/v1/audit-logs。只有管理员能看。"""
+"""Audit log API: /api/v1/audit-logs. Administrators only."""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def list_audit_logs(
     date_from: DateFrom = None,
     date_to: DateTo = None,
 ) -> AuditPage:
-    """谁、什么时候、做了什么。最新的在前。可以按操作、按人、按日期筛。"""
+    """Who did what, and when; newest first. Filterable by action, actor and date."""
     return AuditService(session, owner).page(
         limit, offset, _filter(action, user_id, date_from, date_to)
     )
@@ -62,5 +62,6 @@ def export_audit_logs(
     date_from: DateFrom = None,
     date_to: DateTo = None,
 ) -> AuditPage:
-    """按同样的筛选条件取出全部（最多 EXPORT_LIMIT 条），网页把它存成 CSV。导出本身也记一条。"""
+    """All entries matching the same filters (at most EXPORT_LIMIT); the web UI saves them as CSV.
+    The export itself is also logged."""
     return AuditService(session, owner).export(_filter(action, user_id, date_from, date_to))

@@ -1,7 +1,7 @@
-"""登录、角色权限、用户管理、审计日志。
+"""Login, role permissions, user management, audit log.
 
-这些测试在团队模式（JACARA_MODE=team）下运行；其他测试文件仍然是个人模式，不用登录。
-"""
+These tests run in team mode (JACARA_MODE=team); other test modules remain in personal mode
+without login."""
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -23,7 +23,8 @@ PASSWORD = "correct-horse-1"
 
 @pytest.fixture(autouse=True)
 def team_mode(monkeypatch):
-    """切到团队模式。get_settings 有缓存，改了环境变量要清掉缓存，测完再清一次恢复原样。"""
+    """Switch to team mode. get_settings is cached, so the cache is cleared after changing
+    environment variables, and again afterwards to restore."""
     monkeypatch.setenv("JACARA_MODE", "team")
     get_settings.cache_clear()
     yield
@@ -32,7 +33,8 @@ def team_mode(monkeypatch):
 
 @pytest.fixture
 def make_user(factory):
-    """在默认团队里建一个用户，返回用户名。默认是没有开通任何权限的使用者。"""
+    """Create a user in the default team and return the user name. Defaults to a member without
+    granted permissions."""
 
     def _make(username: str, role: str = "member", allow: tuple[str, ...] = ()) -> str:
         with session_scope(factory) as session:
@@ -52,7 +54,7 @@ def login(client, username: str, password: str = PASSWORD):
 
 @pytest.fixture
 def as_user(client, make_user):
-    """建用户、登录，返回带好 token 的请求头。"""
+    """Create a user, log in and return headers carrying the token."""
 
     def _as(username: str, role: str = "member", allow: tuple[str, ...] = ()) -> dict[str, str]:
         make_user(username, role, allow)
@@ -67,7 +69,7 @@ def actions(factory) -> list[str]:
         return list(session.scalars(select(AuditLog.action).order_by(AuditLog.created_at)))
 
 
-# ---------- 登录 ----------
+# ---------- Login ----------
 
 
 def test_without_token_is_401(client):
@@ -78,11 +80,11 @@ def test_without_token_is_401(client):
 
 def test_login_and_use_token(client, make_user):
     make_user("Alice", role="admin")
-    response = login(client, "ALICE")  # 用户名不区分大小写
+    response = login(client, "ALICE")  # User names are case-insensitive.
     assert response.status_code == 200
     body = response.json()
     assert body["user"]["username"] == "alice"
-    assert "password" not in str(body)  # 返回里没有密码，也没有密码哈希
+    assert "password" not in str(body)  # The response contains neither the password nor its hash.
 
     headers = {"Authorization": f"Bearer {body['token']}"}
     assert client.get("/api/v1/documents", headers=headers).status_code == 200
@@ -95,8 +97,8 @@ def test_bad_login_same_message(client, factory, make_user, username, password):
     make_user("alice")
     response = login(client, username, password)
     assert response.status_code == 401
-    assert response.json()["detail"] == "用户名或密码不对"  # 不说是哪一个错了
-    assert actions(factory)[-1] == "auth:login_failed"  # 失败也留了记录
+    assert response.json()["detail"] == "用户名或密码错误"  # Does not reveal which one was wrong.
+    assert actions(factory)[-1] == "auth:login_failed"  # Failures are recorded too.
 
 
 def test_database_has_no_password_or_token(client, factory, make_user):
@@ -127,7 +129,7 @@ def test_expired_token(client, factory, as_user):
     assert client.get("/api/v1/documents", headers=headers).status_code == 401
 
 
-# ---------- 角色和权限 ----------
+# ---------- Roles and permissions ----------
 
 
 def upload(client, headers):
@@ -141,7 +143,7 @@ def test_member_can_read_and_export_by_default(client, as_user):
     assert client.get("/api/v1/documents", headers=headers).status_code == 200
     response = upload(client, headers)
     assert response.status_code == 403
-    assert response.json()["detail"] == "没有权限：上传文件（请找管理员开通）"
+    assert response.json()["detail"] == "没有权限：上传文件（请联系管理员开通）"
 
 
 def test_member_with_permission_can_upload(client, as_user):
@@ -149,16 +151,16 @@ def test_member_with_permission_can_upload(client, as_user):
     assert upload(client, headers).status_code == 201
     response = client.get("/api/v1/users", headers=headers)
     assert response.status_code == 403
-    assert "只有管理员能做" in response.json()["detail"]
+    assert "仅管理员可执行" in response.json()["detail"]
 
 
 def test_me_lists_what_i_can_do(client, as_user):
     headers = as_user("li", allow=("value:review",))
     me = client.get("/api/v1/auth/me", headers=headers).json()
     assert me["role"] == "member"
-    assert "value:review" in me["permissions"]  # 开通的
-    assert "document:export" in me["permissions"]  # 每人都有的
-    assert "document:create" not in me["permissions"]  # 没开通的
+    assert "value:review" in me["permissions"]  # Granted.
+    assert "document:export" in me["permissions"]  # Granted to every member.
+    assert "document:create" not in me["permissions"]  # Not granted.
 
 
 def test_other_team_cannot_see_documents(client, factory, report, tmp_path, as_user):
@@ -170,14 +172,14 @@ def test_other_team_cannot_see_documents(client, factory, report, tmp_path, as_u
         session.add(other_team)
         session.flush()
         document = save_document(session, path, [report])
-        document.team_id = other_team.id  # 这个文档属于别的团队
+        document.team_id = other_team.id  # This document belongs to another team.
         document_id = document.id
 
     assert client.get(f"/api/v1/documents/{document_id}", headers=headers).status_code == 404
     assert client.get("/api/v1/documents", headers=headers).json()["total"] == 0
 
 
-# ---------- 用户管理 ----------
+# ---------- User management ----------
 
 
 def test_admin_creates_user(client, as_user):
@@ -191,15 +193,16 @@ def test_admin_creates_user(client, as_user):
     response = client.post("/api/v1/users", headers=headers, json=body)
     assert response.status_code == 201
     assert response.json()["username"] == "bob"
-    assert response.json()["permissions"] == ["document:create"]  # 重复的去掉
+    assert response.json()["permissions"] == ["document:create"]  # Duplicates removed.
     assert login(client, "bob", "bob-password").status_code == 200
 
     again = client.post("/api/v1/users", headers=headers, json=body)
-    assert again.status_code == 409  # 用户名重复
+    assert again.status_code == 409  # Duplicate user name.
 
 
 def test_every_grantable_permission_can_be_granted():
-    """接口能收的权限和管理员页面上列出的（GRANTABLE）一样：新加权限时两边都要改。"""
+    """Permissions accepted by the API equal those listed on the admin page (GRANTABLE); adding a
+    permission requires changing both."""
     from typing import get_args
 
     from jacara.core.permissions import GRANTABLE
@@ -242,8 +245,9 @@ def test_disabled_user_is_logged_out(client, as_user):
 
     response = client.patch(f"/api/v1/users/{bob_id}", headers=admin, json={"is_active": False})
     assert response.json()["is_active"] is False
-    assert client.get("/api/v1/documents", headers=bob).status_code == 401  # 已登录的马上失效
-    assert login(client, "bob").status_code == 401  # 也不能再登录
+    # Existing sessions are revoked immediately.
+    assert client.get("/api/v1/documents", headers=bob).status_code == 401
+    assert login(client, "bob").status_code == 401  # And login is refused.
 
 
 def test_granting_takes_effect_now(client, as_user):
@@ -255,13 +259,14 @@ def test_granting_takes_effect_now(client, as_user):
     client.patch(
         f"/api/v1/users/{bob_id}", headers=admin, json={"permissions": ["document:create"]}
     )
-    assert upload(client, bob).status_code == 201  # 不用重新登录，开通了马上能用
+    # Granted permissions take effect without logging in again.
+    assert upload(client, bob).status_code == 201
 
     client.patch(f"/api/v1/users/{bob_id}", headers=admin, json={"permissions": []})
-    assert upload(client, bob).status_code == 403  # 取消了也马上生效
+    assert upload(client, bob).status_code == 403  # Revocations take effect immediately too.
 
 
-# ---------- 改密码、忘记密码 ----------
+# ---------- Password change and reset ----------
 
 
 def change_password(client, headers, old: str, new: str):
@@ -275,14 +280,16 @@ def test_change_own_password(client, factory, make_user):
     laptop = {"Authorization": f"Bearer {login(client, 'bob').json()['token']}"}
 
     wrong = change_password(client, laptop, "not-my-password", "new-password")
-    assert (wrong.status_code, wrong.json()["detail"]) == (422, "原密码不对")
+    assert (wrong.status_code, wrong.json()["detail"]) == (422, "原密码错误")
     same = change_password(client, laptop, PASSWORD, PASSWORD)
-    assert (same.status_code, same.json()["detail"]) == (422, "新密码不能和原来的一样")
+    assert (same.status_code, same.json()["detail"]) == (422, "新密码不能与原密码相同")
     assert change_password(client, laptop, PASSWORD, "short").status_code == 422
 
     assert change_password(client, laptop, PASSWORD, "new-password").status_code == 204
-    assert client.get("/api/v1/documents", headers=laptop).status_code == 200  # 正在用的不退出
-    assert client.get("/api/v1/documents", headers=phone).status_code == 401  # 别的设备退出了
+    # The current session stays.
+    assert client.get("/api/v1/documents", headers=laptop).status_code == 200
+    # Other devices are logged out.
+    assert client.get("/api/v1/documents", headers=phone).status_code == 401
     assert login(client, "bob").status_code == 401
     assert login(client, "bob", "new-password").status_code == 200
     assert "auth:password_change" in actions(factory)
@@ -302,20 +309,23 @@ def test_forgot_password_with_reset_code(client, factory, as_user):
     bob_id = client.get("/api/v1/auth/me", headers=bob).json()["user"]["id"]
 
     url = f"/api/v1/users/{bob_id}/reset-code"
-    assert client.post(url, headers=bob).status_code == 403  # 只有管理员能生成
+    # Only administrators can generate codes.
+    assert client.post(url, headers=bob).status_code == 403
     issued = client.post(url, headers=admin).json()
     code = issued["code"]
-    assert len(code) == 9 and code[4] == "-"  # 比如 K7QM-3XWD
+    assert len(code) == 9 and code[4] == "-"  # For example K7QM-3XWD.
     assert issued["username"] == "bob"
 
-    assert reset(client, "bob", "AAAA-AAAA").status_code == 400  # 码不对
-    assert reset(client, "nobody", code).status_code == 400  # 用户名不对
-    assert reset(client, "bob", code, PASSWORD).status_code == 422  # 和原来的一样（码还能用）
-    # 不分大小写，横线和空格都可以不打
+    assert reset(client, "bob", "AAAA-AAAA").status_code == 400  # Wrong code.
+    assert reset(client, "nobody", code).status_code == 400  # Wrong user name.
+    # Same as before (the code remains valid).
+    assert reset(client, "bob", code, PASSWORD).status_code == 422
+    # Case-insensitive; hyphens and spaces are optional.
     assert reset(client, "bob", code.lower().replace("-", " ")).status_code == 204
-    assert reset(client, "bob", code, "other-password").status_code == 400  # 用过一次就作废
+    assert reset(client, "bob", code, "other-password").status_code == 400  # Invalid after one use.
 
-    assert client.get("/api/v1/documents", headers=bob).status_code == 401  # 已登录的退出了
+    # Existing sessions are logged out.
+    assert client.get("/api/v1/documents", headers=bob).status_code == 401
     assert login(client, "bob", "new-password").status_code == 200
 
     log = actions(factory)
@@ -324,8 +334,8 @@ def test_forgot_password_with_reset_code(client, factory, as_user):
     assert "auth:reset_failed" in log
     with session_scope(factory) as session:
         details = str(list(session.scalars(select(AuditLog.detail))))
-        assert code not in details  # 审计日志里没有重设码
-        assert "new-password" not in details  # 也没有密码
+        assert code not in details  # The audit log does not contain the reset code.
+        assert "new-password" not in details  # Nor the password.
 
 
 def test_new_reset_code_voids_old_one(client, as_user):
@@ -334,7 +344,7 @@ def test_new_reset_code_voids_old_one(client, as_user):
     url = f"/api/v1/users/{client.get('/api/v1/auth/me', headers=bob).json()['user']['id']}"
     first = client.post(f"{url}/reset-code", headers=admin).json()["code"]
     second = client.post(f"{url}/reset-code", headers=admin).json()["code"]
-    assert reset(client, "bob", first).status_code == 400  # 旧的作废了
+    assert reset(client, "bob", first).status_code == 400  # The old code is revoked.
     assert reset(client, "bob", second).status_code == 204
 
 
@@ -345,11 +355,11 @@ def test_reset_code_expires(client, factory, as_user):
     code = client.post(f"/api/v1/users/{bob_id}/reset-code", headers=admin).json()["code"]
     with session_scope(factory) as session:
         row = session.scalars(select(PasswordResetCode)).one()
-        row.expires_at = datetime.now(UTC) - timedelta(minutes=1)  # 假装过了 15 分钟
+        row.expires_at = datetime.now(UTC) - timedelta(minutes=1)  # Simulate 15 minutes passing.
     assert reset(client, "bob", code).status_code == 400
 
 
-# ---------- 审计日志 ----------
+# ---------- Audit log ----------
 
 
 def test_audit_log_records_who_did_what(client, factory, as_user):
@@ -370,7 +380,7 @@ def test_only_admin_reads_audit_log(client, as_user):
 
     page = client.get("/api/v1/audit-logs", headers=admin, params={"action": "auth:"}).json()
     assert {item["action"] for item in page["items"]} == {"auth:login"}
-    assert page["total"] == 2  # boss 和 vic 各登录一次
+    assert page["total"] == 2  # boss and vic log in once each.
 
 
 def test_audit_log_by_person_and_date(client, factory, as_user):
@@ -381,7 +391,7 @@ def test_audit_log_by_person_and_date(client, factory, as_user):
     )
     page = client.get("/api/v1/audit-logs", headers=admin, params={"user_id": vic_id}).json()
     assert page["total"] == 1 and page["items"][0]["action"] == "auth:login"
-    with session_scope(factory) as session:  # 把 vic 的登录挪到上个月
+    with session_scope(factory) as session:  # Move vic's login to last month.
         log = session.scalars(select(AuditLog).where(AuditLog.user_id == uuid.UUID(vic_id))).one()
         log.created_at = datetime.now(UTC) - timedelta(days=40)
     today = date.today().isoformat()
@@ -407,7 +417,7 @@ def test_audit_log_export_is_recorded(client, factory, as_user):
         assert log.detail["count"] == 2 and log.detail["filter_action"] == "auth:"
 
 
-# ---------- 个人模式 ----------
+# ---------- Personal mode ----------
 
 
 def test_personal_mode_needs_no_login(client, monkeypatch):
@@ -416,15 +426,15 @@ def test_personal_mode_needs_no_login(client, monkeypatch):
     assert client.get("/api/v1/documents").status_code == 200
     me = client.get("/api/v1/auth/me").json()
     assert (me["mode"], me["role"], me["user"]) == ("personal", "admin", None)
-    assert "user:manage" in me["permissions"]  # 个人模式什么都能做
+    assert "user:manage" in me["permissions"]  # Personal mode permits everything.
 
 
-# ---------- 密码工具 ----------
+# ---------- Password utilities ----------
 
 
 def test_password_hash():
     first, second = hash_password(PASSWORD), hash_password(PASSWORD)
-    assert first != second  # 每次的盐不一样
+    assert first != second  # A different salt each time.
     assert verify_password(first, PASSWORD)
     assert not verify_password(first, "wrong")
-    assert not verify_password(None, PASSWORD)  # 用户不存在
+    assert not verify_password(None, PASSWORD)  # Unknown user.

@@ -1,15 +1,17 @@
-"""把任何输入文件（图片、PDF）变成 OcrPage 列表，一页一个。
+"""Turn any input file (image, PDF) into a list of OcrPage, one per page.
 
-- 图片：直接交给 OCR 引擎。
-- PDF，默认（pdf_read="image"，ADR 0042）：每页用 pypdfium2 画成图（连表单一起画），
-  和照片走同一条 OCR 路；PDF 自带的文字层、表单字段的值另外读出来，只拿来核对。
-  以前有文字层就直接用，遇到把"示"记成部首"⽰"、字体对照表错了一位的 PDF，抽出来的值就错了，
-  同一张单据 PDF 反而比拍照的差。
-- PDF，pdf_read="text"：只读文字层（快，只适合确定干净的电子版）；文字层太少或是乱码的页，
-  照样画成图做 OCR。
+- Images: passed to the OCR engine directly.
+- PDFs, default (pdf_read="image"): each page is rendered with pypdfium2 (including form
+  fields) and goes through the same OCR path as photos; the embedded text layer and form field
+  values are read separately and used only for cross-checking. Previously the text layer was
+  used directly whenever present; PDFs that encode "示" as the radical "⽰" or whose font mapping
+  is off by one glyph produced wrong values, making the PDF of a document worse than a photo of
+  it.
+- PDFs, pdf_read="text": read only the text layer (fast; suitable only for known-clean digital
+  PDFs); pages with too little or garbled text are still rendered for OCR.
 
-后面的抽取、对齐、校验只认 OcrPage，不用关心原文件是什么格式。
-"""
+Extraction, alignment and validation depend only on OcrPage, regardless of the original file
+format."""
 
 from __future__ import annotations
 
@@ -31,37 +33,42 @@ from pdfplumber.page import Page
 from PIL import Image, ImageOps
 
 from jacara.core.cjk import plain_cjk
+from jacara.core.i18n import stored
 from jacara.plugins.ocr.base import OcrEngine, OcrLine, OcrPage, Point
 from jacara.plugins.ocr.pdftext import as_lines, form_values, text_words
 
 PdfRead = Literal["image", "text"]
-"""PDF 怎么读文字（ADR 0042）：image 画成图做 OCR、文字层只核对；text 只读文字层。"""
+"""How PDF text is read: image renders pages for OCR and uses the text layer only for
+cross-checking; text reads only the text layer."""
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 
 PDF_SCALE = 3
-"""PDF 坐标单位是"点"（1/72 英寸）。乘以 3 相当于 216 DPI：扫描件 OCR 够清楚，
-文字层的坐标也乘同样的倍数，两种 PDF 的坐标单位一致（都是渲染后图片上的像素）。"""
+"""PDF coordinates are in points (1/72 inch). Scaling by 3 gives 216 DPI, sharp enough for OCR of
+scans; text-layer coordinates are scaled the same way, so both kinds of PDF share one unit
+(pixels of the rendered image)."""
 
 MIN_TEXT_CHARS = 10
-"""一页 PDF 的文字层少于这么多字，就当作扫描件，改用 OCR。"""
+"""A PDF page with fewer characters than this in its text layer is treated as a scan and OCR'd."""
 
 MAX_GARBLED = 0.15
-"""文字层里认不出来的字超过这个比例，就当作乱码，改用 OCR。
+"""A text layer with a share of unrecognizable characters above this is treated as garbled and
+OCR'd.
 
-有的 PDF 字体没有带"字形 → 文字"的对照表，读出来是 (cid:12)、方框、私用区字符；
-有的编码错了，读出来是 Ã©、â€ 这种。照着乱码抽字段，值和出处都是错的。"""
+Some PDF fonts lack a glyph-to-text mapping and yield (cid:12), boxes or private-use characters;
+others have a wrong encoding and yield sequences like Ã© or â€. Extracting from garbled text
+produces wrong values and evidence."""
 
 _MOJIBAKE = re.compile("[ÃÂâ][\x80-\xbf€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]")
-"""UTF-8 被当成 Latin-1 读出来的样子：é → Ã©，" → â€œ。"""
+"""UTF-8 decoded as Latin-1: é → Ã©, " → â€œ."""
 
 
 def garbled_ratio(text: str) -> float:
-    """文字里认不出来的字占多少（0～1）。
+    """Share (0–1) of unrecognizable characters in the text.
 
-    算作认不出来的：(cid:数字)、替换符 �、方框 □、私用区和未分配的字符、控制字符、
-    UTF-8 当 Latin-1 读出来的乱码（Ã©）。空格不算。
-    """
+        Counted as unrecognizable: (cid:N), the replacement character �, the box □, private-use
+    and unassigned characters, control characters, and UTF-8 decoded as Latin-1 (Ã©). Spaces are
+    not counted."""
     cids = re.findall(r"\(cid:\d+\)", text)
     rest = re.sub(r"\(cid:\d+\)", "", text)
     chars = [c for c in rest if not c.isspace()]
@@ -77,41 +84,44 @@ def garbled_ratio(text: str) -> float:
 
 
 class UnsupportedFileError(ValueError):
-    """不支持的文件类型。"""
+    """Unsupported file type."""
 
 
 def load_pages(path: Path, ocr: OcrEngine, pdf_read: PdfRead = "image") -> list[OcrPage]:
-    """读一个文件，返回每一页的 OcrPage。"""
+    """Read a file and return one OcrPage per page."""
     suffix = path.suffix.lower()
     if suffix in IMAGE_SUFFIXES:
         return [ocr.recognize(path)]
     if suffix == ".pdf":
         return _load_pdf(path, ocr) if pdf_read == "text" else _image_pages(path, ocr)
-    raise UnsupportedFileError(f"不支持的文件类型：{suffix}，支持图片和 PDF")
+    raise UnsupportedFileError(stored("不支持的文件类型：{suffix}。支持图片和 PDF", suffix=suffix))
 
 
 PDFIUM_LOCK = threading.RLock()
-"""pdfium 不是线程安全的：两个线程同时打开、画 PDF 会报 "Failed to load page."。
-网页服务的接口在线程池里跑，审核页一次要好几张局部图，所以所有 pdfium 的调用都要先拿这把锁。
-（后台任务是单独的进程，不受影响；拿锁也没关系。）"""
+"""pdfium is not thread-safe: two threads opening or rendering PDFs concurrently fail with "Failed
+to load page." The web service runs handlers in a thread pool and the review page requests
+several crops at once, so every pdfium call must hold this lock. (Background workers run in
+separate processes and are unaffected; holding the lock is harmless.)"""
 
 
 def open_pdf(source: Path | bytes) -> pdfium.PdfDocument:
-    """打开 PDF，并准备好表单：画图时把表单里填的值也画上（ADR 0042）。调用方要拿着 PDFIUM_LOCK。"""
+    """Open a PDF and initialize forms so that rendering includes filled form values. The caller
+    must hold PDFIUM_LOCK."""
     pdf = pdfium.PdfDocument(source)
     pdf.init_forms()
     return pdf
 
 
 def _image_pages(path: Path, ocr: OcrEngine) -> list[OcrPage]:
-    """每页画成图做 OCR；文字层、表单字段另外读出来，挂在 OcrPage 上只做核对（ADR 0042）。"""
+    """Render every page for OCR; the text layer and form fields are read separately and attached to
+    OcrPage for cross-checking only."""
     pages: list[OcrPage] = []
     with PDFIUM_LOCK:
         pdf = open_pdf(path)
         count = len(pdf)
     try:
         for number in range(count):
-            with PDFIUM_LOCK:  # 只在用 pdfium 时拿着锁，OCR 的时候放开
+            with PDFIUM_LOCK:  # Hold the lock only while using pdfium; release it during OCR.
                 page = pdf[number]
                 bitmap = page.render(scale=PDF_SCALE, may_draw_forms=True)
                 conv = bitmap.get_posconv(page)
@@ -125,13 +135,16 @@ def _image_pages(path: Path, ocr: OcrEngine) -> list[OcrPage]:
                 scanned = ocr.recognize(image_path)
             models = {
                 **scanned.models,
-                "source": "PDF 每页画成图后 OCR，文字层只做核对",
-                "text_layer": f"pdfium {pdfium.PDFIUM_INFO.version}" if layer else "没有",
+                "source": stored("PDF 每页渲染为图像后执行 OCR，文本层仅用于核对"),
+                "text_layer": f"pdfium {pdfium.PDFIUM_INFO.version}" if layer else stored("没有"),
             }
             if hidden:
-                models["note"] = (
-                    f"这一页的文字层里有 {hidden} 个看不见的字"
-                    "（多半是别的软件留下的旧 OCR），没有用"
+                models["note"] = stored(
+                    (
+                        "此页文本层中有 {hidden} 个不可见字符（通常为其他软件遗留的旧"
+                        " OCR 结果），未使用"
+                    ),
+                    hidden=hidden,
                 )
             pages.append(replace(scanned, models=models, text_layer=layer, forms=forms))
     finally:
@@ -141,7 +154,8 @@ def _image_pages(path: Path, ocr: OcrEngine) -> list[OcrPage]:
 
 
 def _load_pdf(path: Path, ocr: OcrEngine) -> list[OcrPage]:
-    """只读文字层（pdf_read="text"）：太少或是乱码的页才画成图做 OCR。"""
+    """Read only the text layer (pdf_read="text"): only pages with too little or garbled text are
+    rendered for OCR."""
     pages: list[OcrPage] = []
     with pdfplumber.open(path) as pdf:
         for number, page in enumerate(pdf.pages):
@@ -151,9 +165,12 @@ def _load_pdf(path: Path, ocr: OcrEngine) -> list[OcrPage]:
                 continue
             ratio = garbled_ratio(" ".join(line.text for line in text_page.lines))
             if ratio > MAX_GARBLED:
-                # 文字层是乱码：照着它抽，值和出处都是错的，改看图识别
+                # Garbled text layer: extracting from it would give wrong values and evidence; use
+                # OCR instead.
                 scanned = _render_and_ocr(path, number, ocr)
-                note = f"PDF 文字层是乱码（{ratio:.0%} 的字认不出来），这一页改用 OCR"
+                note = stored(
+                    "PDF 文本层为乱码（{ratio:.0%} 的字符无法识别），此页改用 OCR", ratio=ratio
+                )
                 pages.append(replace(scanned, models={**scanned.models, "note": note}))
             else:
                 pages.append(text_page)
@@ -161,7 +178,8 @@ def _load_pdf(path: Path, ocr: OcrEngine) -> list[OcrPage]:
 
 
 def _text_layer(page: Page) -> OcrPage | None:
-    """读 PDF 自带的文字和坐标。文字太少（多半是扫描件）返回 None。"""
+    """Read the embedded text with coordinates. Returns None when there is too little text (usually
+    a scan)."""
     start = time.perf_counter()
     words = page.extract_words(keep_blank_chars=False, x_tolerance=3)
     if sum(len(w["text"].strip()) for w in words) < MIN_TEXT_CHARS:
@@ -175,7 +193,8 @@ def _text_layer(page: Page) -> OcrPage | None:
             Point(x1 * PDF_SCALE, bottom * PDF_SCALE),
             Point(x0 * PDF_SCALE, bottom * PDF_SCALE),
         )
-        # 有的 PDF 把汉字记成部首的编码（⽰、⼩、⻔），看着一样、复制出来不一样，先换成平常的字
+        # Some PDFs encode CJK ideographs as radical code points (⽰, ⼩, ⻔) that look identical
+        # but copy differently; normalize them first.
         lines.append(OcrLine(text=plain_cjk(text), polygon=polygon, confidence=1.0))
 
     return OcrPage(
@@ -183,24 +202,26 @@ def _text_layer(page: Page) -> OcrPage | None:
         height=round(page.height * PDF_SCALE),
         lines=tuple(lines),
         engine="pdf-text",
-        models={"engine": f"pdfplumber {version('pdfplumber')}", "source": "PDF 文字层"},
+        models={"engine": f"pdfplumber {version('pdfplumber')}", "source": stored("PDF 文本层")},
         duration_ms=round((time.perf_counter() - start) * 1000),
     )
 
 
 PHRASE_GAP = 0.6
-"""同一行里两个词的空隙不超过"字高 × 0.6"（大约一两个空格），算同一段（"Invoice Number:"）；
-再宽就是另一列（表格里的"入住日期"和"房间数"），分开成两块，出处框才不会横跨整行。"""
+"""Two words on the same line separated by at most text height × 0.6 (about one or two spaces) form
+one span ("Invoice Number:"); wider gaps separate columns ("Check-in date" and "Rooms" in a
+table), so evidence boxes do not stretch across the line."""
 
 
 def _phrases(words: list[dict[str, Any]]) -> list[tuple[str, float, float, float, float]]:
-    """PDF 里的词 → 一段一段的文字：同一行、挨得近的词连起来，离得远的分开。
+    """PDF words → text spans: nearby words on the same line are joined; distant words are
+    separated.
 
-    以前用 pdfplumber 的 keep_blank_chars 合并，空格多的 PDF（排版用空格对齐）会把一整行连成一块，
-    出处框就从店名一直框到房间数。这里按词之间的实际空隙来分；冒号结尾的词（"Guest Name:"）
-    后面也分开，后面是值。
-    返回 (文字, x0, top, x1, bottom)，单位是 PDF 的点。
-    """
+        Previously pdfplumber's keep_blank_chars merged them, and PDFs that align with many
+    spaces joined whole lines into one block, so evidence boxes stretched from the shop name to
+    the room count. Here words are split by their actual gaps; words ending with a colon ("Guest
+    Name:") are also split from what follows, which is the value. Returns (text, x0, top, x1,
+    bottom) in PDF points."""
     rows: list[list[dict[str, Any]]] = []
     for w in sorted(words, key=lambda w: (round(float(w["top"])), float(w["x0"]))):
         if not str(w["text"]).strip():
@@ -211,7 +232,8 @@ def _phrases(words: list[dict[str, Any]]) -> list[tuple[str, float, float, float
             last = row[-1]
             last_middle = (float(last["top"]) + float(last["bottom"])) / 2
             same_top = abs(float(last["top"]) - float(w["top"])) <= max(1.0, 0.4 * height)
-            # 字框高矮不一（"一"的框只有一条横线高）：按中线对齐也算同一行
+            # Glyph boxes vary in height (the box of "一" is a single stroke tall): alignment by
+            # center line also counts as the same line.
             same_middle = abs(last_middle - middle) <= max(1.0, 0.25 * height)
             if same_top or same_middle:
                 row.append(w)
@@ -232,7 +254,8 @@ def _phrases(words: list[dict[str, Any]]) -> list[tuple[str, float, float, float
                     1.0,
                 )
                 wide = float(w["x0"]) - float(prev["x1"]) > PHRASE_GAP * height
-                # "Guest Name: Sanjay"：冒号后面是值，和标签分开，出处框只框值
+                # "Guest Name: Sanjay": the text after the colon is the value; split it from the
+                # label so the evidence box covers only the value.
                 label = str(prev["text"]).rstrip().endswith((":", "："))
                 if wide or label:
                     phrases.append(_phrase(current))
@@ -244,7 +267,8 @@ def _phrases(words: list[dict[str, Any]]) -> list[tuple[str, float, float, float
 
 
 def _joined(words: list[dict[str, Any]]) -> str:
-    """词连成一段：两边都是汉字时不加空格（"示例市第" + "一" → "示例市第一"）。"""
+    """Join words into a span: no space between two CJK characters ("示例市第" + "一" →
+    "示例市第一")."""
     text = ""
     for w in words:
         piece = str(w["text"]).strip()
@@ -272,7 +296,7 @@ def _phrase(words: list[dict[str, Any]]) -> tuple[str, float, float, float, floa
 
 
 def _render_and_ocr(path: Path, number: int, ocr: OcrEngine) -> OcrPage:
-    """把 PDF 的一页渲染成图片，再做 OCR。"""
+    """Render a PDF page to an image and run OCR."""
     with PDFIUM_LOCK:
         pdf = open_pdf(path)
         try:
@@ -286,11 +310,11 @@ def _render_and_ocr(path: Path, number: int, ocr: OcrEngine) -> OcrPage:
 
 
 def page_images(path: Path) -> list[np.ndarray]:
-    """文件的每一页画成图（OpenCV 用的 BGR 数组），给版面模型、表格模型看（ADR 0034）。
+    """Render every page of the file as an image (BGR array for OpenCV) for the layout and table
+    models.
 
-    坐标和 OCR 一样：PDF 按 PDF_SCALE 渲染（有文字层的页也画，文字层坐标也乘了同样倍数）；
-    图片按 EXIF 方向转正。
-    """
+        Coordinates match OCR: PDFs are rendered at PDF_SCALE (pages with a text layer too, whose
+    coordinates use the same scale); images are rotated according to EXIF orientation."""
     suffix = path.suffix.lower()
     pictures: list[Image.Image] = []
     if suffix == ".pdf":
@@ -309,15 +333,17 @@ def page_images(path: Path) -> list[np.ndarray]:
 
 
 def page_png(data: bytes, is_pdf: bool, number: int, scale: float = PDF_SCALE) -> bytes:
-    """把文件的第 number 页（从 1 开始）画成 PNG，给审核页面显示。
+    """Render page number (1-based) of the file as PNG for the review page.
 
-    坐标和 OCR 时完全一样，出处框才能画准：
-    - PDF 用同样的 PDF_SCALE 渲染（文字层的坐标也乘了它），表单也画上；
-      scale 可以更大，局部放大再识别时用（ADR 0042），坐标要乘 scale / PDF_SCALE；
-    - 图片先按 EXIF 方向转正：手机照片的像素常常是横着存的，另记一个"要转 90 度"的标记，
-      RapidOCR 读图时会先转正再识别，坐标是转正之后的。顺便统一成 PNG：浏览器显示不了 TIFF。
-    页码超出范围时抛 IndexError，由调用方先检查。
-    """
+    Coordinates must equal those used during OCR so evidence boxes are drawn precisely:
+    - PDFs are rendered at the same PDF_SCALE (text-layer coordinates use it too), including
+      forms; scale may be larger for zoomed re-recognition, in which case coordinates are
+      multiplied by scale / PDF_SCALE;
+    - Images are first rotated by EXIF orientation: phone photos are often stored sideways
+      with a "rotate 90 degrees" tag, and RapidOCR rotates before recognition, so coordinates
+      refer to the rotated image. Output is normalized to PNG since browsers cannot display
+      TIFF.
+    Raises IndexError for out-of-range page numbers; callers check first."""
     if is_pdf:
         with PDFIUM_LOCK:
             pdf = open_pdf(data)
@@ -332,7 +358,7 @@ def page_png(data: bytes, is_pdf: bool, number: int, scale: float = PDF_SCALE) -
             raise IndexError(number)
         image = ImageOps.exif_transpose(Image.open(io.BytesIO(data)))
         if image.mode not in ("RGB", "RGBA", "L"):
-            image = image.convert("RGB")  # CMYK、调色板等模式先转成 RGB
+            image = image.convert("RGB")  # Convert CMYK, palette and other modes to RGB.
     out = io.BytesIO()
     image.save(out, format="PNG")
     return out.getvalue()

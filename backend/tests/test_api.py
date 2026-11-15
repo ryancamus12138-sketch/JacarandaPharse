@@ -1,8 +1,8 @@
-"""文档接口：用 FastAPI 的 TestClient 发请求。
+"""Documents API, exercised through FastAPI's TestClient.
 
-client 在 conftest.py 里：dependency_overrides 把真正的依赖（PostgreSQL、SeaweedFS、Valkey）
-换成假的，router 和 service 的代码一行不改。测试不会往真的队列里放任务。
-"""
+client is defined in conftest.py: dependency_overrides replace the real dependencies (PostgreSQL,
+SeaweedFS, Valkey) with fakes without changing router or service code. Tests never enqueue tasks
+to a real queue."""
 
 import uuid
 
@@ -29,7 +29,7 @@ def test_upload_saves_file_and_record(client, storage):
     assert body["filename"] == "receipt.jpg"
     assert body["status"] == "uploaded"
     assert body["page_count"] == 1
-    assert "storage_key" not in body  # 内部信息不给前端
+    assert "storage_key" not in body  # Internal details are not exposed to the frontend.
     assert storage.files[f"documents/{body['id']}/receipt.jpg"][0] == b"fake image bytes"
 
 
@@ -51,7 +51,7 @@ def test_upload_rejects_empty_file(client):
 
 def test_upload_keeps_only_the_file_name(client, storage):
     body = upload(client, "../../etc/passwd.png", b"x", "image/png").json()
-    assert body["filename"] == "passwd.png"  # 不能用文件名跳到别的目录
+    assert body["filename"] == "passwd.png"  # File names cannot escape to other directories.
     assert all(".." not in key for key in storage.files)
 
 
@@ -64,7 +64,8 @@ def test_storage_failure_is_503_and_nothing_saved(client, storage, monkeypatch):
     monkeypatch.setattr(storage, "put", broken)
     response = upload(client, "receipt.jpg", b"x", "image/jpeg")
     assert response.status_code == 503
-    assert client.get("/api/v1/documents").json()["total"] == 0  # 文件没存成，就不写数据库
+    # No database row when the file was not stored.
+    assert client.get("/api/v1/documents").json()["total"] == 0
 
 
 def test_list_newest_first_with_total(client):
@@ -91,7 +92,7 @@ def test_detail_includes_values_and_review_count(client, factory, report, tmp_pa
     [extraction] = detail["extractions"]
     names = [v["name"] for v in extraction["values"]]
     assert names == ["merchant", "total", "cash", "change", "member"]
-    assert detail["review_count"] == 3  # cash、total、change：找零规则不通过
+    assert detail["review_count"] == 3  # cash, total, change: the change rule fails.
 
     listed = client.get("/api/v1/documents").json()["items"][0]
     assert listed["review_count"] == 3
@@ -112,7 +113,7 @@ def test_download_returns_original_file(client):
 
 def test_docs_page_works_offline(client):
     page = client.get("/docs").text
-    assert "cdn.jsdelivr.net" not in page  # 不从网上加载界面文件
+    assert "cdn.jsdelivr.net" not in page  # UI assets are not loaded from the internet.
     assert client.get("/static-offline-docs/swagger-ui-bundle.js").status_code == 200
 
 
@@ -124,7 +125,8 @@ def test_upload_puts_document_in_queue(client, queue):
 def test_upload_still_works_when_queue_is_down(client, queue):
     queue.down = True
     response = upload(client, "receipt.jpg", b"x", "image/jpeg")
-    assert response.status_code == 201  # 文件和记录都保存了，之后可以重新处理
+    # File and record are both stored and can be reprocessed later.
+    assert response.status_code == 201
     assert response.json()["status"] == "uploaded"
 
 
@@ -142,8 +144,8 @@ def test_failed_document_can_be_processed_again(client, factory, queue):
     response = client.post(f"/api/v1/documents/{document_id}/process")
     assert response.status_code == 202
     assert response.json()["status"] == "uploaded"
-    assert response.json()["error"] is None  # 旧的失败原因清掉
-    assert queue.sent == [uuid.UUID(document_id)] * 2  # 上传一次，重新处理一次
+    assert response.json()["error"] is None  # The previous failure reason is cleared.
+    assert queue.sent == [uuid.UUID(document_id)] * 2  # One upload, one reprocess.
 
 
 def test_done_document_is_not_processed_again(client, factory):

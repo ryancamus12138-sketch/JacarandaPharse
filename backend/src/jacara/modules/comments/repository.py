@@ -1,4 +1,4 @@
-"""备注的数据库读写。所有查询都按 team_id 过滤。"""
+"""Comment persistence. All queries filter by team_id."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class CommentRepository:
         ).one_or_none()
 
     def of_document(self, document_id: uuid.UUID, team_id: uuid.UUID) -> list[Comment]:
-        """一份文档的全部备注，先写的在前。"""
+        """All comments of a document, oldest first."""
         query = (
             select(Comment)
             .where(Comment.document_id == document_id, Comment.team_id == team_id)
@@ -34,7 +34,7 @@ class CommentRepository:
         return list(self.session.scalars(query))
 
     def open_counts(self, document_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
-        """每份文档还没解决的备注有几条（列表上显示用）。"""
+        """Number of unresolved comments per document (shown in lists)."""
         if not document_ids:
             return {}
         rows = self.session.execute(
@@ -48,7 +48,8 @@ class CommentRepository:
         self.session.delete(comment)
 
     def names(self, user_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
-        """user id → 显示的名字（昵称 → 用户名；个人模式的昵称在 profiles 里）。"""
+        """User id → display name (display name → user name; personal-mode display names are in
+        profiles)."""
         if not user_ids:
             return {}
         names: dict[uuid.UUID, str] = {}

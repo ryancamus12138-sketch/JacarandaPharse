@@ -1,9 +1,8 @@
-"""从数据库读回 DocumentReport：store.py 的反方向。
+"""Load DocumentReport from the database: the inverse of store.py.
 
-导出器是插件，不碰数据库（项目规则 7），只认 DocumentReport。
-数据库里存的是文档、抽取、字段、审核记录几张表，这里把它们拼回导出器认识的样子，
-再加上每个字段最新的人工审核结果（reviews）。
-"""
+Exporters are plugins that never touch the database and accept only DocumentReport. The database
+stores documents, extractions, fields and revisions in separate tables; this module reassembles
+them into the form exporters expect, adding the latest manual review of each field (reviews)."""
 
 from __future__ import annotations
 
@@ -21,8 +20,9 @@ from jacara.templates import Template
 
 
 def load_reports(document: Document, language: str | None = None) -> list[DocumentReport]:
-    """一个文档的每张单据 → 一份 DocumentReport。要先把抽取、字段、审核记录都查出来。
-    language：导出时字段名（列名）用哪种语言（ADR 0048），不写是中文。"""
+    """One DocumentReport per document within a file. Extractions, fields and revisions must be
+    loaded first. language: language of field names (column headers) in exports; defaults to the
+    default language."""
     from jacara.pipeline.current import page_range
 
     several = len(document.extractions) > 1
@@ -37,7 +37,8 @@ def load_reports(document: Document, language: str | None = None) -> list[Docume
 
 
 def _report(extraction: Extraction, source: str, language: str | None = None) -> DocumentReport:
-    """当前的结果：删掉的行不导出，表格按显示顺序编号，规则按审核之后的值重新检查。"""
+    """Current results: deleted rows are not exported, tables are numbered in display order, rules
+    are re-evaluated on post-review values."""
     from jacara.pipeline.current import current_checks, current_values, labels_of, template_of
 
     current = current_values(extraction)
@@ -54,7 +55,8 @@ def _report(extraction: Extraction, source: str, language: str | None = None) ->
     aligned = tuple(
         AlignedField(
             field=f,
-            # cast：告诉类型检查"数据库里存的就是这几个值之一"，运行时什么都不做
+            # cast: tells the type checker the stored value is one of these literals; no effect at
+            # runtime.
             status=cast(AlignStatus, v.status),
             evidence=_evidence(v.current_evidence),
             needs_review=v.needs_review,
@@ -92,7 +94,7 @@ def _report(extraction: Extraction, source: str, language: str | None = None) ->
 
 
 def _hidden(template: Template | None) -> frozenset[str]:
-    """模板里设成不导出的字段、表、表的列。"""
+    """Fields, tables and table columns set not to export in the template."""
     if template is None:
         return frozenset()
     names = {f.name for f in template.fields if not f.export}
@@ -104,13 +106,15 @@ def _hidden(template: Template | None) -> frozenset[str]:
 
 
 def _field(value: ExtractedValue, name: str) -> ExtractedField:
-    """数据库里的值都是文字；数字还原成数字，规则和导出才能按数字处理。
+    """Values in the database are text; numbers are restored so rules and exports can treat them as
+    numbers.
 
-    人工新增的行没有模型原值，原值就是空的；导出时用审核之后的值。
-    """
+        Manually added rows have no model value, so the original value is empty; exports use the
+    post-review value."""
     raw: str | float | None = value.value
     if value.type == "number" and raw is not None:
-        with suppress(ValueError):  # 转不成数字就保持原样（规则校验会标出来）
+        # Keep the value unchanged if it is not numeric (rule validation flags it).
+        with suppress(ValueError):
             raw = float(raw)
     quote = (value.evidence or {}).get("quote")
     return ExtractedField(
@@ -124,7 +128,8 @@ def _field(value: ExtractedValue, name: str) -> ExtractedField:
 
 
 def _evidence(data: dict[str, Any] | None) -> Evidence | None:
-    """出处只存了合并后的框和最低置信度，还原成一个"文字块"，bbox 和 confidence 和原来一样。"""
+    """Evidence stores only the merged box and the lowest confidence; restore it as a single text
+    block with the same bbox and confidence."""
     if data is None:
         return None
     x0, y0, x1, y1 = data["bbox"]

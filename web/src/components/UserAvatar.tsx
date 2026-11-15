@@ -5,10 +5,10 @@ import { getAvatar } from '../api/auth'
 import { useAuth } from '../auth/useAuth'
 
 /**
- * 自己的头像。有头像就显示图片，没有就显示名字的第一个字。
+ * Own avatar: the image if set, otherwise the first character of the name.
  *
- * 图片要带登录 token 才能取，所以先用 fetch 取回来再变成 blob: 地址（和单据图片一样）。
- * 换了头像 avatar_at 会变，查询的 key 跟着变，就会重新取。
+ * The image requires the login token, so it is fetched first and turned into a blob: URL (like page images).
+ * Changing the avatar changes avatar_at and thus the query key, which triggers a refetch.
  */
 export function UserAvatar({ size = 32 }: { size?: number }) {
   const { me } = useAuth()

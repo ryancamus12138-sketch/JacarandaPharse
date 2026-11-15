@@ -1,4 +1,4 @@
-"""规则校验：数字之间对不上就报出来，缺字段就跳过。"""
+"""Rule validation: report mismatches between numbers; skip rules with missing fields."""
 
 from jacara.plugins.extractors import ExtractedField as F
 from jacara.plugins.validators import RuleValidator
@@ -15,7 +15,7 @@ BASE = [
 def test_all_rules_pass_on_a_correct_receipt():
     result = RuleValidator().validate([*BASE, F("change", "number", 1.0)])
     assert result.issues == ()
-    assert set(result.skipped) == {"items_sum", "item_line"}  # 没有商品明细
+    assert set(result.skipped) == {"items_sum", "item_line"}  # No line items.
 
 
 def test_ocr_mistake_in_change_is_caught():
@@ -48,6 +48,6 @@ def test_future_date_is_only_a_warning():
 
 
 def test_small_float_errors_are_tolerated():
-    # 10.0 - 9.1 在电脑里是 0.9000000000000004，不能因此报错
+    # 10.0 - 9.1 is 0.9000000000000004 in floating point and must not cause an error.
     fields = [F("cash", "number", 10.0), F("total", "number", 9.1), F("change", "number", 0.9)]
     assert RuleValidator().validate(fields).issues == ()

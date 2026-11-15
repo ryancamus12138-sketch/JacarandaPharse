@@ -1,0 +1,12 @@
+{
+  "name": "jacaranda-parse-desktop",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Tauri shell of the JacarandaParse desktop app.",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4"
+  }
+}

@@ -1,6 +1,6 @@
 import { CloseOutlined, DeleteOutlined, MessageOutlined, ScanOutlined } from '@ant-design/icons'
-import { Button, Flex, Segmented, Tag, Tooltip, Typography } from 'antd'
-import { useEffect, useRef } from 'react'
+import { Button, Flex, Segmented, Tag, Tooltip, Typography, theme } from 'antd'
+import { type ReactNode, useEffect, useRef } from 'react'
 import type { Extraction, FieldValue, Level } from '../../api/types'
 import {
   boxColor,
@@ -20,6 +20,8 @@ import { Candidates } from './Candidates'
 import { ReviewForm } from './ReviewForm'
 import { RevisionHistory } from './RevisionHistory'
 import type { Revise } from './useRevise'
+import { useTranslation } from 'react-i18next'
+import { msg } from '../../i18n'
 
 interface Props {
   extraction: Extraction
@@ -27,31 +29,37 @@ interface Props {
   hoveredId: string | null
   onSelect: (id: string) => void
   onHover: (id: string | null) => void
-  /** 能不能修改、确认（有"修改字段"权限）。 */
+  /** Whether fields can be edited and confirmed (requires the edit-fields permission). */
   canEdit: boolean
-  /** 点了 🗑：清空这个字段（父组件弹框问原因）。 */
+  /** 🗑 clicked: clear this field (the parent asks for a reason). */
   onClear: (value: FieldValue, label: string) => void
   onAddRow: (table: string, after: number | null) => void
   onDeleteRow: (table: string, row: TableRow) => void
   onRestoreRow: (table: string, row: TableRow) => void
   onConfirmMany: (ids: string[]) => void
-  /** 字段按单据顺序还是按状态排（extraction.values 已经按这个排好了）。 */
+  /**
+   * Whether fields are ordered by document order or by status (extraction.values is already sorted
+   * accordingly).
+   */
   sortMode: SortMode
   onSortMode: (mode: SortMode) => void
-  /** 这一页每个字段还没解决的备注几条（字段 ID → 条数）。 */
+  /** Unresolved comments per field on this page (field ID → count). */
   comments?: Record<string, number>
+  /** Shown at the right of the summary line (the field-name language choice). */
+  headerExtra?: ReactNode
 }
 
 const LEVEL_SUMMARY: [Level, string, string][] = [
-  ['red', 'red', '先看'],
-  ['yellow', 'gold', '看一眼'],
-  ['green', 'green', '没问题'],
-  ['grey', 'default', '原文没有'],
+  ['red', 'red', msg('优先核对')],
+  ['yellow', 'gold', msg('需核对')],
+  ['green', 'green', msg('无异常')],
+  ['grey', 'default', msg('原文缺失')],
 ]
 
 /**
- * 右边下半部分：规则校验结果、字段列表、商品明细表。点一个 = 选中它（详情显示在右边最上面）。
- * 选中的字段会自动滚到看得见的地方（键盘上下切换时也是）。
+ * Lower right: rule results, field list, line items. Clicking selects an item (its details appear at the top
+ * right).
+ * The selected field scrolls into view automatically (also when moving with the arrow keys).
  */
 export function FieldPanel({
   extraction,
@@ -68,14 +76,18 @@ export function FieldPanel({
   sortMode,
   onSortMode,
   comments = {},
+  headerExtra,
 }: Props) {
+  const { t } = useTranslation()
+  const { token } = theme.useToken()
   const { values } = extraction
-  // 规则按审核之后的值重新检查过（删掉的行不算）；老接口没有时用抽取时的结果
+  // Rules re-evaluated on post-review values (deleted rows excluded); older APIs without them fall back to
+  // extraction-time results.
   const checks = extraction.current_checks ?? extraction.checks
   const plain = values.filter((v) => splitCell(v.name) === null)
   const plainPending = plain.filter((v) => v.pending_review).length
-  // 颜色统计（字段 + 表格的格子，删掉的行不算）
-  // 人工新加、还没填的格子不算（它们是"待填写"，不是"原文没有"）
+  // Color counts (fields + table cells, deleted rows excluded).
+  // Manually added, unfilled cells are excluded (they are "to be filled", not "absent from the source").
   const live = values.filter((v) => !v.deleted && !(v.origin === 'manual' && v.current_value === null))
   const layouts = tableLayouts(values)
   const box = useRef<HTMLDivElement>(null)
@@ -91,32 +103,52 @@ export function FieldPanel({
   return (
     <Flex vertical gap={12} ref={box}>
       <IssueToggle checks={checks} />
+      {/*
+       * Summary, sort and language stay at the top of the scrolling list, so they are never half hidden while
+       * scrolling through the fields.
+       */}
+      <Flex
+        vertical
+        gap={8}
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 2,
+          background: token.colorBgContainer,
+          paddingBottom: 8,
+          borderBottom: `1px solid ${token.colorSplit}`,
+        }}
+      >
       <Flex justify="space-between" align="center" gap={8} wrap>
         <Typography.Text type="secondary">
-          {plain.length} 个字段
-          {plainPending > 0 ? `，${plainPending} 个等你确认` : '，都不用确认'}
+          {t('{{length}} 个字段', { length: plain.length })}
+          {plainPending > 0 ? t('，{{plainPending}} 个待确认', { plainPending }) : t('，无需确认')}
         </Typography.Text>
-        {/* 换排序不用收起详情：点这里不算"点了空白处" */}
+        {/* Changing the sort keeps the details open: this click does not count as a click on empty space. */}
         <Segmented<SortMode>
           data-keep-selection
           size="small"
           value={sortMode}
           onChange={onSortMode}
           options={[
-            { label: '按状态', value: 'status' },
-            { label: '按单据顺序', value: 'document' },
+            { label: t('按状态'), value: 'status' },
+            { label: t('按单据顺序'), value: 'document' },
           ]}
         />
       </Flex>
-      <Flex gap={4} wrap>
-        {LEVEL_SUMMARY.map(([level, color, text]) => {
-          const n = live.filter((v) => levelOf(v) === level).length
-          return n > 0 ? (
-            <Tag key={level} color={color} bordered={false}>
-              {text} {n}
-            </Tag>
-          ) : null
-        })}
+      <Flex justify="space-between" align="center" gap={8} wrap>
+        <Flex gap={4} wrap>
+          {LEVEL_SUMMARY.map(([level, color, text]) => {
+            const n = live.filter((v) => levelOf(v) === level).length
+            return n > 0 ? (
+              <Tag key={level} color={color} bordered={false}>
+                {t(text)} {n}
+              </Tag>
+            ) : null
+          })}
+        </Flex>
+        {headerExtra}
+      </Flex>
       </Flex>
       <Flex vertical gap={4}>
         {plain.map((v) => (
@@ -151,25 +183,28 @@ export function FieldPanel({
         />
       ))}
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        模型 {extraction.model} · 提示词 {extraction.prompt_version} · 文字来源{' '}
-        {extraction.source === 'pdf-text' ? 'PDF 文字层' : 'OCR'}
+        {t('模型 {{model}} · 提示词 {{prompt_version}} · 文字来源', { model: extraction.model, prompt_version: extraction.prompt_version })}{' '}
+        {extraction.source === 'pdf-text' ? t('PDF 文字层') : 'OCR'}
       </Typography.Text>
     </Flex>
   )
 }
 
 /**
- * 一个字段的状态标签。两个维度（ADR 0028）：证据（原文里找到没有）、校验（规则过没过）；
- * 再加审核的结果：已确认、已修改、已从原文选取、已删除。
+ * Status tags of a field. Two dimensions: evidence (found in the source) and validation (rules passed), plus
+ * the review result: confirmed, edited, selected from source text, deleted.
  */
 function StatusTags({ value: v, full = false }: { value: FieldValue; full?: boolean }) {
+  const { t } = useTranslation()
   const edited = v.reviewed && v.current_value !== v.value && !v.deleted
-  // 出处变了 = 从原文选取或框选过（只改值的话出处不变）
+  // Changed evidence means source text or region selection was used (editing only the value keeps the
+  // evidence).
   const picked = v.reviewed && JSON.stringify(v.current_evidence) !== JSON.stringify(v.evidence)
   if (v.deleted) {
-    return <Tag>已删除</Tag>
+    return <Tag>{t('已删除')}</Tag>
   }
-  // 证据说的是模型原值；人审核过之后就不再显示，免得误会（详情里还看得到）
+  // Evidence describes the model value; hidden after review to avoid confusion (still visible in the
+  // details).
   const evidence =
     full || !v.reviewed ? (
       v.evidence_state === 'missing' ? (
@@ -191,38 +226,38 @@ function StatusTags({ value: v, full = false }: { value: FieldValue; full?: bool
   return (
     <>
       {v.origin === 'computed' && (
-        <Tooltip title="不是从单据上找的，是按模板的公式由别的字段算出来的；那些字段改了会跟着重算">
-          <Tag color="cyan">按公式算</Tag>
+        <Tooltip title={t('此值并非从单据中抽取，而是按模板公式由其他字段计算得出；相关字段修改后将自动重新计算')}>
+          <Tag color="cyan">{t('公式计算')}</Tag>
         </Tooltip>
       )}
       {v.status === 'seen' && !v.reviewed && (
-        <Tooltip title="OCR 认错了或没认出来（手写、印章、模糊），这个值是模型看着原图读的，请对着原图核对">
-          <Tag color="orange">看原图读的</Tag>
+        <Tooltip title={t('OCR 识别错误或未识别（手写、印章、模糊等），此值由模型直接读取原图得出，请对照原图核对')}>
+          <Tag color="orange">{t('读取自原图')}</Tag>
         </Tooltip>
       )}
       {evidence}
       {check}
-      {v.pending_review && <Tag color="gold">待确认</Tag>}
+      {v.pending_review && <Tag color="gold">{t('待确认')}</Tag>}
       {v.suggestion && (
         <Tooltip
           title={
             v.suggestion.action === 'confirm'
-              ? `第 ${v.suggestion.run} 轮人确认过同样的值`
-              : `第 ${v.suggestion.run} 轮模型抽出同样的值，被人改成了「${v.suggestion.value ?? '（空）'}」`
+              ? t('第 {{run}} 轮已人工确认相同的值', { run: v.suggestion.run })
+              : t('第 {{run}} 轮模型抽取出相同的值，经人工修改为「{{value}}」', { run: v.suggestion.run, value: v.suggestion.value ?? t('（空）') })
           }
         >
           <Tag color="purple">
-            {v.suggestion.action === 'confirm' ? '上次确认过' : `上次改成 ${v.suggestion.value ?? '空'}`}
+            {v.suggestion.action === 'confirm' ? t('上一轮已确认') : t('上一轮修改为 {{value}}', { value: v.suggestion.value ?? t('空') })}
           </Tag>
         </Tooltip>
       )}
-      {v.reviewed && !edited && <Tag color="green">已确认</Tag>}
-      {edited && <Tag color="blue">{picked ? '已从原文选取' : '已修改'}</Tag>}
+      {v.reviewed && !edited && <Tag color="green">{t('已确认')}</Tag>}
+      {edited && <Tag color="blue">{picked ? t('已从原文选取') : t('已修改')}</Tag>}
     </>
   )
 }
 
-/** 列表里一行的底色：红的、黄的淡淡地标出来，其他白色。 */
+/** Row background: red and yellow lightly tinted, others white. */
 const TINT: Record<Level, string> = {
   red: '#fff1f0',
   yellow: '#fffbe6',
@@ -231,12 +266,13 @@ const TINT: Record<Level, string> = {
 }
 
 function ShownValue({ value: v }: { value: FieldValue }) {
+  const { t } = useTranslation()
   if (v.type === 'date_range' && v.current_value && v.range) {
-    // 日期范围（ADR 0039、0040）：上面开始 ~ 结束，下面天数和原文的写法
+    // Date range: start ~ end on top, number of days and source notation below.
     const r = v.range
     const quote = (v.current_evidence ?? v.evidence)?.quote
     const main = r.start && r.end ? `${r.start} ~ ${r.end}` : v.current_value
-    const extra = [r.days ? `${r.days} 天` : null, quote && quote !== main ? `原文：${quote}` : null]
+    const extra = [r.days ? t('{{days}} 天', { days: r.days }) : null, quote && quote !== main ? t('原文：{{quote}}', { quote }) : null]
       .filter(Boolean)
       .join(' · ')
     return (
@@ -262,12 +298,12 @@ function ShownValue({ value: v }: { value: FieldValue }) {
       {shownValue(v) ?? (
         <Typography.Text type="secondary">
           {v.origin === 'manual'
-            ? '（待填写）'
+            ? t('（待填写）')
             : v.origin === 'computed'
-              ? '（算不出来）'
+              ? t('（无法计算）')
             : v.rejected_value
-              ? `（没有填：模型给的「${v.rejected_value}」原文里对不上）`
-              : '（原文没有）'}
+              ? t('（未填写：模型输出的「{{rejected_value}}」与原文不符）', { rejected_value: v.rejected_value })
+              : t('（原文缺失）')}
         </Typography.Text>
       )}
     </Typography.Text>
@@ -275,13 +311,14 @@ function ShownValue({ value: v }: { value: FieldValue }) {
 }
 
 function ClearButton({ onClear }: { onClear: () => void }) {
+  const { t } = useTranslation()
   return (
-    <Tooltip title="清空：原文里没有这个值（Delete 键）">
+    <Tooltip title={t('清空：原文中没有此值（Delete 键）')}>
       <Button
         size="small"
         type="text"
         icon={<DeleteOutlined />}
-        aria-label="清空"
+        aria-label={t('清空')}
         onClick={(e) => {
           e.stopPropagation()
           onClear()
@@ -291,7 +328,10 @@ function ClearButton({ onClear }: { onClear: () => void }) {
   )
 }
 
-/** 列表里的一行（普通字段）。只显示名字、值和状态；详情和审核表单在右边最上面。 */
+/**
+ * A row in the list (regular field): name, value and status only; details and the review form appear at the
+ * top right.
+ */
 function FieldRow({
   value: v,
   label,
@@ -311,9 +351,10 @@ function FieldRow({
   onHover: (on: boolean) => void
   canEdit: boolean
   onClear: () => void
-  /** 这个字段还没解决的备注几条。 */
+  /** Unresolved comments on this field. */
   comments: number
 }) {
+  const { t } = useTranslation()
   return (
     <div
       data-value-id={v.id}
@@ -340,8 +381,8 @@ function FieldRow({
         >
           {label}
           {comments > 0 && (
-            <Tooltip title={`${comments} 条备注没解决，点上面的"备注"看`}>
-              <MessageOutlined style={{ marginInlineStart: 4, color: '#7c5cbf' }} aria-label="有备注" />
+            <Tooltip title={t('{{comments}} 条备注未解决，点击上方“备注”查看', { comments })}>
+              <MessageOutlined style={{ marginInlineStart: 4, color: '#7c5cbf' }} aria-label={t('有备注')} />
             </Tooltip>
           )}
         </Typography.Text>
@@ -361,8 +402,8 @@ function FieldRow({
 }
 
 /**
- * 选中字段的详情：出处、调整框、审核表单、修改历史。固定在右边最上面，
- * 商品明细再长也不用往下翻。
+ * Details of the selected field: evidence, box adjustment, review form, history. Pinned at the top right so
+ * long line-item tables need no scrolling.
  */
 export function FieldDetail({
   value: v,
@@ -375,7 +416,7 @@ export function FieldDetail({
   onClose,
   documentId,
 }: {
-  /** 文档 ID：候选值旁边的局部图要用。 */
+  /** Document ID, needed for the zoomed images next to candidates. */
   documentId: string
   value: FieldValue
   label: string
@@ -384,9 +425,10 @@ export function FieldDetail({
   onReviewed: () => void
   onClear: () => void
   onAdjustBox: () => void
-  /** 收起详情（取消选中）。在空白处点一下也一样。 */
+  /** Close the details (deselect). Clicking empty space does the same. */
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const ev = v.current_evidence ?? v.evidence
   const edited = v.reviewed && v.current_value !== v.value && !v.deleted
   const indent = { margin: '4px 0 0 0', fontSize: 12 }
@@ -407,12 +449,15 @@ export function FieldDetail({
         <ShownValue value={v} />
         <Flex gap={4} justify="end" style={{ flexShrink: 0 }}>
           {canEdit && !v.deleted && v.current_value !== null && <ClearButton onClear={onClear} />}
-          <Tooltip title="收起（Esc，或在空白处点一下）">
+          <Tooltip title={t('收起（Esc 或点击空白处）')}>
             <Button size="small" type="text" icon={<CloseOutlined />} onClick={onClose} />
           </Tooltip>
         </Flex>
       </Flex>
-      {/* 两个维度单独一行：证据（原文里找到没有）× 校验（规则过没过），再加审核结果 */}
+      {/*
+       * The two dimensions on their own line: evidence (found in the source) × validation (rules passed),
+       * plus the review result.
+       */}
       <Flex gap={4} wrap style={{ marginTop: 6 }}>
         <StatusTags value={v} full />
       </Flex>
@@ -423,24 +468,23 @@ export function FieldDetail({
       )}
       {ev && (
         <Typography.Paragraph type="secondary" style={indent}>
-          出处：
+          {t('出处：')}
           {ev.blocks?.length
-            ? `文字块 ${ev.blocks.map((n) => `⟨${n}⟩`).join('')}`
+            ? t('文字块 {{join}}', { join: ev.blocks.map((n) => `⟨${n}⟩`).join('') })
             : ev.row
-              ? `第 ${ev.row} 行`
+              ? t('第 {{row}} 行', { row: ev.row })
               : ''}
-          「{ev.row_text}」 · OCR 置信度{' '}
-          {Math.round(ev.confidence * 100)}%
+          {t('「{{row_text}}」 · OCR 置信度 {{round}}%', { row_text: ev.row_text, round: Math.round(ev.confidence * 100) })}
         </Typography.Paragraph>
       )}
       {edited && (
         <Typography.Paragraph type="secondary" style={indent}>
-          模型原值：{v.value ?? '（原文没有）'}
+          {t('模型原值：')}{v.value ?? t('（原文缺失）')}
         </Typography.Paragraph>
       )}
       {canEdit && !v.deleted && (
         <Button size="small" icon={<ScanOutlined />} onClick={onAdjustBox} style={{ marginTop: 4 }}>
-          {ev ? '调整框 / 重新识别' : '在原图上框出来'}
+          {ev ? t('调整框 / 重新识别') : t('在原图上框选')}
         </Button>
       )}
       <Candidates
@@ -450,7 +494,7 @@ export function FieldDetail({
         canEdit={canEdit && !v.deleted}
         onDone={onReviewed}
       />
-      {/* key 带上当前值：改完之后表单用新值重新开始 */}
+      {/* key includes the current value, so the form restarts with the new value after a change. */}
       {canEdit && !v.deleted && (
         <ReviewForm key={`${v.id}:${v.current_value}`} value={v} revise={revise} onDone={onReviewed} />
       )}

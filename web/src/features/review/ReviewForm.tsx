@@ -4,12 +4,14 @@ import { useRef } from 'react'
 import type { FieldValue } from '../../api/types'
 import { shownValue } from './fields'
 import type { Revise } from './useRevise'
+import { useTranslation } from 'react-i18next'
+import { t } from '../../i18n'
 
 const PLACEHOLDER: Record<FieldValue['type'], string> = {
   string: '',
-  number: '数字，比如 1.00',
-  date: '日期，比如 2018-12-25',
-  date_range: '原文，或者 2014-07-01 ~ 2014-07-31',
+  get number() { return t('数字，例如 1.00') },
+  get date() { return t('日期，例如 2018-12-25') },
+  get date_range() { return t('原文，或 2014-07-01 ~ 2014-07-31') },
 }
 
 interface ReviewFormValues {
@@ -21,31 +23,34 @@ interface ReviewFormValues {
 interface Props {
   value: FieldValue
   revise: Revise
-  /** 审核成功之后（父组件用来跳到下一个待确认的字段）。 */
+  /** After a successful review (the parent uses it to jump to the next field awaiting confirmation). */
   onDone: () => void
 }
 
-/** "采用原文值"时自动填的原因：说清楚原文是怎么写的。 */
+/** Reason filled in automatically for "use source value": states how the source text reads. */
 function adoptReason(v: FieldValue): string {
   if (v.type === 'number') {
-    return Number(v.source_value) < 0 ? '采用原文值：原文是负数（折扣或退款）' : '采用原文值：原文是正数'
+    return Number(v.source_value) < 0 ? t('采用原文值：原文为负数（折扣或退款）') : t('采用原文值：原文为正数')
   }
-  return '采用原文值：按原文的写法'
+  return t('采用原文值：按原文写法')
 }
 
 /**
- * 选中一个字段后展开：要么确认"值是对的"，要么填新值和原因保存修改。
- * 有"原文值"（模型写的和原文不完全一样）时，多一个"采用原文值"：把原文的写法和原因填好，
- * 看一眼再点保存（原文那几块可能多带了别的字，可以先删掉）。
+ * Expanded for the selected field: either confirm that the value is correct, or enter a new value and reason
+ * and save.
+ * When a source value exists (the model's value differs from the source text), "use source value" fills in
+ * the source notation and reason for review before saving (the source blocks may contain extra text that can
+ * be removed first).
  */
 export function ReviewForm({ value: v, revise, onDone }: Props) {
+  const { t } = useTranslation()
   const [form] = Form.useForm<ReviewFormValues>()
   const missing = Form.useWatch('missing', form)
   const busy = revise.isPending && revise.variables?.valueId === v.id
 
   const range = useRef<[string, string]>([v.range?.start ?? '', v.range?.end ?? ''])
 
-  /** 改了开始或结束日期：值写成统一格式（两个都有才写）。 */
+  /** Start or end date changed: write the value in the uniform format (only when both are present). */
   function setRange(side: 0 | 1, day: string) {
     range.current[side] = day
     const [start, end] = range.current
@@ -72,7 +77,7 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
   }
 
   return (
-    // 点表单里面时不要再触发外面那一行的"选中"
+    // Clicks inside the form must not trigger selection of the row outside.
     <div onClick={(e) => e.stopPropagation()} style={{ margin: '8px 0 0 0' }}>
       <Form<ReviewFormValues>
         form={form}
@@ -80,7 +85,7 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
         layout="vertical"
         initialValues={{
           value: shownValue(v) ?? '',
-          // 人工新加的格子本来就是空的，等着填，不算"原文里没有"
+          // Manually added cells start empty awaiting input; they are not "absent from the source".
           missing: v.current_value === null && v.origin !== 'manual',
           reason: '',
         }}
@@ -88,7 +93,8 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
         requiredMark={false}
       >
         {v.rejected_value && v.current_value === null ? (
-          // 模型给了值，但原文里核对不上，按规则没有填（ADR 0034）：核对原图后可以采用
+          // The model gave a value that could not be verified in the source and was not filled: it can be
+          // accepted after checking the image.
           <Flex align="center" gap={6} wrap style={{ marginBottom: 8 }}>
             <Button
               size="small"
@@ -97,14 +103,14 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
                 form.setFieldsValue({
                   value: v.rejected_value ?? '',
                   missing: false,
-                  reason: '核对原图后采用模型给的值',
+                  reason: t('核对原图后采用模型输出值'),
                 })
               }
             >
-              采用模型给的值
+              {t('采用模型输出值')}
             </Button>
             <span style={{ fontSize: 12, color: '#666', overflowWrap: 'anywhere' }}>
-              模型给的：{v.rejected_value}
+              {t('模型输出：{{rejected_value}}', { rejected_value: v.rejected_value })}
             </span>
           </Flex>
         ) : null}
@@ -117,17 +123,17 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
                 form.setFieldsValue({ value: v.source_value ?? '', missing: false, reason: adoptReason(v) })
               }
             >
-              采用原文值
+              {t('采用原文值')}
             </Button>
             <span style={{ fontSize: 12, color: '#666', overflowWrap: 'anywhere' }}>
-              原文：{v.source_value}
+              {t('原文：{{source_value}}', { source_value: v.source_value })}
             </span>
           </Flex>
         ) : null}
         {v.type === 'date_range' && (
-          // 日期范围（ADR 0039）：直接改开始、结束日期，值写成 2014-07-01 ~ 2014-07-31
+          // Date range: edit start and end dates directly; the value is written as 2014-07-01 ~ 2014-07-31.
           <Flex gap={6} align="center" wrap style={{ marginBottom: 8 }}>
-            <span style={{ fontSize: 12 }}>开始</span>
+            <span style={{ fontSize: 12 }}>{t('开始')}</span>
             <Input
               type="date"
               size="small"
@@ -136,7 +142,7 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
               defaultValue={v.range?.start ?? ''}
               onChange={(e) => setRange(0, e.target.value)}
             />
-            <span style={{ fontSize: 12 }}>结束</span>
+            <span style={{ fontSize: 12 }}>{t('结束')}</span>
             <Input
               type="date"
               size="small"
@@ -149,25 +155,25 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
         )}
         <Form.Item
           name="value"
-          label={v.type === 'date_range' ? '正确的值（原文写法也行，系统会重新拆开）' : '正确的值'}
-          rules={[{ required: !missing, whitespace: true, message: '请输入正确的值' }]}
+          label={v.type === 'date_range' ? t('正确的值（可按原文写法填写，系统将重新拆分）') : t('正确的值')}
+          rules={[{ required: !missing, whitespace: true, message: t('请输入正确的值') }]}
           style={{ marginBottom: 4 }}
         >
           <Input placeholder={PLACEHOLDER[v.type]} disabled={missing} autoComplete="off" />
         </Form.Item>
         <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>
-          也可以按住 Alt（Option），在左边原图上点文字直接填入
+          {t('也可按住 Alt（Option）并点击左侧原图上的文字直接填入')}
         </div>
         <Form.Item name="missing" valuePropName="checked" style={{ marginBottom: 8 }}>
-          <Checkbox>原文里没有这个字段</Checkbox>
+          <Checkbox>{t('原文中没有此字段')}</Checkbox>
         </Form.Item>
         <Form.Item
           name="reason"
-          label="原因（修改时必填）"
-          rules={[{ required: true, whitespace: true, message: '修改时请写明原因' }]}
+          label={t('原因（修改时必填）')}
+          rules={[{ required: true, whitespace: true, message: t('修改时请填写原因') }]}
           style={{ marginBottom: 8 }}
         >
-          <Input placeholder="比如：OCR 把 1.00 读成了 100" maxLength={500} autoComplete="off" />
+          <Input placeholder={t('例如：OCR 将 1.00 识别为 100')} maxLength={500} autoComplete="off" />
         </Form.Item>
         <Flex gap={8}>
           <Button
@@ -176,14 +182,14 @@ export function ReviewForm({ value: v, revise, onDone }: Props) {
             onClick={confirm}
             loading={busy && revise.variables?.change.action === 'confirm'}
           >
-            值是对的
+            {t('值正确')}
           </Button>
           <Button
             htmlType="submit"
             icon={<SaveOutlined />}
             loading={busy && revise.variables?.change.action === 'edit'}
           >
-            保存修改
+            {t('保存修改')}
           </Button>
         </Flex>
       </Form>

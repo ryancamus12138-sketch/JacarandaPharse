@@ -1,9 +1,11 @@
-"""数据库：连接、会话、所有表共用的基类和字段。
+"""Database: engine, sessions, and the base class and columns shared by all tables.
 
-- 每张表都继承 Base，并带上 OwnedMixin（归属）和 TimestampMixin（创建时间）。
-- 业务代码用 session_scope() 拿一个会话：正常结束自动提交，出错自动回滚。
-- 表结构的变化用 Alembic 管理（backend/migrations），不要手动改数据库。
-"""
+- Every table inherits Base together with OwnedMixin (ownership) and TimestampMixin (creation
+  time).
+- Application code obtains a session with session_scope(): it commits on normal exit and rolls
+  back on error.
+- Schema changes are managed with Alembic (jacara/migrations); do not modify the database by
+  hand."""
 
 from __future__ import annotations
 
@@ -12,15 +14,17 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, ClassVar
 
-from sqlalchemy import JSON, DateTime, Engine, MetaData, Uuid, create_engine, func
+from sqlalchemy import JSON, DateTime, Engine, MetaData, Uuid, create_engine, event, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from jacara.core.config import get_settings
 
-# 约束和索引的命名规则：名字固定，Alembic 以后改表时才能准确找到它们。
+# Naming convention for constraints and indexes: stable names let Alembic locate them in later
+# migrations.
 NAMING_CONVENTION = {
     "ix": "ix_%(column_0_label)s",
     "uq": "uq_%(table_name)s_%(column_0_name)s",
@@ -30,7 +34,7 @@ NAMING_CONVENTION = {
 }
 
 JsonColumn = JSON().with_variant(JSONB(), "postgresql")
-"""JSON 字段：PostgreSQL 上用 JSONB（能建索引、能查询），测试用的 SQLite 上用普通 JSON。"""
+"""JSON column: JSONB on PostgreSQL (indexable and queryable), plain JSON on SQLite in tests."""
 
 
 class Base(DeclarativeBase):
@@ -40,25 +44,67 @@ class Base(DeclarativeBase):
 
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    """由数据库填写，不用代码里的时间：多台机器时间不一致也不会乱。"""
+    """Set by the database rather than application code, so clock skew between machines has no
+    effect."""
 
 
 class OwnedMixin:
-    """数据归属（项目规则 6）：每条业务数据都属于一个用户和一个团队。"""
+    """Data ownership: every business record belongs to a user and a team."""
 
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     team_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
 
 
 def new_id() -> uuid.UUID:
-    """主键用 UUID：不会重复，也不会像 1、2、3 那样泄露"一共有多少条"。"""
+    """UUID primary keys: globally unique and, unlike 1, 2, 3, do not reveal the number of rows."""
     return uuid.uuid4()
+
+
+SQLITE_TIMEOUT = 30.0
+"""Seconds a SQLite connection waits for another process's write lock before failing (the
+`timeout` argument of sqlite3.connect, 5 seconds by default). The API and the two pipeline
+workers write to the same file; their writes are short, but a 5-second wait can be exceeded while
+a worker saves a large document."""
+
+
+def sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:
+    """Settings applied to every new SQLite connection.
+
+    - journal_mode=WAL: readers and the writer do not block each other (SQLite documentation,
+      "Write-Ahead Logging"). WAL does not work on network file systems, so the data directory must
+      be on a local disk.
+    - foreign_keys=ON: SQLite does not enforce foreign keys unless enabled per connection
+      (SQLAlchemy documentation, "Foreign Key Support"); PostgreSQL always enforces them, so both
+      databases behave the same."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
+def create_db_engine(url: str) -> Engine:
+    """Engine for a PostgreSQL or SQLite URL. For SQLite the folder is created and every
+    connection gets sqlite_pragmas."""
+    if not url.startswith("sqlite"):
+        return create_engine(url, pool_pre_ping=True)
+    from sqlalchemy.engine import make_url
+
+    database = make_url(url).database
+    if database and database != ":memory:":
+        Path(database).parent.mkdir(parents=True, exist_ok=True)
+    # check_same_thread=False: pooled connections are handed to FastAPI's worker threads; each
+    # session still uses its connection from one thread at a time.
+    engine = create_engine(
+        url, connect_args={"timeout": SQLITE_TIMEOUT, "check_same_thread": False}
+    )
+    event.listen(engine, "connect", sqlite_pragmas)
+    return engine
 
 
 @lru_cache
 def get_engine() -> Engine:
-    """数据库连接池。整个程序共用一个。"""
-    return create_engine(get_settings().database_url, pool_pre_ping=True)
+    """Database connection pool, shared by the whole process."""
+    return create_db_engine(get_settings().database_url)
 
 
 @lru_cache
@@ -67,13 +113,15 @@ def _session_factory() -> sessionmaker[Session]:
 
 
 def get_session_factory() -> sessionmaker[Session]:
-    """会话工厂：要自己决定提交还是回滚时用（例如只读的回放，ADR 0053）。"""
+    """Session factory, for callers that decide themselves whether to commit or roll back (for
+    example read-only replay)."""
     return _session_factory()
 
 
 @contextmanager
 def session_scope(factory: sessionmaker[Session] | None = None) -> Iterator[Session]:
-    """拿一个数据库会话：with 块正常结束就提交，中途出错就全部回滚。"""
+    """Provide a database session: commits when the with block exits normally and rolls back
+    everything on error."""
     session = (factory or _session_factory())()
     try:
         yield session

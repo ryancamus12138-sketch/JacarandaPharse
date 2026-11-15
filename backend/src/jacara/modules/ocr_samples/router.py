@@ -1,4 +1,4 @@
-"""OCR 样本接口：/api/v1/ocr-samples（ADR 0050）。"""
+"""OCR samples API: /api/v1/ocr-samples."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from jacara.core.deps import get_owner, get_session, get_storage
+from jacara.core.i18n import render
 from jacara.core.owner import Owner
 from jacara.core.storage import ObjectStorage
 from jacara.modules.documents.router import attachment
@@ -39,6 +40,7 @@ from jacara.modules.ocr_samples.schemas import (
     SourceFormat,
     SplitIn,
     Status,
+    TemplateOption,
     UnitOut,
     VerifyIn,
     VerifyOut,
@@ -66,7 +68,9 @@ def get_service(
 Service = Annotated[OcrSampleService, Depends(get_service)]
 Categories = Annotated[list[Category] | None, Query(description="只看这几种分类")]
 Format = Annotated[SourceFormat | None, Query(description="pdf 或 image")]
-TemplateName = Annotated[str | None, Query(max_length=200, description="只看这个模板")]
+TemplateName = Annotated[
+    str | None, Query(max_length=200, description="只看这个模板（/ocr-samples/templates 给的 key）")
+]
 Kind = Annotated[ExportKind, Query(description="train_val：训练和验证；test：锁定测试集")]
 
 
@@ -82,7 +86,7 @@ DetService = Annotated[DetPageService, Depends(get_det_service)]
 
 
 def _http_error(err: SampleError | DetError) -> HTTPException:
-    return HTTPException(status_code=_STATUS.get(err.code, 400), detail=err.message)
+    return HTTPException(status_code=_STATUS.get(err.code, 400), detail=render(err.message))
 
 
 @router.get("/settings", summary="自动收集开没开")
@@ -92,7 +96,8 @@ def get_settings(service: Service) -> SampleSettings:
 
 @router.put("/settings", summary="打开或关掉自动收集")
 def put_settings(change: SampleSettingsIn, service: Service) -> SampleSettings:
-    """只有管理员能改。打开后，审核时"图中原文"保存成 OCR 样本。"""
+    """Administrators only. When enabled, transcriptions entered during review are saved as OCR
+    samples."""
     return service.set_settings(change.collect)
 
 
@@ -110,7 +115,7 @@ def list_samples(
 
 
 @router.get("/templates", summary="有样本的模板")
-def sample_templates(service: Service) -> list[str]:
+def sample_templates(service: Service) -> list[TemplateOption]:
     return service.templates()
 
 
@@ -122,11 +127,12 @@ def export_preview(
     template: TemplateName = None,
     kind: Kind = "train_val",
 ) -> ExportPreview:
-    """会导出几条、训练和验证各几组几行、验证集够不够、不导出的几条和原因。"""
+    """Number of entries to export, groups and lines in training and validation, whether validation
+    is sufficient, and excluded entries with reasons."""
     return service.preview(category, source_format, template, kind)
 
 
-@router.post("/export/dataset", summary="导出并存进数据集库", status_code=201)
+@router.post("/export/dataset", summary="导出并保存为数据集", status_code=201)
 def export_to_dataset(
     data: DatasetIn,
     service: Service,
@@ -135,7 +141,8 @@ def export_to_dataset(
     template: TemplateName = None,
     kind: Kind = "train_val",
 ) -> DatasetOut:
-    """和导出 ZIP 一样（照常记导出记录），存进数据集库（ADR 0059），给 OCR 模型评测用。"""
+    """Same as the ZIP export (an export record is written as usual), but stored in the dataset
+    library for OCR model evaluation."""
     try:
         return service.export_to_dataset(
             data.name, data.description, category, source_format, template, kind
@@ -144,7 +151,7 @@ def export_to_dataset(
         raise _http_error(err) from err
 
 
-# ---- 检测样本（ADR 0061） ----
+# ---- Detection samples ----
 
 
 @router.get("/det-pages", summary="能做检测样本的页")
@@ -154,7 +161,8 @@ def det_pages(
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> DetPageList:
-    """审核完成的单据里 OCR 认的页（有敏感字段的不算），和每页做到哪了。"""
+    """OCR-read pages of reviewed documents (excluding pages with sensitive fields) and the progress
+    of each page."""
     return service.candidates(status_, offset, limit)
 
 
@@ -165,8 +173,7 @@ def det_export_preview(service: DetService, kind: Kind = "train_val") -> DetExpo
 
 @router.get("/det-pages/export", summary="导出检测样本 ZIP", response_class=Response)
 def det_export(service: DetService, kind: Kind = "train_val") -> Response:
-    """images/、det_gt_train.txt、det_gt_val.txt（或 det_gt_test.txt）、
-    manifest.jsonl、README.md。"""
+    """images/, det_gt_train.txt, det_gt_val.txt (or det_gt_test.txt), manifest.jsonl, README.md."""
     try:
         filename, data, _ = service.export(kind)
     except DetError as err:
@@ -174,7 +181,7 @@ def det_export(service: DetService, kind: Kind = "train_val") -> Response:
     return attachment(filename, data, "application/zip")
 
 
-@router.post("/det-pages/export/dataset", summary="导出检测样本并存进数据集库", status_code=201)
+@router.post("/det-pages/export/dataset", summary="导出检测样本并保存为数据集", status_code=201)
 def det_export_to_dataset(
     data: DatasetIn, service: DetService, kind: Kind = "train_val"
 ) -> DatasetOut:
@@ -193,13 +200,16 @@ def det_export_to_dataset(
     except DetError as err:
         raise _http_error(err) from err
     except HubError as err:
-        raise HTTPException(status_code=_STATUS.get(err.code, 400), detail=err.message) from err
+        raise HTTPException(
+            status_code=_STATUS.get(err.code, 400), detail=render(err.message)
+        ) from err
     return hub.dataset_out(dataset)
 
 
 @router.get("/det-pages/{document_id}/{page}", summary="打开一页检测样本")
 def det_page(document_id: uuid.UUID, page: int, service: DetService) -> DetPageOut:
-    """存过的照存的；没存过的给预标注（OCR 的框 + 审核时改对的原文 + 框选的漏认）。"""
+    """Saved boxes if any; otherwise pre-annotation (OCR boxes + transcriptions corrected during
+    review + missed-text regions)."""
     try:
         return service.get(document_id, page)
     except DetError as err:
@@ -224,8 +234,9 @@ def set_det_page(
     data: DetPageIn,
     service: DetService,
 ) -> DetPageOut:
-    """confirm：确认（PPOCRLabel 的确认，只有确认过的导出）；exclude：不用这一页；
-    reopen：改回没确认。都会同时保存带来的框。"""
+    """confirm: confirm the page (PPOCRLabel confirmation; only confirmed pages are exported);
+    exclude: do not use this page; reopen: back to unconfirmed. The submitted boxes are saved in
+    all cases."""
     target = {"confirm": "confirmed", "exclude": "excluded", "reopen": "draft"}[action]
     try:
         return service.save(document_id, page, data, target)
@@ -241,8 +252,8 @@ def export_samples(
     template: TemplateName = None,
     kind: Kind = "train_val",
 ) -> Response:
-    """crop_img/、rec_gt_train.txt、rec_gt_val.txt、rec_gt.txt（或 rec_gt_test.txt）、
-    manifest.jsonl、README.md。每次导出记一条导出记录（ADR 0052）。"""
+    """crop_img/, rec_gt_train.txt, rec_gt_val.txt, rec_gt.txt (or rec_gt_test.txt), manifest.jsonl,
+    README.md. Every export writes an export record."""
     try:
         filename, data = service.export(category, source_format, template, kind)
     except SampleError as err:
@@ -252,19 +263,21 @@ def export_samples(
 
 @router.get("/exports", summary="导出记录")
 def export_records(service: Service) -> list[ExportRecordOut]:
-    """每次导出了几组几行；导出以后发现的问题（合并、拆开时隔离的组）记在 affected 里。"""
+    """Groups and lines of each export; problems found later (groups quarantined by merging or
+    splitting) are listed in affected."""
     return service.export_records()
 
 
 @router.get("/groups", summary="单据分组")
 def list_groups(service: Service) -> GroupList:
-    """每一组有哪几张业务单据、几条样本、分在哪边（ADR 0052）。"""
+    """Business documents, sample counts and split of each group."""
     return service.group_list()
 
 
 @router.put("/groups/{group_id}/split", summary="改一组的划分")
 def change_split(group_id: uuid.UUID, change: SplitIn, service: Service) -> GroupOut:
-    """管理员：锁定测试集、处理隔离的组。已经导出进训练集的不能再当验证集或测试集。"""
+    """Administrators: lock test groups and handle quarantined groups. Groups exported into training
+    can no longer become validation or test."""
     try:
         return service.change_split(group_id, change.split)
     except SampleError as err:
@@ -281,13 +294,15 @@ def detach_member(member_id: uuid.UUID, service: Service) -> PairResult:
 
 @router.get("/pairs", summary="可能是同一张单据的")
 def list_pairs(service: Service) -> list[PairOut]:
-    """PDF 和照片：单据类型、单号、日期、金额、币种、发单方对得上的，等人并排看原图确认。"""
+    """PDFs and photos whose document type, number, date, amount, currency and issuer match,
+    awaiting side-by-side confirmation."""
     return service.pairs()
 
 
 @router.post("/pairs", summary="确认是不是同一张单据")
 def decide_pair(change: PairIn, service: Service) -> PairResult:
-    """same：合并成一组（已经导出过、分在不同边的整组隔离）；different：记下来，不再提名。"""
+    """same: merge into one group (already exported groups in different splits are quarantined as a
+    whole); different: recorded and no longer proposed."""
     try:
         return service.decide_pair(change)
     except SampleError as err:
@@ -298,14 +313,15 @@ def decide_pair(change: PairIn, service: Service) -> PairResult:
 def find_units(
     service: Service, q: Annotated[str, Query(min_length=1, max_length=200)]
 ) -> list[UnitOut]:
-    """手动配对时用：文件名里有 q 的、处理完的单据。"""
+    """For manual pairing: processed documents whose file name contains q."""
     return service.units(q)
 
 
 @router.post("/backfill", summary="从以前的修改补收样本")
 def backfill(service: Service) -> BackfillOut:
-    """以前审核时点了原文或框了一块、改了值的，裁出小图进"待复核"（ADR 0053）。
-    人确认图里的原文以后才能导出。同一次修改只收一条，再点不会重复。"""
+    """Crop earlier corrections made by clicking source text or selecting a region into pending
+    samples. They can be exported only after a person confirms the transcription. Each correction
+    is collected once; repeated calls create no duplicates."""
     try:
         return service.backfill()
     except SampleError as err:
@@ -314,8 +330,9 @@ def backfill(service: Service) -> BackfillOut:
 
 @router.post("/confirmed-lines", summary="收认对的行")
 def confirmed_lines(service: Service) -> BackfillOut:
-    """审核完成的单据里人没改过、出处正好一整块、这一块只有这个值的：OCR 读对了，
-    裁成小图进"待复核"（ADR 0055）。同一个字段只收一次。"""
+    """From reviewed documents, collect fields that were not corrected and whose evidence is exactly
+    one whole block containing only this value: OCR read them correctly. Cropped into pending
+    samples; each field is collected once."""
     try:
         return service.collect_confirmed()
     except SampleError as err:
@@ -324,7 +341,8 @@ def confirmed_lines(service: Service) -> BackfillOut:
 
 @router.post("/verify", summary="一次复核通过几条")
 def verify_samples(data: VerifyIn, service: Service) -> VerifyOut:
-    """样本页"通过这一页"：人看过这一页的小图，待复核的一起变成可以导出。"""
+    """ "Approve page" on the samples page: the reviewer has checked the crops on this page, and the
+    pending ones become exportable."""
     return service.verify_many(data.ids)
 
 
@@ -339,7 +357,8 @@ def sample_image(sample_id: uuid.UUID, service: Service) -> Response:
 
 @router.patch("/{sample_id}", summary="改一条样本")
 def update_sample(sample_id: uuid.UUID, change: SampleIn, service: Service) -> SampleOut:
-    """改图中原文、改分类、撤回（status=withdrawn）或恢复（status=ready）。"""
+    """Change the transcription or category, withdraw (status=withdrawn) or restore
+    (status=ready)."""
     try:
         return service.update(sample_id, change)
     except SampleError as err:

@@ -1,19 +1,24 @@
-/** 字段审核的接口：/api/v1/values（一个字段）和 /api/v1/extractions（表格增删行）。 */
+/**
+ * Field review API: /api/v1/values (single fields) and /api/v1/extractions (adding and removing table rows).
+ */
 
 import { api } from './client'
 import type { FieldValue, RevisionIn, ValueHistory } from './types'
 
-/** 修改或确认一个字段。原值不会被覆盖，后端新增一条审核记录。 */
+/** Edit or confirm a field. The original value is never overwritten; the backend adds a revision. */
 export function reviseValue(id: string, change: RevisionIn): Promise<FieldValue> {
   return api<FieldValue>(`/values/${id}/revisions`, { method: 'POST', json: change })
 }
 
-/** 一个字段的修改历史。 */
+/** History of a field. */
 export function getValueHistory(id: string): Promise<ValueHistory> {
   return api<ValueHistory>(`/values/${id}/revisions`)
 }
 
-/** 表格加一行，插在第 after 行后面（行的编号，items.3.amount 里的 3；0 是最前面；不写加在最后）。 */
+/**
+ * Add a table row after row after (the row number, e.g. 3 in items.3.amount; 0 inserts at the top; omitted
+ * appends at the end).
+ */
 export function addRow(
   extractionId: string,
   table: string,
@@ -25,7 +30,7 @@ export function addRow(
   })
 }
 
-/** 删除或恢复表格的一行（原因必填）。不真的删，可以恢复。 */
+/** Delete or restore a table row (reason required). Nothing is deleted, so the row can be restored. */
 export function changeRow(
   extractionId: string,
   table: string,
@@ -39,7 +44,7 @@ export function changeRow(
   })
 }
 
-/** 一次确认好几个字段（值是对的）。已经删掉的行会跳过。 */
+/** Confirm several fields at once (their values are correct). Deleted rows are skipped. */
 export function confirmValues(
   ids: string[],
   reason = '',

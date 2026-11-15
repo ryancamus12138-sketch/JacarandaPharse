@@ -13,7 +13,17 @@ titles = { en = "e-Invoice (Malaysia, MyInvois)", ms = "e-Invois" }
 countries = ["MY"]
 domains = ["发票"]
 description = "马来西亚 MyInvois 电子发票：供应商和买方的 TIN、BRN、SST 号，MSIC 代码，发票号和日期，明细、税额、合计，以及 LHDN 验证后的唯一编号（UIN）和验证时间。没读到 UIN 会提醒（可能不是已验证的电子发票）。"
+descriptions = { en = "Malaysian MyInvois e-invoices: TIN, BRN and SST numbers of the supplier and buyer, MSIC code, invoice number and date, line items, tax, total, and the unique identifier (UIN) and validation time assigned by LHDN. A missing UIN is reported (possibly not a validated e-invoice)." }
 rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "my_validated"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Malaysian e-invoices (MyInvois printouts validated by LHDN / IRBM).",
+  "Basis: Income Tax Act 1967 s. 82C (e-invoice), IRBM e-Invoice Guideline v4.6 (2025-12) and the Specific Guideline (issued under s. 134A): TIN, BRN and SST registration numbers of the supplier and buyer (NA if none), MSIC code, invoice number, date, line items, tax; printouts of validated e-invoices carry the IRBM unique identifier (UIN), validation date and time, and a QR code. Taxpayers with annual turnover below RM1,000,000 are exempt from mandatory implementation.",
+  "Use: transactions between Malaysian businesses and expense claims; buyers deduct expenses with validated e-invoices.",
+  "Sources: LHDN IRBM e-Invoice Specific Guideline (hasil.gov.my); vatupdate 2025-12-07, Guideline v4.6.",
+]
 
 [[fields]]
 name = "document_title"
@@ -21,6 +31,7 @@ label = "单据标题"
 names = { en = "Document Title", ms = "Jenis e-Invois" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 aliases = ["Jenis e-Invois"]
 
 [[fields]]
@@ -31,6 +42,7 @@ type = "string"
 required = true
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 aliases = ["No. e-Invois"]
 
 [[fields]]
@@ -69,6 +81,7 @@ label = "供应商 SST 登记号"
 names = { en = "Supplier SST No.", ms = "No. Pendaftaran SST" }
 type = "string"
 description = "没有 SST 的写 NA，照抄"
+descriptions = { en = "Copy NA as written when there is no SST" }
 aliases = ["No. Pendaftaran SST"]
 
 [[fields]]
@@ -98,6 +111,7 @@ label = "买方 TIN"
 names = { en = "Buyer TIN", ms = "TIN Pembeli" }
 type = "string"
 description = "普通消费者合并开票时是 EI00000000010 这类，照抄"
+descriptions = { en = "For consolidated invoices to general consumers it looks like EI00000000010; copy it as written" }
 aliases = ["TIN Pembeli"]
 
 [[fields]]
@@ -157,6 +171,7 @@ label = "验证日期时间"
 names = { en = "Date and Time of Validation", ms = "Tarikh dan Masa Pengesahan" }
 type = "string"
 description = "照抄"
+descriptions = { en = "Copy it as written" }
 aliases = ["Tarikh dan Masa Pengesahan"]
 
 [[tables]]
@@ -164,6 +179,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", ms = "Butiran" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -192,6 +208,7 @@ label = "金额"
 names = { en = "Amount", ms = "Jumlah" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["Jumlah"]
 
 [[tables.columns]]

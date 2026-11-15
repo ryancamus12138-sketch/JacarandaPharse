@@ -1,11 +1,13 @@
-"""按原工作簿导出（ADR 0031）：把审核之后的数据填回用户建模板时上传的那个 Excel。
+"""Export into the original workbook: fill post-review data back into the workbook uploaded when the
+template was created.
 
-- 单据表：一份单据一行；明细表：一项一行（带着单据上的字段）；对象表：同一个编号合并成一行，
-  几份单据写得不一样就标黄、批注里写清楚；参照表、选项、说明：原样不动。
-- 表头下面原来的数据清掉，新数据用原来第一行数据的格式；
-  原来有合计行的，在最后补一行合计（求和公式）。
-- 表头一样的几张 sheet（按月分的）：原来的都不动，复制第一张，填进复制出来的那张。
-"""
+- Document sheets: one row per document; line-item sheets: one row per item (with document-level
+  fields); entity sheets: one row per identifier, with cells where documents disagree highlighted
+  and explained in a comment; reference, option and note sheets: unchanged.
+- Existing data below the header is cleared, and new data takes the format of the original first
+  data row; if a total row existed, one is appended at the end (sum formulas).
+- Sheets with identical headers (monthly): the originals are left untouched; the first is copied
+  and the copy is filled."""
 
 from __future__ import annotations
 
@@ -24,6 +26,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from jacara.core.daterange import DateRange, parse_date_range
+from jacara.core.i18n import tr
 from jacara.templates import Template
 from jacara.templates.extras import WorkbookSheet, normalize
 
@@ -33,7 +36,7 @@ _TOTAL = re.compile(r"^\s*(合计|总计|小计|共计|total|subtotal)", re.I)
 
 @dataclass
 class DocRow:
-    """一份单据（一页）审核之后的值。"""
+    """Post-review values of one document (one page)."""
 
     filename: str
     page: int = 1
@@ -41,16 +44,16 @@ class DocRow:
     processed_at: datetime | None = None
     reviewed_at: datetime | None = None
     values: dict[str, Any] = dc_field(default_factory=dict)
-    """普通字段 ID → 值（数字、日期已经转好）。"""
+    """Regular field ID → value (numbers and dates already converted)."""
     tables: dict[str, list[dict[str, Any]]] = dc_field(default_factory=dict)
-    """表格名 → 每一行（列 ID → 值），按显示顺序。"""
+    """Table name → rows (column ID → value), in display order."""
 
 
 def fill_workbook(template: Template, original: bytes, rows: list[DocRow], title: str) -> bytes:
-    """title：按月分的 sheet 复制出来的那张叫什么（例如"2026-11-12 导出"）。"""
+    """title: name of the copied sheet for monthly sheets (for example "2026-11-12 export")."""
     layout = template.workbook
     if layout is None:
-        raise ValueError("这个模板没有工作簿样式")
+        raise ValueError(tr("此模板没有工作簿版式"))
     book = load_workbook(io.BytesIO(original))
     grouped = {s.same_as for s in layout.sheets if s.same_as}
     for sheet in layout.sheets:
@@ -80,7 +83,7 @@ def _unique_title(book: Any, title: str) -> str:
 
 
 Cell = tuple[Any, str | None]
-"""（值，批注）。有批注的格子标黄。"""
+"""(value, comment). Cells with comments are highlighted."""
 
 
 def _sheet_rows(template: Template, sheet: WorkbookSheet, rows: list[DocRow]) -> list[list[Cell]]:
@@ -102,7 +105,8 @@ def _sheet_rows(template: Template, sheet: WorkbookSheet, rows: list[DocRow]) ->
 
 
 def _entity_rows(template: Template, sheet: WorkbookSheet, rows: list[DocRow]) -> list[list[Cell]]:
-    """同一个编号合并成一行；同一格几份单据写得不一样，用第一份的，批注里列出各份写的。"""
+    """Merge one identifier into one row; where documents disagree on a cell, use the first and list
+    every document's value in a comment."""
     entity = next(e for e in template.entities if e.name == sheet.entity)
     groups: dict[str, list[DocRow]] = {}
     for n, doc in enumerate(rows):
@@ -118,7 +122,9 @@ def _entity_rows(template: Template, sheet: WorkbookSheet, rows: list[DocRow]) -
             distinct = {normalize(str(v)) for v, _ in present}
             note = None
             if len(distinct) > 1:
-                note = "几份单据写的不一样：\n" + "\n".join(f"{f}：{v}" for v, f in present)
+                note = tr("多份单据内容不一致：\n") + "\n".join(
+                    tr("{file}：{value}", file=f, value=v) for v, f in present
+                )
             row.append((value, note))
         result.append(row)
     return result
@@ -162,7 +168,8 @@ def _value(
     table, _, col = ref.partition(".")
     ranges = template.ranges()
     if table in ranges and col in ("start", "end", "days"):
-        # 日期范围的开始、结束、天数（ADR 0039）：公司表格里分两格写
+        # Start, end and number of days of a date range: business workbooks write them in separate
+        # cells.
         found = _range(doc.values.get(table), template)
         if found is None:
             return None
@@ -183,7 +190,7 @@ def _range(raw: Any, template: Template) -> DateRange | None:
 
 
 def _naive(moment: datetime | None) -> datetime | None:
-    """Excel 不认带时区的时间：换成这台电脑的时间。"""
+    """Excel does not support time zones: convert to the local time of this machine."""
     return moment.astimezone().replace(tzinfo=None) if moment else None
 
 
@@ -218,7 +225,7 @@ def _write(ws: Worksheet, sheet: WorkbookSheet, rows: list[list[Cell]]) -> None:
 
 
 def _total_row(ws: Worksheet, start: int) -> tuple[int, str] | None:
-    """原来数据下面有没有"合计"行：有的话记下它写在哪一列、写的什么。"""
+    """Whether a total row follows the original data: if so, record its column and content."""
     for row in ws.iter_rows(min_row=start, max_row=ws.max_row):
         for cell in row:
             if isinstance(cell.value, str) and cell.value.strip():

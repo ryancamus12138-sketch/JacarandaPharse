@@ -1,4 +1,4 @@
-"""导出记录接口：/api/v1/exports。"""
+"""Export history API: /api/v1/exports."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from jacara.core.deps import get_owner, get_session, get_storage
+from jacara.core.i18n import render
 from jacara.core.owner import Owner
 from jacara.core.storage import ObjectStorage
 from jacara.modules.documents.router import attachment
@@ -42,17 +43,19 @@ def list_exports(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ExportPage:
-    """以前的每次导出：谁、什么时候、导出了哪些文档。最新的在前。"""
+    """Past exports: who, when and which documents. Newest first."""
     return service.page(limit, offset)
 
 
 @router.get("/{export_id}/file", summary="重新下载", response_class=Response)
 def download_export(export_id: uuid.UUID, service: Service) -> Response:
-    """下载当时导出的文件（当时的值，不是现在的值）。"""
+    """Download the file as exported at the time (values at that time, not current values)."""
     try:
         export, data = service.download(export_id)
     except ExportError as err:
-        raise HTTPException(status_code=_STATUS.get(err.code, 400), detail=err.message) from err
+        raise HTTPException(
+            status_code=_STATUS.get(err.code, 400), detail=render(err.message)
+        ) from err
     return attachment(
         export.filename, data, CONTENT_TYPES.get(export.format, "application/octet-stream")
     )

@@ -13,7 +13,17 @@ titles = { en = "GST/HST Invoice (Canada)", fr = "Facture TPS/TVH" }
 countries = ["CA"]
 domains = ["发票"]
 description = "加拿大的 GST/HST 发票：供应商名称和 GST/HST 登记号（BN + RT）、日期、买方名称、付款条件、描述、税率、GST/HST（和 QST/PST）、总额。BN 校验位不对、税率不是 5/13/14/15%、$100 以上没有登记号、$500 以上没有买方或付款条件会提醒。"
+descriptions = { en = "Canadian GST/HST invoices: supplier name and GST/HST registration number (BN + RT), date, buyer name, payment terms, description, rate, GST/HST (and QST/PST), total. Invalid BN check digits, rates other than 5/13/14/15%, no registration number from $100, and no buyer or payment terms from $500 are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "ca_business_no", "ca_rates", "ca_regno_100", "ca_buyer_500"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Canadian GST/HST invoices (for buyers claiming input tax credits).",
+  "Basis: Input Tax Credit Information (GST/HST) Regulations SOR/91-45 s. 3 (version of 2024-06-20, current to 2026-10-19): under $100: supplier name, date, total; $100 to under $500: plus the GST/HST registration number and tax (or a statement that tax is included and the rate); $500 and over: plus the buyer name, payment terms and a description sufficient to identify the supply. Rates: GST 5%; HST ON 13%, NS 14% (from 2025-04-01), NB/NL/PE 15%.",
+  "Use: GST/HST-registered Canadian businesses claiming ITCs; expense claims.",
+  "Sources: laws-lois.justice.gc.ca SOR/91-45 s. 3; canada.ca GST/HST calculator (and rates).",
+]
 
 [[fields]]
 name = "document_title"
@@ -21,6 +31,7 @@ label = "单据标题"
 names = { en = "Document Title", fr = "Titre" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 aliases = ["Titre"]
 
 [[fields]]
@@ -31,6 +42,7 @@ type = "string"
 required = true
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 aliases = ["Numéro de facture"]
 
 [[fields]]
@@ -90,6 +102,7 @@ label = "税率"
 names = { en = "Tax Rate", fr = "Taux" }
 type = "string"
 description = "照抄，如 10%；有几个税率就留空，看明细"
+descriptions = { en = "Copy it as written, such as 10%; leave empty when there are several rates and check the line items" }
 aliases = ["Taux"]
 
 [[fields]]
@@ -126,6 +139,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", fr = "Articles" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -154,6 +168,7 @@ label = "金额"
 names = { en = "Amount", fr = "Montant" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }
 aliases = ["Montant"]
 
 [[tables.columns]]

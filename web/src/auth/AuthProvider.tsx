@@ -5,9 +5,15 @@ import { ApiError, setUnauthorizedHandler } from '../api/client'
 import { clearToken, setToken } from '../api/token'
 import type { Me } from '../api/types'
 import { AuthContext, type AuthState } from './context'
+import { setDesktop } from '../desktop'
+import { useTranslation } from 'react-i18next'
 
-/** 包在整个网站外面：打开网页时问一次后端"我是谁"，结果放进 AuthContext 给所有页面用。 */
+/**
+ * Wraps the whole app: asks the backend for the current user once on load and provides the result to all
+ * pages through AuthContext.
+ */
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const [me, setMe] = useState<Me | null>(null)
   const [loading, setLoading] = useState(true)
@@ -21,7 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    // 网页打开时问一次。ignore：页面已经关掉了就不再更新（StrictMode 下会执行两次）
+    // Asked once on load. ignore: skip updates after unmount (effects run twice under StrictMode).
     let ignore = false
     void loadMe().then((result) => {
       if (!ignore) {
@@ -36,18 +42,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    // 用着用着 token 失效了（过期、被管理员停用）：清掉"我是谁"，RequireAuth 会带去登录页
+    // The token became invalid during use (expired, deactivated by an administrator): clear the current user;
+    // RequireAuth redirects to login.
     setUnauthorizedHandler(() => {
       setMe(null)
-      // key：几个请求同时失效时，只显示一条提示
+      // key: show a single notification when several requests fail at once.
       void message.open({
         key: 'session-expired',
         type: 'warning',
-        content: '登录已失效，请重新登录',
+        content: t('登录已失效，请重新登录'),
       })
     })
     return () => setUnauthorizedHandler(null)
-  }, [message])
+  }, [message, t])
 
   const login = useCallback(
     async (username: string, password: string) => {
@@ -62,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await authApi.logout()
     } catch {
-      // 后端连不上也照样在本地退出
+      // Log out locally even when the backend is unreachable.
     }
     clearToken()
     setMe(null)
@@ -84,10 +91,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext value={value}>{children}</AuthContext>
 }
 
-/** 问后端"我是谁"。401 = 团队模式还没登录，这是正常情况，不算错误。 */
+/**
+ * Ask the backend for the current user. 401 means not logged in yet in team mode, which is expected and not
+ * an error.
+ */
 async function loadMe(): Promise<{ me: Me | null; error: ApiError | null }> {
   try {
-    return { me: await authApi.getMe(), error: null }
+    const me = await authApi.getMe()
+    setDesktop(me.desktop ?? false)
+    return { me, error: null }
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
       return { me: null, error: null }

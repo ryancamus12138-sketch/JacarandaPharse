@@ -22,8 +22,9 @@ import {
 } from 'antd'
 import { type CSSProperties, useState } from 'react'
 import { boxColor, columnLabel, shownValue, type TableLayout, type TableRow, tableLabel } from './fields'
+import { useTranslation } from 'react-i18next'
 
-/** 行号格子里"上面加一行""下面加一行"的小按钮。 */
+/** "Insert above" and "insert below" buttons in the row number cell. */
 const insertButton: CSSProperties = {
   border: 'none',
   background: 'transparent',
@@ -42,21 +43,22 @@ interface Props {
   hoveredId: string | null
   onSelect: (id: string) => void
   onHover: (id: string | null) => void
-  /** 能不能增删行（有"修改字段"权限）。 */
+  /** Whether rows can be added and removed (requires the edit-fields permission). */
   canEdit: boolean
-  /** 加一行：插在第 after 行后面（真实编号；0 是最前面；null 是最后）。 */
+  /** Add a row after row after (real number; 0 inserts at the top; null appends at the end). */
   onAddRow: (after: number | null) => void
   onDeleteRow: (row: TableRow) => void
   onRestoreRow: (row: TableRow) => void
-  /** 批量确认这些格子（值是对的）。 */
+  /** Confirm these cells in bulk (their values are correct). */
   onConfirm: (ids: string[]) => void
-  /** 每一格还没解决的备注几条（字段 ID → 条数）。 */
+  /** Unresolved comments per cell (field ID → count). */
   comments?: Record<string, number>
 }
 
 /**
- * 表格字段（商品明细）：一行商品一行。点一格 = 左边高亮它的出处，下面展开审核表单。
- * 每行最后的 ⋯ 菜单：在上方插入、在下方插入、删除（或恢复）这一行。
+ * Table field (line items): one row per item. Clicking a cell highlights its evidence on the left and opens
+ * the review form below.
+ * The ⋯ menu at the end of each row: insert above, insert below, delete (or restore) the row.
  */
 export function ItemsTable({
   layout,
@@ -71,8 +73,9 @@ export function ItemsTable({
   onConfirm,
   comments = {},
 }: Props) {
+  const { t } = useTranslation()
   const { table, columns, rows } = layout
-  // 删掉的行留在原位（灰色、划掉，不占行号，可以恢复）
+  // Deleted rows stay in place (grey, struck through, without a row number, restorable).
   const live = rows.filter((r) => !r.deleted)
   const cells = live.flatMap((r) => [...r.cells.values()])
   const pendingIds = cells.filter((v) => v.pending_review).map((v) => v.id)
@@ -81,21 +84,21 @@ export function ItemsTable({
 
   const [hoverRow, setHoverRow] = useState<number | null>(null)
 
-  /** 一行的菜单：⋯ 按钮和右键用同一个。 */
+  /** Row menu shared by the ⋯ button and right-click. */
   const menuFor = (row: TableRow): MenuProps => ({
     items: row.deleted
-      ? [{ key: 'restore', icon: <UndoOutlined />, label: '恢复这一行' }]
+      ? [{ key: 'restore', icon: <UndoOutlined />, label: t('恢复此行') }]
       : [
-          { key: 'confirm', icon: <CheckOutlined />, label: '确认这一行' },
+          { key: 'confirm', icon: <CheckOutlined />, label: t('确认此行') },
           { type: 'divider' },
-          { key: 'above', icon: <VerticalAlignTopOutlined />, label: '在上方插入一行' },
+          { key: 'above', icon: <VerticalAlignTopOutlined />, label: t('在上方插入一行') },
           {
             key: 'below',
             icon: <VerticalAlignBottomOutlined />,
-            label: '在下方插入一行（⌘/Ctrl + Enter）',
+            label: t('在下方插入一行（⌘/Ctrl + Enter）'),
           },
           { type: 'divider' },
-          { key: 'delete', icon: <DeleteOutlined />, label: '删除这一行', danger: true },
+          { key: 'delete', icon: <DeleteOutlined />, label: t('删除此行'), danger: true },
         ],
     onClick: ({ key }) => {
       if (key === 'above') onAddRow(above(row))
@@ -110,7 +113,7 @@ export function ItemsTable({
     },
   })
 
-  /** 上方插入：插在上一行后面；已经是第一行就插在最前面。 */
+  /** Insert above: after the previous row, or at the top when this is the first row. */
   const above = (row: TableRow) => {
     const i = rows.indexOf(row)
     return i > 0 ? rows[i - 1].index : 0
@@ -120,21 +123,23 @@ export function ItemsTable({
     <div>
       <Flex justify="space-between" align="center">
         <Typography.Text strong>
-          {tableLabel(table)}（{live.length} 行{pending > 0 ? `，${pending} 格等你确认` : ''}）
+          {pending > 0
+            ? t('{{tableLabel}}（{{length}} 行，{{pending}} 格待确认）', { tableLabel: tableLabel(table), length: live.length, pending })
+            : t('{{tableLabel}}（{{length}} 行）', { tableLabel: tableLabel(table), length: live.length })}
         </Typography.Text>
         {canEdit && (
           <Flex gap={4}>
             {pending > 0 && (
-              // 只在有标黄的格子时出现；全都处理完了就不显示
+              // Shown only while cells are flagged; hidden once everything is handled.
               <Popconfirm
-                title={`确认这张表里 ${pending} 格标黄的都是对的？`}
-                description="不用一格一格点。每格都会记一条确认记录。"
-                okText="全部确认"
-                cancelText="取消"
+                title={t('确认此表中 {{pending}} 个标黄单元格均正确？', { pending })}
+                description={t('无需逐格确认。每个单元格都会记录一条确认记录。')}
+                okText={t('全部确认')}
+                cancelText={t('取消')}
                 onConfirm={() => onConfirm(pendingIds)}
               >
                 <Button size="small" type="link" icon={<CheckOutlined />}>
-                  全部确认（{pending}）
+                  {t('全部确认（{{pending}}）', { pending })}
                 </Button>
               </Popconfirm>
             )}
@@ -144,7 +149,7 @@ export function ItemsTable({
               icon={<PlusOutlined />}
               onClick={() => onAddRow(null)}
             >
-              加一行
+              {t('添加行')}
             </Button>
           </Flex>
         )}
@@ -152,7 +157,7 @@ export function ItemsTable({
       <div style={{ marginTop: 6 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
-            {/* 表头粘在上面：往下滚到第 30 行也看得到每一列是什么 */}
+            {/* Sticky header: column names stay visible when scrolled to row 30. */}
             <tr style={{ background: '#faf9fc', position: 'sticky', top: 0, zIndex: 1 }}>
               <th style={{ border, padding: '4px 6px', width: 32, fontWeight: 500 }}>#</th>
               {columns.map((c) => (
@@ -182,24 +187,25 @@ export function ItemsTable({
                     }}
                   >
                     {hovering ? (
-                      // 像 Excel：鼠标停在一行上，行号变成"上面加一行""下面加一行"两个小按钮
+                      // As in Excel: hovering over a row turns its row number into "insert above" and "insert
+                      // below" buttons.
                       <Flex vertical>
-                        <Tooltip title="在上方插入一行" placement="left">
+                        <Tooltip title={t('在上方插入一行')} placement="left">
                           <button
                             type="button"
                             style={insertButton}
-                            aria-label="在上方插入一行"
+                            aria-label={t('在上方插入一行')}
                             onClick={() => onAddRow(above(row))}
                           >
                             <PlusOutlined style={{ fontSize: 9 }} />
                             <ArrowUpOutlined style={{ fontSize: 9 }} />
                           </button>
                         </Tooltip>
-                        <Tooltip title="在下方插入一行（⌘/Ctrl + Enter）" placement="left">
+                        <Tooltip title={t('在下方插入一行（⌘/Ctrl + Enter）')} placement="left">
                           <button
                             type="button"
                             style={insertButton}
-                            aria-label="在下方插入一行"
+                            aria-label={t('在下方插入一行')}
                             onClick={() => onAddRow(row.index)}
                           >
                             <PlusOutlined style={{ fontSize: 9 }} />
@@ -229,7 +235,7 @@ export function ItemsTable({
                           border,
                           padding: '4px 6px',
                           cursor: 'pointer',
-                          overflowWrap: 'anywhere', // 长的才断开，先在空格处换行
+                          overflowWrap: 'anywhere', // Break only long text, preferring spaces.
                           textAlign: v.type === 'number' ? 'right' : 'left',
                           boxShadow: row.deleted ? undefined : `inset 3px 0 0 ${boxColor(v)}`,
                           outline: selected ? '2px solid #b7a3e8' : 'none',
@@ -249,7 +255,7 @@ export function ItemsTable({
                         {shownValue(v) ?? <span style={{ color: '#bbb' }}>—</span>}
                         {(comments[v.name] ?? 0) > 0 && (
                           <MessageOutlined
-                            aria-label="有备注"
+                            aria-label={t('有备注')}
                             style={{ marginInlineStart: 4, color: '#7c5cbf', fontSize: 11 }}
                           />
                         )}
@@ -263,14 +269,14 @@ export function ItemsTable({
                           size="small"
                           type="text"
                           icon={<MoreOutlined />}
-                          aria-label={`第 ${row.display ?? ''} 行的操作`}
+                          aria-label={t('第 {{value}} 行的操作', { value: row.display ?? '' })}
                         />
                       </Dropdown>
                     </td>
                   )}
                 </tr>
               )
-              // 右键一行也能打开同样的菜单（和 Excel 一样）
+              // Right-clicking a row opens the same menu (as in Excel).
               return canEdit ? (
                 <Dropdown key={row.index} trigger={['contextMenu']} menu={menuFor(row)}>
                   {tr}
@@ -285,9 +291,9 @@ export function ItemsTable({
       {live.some((r) => r.manual) && (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           <Tag color="purple" style={{ marginInlineEnd: 4 }}>
-            人工
+            {t('人工')}
           </Tag>
-          新加的行先是空的：选中一格，再在原图上点文字填入，或者直接输入。
+          {t('新增的行为空行：选中单元格后点击原图上的文字填入，或直接输入。')}
         </Typography.Text>
       )}
     </div>

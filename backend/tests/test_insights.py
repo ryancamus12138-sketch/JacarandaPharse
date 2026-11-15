@@ -1,4 +1,4 @@
-"""人工修改统计和审核数据导出（ADR 0044）。"""
+"""Correction statistics and review data export."""
 
 from __future__ import annotations
 
@@ -38,7 +38,8 @@ def test_error_kinds(type_, before, after, kind):
 
 @pytest.fixture
 def reviewed(client, factory, report, tmp_path) -> uuid.UUID:
-    """存一张收据，改两个字段（找零标黄了、商家没标黄）、确认其余要确认的，完成审核。"""
+    """Store a receipt, edit two fields (change flagged, merchant not flagged), confirm the
+    remaining flagged fields and complete review."""
     path = tmp_path / "receipt.jpg"
     path.write_bytes(b"x")
     with session_scope(factory) as session:
@@ -68,12 +69,12 @@ def test_correction_stats(client, reviewed):
     stats = client.get("/api/v1/insights/corrections").json()
     assert stats["documents"] == 1
     assert stats["edited"] == 2
-    assert stats["silent"] == 1  # 商家改了，但抽取时没标黄
+    assert stats["silent"] == 1  # Merchant corrected, but not flagged at extraction.
     kinds = {k["kind"]: k["count"] for k in stats["kinds"]}
     assert kinds == {"decimal": 1, "chars": 1}
     change = next(f for f in stats["by_field"] if f["field"] == "change")
     assert change["edited"] == 1 and change["rate"] == 1.0
-    assert {c["kind_name"] for c in stats["recent"]} == {"小数点", "个别字认错"}
+    assert {c["kind_name"] for c in stats["recent"]} == {"小数点", "个别字符错误"}
     assert stats["templates"][0]["documents"] == 1
 
 
@@ -99,14 +100,15 @@ def test_lessons_are_picked_and_written_into_the_prompt(client, reviewed, factor
         document = session.get_one(Document, reviewed)
         team, template = document.team_id, document.extractions[0].template
         lessons = from_database(session, team, template)
-        assert not from_database(session, team, template, exclude=reviewed)  # 不用自己的
+        # Its own examples are excluded.
+        assert not from_database(session, team, template, exclude=reviewed)
     assert {(lesson.field, lesson.kind) for lesson in lessons} == {
         ("change", "decimal"),
         ("merchant", "chars"),
     }
     many = [Lesson("total", "总额", str(n), "1", "number") for n in range(5)] + lessons
     chosen = pick(many)
-    assert sum(lesson.field == "total" for lesson in chosen) == 2  # 每个字段最多 2 条
+    assert sum(lesson.field == "total" for lesson in chosen) == 2  # At most 2 per field.
     note = note_for(chosen)
     assert "人改成「1.0」（小数点）" in note and "不要照抄" in note
     page = make_page(make_line("TOTAL 9.00", 0, 0, 100, 20))
@@ -135,11 +137,13 @@ def test_pipeline_teaches_the_model_and_records_it(receipt_page):
     report = pipeline.extract_page(receipt_page, "r.jpg", 1, "receipt")
     assert report.extraction.prompt_version.endswith("+lessons1")
     assert "人改成「1.00」（小数点）" in backend.received[-1].content
-    assert extractor.lessons == ("", 0)  # 抽完清掉，不带到下一张
+    # Cleared after extraction, not carried to the next document.
+    assert extractor.lessons == ("", 0)
 
 
 def test_review_time_is_added_up_and_averaged(client, factory, reviewed):
-    """审核页报来的用时加在一起；统计页显示平均每份几秒。"""
+    """Review time reported by the review page is summed; the statistics page shows the average
+    seconds per document."""
     for seconds in (30, 45):
         response = client.post(
             f"/api/v1/documents/{reviewed}/review-time", json={"seconds": seconds}
@@ -154,7 +158,8 @@ def test_review_time_is_added_up_and_averaged(client, factory, reviewed):
 
 
 def test_stats_show_where_errors_came_from_and_allow_override(client, reviewed):
-    """统计页：改过的字段错在哪一步；人可以改判，改判后不会被重新判断覆盖。"""
+    """Statistics page: stage at fault for corrected fields; a person can override, and overrides
+    survive re-attribution."""
     stats = client.get("/api/v1/insights/corrections").json()
     assert sum(s["count"] for s in stats["stages"]) == stats["edited"] == 2
     change = next(c for c in stats["recent"] if c["kind_name"] == "小数点")
@@ -180,4 +185,5 @@ def test_stats_show_where_errors_came_from_and_allow_override(client, reviewed):
     assert undo.json()["stage"] == change["auto_stage"]
     actions = [x["action"] for x in client.get("/api/v1/audit-logs").json()["items"]]
     assert actions.count("attribution:override") == 2
-    assert client.delete(f"/api/v1/documents/{reviewed}").status_code == 200  # 归因跟着删
+    # Attributions are deleted too.
+    assert client.delete(f"/api/v1/documents/{reviewed}").status_code == 200

@@ -1,4 +1,5 @@
-"""检测样本（ADR 0061）：预标注、调框、确认、导出、存进数据集库。"""
+"""Detection samples: pre-annotation, box adjustment, confirmation, export, storage in the dataset
+library."""
 
 from __future__ import annotations
 
@@ -25,7 +26,8 @@ from .test_ocr_samples import KEY, page_png
 
 @pytest.fixture
 def document_id(factory, receipt_page, storage, tmp_path) -> uuid.UUID:
-    """一份审核完成的收据（照片），OCR 结果是 conftest 的 receipt_page（15 个文字块）。"""
+    """A reviewed receipt (photo) whose OCR result is receipt_page from conftest (15 text
+    blocks)."""
     fields = (F("total", "number", 9.0, 9),)
     result = ExtractionResult(fields, "{}", "test-model", "fake", "extract-v4", 5)
     report = DocumentReport(
@@ -55,7 +57,7 @@ def url(document_id, *rest: str) -> str:
 
 def test_prefill_uses_ocr_boxes_and_corrected_samples(client, factory, document_id):
     with session_scope(factory) as session:
-        # 审核时人把日期那一块改对了，还框选了一块 OCR 漏掉的字
+        # During review the date block was corrected and a region missed by OCR was selected.
         common = {
             "document_id": document_id,
             "page": 1,
@@ -95,7 +97,7 @@ def test_prefill_uses_ocr_boxes_and_corrected_samples(client, factory, document_
         1000,
     )
     boxes = page["boxes"]
-    assert len(boxes) == 16  # 15 个 OCR 文字块 + 1 个漏认的框
+    assert len(boxes) == 16  # 15 OCR text blocks + 1 box for missed text.
     date = next(b for b in boxes if b["origin"] == "sample")
     assert date["text"] == "25/12/2018 8:18:39 PM"
     assert boxes[-1] == {
@@ -110,7 +112,7 @@ def test_prefill_uses_ocr_boxes_and_corrected_samples(client, factory, document_
 
 def test_save_confirm_and_revision_conflict(client, factory, document_id):
     boxes = client.get(url(document_id)).json()["boxes"]
-    boxes[-1]["ignore"] = True  # 最后一块看不清
+    boxes[-1]["ignore"] = True  # The last box is illegible.
     boxes.append(
         {"points": [[10, 10], [60, 10], [60, 30], [10, 30]], "text": "LOGO", "origin": "manual"}
     )
@@ -133,13 +135,13 @@ def test_save_confirm_and_revision_conflict(client, factory, document_id):
 def test_bad_boxes_are_refused(client, document_id):
     crossed = [{"points": [[0, 0], [50, 20], [50, 0], [0, 20]], "text": "X"}]
     response = client.put(url(document_id), json={"revision": 0, "boxes": crossed})
-    assert response.status_code == 422 and "四个角不对" in response.json()["detail"]
+    assert response.status_code == 422 and "角点无效" in response.json()["detail"]
     empty = [{"points": [[0, 0], [50, 0], [50, 20], [0, 20]], "text": " "}]
     response = client.put(url(document_id), json={"revision": 0, "boxes": empty})
     assert "没有文字" in response.json()["detail"]
     blurry = [{"points": [[0, 0], [50, 0], [50, 20], [0, 20]], "text": "", "ignore": True}]
     response = client.post(url(document_id, "confirm"), json={"revision": 0, "boxes": blurry})
-    assert "一个能用的框都没有" in response.json()["detail"]
+    assert "没有可用的文本框" in response.json()["detail"]
 
 
 def test_unreviewed_documents_are_not_offered(client, factory, document_id):
@@ -173,7 +175,7 @@ def test_export_and_save_to_dataset(client, factory, document_id):
         "points": [[163, 369], [345, 369], [345, 390], [163, 390]],
     }
     assert manifest["document_group"].startswith("g_") and manifest["ignored"] == 1
-    # 导出的就是能直接读的检测数据集
+    # The export is a detection dataset ready for training.
     parsed = dataset_files.parse(response.content, "ocr_det")
     assert sum(parsed.counts.values()) == 1 and parsed.items[0].boxes[0].ignore
 

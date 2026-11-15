@@ -1,10 +1,9 @@
-"""跑一次评测：每张样本走一遍流水线，打分，写出结果文件。
+"""Run one evaluation: process each sample through the pipeline, score it and write result files.
 
-结果放在 results/eval/<时间>/（results/ 在 .gitignore 里）：
-    fields.jsonl   每个字段一行：标准答案、模型的值、对不对、有没有出处、标没标黄
-    summary.json   汇总指标和这次评测的条件（模型、提示词版本、样本数）
-    summary.md     给人看的表格，可以直接贴到 docs/eval/ 里
-"""
+Results go to results/eval/<timestamp>/ (results/ is git-ignored):
+    fields.jsonl   one line per field: ground truth, model value, correct, has evidence, flagged
+    summary.json   aggregate metrics and run conditions (model, prompt version, sample count)
+    summary.md     human-readable table, suitable for docs/eval/"""
 
 from __future__ import annotations
 
@@ -14,12 +13,13 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from jacara.core.i18n import render
 from jacara.eval.score import FieldScore, Summary, score_report, summarize
 from jacara.eval.sroie import Sample
 from jacara.plugins.exporters import DocumentReport
 
 Process = Callable[[Path], list[DocumentReport]]
-"""处理一个文件的函数。真跑时是 Pipeline.run，测试里换成假的。"""
+"""Function that processes one file: Pipeline.run in real runs, a fake in tests."""
 
 
 @dataclass
@@ -27,7 +27,8 @@ class EvalResult:
     scores: list[FieldScore] = field(default_factory=list)
     summaries: list[Summary] = field(default_factory=list)
     failures: dict[str, str] = field(default_factory=dict)
-    """样本编号 → 出错原因（模型没响应、图片读不了……）。出错的样本不算进指标。"""
+    """Sample id → error (model not responding, unreadable image, …). Failed samples are excluded
+    from the metrics."""
     model: str = ""
     prompt_version: str = ""
     seconds: float = 0.0
@@ -43,10 +44,11 @@ def run_eval(
     for i, sample in enumerate(samples, start=1):
         try:
             reports = process(sample.image)
-        except Exception as err:  # 一张出错不影响其他样本，原因记下来
-            result.failures[sample.sample_id] = f"{type(err).__name__}: {err}"
+        # A failure in one sample does not affect the others; record the cause.
+        except Exception as err:
+            result.failures[sample.sample_id] = f"{type(err).__name__}: {render(str(err))}"
         else:
-            report = reports[0]  # 收据都是一页
+            report = reports[0]  # Receipts have a single page.
             result.model = report.extraction.model
             result.prompt_version = report.extraction.prompt_version
             result.scores += score_report(sample.sample_id, sample.answers, report)

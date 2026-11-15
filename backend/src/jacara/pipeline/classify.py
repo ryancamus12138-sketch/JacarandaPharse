@@ -1,11 +1,13 @@
-"""自动判断单据用哪个模板（ADR 0038）。
+"""Automatic template selection for documents.
 
-上传时选"自动判断"：每张单据从"我的模板"里挑最合适的一个。
-1. 先按关键字给每个模板打分：模板的字段名、别名、名字在单据文字里出现了多少（快，不用模型）；
-2. 分数最高的几个交给模型，模型看单据开头的文字和模板说明，选一个，或者说都不合适；
-3. 都不合适：不用模板，抽出所有键值对（可以拿它建新模板）。
-没有模型能问（命令行测试、模型不会选）时，按关键字分数选，分数太低就当都不合适。
-"""
+With "automatic" selected at upload, each document picks the best match from my templates.
+1. Score each template by keywords: how many of its field names, aliases and its name appear in
+   the document text (fast, no model);
+2. Hand the top candidates to the model, which reads the beginning of the document and the
+   template descriptions and picks one, or none;
+3. None fits: use no template and extract all key-value pairs (which can seed a new template).
+Without a model to ask (CLI tests, or the model cannot decide), pick by keyword score; a score
+that is too low means none fits."""
 
 from __future__ import annotations
 
@@ -15,27 +17,30 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from jacara.core.i18n import stored
 from jacara.plugins.ocr.base import OcrPage
 from jacara.plugins.ocr.layout import group_rows
 from jacara.templates import Template, TemplateField
 
 SHORTLIST = 5
-"""交给模型挑的模板最多几个。太多了提示词长、模型也容易挑错。"""
+"""Maximum number of templates offered to the model. More would lengthen the prompt and make wrong
+picks likelier."""
 
 HEAD_LINES = 60
-"""给模型看单据开头的几行。种类、抬头、国家一般都在前面。"""
+"""Number of lines from the beginning of the document shown to the model. Type, header and country
+usually appear early."""
 
 MIN_KEYWORD_SCORE = 0.3
-"""没有模型时，关键字分数（对上的字段占几成）至少多少才算合适。"""
+"""Minimum keyword score (share of matched fields) for a template to fit when there is no model."""
 
 Chooser = Callable[[str, Sequence[str]], "tuple[int, str] | None"]
-"""问模型：（单据文字，模板说明列表）→（选第几个，从 1 开始，0 是都不合适；理由）。
-答不上来返回 None。"""
+"""Ask the model: (document text, list of template descriptions) → (chosen index, 1-based, 0 meaning
+none fits; reason). Returns None when the model cannot answer."""
 
 
 @dataclass(frozen=True)
 class Candidate:
-    """一个可以选的模板：我的模板的最新版。"""
+    """A selectable template: the latest version of one of my templates."""
 
     template: Template
     template_id: uuid.UUID
@@ -44,7 +49,7 @@ class Candidate:
 
 @dataclass(frozen=True)
 class AutoChoice:
-    """上传时选了"自动判断"：交给流水线的候选模板。"""
+    """ "Automatic" selected at upload: candidate templates passed to the pipeline."""
 
     candidates: tuple[Candidate, ...]
 
@@ -52,10 +57,11 @@ class AutoChoice:
 @dataclass(frozen=True)
 class Classification:
     picked: Candidate | None
-    """选中的模板；都不合适是 None（改成抽出所有键值对）。"""
+    """Selected template; None if none fits (all key-value pairs are extracted instead)."""
     reason: str
     by: str
-    """model：模型选的；keywords：按关键字选的；none：没有可选的模板。"""
+    """model: chosen by the model; keywords: chosen by keyword score; none: no templates
+    available."""
     scores: tuple[tuple[Candidate, float], ...] = ()
 
     def to_json(self) -> dict[str, Any]:
@@ -79,7 +85,7 @@ class Classification:
 
 
 def head_text(page: OcrPage, lines: int = HEAD_LINES) -> str:
-    """单据开头的几行文字（按视觉行）。"""
+    """Lines from the beginning of the document (visual lines)."""
     return "\n".join(r.text for r in group_rows(page)[:lines])
 
 
@@ -95,8 +101,9 @@ def _all_fields(template: Template) -> list[TemplateField]:
 
 
 def keyword_score(text: str, template: Template) -> float:
-    """对上的字段占几成：字段的中文名或任何一个别名在单据文字里出现，就算对上。
-    模板名出现在单据上（"增值税发票""Tax Invoice"）再加 0.5。"""
+    """Share of matched fields: a field matches when its display name or any alias appears in
+    the document text. A template name appearing on the document ("增值税发票", "Tax Invoice")
+    adds 0.5."""
     plain = _squash(text)
     fields = _all_fields(template)
     hits = 0
@@ -111,7 +118,8 @@ def keyword_score(text: str, template: Template) -> float:
 
 
 def describe(template: Template) -> str:
-    """给模型看的模板说明：名字、说明、领域、国家、要抽的字段。"""
+    """Template description for the model: name, description, domains, country, fields to
+    extract."""
     countries = "、".join(template.countries) or "通用（不分国家）"
     domains = "、".join(template.domains) or "（没写）"
     fields = "、".join(f.label for f in _all_fields(template)[:30])
@@ -123,9 +131,9 @@ def describe(template: Template) -> str:
 
 
 def classify(text: str, auto: AutoChoice, chooser: Chooser | None) -> Classification:
-    """给一张单据选模板。text 是单据开头的文字。"""
+    """Select a template for one document. text is the beginning of the document text."""
     if not auto.candidates:
-        return Classification(None, "还没有自己的模板，抽出了所有键值对", "none")
+        return Classification(None, stored("尚无模板，已抽取所有键值对"), "none")
     scored = sorted(
         ((c, keyword_score(text, c.template)) for c in auto.candidates),
         key=lambda pair: -pair[1],
@@ -136,12 +144,19 @@ def classify(text: str, auto: AutoChoice, chooser: Chooser | None) -> Classifica
         if answer is not None and 0 <= answer[0] <= len(shortlist):
             index, reason = answer
             picked = shortlist[index - 1][0] if index > 0 else None
-            reason = reason.strip() or ("模型认为都不合适" if picked is None else "模型选的")
+            reason = reason.strip() or (
+                stored("模型判断均不适用") if picked is None else stored("由模型选择")
+            )
             return Classification(picked, reason, "model", shortlist)
     best, score = shortlist[0]
     if score >= MIN_KEYWORD_SCORE:
         hits = round(min(score, 1.0) * len(_all_fields(best.template)))
         return Classification(
-            best, f"按关键字选的：单据上对上了约 {hits} 个字段名", "keywords", shortlist
+            best,
+            stored("按关键字选择：单据上约有 {hits} 个字段名匹配", hits=hits),
+            "keywords",
+            shortlist,
         )
-    return Classification(None, "按关键字找不到合适的模板，抽出了所有键值对", "keywords", shortlist)
+    return Classification(
+        None, stored("按关键字未找到合适的模板，已抽取所有键值对"), "keywords", shortlist
+    )

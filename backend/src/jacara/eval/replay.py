@@ -1,15 +1,20 @@
 # ruff: noqa: E501
-"""回放（ADR 0053，B4 最小回放）：审核完成的单据，用当时存下的 OCR 快照，换一种设置再抽一次，
-和人审核过的值比，看新设置修好了哪些、弄坏了哪些。
+"""Replay: re-extract reviewed documents from their stored OCR snapshots with different settings and
+compare against the reviewed values, to see which values the new settings fix and which they
+break.
 
-- 两边（A、B）用同一份 OCR 快照：差别只来自抽取（模型、提示词、例子），不混进 OCR 的变化；
-- A 默认是"当时存下的结果"（不用再跑），B 是要试的新设置；也可以两边都重新跑；
-- 按业务单据分组配对（ADR 0052 的单据分组），同一组的几张算一个单位做 bootstrap；
-- 只读：不改数据库里的任何东西（审核数据、样本、划分都不动），结果写到 --out 的文件夹里。
+- Both arms (A and B) use the same OCR snapshot, so differences come only from extraction (model,
+  prompt, examples) and not from OCR changes;
+- A defaults to the stored results (not re-run) and B is the configuration under test; both arms
+  may also be re-run;
+- Pairing is grouped by business document; the documents of one group form a single bootstrap
+  unit;
+- Read-only: nothing in the database is changed (review data, samples and splits are untouched);
+  results are written to the --out directory.
 
-比较的范围：单个字段，和表格明细（ADR 0062）。表格明细先把人审核后的行和抽出来的行一一配对
-（DocILE 明细识别评测的最大匹配，见 eval/tables.py），再逐格比；单个字段和明细格子分开统计。
-"""
+Scope: single fields and table line items. Line items first pair reviewed rows with extracted
+rows (maximum matching as in DocILE line item recognition; see eval/tables.py) and are then
+compared cell by cell; single fields and line-item cells are reported separately."""
 
 from __future__ import annotations
 
@@ -30,6 +35,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from jacara.core.i18n import render
 from jacara.core.storage import ObjectStorage, StorageError
 from jacara.models import Document, Extraction, TemplateVersion
 from jacara.pipeline.current import template_from_version
@@ -47,21 +53,21 @@ if TYPE_CHECKING:
     from jacara.eval.tables import CellResult, PredRow, TableSide, TruthRow
 
 Outcome = Literal["correct", "wrong", "missing", "extra", "empty"]
-"""一个字段的结果：对了、值错了、该有没取到、不该有却给了值、两边都空（不算）。"""
+"""Outcome of one field: correct, wrong value, missed, spurious, or both empty (not counted)."""
 
 BOOTSTRAP_ROUNDS = 2000
 
 
 @dataclass(frozen=True)
 class Arm:
-    """一边的设置。server 是 None 表示"当时存下的结果"，不重新跑。"""
+    """Configuration of one arm. server=None means the stored results, which are not re-run."""
 
     name: str
     label: str
     server: str | None = None
     learn: str | None = None
-    """抽取时带上以前人改过的例子：recent（ADR 0045）或 curated（整理过的，ADR 0055）；
-    None 不带。锁定测试集的单据本来就不当例子。"""
+    """Include past corrections as examples during extraction: recent or curated; None for none.
+    Documents in the locked test split are never used as examples."""
 
     @property
     def stored(self) -> bool:
@@ -72,12 +78,12 @@ class Arm:
 class Pred:
     value: str | None
     flagged: bool
-    """标黄了（要人看）。"""
+    """Flagged for review."""
 
 
 @dataclass
 class Row:
-    """一个字段在两边的结果。"""
+    """Outcome of one field in both arms."""
 
     document_id: str
     page: int
@@ -101,7 +107,8 @@ class Row:
 
 @dataclass
 class CellPair:
-    """表格明细里人审核后的一格，在两边的结果（两边各自配对，所以配上的行可能不同）。"""
+    """Outcome of one reviewed line-item cell in both arms (each arm is paired separately, so the
+    matched rows may differ)."""
 
     document_id: str
     page: int
@@ -122,14 +129,15 @@ class CellPair:
 
 @dataclass
 class TableExtra:
-    """一张单据上某一边抽出来、没有对应的人审核格子的：多出来的格子数和行数。"""
+    """Extracted cells in one arm with no corresponding reviewed cell on a document: number of
+    spurious cells and rows."""
 
     cells: int = 0
     rows: int = 0
 
 
 class _Paired(Protocol):
-    """能做分组 bootstrap 的：单个字段（Row）或明细格子（CellPair）。"""
+    """Unit for grouped bootstrap: a single field (Row) or a line-item cell (CellPair)."""
 
     @property
     def group(self) -> str: ...
@@ -147,7 +155,7 @@ class Skipped:
 
 @dataclass
 class Manifest:
-    """这次回放用的是什么：以后看结果时知道是怎么比出来的。"""
+    """What this replay used, so results can be interpreted later."""
 
     started_at: str
     jacara_version: str
@@ -156,9 +164,9 @@ class Manifest:
     templates: dict[str, int] = field(default_factory=dict)
     ocr: dict[str, int] = field(default_factory=dict)
     snapshots: dict[str, str] = field(default_factory=dict)
-    """文档 id → OCR 快照的 sha256：两边用的确实是同一份字。"""
+    """Document id → sha256 of the OCR snapshot: proves both arms used the same text."""
     reread: list[str] = field(default_factory=list)
-    """没有快照、重新认了字的文档（这些的差别里混着 OCR 的变化）。"""
+    """Documents without a snapshot that were re-OCR'd (their differences include OCR changes)."""
 
 
 @dataclass
@@ -167,14 +175,14 @@ class ReplayResult:
     skipped: list[Skipped]
     manifest: Manifest
     models: dict[str, Counter[str]] = field(default_factory=dict)
-    """每一边实际用的模型和提示词版本（"模型 / 提示词" → 张数）。"""
+    """Model and prompt version actually used by each arm ("model / prompt" → count)."""
     cells: list[CellPair] = field(default_factory=list)
-    """表格明细：人审核后的每一格（ADR 0062）。"""
+    """Line items: every reviewed cell."""
     extra: dict[str, TableExtra] = field(default_factory=dict)
-    """表格明细：每一边多出来的格子和行（A、B → 合计）。"""
+    """Line items: spurious cells and rows per arm (A, B → totals)."""
 
 
-# ---- 比较 ----
+# ---- Comparison ----
 
 
 def _decimal(text: str) -> Decimal | None:
@@ -185,7 +193,8 @@ def _decimal(text: str) -> Decimal | None:
 
 
 def same_value(type_: str, a: str | None, b: str | None) -> bool:
-    """两个值算不算一样：数字按数值比（9 和 9.0 一样），别的去掉多余空白再比。"""
+    """Whether two values are equal: numbers compare numerically (9 equals 9.0); other values after
+    collapsing whitespace."""
     if a is None or b is None:
         return (a is None or not a.strip()) and (b is None or not b.strip())
     if type_ == "number":
@@ -210,7 +219,8 @@ def outcome(type_: str, truth: str | None, pred: str | None) -> Outcome:
 
 
 def mcnemar_exact(fixed: int, broken: int) -> float:
-    """精确 McNemar（双侧）：修好的和弄坏的一样多的话，看到这么不平均的概率。"""
+    """Exact two-sided McNemar test: the probability of an imbalance at least this large if fixes
+    and breaks were equally likely."""
     n = fixed + broken
     if n == 0:
         return 1.0
@@ -230,14 +240,15 @@ def _accuracy(rows: Sequence[_Paired], arm: Literal["a", "b"]) -> float:
 def group_bootstrap(
     rows: Sequence[_Paired], rounds: int = BOOTSTRAP_ROUNDS, seed: int = 0
 ) -> tuple[float, float] | None:
-    """B 减 A 的准确率差，按业务单据分组有放回地抽，取 95% 区间。少于 2 组不算。"""
+    """95% interval of the accuracy difference B − A, resampling business-document groups with
+    replacement. Not computed for fewer than 2 groups."""
     groups: dict[str, list[_Paired]] = {}
     for r in rows:
         groups.setdefault(r.group, []).append(r)
     if len(groups) < 2:
         return None
     keys = sorted(groups)
-    rng = random.Random(seed)  # noqa: S311  统计抽样用，不是加密
+    rng = random.Random(seed)  # noqa: S311  Statistical sampling, not cryptography.
     diffs: list[float] = []
     for _ in range(rounds):
         picked = [r for _ in keys for r in groups[rng.choice(keys)]]
@@ -247,7 +258,7 @@ def group_bootstrap(
 
 
 def evidence_level(groups: int, rows: int) -> str:
-    """和 OCR 样本导出（ADR 0052）一样的门槛。"""
+    """Same thresholds as the OCR sample export."""
     if groups < 10 or rows < 50:
         return "process"
     if groups >= 15 and rows >= 100:
@@ -333,8 +344,8 @@ def summarize(result: ReplayResult) -> dict[str, Any]:
 
 
 def _table_summary(result: ReplayResult) -> dict[str, Any] | None:
-    """表格明细（ADR 0062）：每一边的 micro 精确率、召回率、F1（DocILE LIR 的主指标），
-    人审核后每一格在两边的对错变化（精确 McNemar、分组 bootstrap，和单个字段一样）。"""
+    """Line items: micro precision, recall and F1 per arm (the primary DocILE LIR metric), and
+    per-cell changes between arms (exact McNemar and grouped bootstrap, as for single fields)."""
     from jacara.eval.tables import TableSide, micro
 
     cells = result.cells
@@ -405,7 +416,7 @@ def summary_markdown(s: dict[str, Any]) -> str:
     a, b = s["a"], s["b"]
     ci = s["bootstrap_ci"]
     lines = [
-        "# 回放结果（ADR 0053）",
+        "# 回放结果",
         "",
         f"- 比较：**A {a['label']}** 对 **B {b['label']}**，同一份 OCR 快照，和人审核过的值比",
         f"- {s['documents']} 份文档、{s['groups']} 组业务单据、{s['rows']} 个字段（单个字段；表格明细见下面单独一节）",
@@ -471,7 +482,7 @@ def _tables_markdown(t: dict[str, Any]) -> list[str]:
     a, b = t["a"], t["b"]
     ci = t["bootstrap_ci"]
     lines = [
-        "## 表格明细（ADR 0062）",
+        "## 表格明细",
         "",
         f"- {t['documents']} 份文档、{t['groups']} 组业务单据、人审核后 {t['rows']} 行、{t['cells']} 个格子",
         "- 先把人审核后的行和抽出来的行一一配对（对上的格子总数最多的配法，DocILE 明细识别评测），再逐格比；"
@@ -502,7 +513,8 @@ def _tables_markdown(t: dict[str, Any]) -> list[str]:
 
 
 def write_result(result: ReplayResult, out: Path) -> Path:
-    """写出 summary.md、summary.json、fields.jsonl、cells.jsonl（有表格明细时），返回 summary.md 的路径。"""
+    """Write summary.md, summary.json, fields.jsonl and cells.jsonl (when line items exist); return
+    the path of summary.md."""
     out.mkdir(parents=True, exist_ok=True)
     s = summarize(result)
     (out / "summary.json").write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -519,7 +531,7 @@ def write_result(result: ReplayResult, out: Path) -> Path:
     return md
 
 
-# ---- 回放 ----
+# ---- Replay ----
 
 
 @dataclass
@@ -528,9 +540,10 @@ class Options:
     docs: list[uuid.UUID] | None = None
     limit: int | None = None
     split: str | None = None
-    """只回放这一边的单据：train、val、test_locked；不写是全部。"""
+    """Replay only documents in this split: train, val, test_locked; all when omitted."""
     reread: bool = False
-    """没有 OCR 快照的（这次更新前处理的）重新认字；不写就跳过它们。"""
+    """Re-OCR documents without an OCR snapshot (processed before snapshots existed); skipped when
+    omitted."""
 
 
 @dataclass
@@ -540,11 +553,13 @@ class _Unit:
     split: str | None
     template: str
     values: dict[str, tuple[str, str | None, Pred]]
-    """字段名 → (类型, 人审核过的值, 当时存下的结果)。"""
+    """Field name → (type, reviewed value, stored result)."""
     tables: dict[str, list[TruthRow]] = field(default_factory=dict)
-    """表名 → 人审核后的行（按显示顺序，删掉的行不在里面，人加的行在里面）。"""
+    """Table name → reviewed rows (in display order; deleted rows excluded, rows added by reviewers
+    included)."""
     stored_tables: dict[str, list[PredRow]] = field(default_factory=dict)
-    """表名 → 当时模型抽出来的行（按模型给的顺序，包括后来被人删掉的行）。"""
+    """Table name → rows extracted by the model at the time (in model order, including rows later
+    deleted by reviewers)."""
 
 
 @dataclass
@@ -566,7 +581,7 @@ def _stored(extraction: Extraction) -> dict[str, tuple[str, str | None, Pred]]:
     found: dict[str, tuple[str, str | None, Pred]] = {}
     for v in extraction.values:
         if v.origin not in ("model", "manual") or split_cell_name(v.name) is not None:
-            continue  # 按公式算的不算；表格明细这一版不比
+            continue  # Formula fields are excluded; line items are handled separately.
         truth = None if v.deleted else v.current_value
         found[v.name] = (v.type, truth, Pred(v.value, bool(v.needs_review)))
     return found
@@ -575,11 +590,12 @@ def _stored(extraction: Extraction) -> dict[str, tuple[str, str | None, Pred]]:
 def _stored_tables(
     extraction: Extraction,
 ) -> tuple[dict[str, list[TruthRow]], dict[str, list[PredRow]]]:
-    """表格明细的标准答案和当时存下的结果（ADR 0062）。
+    """Ground truth and stored results for line items.
 
-    标准答案按审核后的"当前结果"（pipeline/current.py：跳过删掉的行、按显示顺序编号）；
-    按公式算的列不算（和单个字段一样）。当时的结果只取模型抽的格子（人加的行模型没给过）。
-    """
+        The ground truth is the current reviewed result (pipeline/current.py: deleted rows
+    skipped, numbered in display order); formula columns are excluded (as for single fields).
+    Stored results contain only model-extracted cells (the model never produced rows added by
+    reviewers)."""
     from jacara.pipeline.current import current_values
 
     truth: dict[str, dict[int, dict[str, tuple[str, str | None]]]] = {}
@@ -608,7 +624,8 @@ def _stored_tables(
 
 
 def _template_of(session: Session, document: Document) -> TemplateChoice | None:
-    """和当时同一版模板；自动判断的按现在能选的；键值对发现不比（没有固定字段）。"""
+    """Use the same template version as originally; automatic selection uses the currently
+    selectable templates; key-value discovery is not compared (it has no fixed fields)."""
     if document.discover:
         return None
     versions = {e.template_version_id for e in document.extractions}
@@ -696,7 +713,8 @@ def _collect(
 
 
 def _predictions(reports: Iterable[DocumentReport]) -> dict[int, dict[str, Pred]]:
-    """每一页每个字段（包括表格的格子，名字是 items.2.amount）的预测。"""
+    """Prediction for every field on every page (including table cells, named like
+    items.2.amount)."""
     found: dict[int, dict[str, Pred]] = {}
     for report in reports:
         flagged = report.checks.fields_with_issues()
@@ -711,7 +729,7 @@ def _predictions(reports: Iterable[DocumentReport]) -> dict[int, dict[str, Pred]
 
 
 def _pred_tables(preds: dict[str, Pred]) -> dict[str, list[PredRow]]:
-    """把 items.2.amount 这样的格子按表、按行号收成行。"""
+    """Group cells such as items.2.amount into rows by table and row number."""
     tables: dict[str, dict[int, dict[str, Pred]]] = {}
     for name, pred in preds.items():
         cell = split_cell_name(name)
@@ -737,7 +755,8 @@ def replay(
     options: Options | None = None,
     progress: Callable[[str], None] = lambda _: None,
 ) -> ReplayResult:
-    """回放：只读数据库，不写回任何东西。pipelines(arm) 给出那一边用的流水线（stored 的不会叫）。"""
+    """Replay: reads the database and never writes back. pipelines(arm) returns the pipeline of that
+    arm (never called for stored arms)."""
     from jacara import __version__
 
     options = options or Options()
@@ -754,7 +773,8 @@ def replay(
         for team in {d.team_id for d in docs}:
             manifest.split_version[str(team)] = split_version(session, team)
     finally:
-        session.rollback()  # 只读：分组设置第一次用时会生成种子，这里不留下
+        # Read-only: the group seed generated on first use is not persisted here.
+        session.rollback()
         session.close()
 
     built = {a.name: pipelines(a) for a in arms if not a.stored}
@@ -798,8 +818,8 @@ def replay(
                         pdf_read=doc.pdf_read,
                         pages=pages,
                     )
-                except Exception as err:  # 一份出错不影响别的
-                    failed = f"{arm.name} 边处理出错：{type(err).__name__}: {str(err)[:120]}"
+                except Exception as err:  # A failure in one document does not affect the others.
+                    failed = f"{arm.name} 边处理出错：{type(err).__name__}: {(render(str(err)) or '')[:120]}"
                     break
                 finally:
                     pipeline.lessons = None
@@ -839,7 +859,8 @@ def replay(
             }
             for table, a_side in sides[a_name].items():
                 b_side = sides[b_name][table]
-                # 两边的 cells 都是按人审核后的行、列的顺序排的，一一对应
+                # cells in both arms are ordered by reviewed row and column, so they correspond
+                # one-to-one.
                 for a_cell, b_cell in zip(a_side.cells, b_side.cells, strict=True):
                     cells.append(
                         CellPair(
@@ -874,7 +895,9 @@ def _pages(
         manifest.reread.append(str(doc.id))
     for p in pages:
         engine = p.engine + (
-            f"（{', '.join(f'{k}={v}' for k, v in sorted(p.models.items()))}）" if p.models else ""
+            f"（{', '.join(f'{k}={render(v)}' for k, v in sorted(p.models.items()))}）"
+            if p.models
+            else ""
         )
         manifest.ocr[engine] = manifest.ocr.get(engine, 0) + 1
     return pages

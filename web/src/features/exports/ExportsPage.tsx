@@ -8,11 +8,13 @@ import { downloadExport, listExports } from '../../api/exports'
 import type { ExportRecord } from '../../api/types'
 import { saveFile } from '../../utils/download'
 import { formatBytes, formatTime } from '../../utils/format'
+import { useTranslation } from 'react-i18next'
 
 const PAGE_SIZE = 20
 
-/** 导出了哪些文档：数量，鼠标放上去列出文件名（点了进审核页）。 */
+/** Exported documents: the count; hovering lists file names (each opens the review page). */
 function DocumentsCell({ record }: { record: ExportRecord }) {
+  const { t } = useTranslation()
   const list = (
     <div style={{ maxHeight: 260, overflow: 'auto', maxWidth: 360 }}>
       {record.documents.map((d) => (
@@ -23,17 +25,19 @@ function DocumentsCell({ record }: { record: ExportRecord }) {
     </div>
   )
   return (
-    <Popover content={list} title="导出的文档">
-      <Typography.Link>{record.document_count} 份</Typography.Link>
+    <Popover content={list} title={t('导出的文档')}>
+      <Typography.Link>{t('{{document_count}} 份', { document_count: record.document_count })}</Typography.Link>
     </Popover>
   )
 }
 
 /**
- * 导出记录：每次导出都存了一份文件，可以重新下载。
- * 重新下载拿到的是当时导出的内容；文档后来又改过的话，要回文档列表重新导出。
+ * Export history: every export stored a file that can be downloaded again.
+ * Re-downloads contain the content as exported at the time; for later changes, export again from the document
+ * list.
  */
 export function ExportsPage() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const [page, setPage] = useState(1)
   const exports = useQuery({
@@ -43,35 +47,35 @@ export function ExportsPage() {
   })
   const download = useMutation({
     mutationFn: (r: ExportRecord) => downloadExport(r.id, r.filename),
-    onSuccess: ({ blob, filename }) => saveFile(blob, filename),
+    onSuccess: (file) => void saveFile(file),
     onError: (err) => void message.error(err instanceof ApiError ? err.message : String(err)),
   })
 
   const columns: TableProps<ExportRecord>['columns'] = [
-    { title: '时间', dataIndex: 'created_at', width: 170, render: formatTime },
-    { title: '文件', dataIndex: 'filename', ellipsis: true },
+    { title: t('时间'), dataIndex: 'created_at', width: 170, render: formatTime },
+    { title: t('文件'), dataIndex: 'filename', ellipsis: true },
     {
-      title: '格式',
+      title: t('格式'),
       dataIndex: 'format',
       width: 150,
       render: (f: ExportRecord['format']) =>
         f === 'zip' ? (
-          <Tag>每份一个 Excel（zip）</Tag>
+          <Tag>{t('每份一个 Excel（zip）')}</Tag>
         ) : f === 'csv' ? (
           <Tag color="cyan">CSV</Tag>
         ) : f === 'csv-zip' ? (
-          <Tag color="cyan">CSV（zip）</Tag>
+          <Tag color="cyan">{t('CSV（zip）')}</Tag>
         ) : f === 'json' ? (
           <Tag color="geekblue">JSON</Tag>
         ) : (
-          <Tag color="purple">汇总 Excel</Tag>
+          <Tag color="purple">{t('汇总 Excel')}</Tag>
         ),
     },
-    { title: '文档', key: 'documents', width: 90, render: (_, r) => <DocumentsCell record={r} /> },
-    { title: '大小', dataIndex: 'size_bytes', width: 100, align: 'right', render: formatBytes },
-    { title: '导出人', dataIndex: 'user_name', width: 120, ellipsis: true },
+    { title: t('文档'), key: 'documents', width: 90, render: (_, r) => <DocumentsCell record={r} /> },
+    { title: t('大小'), dataIndex: 'size_bytes', width: 100, align: 'right', render: formatBytes },
+    { title: t('导出人'), dataIndex: 'user_name', width: 120, ellipsis: true },
     {
-      title: '操作',
+      title: t('操作'),
       key: 'actions',
       width: 120,
       render: (_, r) =>
@@ -82,20 +86,20 @@ export function ExportsPage() {
             loading={download.isPending && download.variables?.id === r.id}
             onClick={() => download.mutate(r)}
           >
-            重新下载
+            {t('重新下载')}
           </Button>
         ) : (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            文件没保存
+            {t('文件未保存')}
           </Typography.Text>
         ),
     },
   ]
 
   return (
-    <Card title="导出记录">
+    <Card title={t('导出记录')}>
       <Typography.Paragraph type="secondary">
-        每次导出的文件都存了一份。重新下载拿到的是当时的内容；文档后来又改过的话，回文档列表重新导出。
+        {t('每次导出的文件均已存档。重新下载获取的是导出时的内容；如文档之后有修改，请在文档列表中重新导出。')}
       </Typography.Paragraph>
       {exports.error && (
         <Alert
@@ -115,10 +119,10 @@ export function ExportsPage() {
           current: page,
           pageSize: PAGE_SIZE,
           total: exports.data?.total ?? 0,
-          showTotal: (total) => `共 ${total} 次`,
+          showTotal: (total) => t('共 {{total}} 次', { total }),
           onChange: setPage,
         }}
-        locale={{ emptyText: '还没有导出过。在文档列表勾选文档，点"导出"' }}
+        locale={{ emptyText: t('暂无导出记录。可在文档列表中勾选文档后点击“导出”') }}
       />
     </Card>
   )

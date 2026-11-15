@@ -1,19 +1,27 @@
-"""一页 OCR 结果 → 页面结构（ADR 0034）：文字块、行、版面区域、表格、"标题 → 值"。
+"""One page of OCR results → page structure: text blocks, lines, layout regions, tables, label →
+value pairs.
 
-步骤（照 AWS Textract 的 LAYOUT、TABLES、FORMS 三部分）：
-1. WORD、LINE：OCR 的文字块按阅读顺序编号；按位置合成视觉行（plugins/ocr/layout.py）。
-2. LAYOUT：有版面模型就找出区域（标题、正文、表格、页眉页脚……），区域里的文字块归给它。
-3. TABLE / CELL / MERGED_CELL：版面模型找出的每张表，有表格结构模型就认出行列和合并的格子；
-   没有表格模型，按文字位置划分（每个视觉行一行，文字在横向上的投影分成几段就是几列）。
-4. KEY / VALUE：Textract 用训练好的模型找"标题 → 值"。能离线、能商用的同类模型（LayoutXLM 系列）
-   许可证不允许商用，所以这里按版面规则找，五种情况：
-   - 同一块里"标题：值"（"Date: 31/12/2017"）
-   - 冒号结尾的标题，值在右边或正下方（"Guest Name:" "Sanjay"）
-   - 上面一行是几个标题，下面按列写值（"Check In  Check Out  Rooms" / "31/12/2017  01/01/2018  1"）
-   - 两列的表格，左边一列是标题
-   - 同一行只有两块：左边像标题、右边是数字（"Grand Total   Rs 1939"）
-   找到的只是结构，最后哪个值填哪个字段由大模型决定，再由证据对齐核对。
-"""
+Steps (following the LAYOUT, TABLES and FORMS features of AWS Textract):
+1. WORD, LINE: OCR text blocks are numbered in reading order and merged into visual lines by
+   position (plugins/ocr/layout.py).
+2. LAYOUT: with a layout model, regions (title, text, table, header, footer, …) are detected and
+   the text blocks inside are assigned to them.
+3. TABLE / CELL / MERGED_CELL: for each table found by the layout model, a table structure model
+   (if present) recognizes rows, columns and merged cells; otherwise cells are derived from text
+   positions (one row per visual line; columns from the horizontal projection of the text).
+4. KEY / VALUE: Textract finds label → value pairs with trained models. Comparable offline models
+   (the LayoutXLM family) are not licensed for commercial use, so layout rules are used instead,
+   covering five cases:
+   - "label: value" within one block ("Date: 31/12/2017")
+   - A label ending with a colon, with the value to its right or directly below ("Guest Name:"
+     "Sanjay")
+   - A line of labels with values in columns below ("Check In  Check Out  Rooms" / "31/12/2017
+     01/01/2018  1")
+   - Two-column tables whose left column holds labels
+   - Exactly two blocks on a line: a label-like block on the left and a number on the right
+     ("Grand Total   Rs 1939")
+   The result is only structure; the LLM decides which value fills which field, and evidence
+alignment verifies it."""
 
 from __future__ import annotations
 
@@ -24,6 +32,7 @@ from statistics import median
 
 import numpy as np
 
+from jacara.core.i18n import N_c
 from jacara.plugins.ocr.base import OcrLine, OcrPage
 from jacara.plugins.ocr.layout import OcrRow, continues, group_rows
 from jacara.structure.engines import NO_MODELS, TABLE, CellGuess, Region, StructureEngines
@@ -32,10 +41,12 @@ from jacara.structure.graph import Block, Box, PageStructure
 _WORDY = re.compile(r"[A-Za-z一-鿿]")
 _DIGIT = re.compile(r"\d")
 _INLINE = re.compile(r"^(?P<key>[^:：\d]{1,40}?)\s*[:：]\s*(?P<value>\S.*)$")
-"""同一块里的"标题：值"。标题里不能有数字（"8:13" 不是标题和值）。"""
+""""label: value" within one block. The label must not contain digits ("8:13" is not a label and
+value)."""
 
 WIDE_GAP = 0.35
-"""冒号结尾的标题和右边的值，横向空隙不超过页宽的 35%。"""
+"""Maximum horizontal gap between a colon-terminated label and the value to its right: 35% of the
+page width."""
 
 
 def _box(line: OcrLine) -> Box:
@@ -52,7 +63,7 @@ def _inside(box: Box, area: Box, pad: float = 2.0) -> bool:
 
 
 def _label_like(text: str) -> bool:
-    """像标题：有字、没有数字、不长。"""
+    """Looks like a label: has letters, no digits, short."""
     text = text.strip()
     return bool(_WORDY.search(text)) and not _DIGIT.search(text) and 0 < len(text) <= 40
 
@@ -66,7 +77,7 @@ class _Builder:
     lines: list[str]
     ocr_lines: list[OcrLine]
     word_of: dict[int, str]
-    """id(OcrLine) → WORD 的 id。"""
+    """id(OcrLine) → WORD id."""
 
     def add(self, block: Block) -> Block:
         self.blocks[block.id] = block
@@ -94,15 +105,16 @@ def analyze_page(
     engines: StructureEngines = NO_MODELS,
     page_starts: tuple[float, ...] = (),
 ) -> PageStructure:
-    """分析一页的结构。image 是这一页的图（坐标和 OCR 一样）；没有图就不用模型，只按规则。
+    """Analyze the structure of one page. image is the page image (same coordinates as OCR); without
+    an image no models are used, only rules.
 
-    page_starts：几页拼成的一张单据（ADR 0036），每一页从多高开始；记在结构里，给模型看时分页。
-    """
+        page_starts: for stacked documents, the y offset at which each page begins; recorded in
+    the structure so the model input can mark page breaks."""
     rows = group_rows(page)
     b = _Builder(page, rows, {}, [], [], [], {})
     index_of = {id(ln): i for i, ln in enumerate(page.lines)}
 
-    # 1. WORD、LINE
+    # 1. WORD, LINE
     for row in rows:
         ids: list[str] = []
         for line in row.lines:
@@ -134,7 +146,8 @@ def analyze_page(
     layouts: list[str] = []
     seen: dict[tuple[str, ...], float] = {}
     kept: list[tuple[Region, tuple[str, ...]]] = []
-    # 版面模型有时把同一块地方报两次（一次"标题"、一次"正文"）：同样几块文字只留分数高的那个
+    # The layout model sometimes reports the same area twice (once as title, once as text): keep
+    # only the higher-scoring region for the same blocks.
     for region in sorted(regions, key=lambda r: -r.score):
         inside = tuple(w for w in b.words if _inside(b.blocks[w].box, region.box))
         if inside and inside in seen:
@@ -169,7 +182,7 @@ def analyze_page(
             guesses = _recognize(image, region.box, engines)
             sources["table"] = engines.table.name
         else:
-            sources.setdefault("table", "规则")
+            sources.setdefault("table", N_c("structure source", "规则"))
         table = _build_table(b, len(tables) + 1, region, guesses)
         if table is not None:
             tables.append(table.id)
@@ -197,11 +210,12 @@ def _min_conf(b: _Builder, ids: Iterable[str]) -> float:
     return min((b.blocks[i].confidence for i in ids), default=1.0)
 
 
-# ---- 表格 ----
+# ---- Tables ----
 
 
 def _recognize(image: np.ndarray, area: Box, engines: StructureEngines) -> list[CellGuess]:
-    """把表格那一块裁出来交给表格模型，格子的框换回整页的坐标。"""
+    """Crop the table region for the table model and convert cell boxes back to full-page
+    coordinates."""
     if engines.table is None:
         return []
     h, w = image.shape[:2]
@@ -223,7 +237,8 @@ def _recognize(image: np.ndarray, area: Box, engines: StructureEngines) -> list[
 
 
 def _bands(spans: list[tuple[int, float, float]], count: int) -> list[tuple[float, float]]:
-    """每一行（或列）占的范围：这一行里所有不跨行的格子的上下边界合起来。没有的按两边插。"""
+    """Extent of each row (or column): the union of the top and bottom edges of its non-spanning
+    cells; interpolated from neighbors when empty."""
     found: dict[int, tuple[float, float]] = {}
     for index, lo, hi in spans:
         old = found.get(index)
@@ -234,7 +249,7 @@ def _bands(spans: list[tuple[int, float, float]], count: int) -> list[tuple[floa
 def _nearest(value: float, bands: list[tuple[float, float]]) -> int:
     best, best_d = 0, float("inf")
     for i, (lo, hi) in enumerate(bands):
-        if lo != lo:  # nan：这一行没有自己的格子
+        if lo != lo:  # nan: this row has no cells of its own.
             continue
         d = 0.0 if lo <= value <= hi else min(abs(value - lo), abs(value - hi))
         if d < best_d:
@@ -243,9 +258,11 @@ def _nearest(value: float, bands: list[tuple[float, float]]) -> int:
 
 
 def _build_table(b: _Builder, number: int, region: Block, guesses: list[CellGuess]) -> Block | None:
-    """一张表：先定出有几行几列、每个文字块在哪一格，再生成 CELL（每个位置一个）和 MERGED_CELL。"""
+    """One table: determine the rows and columns and the cell of each text block, then generate CELL
+    blocks (one per position) and MERGED_CELL blocks."""
     words = list(region.children)
-    spans: list[tuple[int, int, int, int]] = []  # 合并的格子：(行, 行尾, 列, 列尾)
+    # Merged cell: (row, last row, column, last column).
+    spans: list[tuple[int, int, int, int]] = []
     if guesses:
         n_rows = max(g.row_end for g in guesses) + 1
         n_cols = max(g.col_end for g in guesses) + 1
@@ -337,10 +354,11 @@ def _build_table(b: _Builder, number: int, region: Block, guesses: list[CellGues
 
 
 def _rule_grid(b: _Builder, region: Block) -> tuple[dict[str, tuple[int, int]], int, int]:
-    """没有表格模型时：每个视觉行一行；把文字块在横向上的范围投影到一起，连起来的算一列。
+    """Without a table model: one row per visual line; the horizontal extents of the text blocks are
+    projected together, and each connected range is a column.
 
-    很宽的块（超过表格宽度六成，例如表格里的一行说明）不参与分列，免得把几列连成一列。
-    """
+        Very wide blocks (over 60% of the table width, such as a note spanning the table) are
+    excluded from column detection so they do not merge several columns into one."""
     words = list(region.children)
     width = max(region.box[2] - region.box[0], 1.0)
     narrow = [w for w in words if (b.blocks[w].box[2] - b.blocks[w].box[0]) <= 0.6 * width]
@@ -364,7 +382,7 @@ def _rule_grid(b: _Builder, region: Block) -> tuple[dict[str, tuple[int, int]], 
     return place, len(row_numbers), len(col_bands)
 
 
-# ---- 标题 → 值 ----
+# ---- Label → value ----
 
 
 @dataclass
@@ -375,7 +393,7 @@ class _Pair:
     confidence: float
     key_span: tuple[int, int] | None = None
     value_span: tuple[int, int] | None = None
-    """同一块里的"标题：值"：标题、值各占这块文字的哪一段（第几个字到第几个字）。"""
+    """"label: value" within one block: the character ranges of the label and of the value."""
 
 
 def _key_values(b: _Builder, in_table: set[str], tables: list[str]) -> list[str]:
@@ -386,7 +404,7 @@ def _key_values(b: _Builder, in_table: set[str], tables: list[str]) -> list[str]
     def take(pair: _Pair) -> None:
         if any(w in used_value for w in pair.value) or any(w in used_key for w in pair.key):
             return
-        if pair.key_span is None:  # 同一块的标题和值不算"已经用掉"
+        if pair.key_span is None:  # Label and value within one block are not marked as used.
             used_key.update(pair.key)
             used_value.update(pair.value)
         else:
@@ -398,7 +416,7 @@ def _key_values(b: _Builder, in_table: set[str], tables: list[str]) -> list[str]
     for w in free:
         by_row.setdefault(int(b.blocks[w].attrs["row"]), []).append(w)
 
-    # ① 同一块里"标题：值"
+    # 1. "label: value" within one block
     for w in free:
         m = _INLINE.match(b.blocks[w].text.strip())
         if m and _label_like(m["key"]):
@@ -415,7 +433,7 @@ def _key_values(b: _Builder, in_table: set[str], tables: list[str]) -> list[str]
                 )
             )
 
-    # ② 冒号结尾的标题：值在右边，或者在正下方
+    # 2. Colon-terminated label: value to the right or directly below
     for w in free:
         text = b.blocks[w].text.strip()
         if not text.endswith((":", "：")) or not _label_like(text[:-1]) or w in used_key:
@@ -436,7 +454,7 @@ def _key_values(b: _Builder, in_table: set[str], tables: list[str]) -> list[str]
             value = [below, *_continued_below(b, below, free)]
             take(_Pair((w,), tuple(value), "colon_below", 0.75))
 
-    # ③ 上面一行是几个标题，下面按列写值
+    # 3. A line of labels with values in columns below
     for above, below in zip(b.rows, b.rows[1:], strict=False):
         heads = [w for w in b.word_ids(above.lines) if w in by_row.get(above.index, [])]
         if len(heads) < 2 or not all(_label_like(b.blocks[h].text) for h in heads):
@@ -454,7 +472,7 @@ def _key_values(b: _Builder, in_table: set[str], tables: list[str]) -> list[str]
         for w, head in columns.items():
             if head is not None:
                 values.setdefault(head, []).append(w)
-        # 下面"接着上一行写"的行，对得上哪一栏就接到哪一栏
+        # Lines below that continue the previous line are appended to the column they align with.
         previous = below
         for nxt in b.rows[below.index :]:
             if not continues(previous, nxt):
@@ -468,7 +486,7 @@ def _key_values(b: _Builder, in_table: set[str], tables: list[str]) -> list[str]
             if head in values:
                 take(_Pair((head,), tuple(values[head]), "header_above", 0.8))
 
-    # ④ 两列的表格，左边一列是标题
+    # 4. Two-column tables whose left column holds labels
     for t in tables:
         table = b.blocks[t]
         if table.attrs["cols"] != 2:
@@ -482,21 +500,25 @@ def _key_values(b: _Builder, in_table: set[str], tables: list[str]) -> list[str]
             continue
         _, head_v = rows[0]
         if head_v.children and _label_like(head_v.text):
-            continue  # 第一行两格都是标题（"DESCRIPTION  AMOUNT"）：这是普通的表，不是"标题 → 值"
+            # Both cells of the first row are headers ("DESCRIPTION  AMOUNT"): an ordinary table,
+            # not label → value.
+            continue
         for k, v in rows:
             if k.children and v.children and _label_like(k.text):
                 take(_Pair(k.children, v.children, "two_column_table", 0.8))
 
-    # ⑤ 同一行只有两块：左边像标题，右边有数字
+    # 5. Exactly two blocks on a line: label-like on the left, a number on the right
     for row_words in by_row.values():
         if len(row_words) == 2:
             left, right = row_words
             if _label_like(b.blocks[left].text) and _DIGIT.search(b.blocks[right].text):
                 take(_Pair((left,), (right,), "label_left", 0.6))
 
-    # ⑥ 没认出表格的表格行：最左边是行名，同一条水平线上右边还有两块以上，最右边是金额
-    # （"Room Charges   Rs 1939 x 1 Night x 1 Room   Rs 1939"）。按位置看是不是同一条线，
-    # 不按行号：行名和金额有时被分在两个版面区域里，行号不一样
+    # 6. Table rows not recognized as a table: the row name on the far left, at least two more
+    # blocks to the right on the same horizontal line, and an amount at the far right ("Room Charges
+    # Rs 1939 x 1 Night x 1 Room   Rs 1939"). The same line is judged by position rather than line
+    # number, since the row name and the amount are sometimes assigned to different layout regions
+    # with different line numbers.
     for w in free:
         text = b.blocks[w].text.strip()
         if (
@@ -559,7 +581,8 @@ def _key_values(b: _Builder, in_table: set[str], tables: list[str]) -> list[str]
 _AMOUNT = re.compile(
     r"(?:[A-Za-z]{2,3}\.?\s+)?[-+(]?\s*[$€£¥₹]?\s*\d+(?:[,\s]\d{3})*(?:\.\d+)?\)?\s*[A-Za-z%]{0,4}"
 )
-"""整块就是一个金额或数（Rs 1939、$4.11、9.00、10 kg）：表格行最右边的值。"""
+"""The whole block is an amount or number (Rs 1939, $4.11, 9.00, 10 kg): the rightmost value of a
+table row."""
 
 
 def _part(b: _Builder, ids: tuple[str, ...], span: tuple[int, int] | None) -> str:
@@ -572,7 +595,8 @@ def _row_height(*rows: OcrRow) -> float:
 
 
 def _column_of(b: _Builder, word: str, heads: list[str], h: float) -> str | None:
-    """这块值在哪个标题下面：左边对齐（差不到 1.5 个字高），或者中心落在标题的左右范围里。"""
+    """Header under which this value block sits: left-aligned (within 1.5 text heights), or its
+    center within the header's horizontal extent."""
     x0, _, x1, _ = b.blocks[word].box
     cx = (x0 + x1) / 2
     best: tuple[float, str] | None = None
@@ -586,7 +610,8 @@ def _column_of(b: _Builder, word: str, heads: list[str], h: float) -> str | None
 
 
 def _has_own_label(b: _Builder, word: str, free: list[str]) -> bool:
-    """这一块左边同一行有自己的标签（"Cashier :  MANIS"）：它是另一个值，不是上一个值折行。"""
+    """This block has its own label to its left on the same line ("Cashier :  MANIS"): it is another
+    value, not a continuation of the previous one."""
     row = b.blocks[word].attrs["row"]
     x0 = b.blocks[word].box[0]
     for w in free:
@@ -600,7 +625,7 @@ def _has_own_label(b: _Builder, word: str, free: list[str]) -> bool:
 
 
 def _just_below(b: _Builder, word: str, free: list[str]) -> str | None:
-    """正下方左对齐、挨得近的那一块。"""
+    """The nearby left-aligned block directly below."""
     x0, _, _, y1 = b.blocks[word].box
     h = b.blocks[word].box[3] - b.blocks[word].box[1]
     found = [
@@ -612,7 +637,8 @@ def _just_below(b: _Builder, word: str, free: list[str]) -> str | None:
 
 
 def _continued_below(b: _Builder, word: str, free: list[str]) -> list[str]:
-    """值折行：正下方左对齐、挨得近、字一样大的几块（最多再接 5 块）。"""
+    """Wrapped value: nearby left-aligned blocks of the same text size directly below (at most 5
+    more)."""
     found: list[str] = []
     current = word
     for _ in range(5):

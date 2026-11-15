@@ -1,9 +1,11 @@
-"""一个文件里的几张单据（ADR 0036）：把一张单据的几页拼成一页处理，存的时候再拆回每一页。
+"""Several documents in one file: the pages of one document are stacked into a single page for
+processing and split back into pages when stored.
 
-为什么拼成一页：抽取、找出处、版面分析都是按"一页"写的。两页的酒店账单拼成上下相连的一张长页，
-跨页的明细表就自然接在一起，后面的步骤一行都不用改。
-存的时候每一页的 OCR 结果、出处框都换回这一页自己的坐标，审核页照常按页显示原图。
-"""
+Why stack: extraction, evidence location and layout analysis all operate on one page. Stacking a
+two-page hotel bill into one tall page joins line-item tables that span pages naturally, without
+changing any later step. When storing, the OCR results and evidence boxes of each page are
+converted back to that page's coordinates, so the review page shows the images page by page as
+usual."""
 
 from __future__ import annotations
 
@@ -20,19 +22,21 @@ if TYPE_CHECKING:
     from jacara.models import Extraction
 
 GAP = 60
-"""拼起来时页与页之间空多少像素：比行距大得多，分析时不会把上一页最后一行和下一页第一行当成一行。"""
+"""Gap in pixels between stacked pages: much larger than the line spacing, so the last line of one
+page and the first line of the next are never merged."""
 
 
 @dataclass(frozen=True)
 class Stacked:
-    """几页拼成的一页。starts[k] 是第 k 页（从 0 数）在长页上从哪个高度开始。"""
+    """Several pages stacked into one. starts[k] is the y offset at which page k (0-based) begins on
+    the tall page."""
 
     page: OcrPage
     starts: tuple[float, ...]
     pages: tuple[OcrPage, ...]
 
     def page_index(self, y: float) -> int:
-        """长页上高度 y 落在第几页（从 0 数）。"""
+        """Page index (0-based) containing height y on the tall page."""
         index = 0
         for k, start in enumerate(self.starts):
             if y >= start - GAP / 2:
@@ -41,7 +45,7 @@ class Stacked:
 
 
 def stack_pages(pages: Sequence[OcrPage]) -> Stacked:
-    """几页拼成一页：上下相连，中间空 GAP。只有一页就原样返回。"""
+    """Stack pages vertically with GAP between them. A single page is returned unchanged."""
     if len(pages) == 1:
         return Stacked(pages[0], (0.0,), tuple(pages))
     lines: list[OcrLine] = []
@@ -88,7 +92,8 @@ def _shift(line: OcrLine, dy: float) -> OcrLine:
 
 
 def stack_images(images: Sequence[np.ndarray | None], stacked: Stacked) -> np.ndarray | None:
-    """几页的图拼成一张（和 stack_pages 一样的位置），白底。有一页没有图就不拼。"""
+    """Stack page images into one (same positions as stack_pages) on a white background. Not stacked
+    if any page lacks an image."""
     if any(image is None for image in images):
         return None
     pictures = [image for image in images if image is not None]
@@ -105,7 +110,8 @@ def stack_images(images: Sequence[np.ndarray | None], stacked: Stacked) -> np.nd
 
 @dataclass
 class StackedLayout:
-    """版面模型按一页一页看（拼成的长页缩小后看不清），找到的区域再挪回长页上的位置。"""
+    """The layout model looks at pages one by one (a downscaled tall page would be illegible) and
+    its regions are moved back to their positions on the tall page."""
 
     base: LayoutDetector
     starts: tuple[float, ...]
@@ -123,7 +129,8 @@ class StackedLayout:
 
 
 def stacked_engines(engines: StructureEngines, stacked: Stacked) -> StructureEngines:
-    """拼成长页时用的模型：版面模型一页一页看；表格模型看的是一张表的图，不用改。"""
+    """Models used for stacked pages: the layout model looks page by page; the table model looks at
+    a single table image and needs no change."""
     if engines.layout is None or len(stacked.pages) == 1:
         return engines
     heights = tuple(p.height for p in stacked.pages)
@@ -132,7 +139,8 @@ def stacked_engines(engines: StructureEngines, stacked: Stacked) -> StructureEng
 
 
 def local_box(box: Sequence[float], starts: Sequence[float]) -> tuple[int, list[float]]:
-    """长页上的框 → （第几页，从 0 数；这一页上的框）。框跨两页时算在上面那页。"""
+    """Box on the tall page → (page index, 0-based; box on that page). Boxes spanning two pages
+    belong to the upper one."""
     index = 0
     for k, start in enumerate(starts):
         if box[1] >= start - GAP / 2:
@@ -143,10 +151,10 @@ def local_box(box: Sequence[float], starts: Sequence[float]) -> tuple[int, list[
 
 
 def ocr_page_json(ocr: dict[str, Any] | None, page: int, first: int) -> dict[str, Any] | None:
-    """一条抽取记录里第 page 页（文件里的页码）的 OCR 结果。
+    """OCR result of page page (page number in the file) in one extraction.
 
-    一张单据只占一页的，存的就是这一页；占好几页的，存成 {"pages": [{"page": 3, "lines": …}, …]}。
-    """
+        A single-page document stores that page; a multi-page document stores {"pages": [{"page":
+    3, "lines": …}, …]}."""
     if ocr is None:
         return None
     if "pages" not in ocr:
@@ -155,7 +163,7 @@ def ocr_page_json(ocr: dict[str, Any] | None, page: int, first: int) -> dict[str
 
 
 def pages_json(ocr: dict[str, Any] | None, first: int) -> list[tuple[int, dict[str, Any]]]:
-    """一条抽取记录里每一页的 OCR 结果：[(页码, 那一页的 OCR)]。"""
+    """OCR result of every page in one extraction: [(page number, OCR of that page)]."""
     if ocr is None:
         return []
     if "pages" not in ocr:
@@ -164,12 +172,13 @@ def pages_json(ocr: dict[str, Any] | None, first: int) -> list[tuple[int, dict[s
 
 
 def covering(extractions: Iterable[Extraction], page: int) -> Extraction | None:
-    """第 page 页属于哪一张单据（哪一条抽取记录）。"""
+    """Document (extraction) containing page page."""
     return next((e for e in extractions if e.page <= page <= (e.last_page or e.page)), None)
 
 
 def page_slice(data: dict[str, Any], page: int, first: int) -> tuple[float, float] | None:
-    """几页拼成的结构里，第 page 页占长页的哪一段 (上, 下)。不是拼成的（只有一页）返回 None。"""
+    """Range (top, bottom) of page page on the tall page of a stacked structure. None if not stacked
+    (single page)."""
     starts = data.get("page_starts") or []
     if len(starts) < 2:
         return None

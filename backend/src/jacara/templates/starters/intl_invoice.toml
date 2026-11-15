@@ -9,7 +9,16 @@ title = "通用发票"
 titles = { en = "Invoice", ar = "فاتورة", de = "Rechnung", es = "Factura", fr = "Facture", hi = "बीजक", id = "Faktur", it = "Fattura", ja = "請求書", ko = "인보이스", ms = "Invois", nl = "Factuur", pl = "Faktura", th = "ใบแจ้งหนี้", vi = "Hóa đơn", "zh-Hant" = "發票" }
 domains = ["发票"]
 description = "任何国家的商业发票（Invoice）：卖方、买方、明细、不含税合计 + 税额 = 含税合计。字段和金额关系参考 EN 16931，不带地区规定。"
+descriptions = { en = "Commercial invoices from any country: seller, buyer, line items, net total + tax = gross total. Fields and amount relations follow EN 16931, without regional rules." }
 rules = ["issue_date_exists", "issue_date_not_future", "lines_net", "net_tax_gross", "due_not_above_gross", "item_line"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: generic invoices.",
+  "Field source: the items and amount relations common to all countries in EN 16931 (the European e-invoicing standard, also used by Peppol BIS Billing 3.0).",
+  "No tax rules of any country or region; for Australian tax invoices see au_tax_invoice.toml.",
+]
 
 [[fields]]
 name = "document_title"
@@ -17,6 +26,7 @@ label = "单据标题"
 names = { en = "Document Title", ar = "عنوان المستند", de = "Belegart", es = "Tipo de documento", fr = "Titre du document", hi = "दस्तावेज़ का शीर्षक", id = "Jenis dokumen", it = "Tipo documento", ja = "書類名", ko = "문서명", ms = "Jenis dokumen", nl = "Documentsoort", pl = "Rodzaj dokumentu", th = "ชื่อเอกสาร", vi = "Tên chứng từ", "zh-Hant" = "單據標題" }
 type = "string"
 description = "单据上写的标题，如 Invoice、Tax Invoice，原样照抄"
+descriptions = { en = "The title written on the document, such as Invoice or Tax Invoice; copy it as written" }
 aliases = ["Invoice", "Tax Invoice", "发票"]
 
 [[fields]]
@@ -49,6 +59,7 @@ label = "币种"
 names = { en = "Currency", ar = "العملة", de = "Währung", es = "Moneda", fr = "Devise", hi = "मुद्रा", id = "Mata uang", it = "Valuta", ja = "通貨", ko = "통화", ms = "Mata wang", nl = "Valuta", pl = "Waluta", th = "สกุลเงิน", vi = "Loại tiền", "zh-Hant" = "幣別" }
 type = "string"
 description = "三个字母的币种代码，如 AUD、USD、EUR；单据上只有符号时按符号和国家判断"
+descriptions = { en = "The three-letter currency code, such as AUD, USD, EUR; when the document shows only a symbol, infer it from the symbol and country" }
 aliases = ["Currency"]
 
 [[fields]]
@@ -58,6 +69,7 @@ names = { en = "Seller Name", ar = "البائع", de = "Verkäufer", es = "Vend
 type = "string"
 required = true
 description = "开发票的公司名称"
+descriptions = { en = "The name of the company issuing the invoice" }
 aliases = ["From", "Supplier", "Seller"]
 
 [[fields]]
@@ -66,6 +78,7 @@ label = "卖方税号"
 names = { en = "Seller Tax ID", ar = "الرقم الضريبي للبائع", de = "USt-IdNr. Verkäufer", es = "NIF del vendedor", fr = "N° TVA du vendeur", hi = "विक्रेता जीएसटीआईएन", id = "NPWP penjual", it = "Partita IVA cedente", ja = "売手登録番号", ko = "판매자 사업자등록번호", ms = "TIN penjual", nl = "Btw-id leverancier", pl = "NIP sprzedawcy", th = "เลขประจำตัวผู้เสียภาษีผู้ขาย", vi = "Mã số thuế người bán", "zh-Hant" = "賣方統一編號" }
 type = "string"
 description = "卖方的税号，如 ABN、VAT No.、GST No."
+descriptions = { en = "The seller's tax number, such as ABN, VAT No., GST No." }
 aliases = ["ABN", "VAT No.", "GST No.", "Tax ID"]
 
 [[fields]]
@@ -94,6 +107,7 @@ label = "不含税合计"
 names = { en = "Total excl. Tax", ar = "الإجمالي غير شامل الضريبة", de = "Nettobetrag", es = "Base imponible", fr = "Total HT", hi = "कर रहित कुल", id = "Total sebelum pajak", it = "Imponibile", ja = "税抜合計", ko = "공급가액 합계", ms = "Jumlah tidak termasuk cukai", nl = "Totaal excl. btw", pl = "Wartość netto", th = "มูลค่าก่อนภาษี", vi = "Cộng tiền hàng", "zh-Hant" = "未稅合計" }
 type = "number"
 description = "不含税的合计金额"
+descriptions = { en = "The total excluding tax" }
 aliases = ["Subtotal", "Total excl. tax", "Net amount"]
 
 [[fields]]
@@ -102,6 +116,7 @@ label = "税额"
 names = { en = "Tax", ar = "الضريبة", de = "Steuer", es = "Impuesto", fr = "TVA", hi = "कर", id = "Pajak", it = "Imposta", ja = "税額", ko = "세액", ms = "Cukai", nl = "Btw", pl = "Podatek", th = "ภาษี", vi = "Tiền thuế", "zh-Hant" = "稅額" }
 type = "number"
 description = "税额合计"
+descriptions = { en = "The total tax" }
 aliases = ["Tax", "VAT", "GST", "Sales tax", "Total tax"]
 
 [[fields]]
@@ -111,6 +126,7 @@ names = { en = "Total incl. Tax", ar = "الإجمالي شامل الضريبة
 type = "number"
 required = true
 description = "含税的合计金额"
+descriptions = { en = "The total including tax" }
 aliases = ["Total", "Total incl. tax", "Grand total"]
 
 [[fields]]
@@ -119,6 +135,7 @@ label = "应付金额"
 names = { en = "Amount Due", ar = "المبلغ المستحق", de = "Zahlbetrag", es = "Importe a pagar", fr = "Montant dû", hi = "देय राशि", id = "Jumlah tagihan", it = "Importo da pagare", ja = "請求金額", ko = "청구금액", ms = "Jumlah perlu dibayar", nl = "Te betalen", pl = "Do zapłaty", th = "ยอดที่ต้องชำระ", vi = "Số tiền phải trả", "zh-Hant" = "應付金額" }
 type = "number"
 description = "扣掉已付款后还要付的金额"
+descriptions = { en = "The amount still to pay after deducting payments made" }
 aliases = ["Amount Due", "Balance Due"]
 
 [[fields]]
@@ -133,6 +150,7 @@ name = "items"
 label = "明细"
 names = { en = "Items", ar = "البنود", de = "Positionen", es = "Conceptos", fr = "Lignes", hi = "विवरण", id = "Rincian", it = "Righe", ja = "明細", ko = "품목", ms = "Butiran", nl = "Regels", pl = "Pozycje", th = "รายการ", vi = "Hàng hóa, dịch vụ", "zh-Hant" = "明細" }
 description = "发票的明细行，每个商品或服务一行"
+descriptions = { en = "The invoice line items, one row per product or service" }
 
 [[tables.columns]]
 name = "description"
@@ -161,6 +179,7 @@ label = "金额"
 names = { en = "Amount", ar = "المبلغ", de = "Betrag", es = "Importe", fr = "Montant", hi = "राशि", id = "Nilai", it = "Importo", ja = "金額", ko = "금액", ms = "Jumlah", nl = "Bedrag", pl = "Wartość", th = "จำนวนเงิน", vi = "Thành tiền", "zh-Hant" = "金額" }
 type = "number"
 description = "这一行不含税的金额"
+descriptions = { en = "The amount of this row excluding tax" }
 aliases = ["Amount", "Line Total"]
 
 [[tables.columns]]

@@ -1,4 +1,5 @@
-"""导出 API：下载 Excel，打开检查内容。以及从数据库读回 DocumentReport（load_reports）。"""
+"""Export API: download Excel and inspect it; reading DocumentReport back from the database
+(load_reports)."""
 
 import io
 import uuid
@@ -18,7 +19,7 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 @pytest.fixture
 def save(factory, report, tmp_path):
-    """存一个处理完的文档，返回它的 id。可以指定文件名。"""
+    """Store a processed document and return its id. The file name is optional."""
 
     def _save(filename: str = "receipt.jpg") -> uuid.UUID:
         path = tmp_path / filename
@@ -30,14 +31,14 @@ def save(factory, report, tmp_path):
 
 
 def summary(response) -> list[dict]:
-    """把下载的 Excel 的"汇总"表读成一行一个字典。"""
+    """Read the summary sheet of a downloaded workbook as one dictionary per row."""
     sheet = load_workbook(io.BytesIO(response.content))["汇总"]
     rows = list(sheet.iter_rows(values_only=True))
     return [dict(zip(rows[0], r, strict=True)) for r in rows[1:]]
 
 
 def download_name(response) -> str:
-    """从 Content-Disposition 里取出（解码后的）文件名。"""
+    """Decoded file name from Content-Disposition."""
     disposition = response.headers["content-disposition"]
     return unquote(disposition.split("filename*=UTF-8''")[1])
 
@@ -51,7 +52,7 @@ def test_export_one_document(client, save):
     assert response.headers["content-disposition"].startswith("attachment")
     assert download_name(response) == "receipt.xlsx"
     [row] = summary(response)
-    assert row["总额"] == 9.0  # 列名用模板里的中文名
+    assert row["总额"] == 9.0  # Column headers use the template display names.
     assert row["需要确认"] == 3
 
 
@@ -65,7 +66,7 @@ def test_export_uses_reviewed_value(client, save):
     )
 
     [row] = summary(client.get(f"/api/v1/documents/{document_id}/export.xlsx"))
-    assert row["change"] == 1.0  # 审核之后的值，不是模型的 100
+    assert row["change"] == 1.0  # The post-review value, not the model's 100.
     assert row["需要确认"] == 2
 
 
@@ -76,7 +77,8 @@ def test_export_many_documents_in_order(client, save):
     )
 
     assert response.status_code == 200
-    assert [r["文件"] for r in summary(response)] == ["b.jpg", "a.jpg"]  # 按选的顺序，去掉重复
+    # In selection order, without duplicates.
+    assert [r["文件"] for r in summary(response)] == ["b.jpg", "a.jpg"]
     assert download_name(response).endswith("2份.xlsx")
 
 
@@ -89,11 +91,11 @@ def test_export_zip_one_excel_per_document(client, save):
     assert download_name(response).endswith("3份.zip")
     assert 'filename="export.zip"' in response.headers["content-disposition"]
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-        # 按选的顺序；重名的加 (2)
+        # In selection order; duplicate names get (2).
         assert archive.namelist() == ["receipt.xlsx", "发票.xlsx", "receipt (2).xlsx"]
         for name in archive.namelist():
             sheet = load_workbook(io.BytesIO(archive.read(name)))["汇总"]
-            assert sheet.max_row == 2  # 表头 + 这一张单据
+            assert sheet.max_row == 2  # Header + this document.
 
 
 def test_export_zip_checks_like_excel(client, factory, save):
@@ -129,7 +131,7 @@ def test_export_many_needs_ids(client):
 
 
 def test_load_reports_round_trip(factory, report, save):
-    """存进数据库再读出来，导出器需要的东西都还在。"""
+    """Everything exporters need survives a database round trip."""
     document_id = save()
     with session_scope(factory) as session:
         [loaded] = load_reports(session.get_one(Document, document_id))
@@ -145,4 +147,4 @@ def test_load_reports_round_trip(factory, report, save):
         if before.evidence is not None:
             assert field.evidence is not None
             assert field.evidence.bbox == pytest.approx(before.evidence.bbox, abs=0.1)
-    assert loaded.reviews == {}  # 还没人审核
+    assert loaded.reviews == {}  # Not yet reviewed.

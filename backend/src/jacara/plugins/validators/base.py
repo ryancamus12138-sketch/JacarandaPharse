@@ -1,9 +1,10 @@
-"""规则校验扩展点：用单据上的数字和常识互相验证。
+"""Rule validation extension point: cross-check the numbers on a document against each other and
+against common sense.
 
-证据对齐只能回答"值在不在原文里"。如果 OCR 把原文读错了（1.00 读成 100），
-对齐会把错值当成有出处。规则校验换个角度：现金 − 总额 应该等于 找零，对不上就说明有值错了，
-不管 OCR 置信度有多高。
-"""
+Evidence alignment can only tell whether a value is in the source text. If OCR misread the source
+(1.00 as 100), alignment treats the wrong value as having evidence. Rule validation takes another
+angle: cash − total should equal change; if not, some value is wrong, however high the OCR
+confidence."""
 
 from __future__ import annotations
 
@@ -14,25 +15,26 @@ from typing import Literal, Protocol
 from jacara.plugins.extractors.base import ExtractedField
 
 Severity = Literal["error", "warning"]
-"""error：肯定有值错了。warning：可疑，但也可能没错（例如日期在未来，可能是电脑时间不对）。"""
+"""error: some value is definitely wrong. warning: suspicious but possibly correct (for example a
+future date may mean a wrong computer clock)."""
 
 Values = dict[str, str | float | None]
-"""字段名 → 值。规则只看值，不关心它是怎么抽出来的。"""
+"""Field name → value. Rules look only at values, regardless of how they were extracted."""
 
 
 @dataclass(frozen=True)
 class Rule:
-    """一条规则：名字、要用到哪些字段、怎么检查。
+    """A rule: name, required fields, check.
 
-    check 返回 None 表示通过，返回一句话表示不通过（这句话直接给人看）。
-    needs 里的字段只要有一个没值，这条规则就跳过，不算错。
+        check returns None on success and a sentence on failure (shown to the user as is). If any
+    field in needs has no value, the rule is skipped and does not count as failed.
 
-    表格（商品明细）的两种规则：
-    - needs 里写 items.*.amount：表示"表里所有行的金额"，至少有一行有值才检查。
-    - per_row="items"：每一行单独检查一次，needs 写列名（quantity、amount），
-      check 拿到的是这一行的值。
-    flags：不通过时标黄哪些字段。不写就标 needs 里的全部。
-    """
+        Two kinds of table (line item) rules:
+        - needs contains items.*.amount: "the amounts of all rows"; checked when at least one row
+          has a value.
+        - per_row="items": checked once per row; needs lists column names (quantity, amount) and
+          check receives that row's values.
+        flags: fields highlighted on failure. Defaults to all of needs."""
 
     id: str
     title: str
@@ -42,13 +44,15 @@ class Rule:
     per_row: str | None = None
     flags: tuple[str, ...] | None = None
     requires: tuple[str, ...] = ()
-    """模板里要有这些字段（值可以是空的）这条规则才算"用得上"。查"缺了什么"的规则靠它，
-    只出现在相关的模板里（收银小票的 TSE 规则不会出现在德国发票模板里，ADR 0049）。"""
+    """The rule applies only when the template contains these fields (values may be empty). Rules
+    that check for missing information rely on this and appear only in relevant templates (cash
+    register TSE rules do not appear in German invoice templates)."""
 
 
 @dataclass(frozen=True)
 class Issue:
-    """一条没通过的规则。fields 是牵涉到的字段：不知道是哪个错了，所以全部标出。"""
+    """A failed rule. fields are the fields involved: it is unknown which one is wrong, so all are
+    flagged."""
 
     rule: str
     title: str
@@ -59,22 +63,22 @@ class Issue:
 
 @dataclass(frozen=True)
 class ValidationResult:
-    """校验结果：没通过的、通过的、因为缺字段跳过的。"""
+    """Validation result: failed, passed, and skipped for missing fields."""
 
     issues: tuple[Issue, ...]
     passed: tuple[str, ...]
     skipped: tuple[str, ...]
 
     def fields_with_issues(self) -> set[str]:
-        """所有牵涉到问题的字段名。"""
+        """Names of all fields involved in issues."""
         return {name for issue in self.issues for name in issue.fields}
 
 
 class Validator(Protocol):
-    """校验器接口：任何类只要有 name 属性和 validate 方法，就是一个校验器。"""
+    """Validator interface: any class with a name attribute and a validate method is a validator."""
 
     name: str
 
     def validate(self, fields: Sequence[ExtractedField]) -> ValidationResult:
-        """检查一组字段，返回问题清单。"""
+        """Check a set of fields and return the issues."""
         ...

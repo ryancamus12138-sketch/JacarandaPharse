@@ -11,13 +11,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - name: 安装依赖
+      - name: Install dependencies
         run: uv sync --locked
-      - name: 代码检查
+      - name: Lint
         run: uv run ruff check .
-      - name: 格式检查
+      - name: Format check
         run: uv run ruff format --check .
-      - name: 类型检查
+      - name: Type check
         run: uv run pyright
-      - name: 自动化测试
+      - name: Test
         run: uv run pytest

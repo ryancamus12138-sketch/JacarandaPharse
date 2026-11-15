@@ -1,4 +1,4 @@
-"""导出记录的数据库读写。所有查询都按 team_id 过滤。"""
+"""Export history persistence. All queries filter by team_id."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class ExportRepository:
         return self.session.scalars(query).one_or_none()
 
     def page(self, team_id: uuid.UUID, limit: int, offset: int) -> tuple[list[Export], int]:
-        """最新的在前。"""
+        """Newest first."""
         query = (
             select(Export)
             .where(Export.team_id == team_id)
@@ -39,14 +39,14 @@ class ExportRepository:
         return list(self.session.scalars(query)), total or 0
 
     def user_names(self, user_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
-        """用户 id → 显示名（没有显示名就用用户名）。"""
+        """User id → display name (user name if no display name is set)."""
         if not user_ids:
             return {}
         query = select(User.id, User.display_name, User.username).where(User.id.in_(user_ids))
         return {uid: display or username for uid, display, username in self.session.execute(query)}
 
     def total_bytes(self, team_id: uuid.UUID) -> tuple[int, int]:
-        """（导出了几次，存下的文件一共多大）。"""
+        """(Number of exports, total size of stored files)."""
         query = select(func.count(), func.coalesce(func.sum(Export.size_bytes), 0)).where(
             Export.team_id == team_id, Export.storage_key.is_not(None)
         )

@@ -1,0 +1,57 @@
+# Models the desktop app offers to download. Shipped with the program and never
+# fetched at run time. Each file: model library name, size in bytes, SHA-256 of the whole file and
+# its address at each source, pinned to the commit that last changed it, so an update of the
+# repository cannot change what is downloaded. The size and SHA-256 are those of the files checked
+# by hand (2026-11-14/15), not the metadata the sources report.
+#
+# Sources, in the order tried: Hugging Face (the publisher's repository), ModelScope (the same
+# repository mirrored there), hf-mirror.com (community mirror of Hugging Face). Checked 2026-11-15:
+# Hugging Face page (file SHA-256 and last commit), ModelScope API (Size, Sha256, CommitId).
+
+version = 1
+
+[[files]]
+slot = "model"
+name = "Qwen3.5-9B"
+filename = "Qwen3.5-9B-Q4_K_M.gguf"
+size = 5680522464
+sha256 = "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8"
+license = "Apache-2.0"
+base_model = "Qwen/Qwen3.5-9B-Base"
+default = true
+description = "Qwen3.5 9B, 4-bit quantization Q4_K_M (unsloth/Qwen3.5-9B-GGUF)."
+
+[[files.sources]]
+id = "huggingface"
+url = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/99a1b2185534379e6e8b5ec869da25d3e7b3f73c/Qwen3.5-9B-Q4_K_M.gguf"
+
+[[files.sources]]
+id = "modelscope"
+url = "https://www.modelscope.cn/models/unsloth/Qwen3.5-9B-GGUF/resolve/ae90f0d1c1be2b9250b0ef68265615f6fe3c777b/Qwen3.5-9B-Q4_K_M.gguf"
+
+[[files.sources]]
+id = "hf_mirror"
+url = "https://hf-mirror.com/unsloth/Qwen3.5-9B-GGUF/resolve/99a1b2185534379e6e8b5ec869da25d3e7b3f73c/Qwen3.5-9B-Q4_K_M.gguf"
+
+[[files]]
+slot = "mmproj"
+name = "Qwen3.5-9B-mmproj"
+filename = "mmproj-F16.gguf"
+size = 918166080
+sha256 = "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f"
+license = "Apache-2.0"
+base_model = "Qwen/Qwen3.5-9B-Base"
+default = true
+description = "Vision projector of Qwen3.5 9B in F16 (unsloth/Qwen3.5-9B-GGUF): lets the model look at the page image when OCR is unreliable."
+
+[[files.sources]]
+id = "huggingface"
+url = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/f0a5ec311e0b365f00a15084f64a43bbd21af890/mmproj-F16.gguf"
+
+[[files.sources]]
+id = "modelscope"
+url = "https://www.modelscope.cn/models/unsloth/Qwen3.5-9B-GGUF/resolve/ae90f0d1c1be2b9250b0ef68265615f6fe3c777b/mmproj-F16.gguf"
+
+[[files.sources]]
+id = "hf_mirror"
+url = "https://hf-mirror.com/unsloth/Qwen3.5-9B-GGUF/resolve/f0a5ec311e0b365f00a15084f64a43bbd21af890/mmproj-F16.gguf"

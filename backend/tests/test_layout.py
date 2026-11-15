@@ -1,4 +1,5 @@
-"""视觉行合并：上下重叠够多的文字块算同一行，行内从左到右。"""
+"""Visual line merging: blocks with sufficient vertical overlap form one line, ordered left to
+right."""
 
 from jacara.plugins.ocr.layout import group_rows, numbered_text
 
@@ -7,7 +8,7 @@ from .conftest import make_line, make_page
 
 def test_same_row_blocks_are_merged_left_to_right():
     page = make_page(
-        make_line("25/12/2018", 163, 369, 345, 390),  # 故意把右边的放前面
+        make_line("25/12/2018", 163, 369, 345, 390),  # Right block deliberately first.
         make_line("Date:", 48, 369, 100, 390),
     )
     rows = group_rows(page)
@@ -24,7 +25,7 @@ def test_blocks_that_do_not_overlap_start_a_new_row():
 
 
 def test_small_overlap_is_not_enough():
-    # 上下只重叠 2 像素，远小于高度的一半
+    # Only 2 pixels of vertical overlap, far less than half the height.
     page = make_page(make_line("A", 0, 0, 50, 20), make_line("B", 60, 18, 100, 38))
     assert len(group_rows(page)) == 2
 
@@ -36,7 +37,7 @@ def test_rows_are_numbered_from_one(receipt_page):
 
 
 def tilted_line(text: str, x0: float, y0: float, width: float, slope: float, height: float = 20):
-    """一块歪着的文字：左上角在 (x0, y0)，每向右 1 像素往下 slope 像素。"""
+    """A skewed text block: top left at (x0, y0), descending slope pixels per pixel to the right."""
     from jacara.plugins.ocr.base import OcrLine, Point
 
     x1, y1 = x0 + width, y0 + slope * width
@@ -45,10 +46,11 @@ def tilted_line(text: str, x0: float, y0: float, width: float, slope: float, hei
 
 
 def test_tilted_photo_keeps_rows_apart():
-    """歪着拍的收据：每块文字的外接矩形都比字高很多，按矩形重叠会把好几行粘成一行。
+    """A receipt photographed at an angle: bounding rectangles are much taller than the text, and
+    rectangle overlap would glue several lines together.
 
-    按倾斜方向延长过去比较，才能分开。行距 30 像素、字高 20、斜度 0.15（约 8.5 度）。
-    """
+        Comparing along the slope separates them. Line spacing 30 pixels, text height 20, slope
+    0.15 (about 8.5 degrees)."""
     slope = 0.15
     lines = []
     for i, (name, price) in enumerate([("SUNGOLD KIWI", "17.99"), ("GOURMET MIX", "9.99")]):
@@ -66,7 +68,8 @@ def test_tilted_photo_keeps_rows_apart():
 
 
 def test_another_piece_of_paper_at_an_angle_is_not_merged():
-    """照片里旁边还有一张斜着放的纸：斜度差很多，不和收据的行合并。"""
+    """Another sheet of paper lies askew in the photo: its slope differs greatly and it is not
+    merged with the receipt's lines."""
     receipt = tilted_line("BRIOCHE BUNS", 50, 100, 200, 0.0)
     other = tilted_line("08-Nov-2026 05:50 pm", 300, 60, 200, 0.4)
     rows = group_rows(make_page(receipt, other))

@@ -1,8 +1,9 @@
-"""API 的"依赖"：每个请求需要的东西（数据库会话、对象存储、任务队列、当前用户）。
+"""FastAPI dependencies: per-request resources (database session, object storage, task queue,
+current user).
 
-router 里写 session: Session = Depends(get_session)，FastAPI 每次请求会自动调用这里的函数。
-测试时用 app.dependency_overrides 换成假的，业务代码不用改。
-"""
+Routers declare `session: Session = Depends(get_session)` and FastAPI calls these functions for
+each request. Tests replace them through app.dependency_overrides without changing application
+code."""
 
 from __future__ import annotations
 
@@ -16,8 +17,9 @@ from sqlalchemy.orm import Session
 
 from jacara.core.config import get_settings
 from jacara.core.db import session_scope
+from jacara.core.i18n import tr
 from jacara.core.owner import PERSONAL_OWNER, Owner
-from jacara.core.queue import CeleryQueue, TaskQueue
+from jacara.core.queue import TaskQueue, create_queue
 from jacara.core.storage import ObjectStorage
 from jacara.core.storage import get_storage as _get_storage
 from jacara.modules.auth.service import AuthService
@@ -27,11 +29,12 @@ if TYPE_CHECKING:
     from jacara.plugins.ocr.base import OcrEngine
 
 bearer = HTTPBearer(auto_error=False, description="登录接口返回的 token")
-"""从请求头 Authorization: Bearer <token> 里取出 token。/docs 页面右上角的 Authorize 按钮就是它。"""
+"""Extract the token from the `Authorization: Bearer <token>` header. This is what the Authorize
+button on /docs sets."""
 
 
 def get_session() -> Iterator[Session]:
-    """每个请求一个数据库会话：请求正常结束就提交，出错就回滚。"""
+    """One database session per request: commits on success and rolls back on error."""
     with session_scope() as session:
         yield session
 
@@ -42,14 +45,15 @@ def get_storage() -> ObjectStorage:
 
 @lru_cache
 def get_ocr() -> OcrEngine:
-    """API 里用的 OCR 引擎（审核时"重新识别这块"用）。模型第一次用到时才加载，之后一直用同一个。"""
+    """OCR engine used by the API (for re-recognizing a region during review). Loaded on first use
+    and reused afterwards."""
     from jacara.plugins.ocr import create_ocr_engine
 
     return create_ocr_engine()
 
 
 def get_model() -> ModelBackend:
-    """API 里调用本地大模型（审核时"让模型看这块"用，ADR 0038）。"""
+    """Local LLM client used by the API (for asking the model about a region during review)."""
     from jacara.core.config import model_api_key
     from jacara.plugins.model_backends import ModelConfig, create_model_backend
 
@@ -58,7 +62,7 @@ def get_model() -> ModelBackend:
 
 
 def get_queue() -> TaskQueue:
-    return CeleryQueue()
+    return create_queue()
 
 
 def get_token(
@@ -71,11 +75,11 @@ def get_owner(
     session: Annotated[Session, Depends(get_session)],
     token: Annotated[str | None, Depends(get_token)],
 ) -> Owner:
-    """当前是谁在操作。
+    """The current actor.
 
-    个人模式：不用登录，固定是 PERSONAL_OWNER。
-    团队模式：从 token 查出用户；没带 token 或 token 无效，返回 401（请先登录）。
-    """
+        Personal mode: no login; always PERSONAL_OWNER.
+        Team mode: the user is looked up from the token; a missing or invalid token yields 401
+    (login required)."""
     if get_settings().jacara_mode == "personal":
         return PERSONAL_OWNER
 
@@ -83,7 +87,7 @@ def get_owner(
     if owner is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="请先登录" if token is None else "登录已失效，请重新登录",
+            detail=tr("请先登录") if token is None else tr("登录已失效，请重新登录"),
             headers={"WWW-Authenticate": "Bearer"},
         )
     return owner

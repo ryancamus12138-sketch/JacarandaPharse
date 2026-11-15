@@ -1,4 +1,5 @@
-"""评测：在有标准答案的数据集上跑流水线，算出准确率和"出处能不能拦住错值"。
+"""Evaluation: run the pipeline on datasets with ground truth and measure accuracy and how well
+evidence checks block wrong values.
 
-只在开发时用（jacara eval），不属于产品运行时：评测数据不进仓库，也不随安装包分发。
-"""
+Development only (`jacara eval`); not part of the product runtime. Evaluation data is neither
+tracked in the repository nor shipped in the release package."""

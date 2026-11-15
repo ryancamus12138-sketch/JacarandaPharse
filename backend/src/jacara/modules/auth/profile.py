@@ -1,9 +1,12 @@
-"""个人资料：昵称和头像（右上角名字、左边菜单顶上的头像点进去的那一页）。
+"""User profile: display name and avatar (the page opened from the name in the top-right corner or
+the avatar above the sidebar).
 
-- 团队模式：昵称就是 users.display_name，本人改、管理员也能改；头像本人换。
-- 个人模式：没有用户账号，昵称和头像记在 profiles 表里 PERSONAL_OWNER 那一行。
-头像统一裁成正方形、缩到 256 × 256、存成 PNG（去掉照片里的拍摄地点等信息），放在对象存储里。
-"""
+- Team mode: the display name is users.display_name, editable by the user and by administrators;
+  the avatar is changed by the user.
+- Personal mode: no user accounts; display name and avatar are stored in the profiles row of
+  PERSONAL_OWNER.
+Avatars are cropped to a square, scaled to 256 × 256 and stored as PNG in object storage
+(dropping metadata such as photo location)."""
 
 from __future__ import annotations
 
@@ -14,20 +17,20 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from jacara.core.config import get_settings
+from jacara.core.i18n import tr
 from jacara.core.owner import Owner
 from jacara.core.permissions import GRANTABLE, allowed
 from jacara.core.storage import ObjectStorage
 from jacara.models import Profile, Team, User
 from jacara.modules.audit.service import record
-from jacara.modules.auth.schemas import ProfileOut, ProfileUpdate
+from jacara.modules.auth.schemas import PERSONAL_NAME, ProfileOut, ProfileUpdate
 from jacara.modules.auth.service import AuthError
 
 AVATAR_SIZE = 256
-"""头像存成多大（像素，正方形）。"""
+"""Stored avatar size (pixels, square)."""
 AVATAR_MAX_BYTES = 5 * 1024 * 1024
-"""上传的头像图片最大 5 MB。"""
+"""Maximum uploaded avatar size: 5 MB."""
 AVATAR_FORMATS = {"PNG", "JPEG", "WEBP"}
-PERSONAL_NAME = "本机用户"
 
 
 def avatar_key(owner: Owner) -> str:
@@ -35,19 +38,20 @@ def avatar_key(owner: Owner) -> str:
 
 
 def shrink_avatar(data: bytes) -> bytes:
-    """任意大小的照片 → 256 × 256 的 PNG。不是图片、格式不支持就报错。"""
+    """Photo of any size → 256 × 256 PNG. Raises for non-images and unsupported formats."""
     if len(data) > AVATAR_MAX_BYTES:
-        raise AuthError("invalid", "头像图片太大了，请选 5 MB 以内的")
+        raise AuthError("invalid", tr("头像图片过大，请选择 5 MB 以内的图片"))
     try:
         with Image.open(io.BytesIO(data)) as image:
             if image.format not in AVATAR_FORMATS:
-                raise AuthError("invalid", "头像只支持 PNG、JPG、WEBP 图片")
-            picture = ImageOps.exif_transpose(image)  # 手机竖着拍的照片转正
+                raise AuthError("invalid", tr("头像只支持 PNG、JPG、WEBP 图片"))
+            # Apply EXIF orientation (portrait phone photos).
+            picture = ImageOps.exif_transpose(image)
             picture = ImageOps.fit(picture.convert("RGBA"), (AVATAR_SIZE, AVATAR_SIZE))
     except (UnidentifiedImageError, Image.DecompressionBombError, OSError) as err:
-        raise AuthError("invalid", "这个文件打不开，不是图片或者已经损坏") from err
+        raise AuthError("invalid", tr("无法打开此文件：不是图片或文件已损坏")) from err
     out = io.BytesIO()
-    picture.save(out, format="PNG")  # 新存一张，不带原图的 EXIF
+    picture.save(out, format="PNG")  # Save a new image without the original EXIF data.
     return out.getvalue()
 
 
@@ -60,7 +64,7 @@ class ProfileService:
         self.storage = storage
         self.personal = get_settings().jacara_mode == "personal"
 
-    # ---- 读 ----
+    # ---- Read ----
 
     def get(self) -> ProfileOut:
         profile = self.session.get(Profile, self.owner.user_id)
@@ -79,10 +83,10 @@ class ProfileService:
             mode="personal" if self.personal else "team",
             username=username,
             display_name=name,
-            shown_name=name or username or PERSONAL_NAME,
+            shown_name=name or username or tr(PERSONAL_NAME),
             role=self.owner.role,
             team=team_name,
-            permissions=[label for action, label in GRANTABLE.items() if action in can],
+            permissions=[tr(label) for action, label in GRANTABLE.items() if action in can],
             avatar_at=profile.avatar_at if profile else None,
             member_since=since,
         )
@@ -90,10 +94,10 @@ class ProfileService:
     def avatar(self) -> bytes:
         profile = self.session.get(Profile, self.owner.user_id)
         if profile is None or profile.avatar_at is None:
-            raise AuthError("not_found", "还没有头像")
+            raise AuthError("not_found", tr("尚未设置头像"))
         return self._storage().get(avatar_key(self.owner))
 
-    # ---- 改 ----
+    # ---- Update ----
 
     def update(self, change: ProfileUpdate) -> ProfileOut:
         name = change.display_name.strip()
@@ -102,7 +106,7 @@ class ProfileService:
         else:
             user = self._user()
             if user is None:
-                raise AuthError("not_found", "找不到你的账号")
+                raise AuthError("not_found", tr("未找到你的账号"))
             user.display_name = name
         record(self.session, self.owner, "profile:update", "user", self.owner.user_id)
         self.session.flush()
@@ -117,7 +121,9 @@ class ProfileService:
         return self.get()
 
     def remove_avatar(self) -> ProfileOut:
-        """去掉头像：之后显示名字的第一个字。旧图片留在存储里（存储没有删除接口），下次换头像时覆盖。"""
+        """Remove the avatar; the first character of the name is shown instead. The old image stays
+        in storage (the storage interface used here has no delete) and is overwritten by the next
+        upload."""
         profile = self.session.get(Profile, self.owner.user_id)
         if profile is not None and profile.avatar_at is not None:
             profile.avatar_at = None
@@ -125,7 +131,7 @@ class ProfileService:
             self.session.flush()
         return self.get()
 
-    # ---- 内部 ----
+    # ---- Internal ----
 
     def _user(self) -> User | None:
         user = self.session.get(User, self.owner.user_id)
@@ -140,5 +146,5 @@ class ProfileService:
 
     def _storage(self) -> ObjectStorage:
         if self.storage is None:
-            raise RuntimeError("ProfileService 没有拿到对象存储")
+            raise RuntimeError(tr("ProfileService 没有拿到对象存储"))
         return self.storage

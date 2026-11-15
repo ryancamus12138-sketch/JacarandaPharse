@@ -1,7 +1,7 @@
-"""字段抽取插件。目前只有大模型抽取器；有第二种抽取器时再加登记表。
+"""Field extraction plugins. Currently only the LLM extractor; a registry will be added with a
+second extractor.
 
-抽哪些字段不写在这里，由模板决定（backend/src/jacara/templates/）。
-"""
+The fields to extract are defined by templates (backend/src/jacara/templates/), not here."""
 
 from jacara.plugins.extractors.base import (
     ExtractedField,

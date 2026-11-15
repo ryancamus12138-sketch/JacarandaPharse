@@ -1,4 +1,5 @@
-/** 后端返回的数据长什么样。和 backend 的 schemas.py 一一对应，字段名保持一样。 */
+import { t } from '../i18n'
+/** Shapes of backend responses. Mirrors the backend schemas.py with identical field names. */
 
 export interface Health {
   status: string
@@ -15,63 +16,71 @@ export interface User {
   created_at: string
 }
 
-/** GET /auth/me：现在是谁、能做什么。 */
+/** GET /auth/me: current user and permitted operations. */
 export interface Me {
   mode: 'personal' | 'team'
+  /** Served by the desktop app: advice names actions in the app instead of terminal commands. */
+  desktop?: boolean
   role: string
   permissions: string[]
   user: User | null
-  /** 右上角显示的名字：昵称 → 用户名；个人模式没设昵称是"本机用户"。 */
+  /**
+   * Name shown in the top-right corner: display name → user name; in personal mode without a display name,
+   * "Local user".
+   */
   shown_name?: string
-  /** 最后一次换头像的时间（也当头像的版本号）；没有头像是 null。 */
+  /** Time of the last avatar change (also the avatar version); null when there is no avatar. */
   avatar_at?: string | null
 }
 
-/** 个人资料页（GET /auth/profile）。 */
+/** Profile page (GET /auth/profile). */
 export interface Profile {
   mode: 'personal' | 'team'
-  /** 登录用的名字。个人模式没有。 */
+  /** Login name. Absent in personal mode. */
   username: string | null
-  /** 昵称，可以是空的。 */
+  /** Display name; may be empty. */
   display_name: string
   shown_name: string
   role: string
-  /** 所在团队的名字。个人模式是空的。 */
+  /** Team name. Empty in personal mode. */
   team: string
-  /** 能做的事（中文名）。 */
+  /** Permitted operations (display names). */
   permissions: string[]
   avatar_at: string | null
   member_since: string | null
 }
 
-/** 备注：留给同事的话，挂在整份文档（field_name 为空）或某个字段上。 */
+/** Comment: a note for colleagues, attached to a whole document (field_name empty) or to a field. */
 export interface DocComment {
   id: string
   document_id: string
-  /** 字段在第几页；整份文档的备注是 null。 */
+  /** Page of the field; null for document comments. */
   page: number | null
-  /** 字段 ID；表格里的一格是 items.2.amount。 */
+  /** Field ID; a table cell is items.2.amount. */
   field_name: string | null
   body: string
   author: string
-  /** 是不是自己写的（自己写的才能删，管理员都能删）。 */
+  /**
+   * Whether the current user is the author (authors can delete their own comments; administrators can delete
+   * any).
+   */
   mine: boolean
   created_at: string
   resolved_at: string | null
   resolved_by: string | null
 }
 
-/** POST /auth/login 的返回。token 只在这里出现一次。 */
+/** Response of POST /auth/login. The token appears only here. */
 export interface LoginOut {
   token: string
   expires_at: string
   user: User
 }
 
-/** 文档状态。uploaded 排队中 → processing 处理中 → done 完成 / failed 失败；审核完是 reviewed。 */
+/** Document status: uploaded (queued) → processing → done / failed; reviewed after review. */
 export type DocumentStatus = 'uploaded' | 'processing' | 'done' | 'failed' | 'reviewed'
 
-/** 文档列表里的一项（后端的 DocumentOut）。 */
+/** One item of the document list (backend DocumentOut). */
 export interface DocumentSummary {
   id: string
   filename: string
@@ -79,78 +88,90 @@ export interface DocumentSummary {
   size_bytes: number
   page_count: number
   status: DocumentStatus
-  /** 失败原因，只有 failed 时才有。 */
+  /** Failure cause; only when failed. */
   error: string | null
   created_at: string
-  /** 还在等人确认的字段数。 */
+  /** Number of fields still awaiting confirmation. */
   review_count: number
-  /** 处理到哪一步，比如"抽取第 2 / 3 页"。只有处理中才有。 */
+  /** Current step, for example "Extracting page 2 / 3". Only while processing. */
   stage: string | null
-  /** 处理进度 0–100。只有处理中才有。 */
+  /** Processing progress 0–100. Only while processing. */
   progress: number | null
   processed_at: string | null
   reviewed_at: string | null
-  /** 现在用的是第几轮处理的结果（重新处理一次加 1）。 */
+  /** Run whose results are currently used (incremented on each reprocess). */
   current_run?: number
-  /** 不用模板、抽出所有键值对（"用样例建模板"的第一步）。 */
+  /** No template; extract all key-value pairs (the first step of creating a template from a sample). */
   discover?: boolean
-  /** 自动判断用哪个模板（ADR 0038）。 */
+  /** Automatic template selection. */
   auto?: boolean
-  /** 看不看原图：always、off；null 按系统设置（ADR 0038）。 */
+  /** Whether the model sees the page image: always, off; null follows the system setting. */
   vision?: string | null
-  /** PDF 怎么读（ADR 0042）：image、text；null 按系统设置。 */
+  /** How PDFs are read: image, text; null follows the system setting. */
   pdf_read?: string | null
-  /** 审核时点了"先跳过"的时间；没跳过是 null。 */
+  /** Time "Skip for now" was clicked during review; null if not skipped. */
   skipped_at?: string | null
   skip_reason?: string | null
-  /** 还没解决的备注几条。 */
+  /** Number of unresolved comments. */
   open_comments?: number
-  /** 批量导入时所在的文件夹（ADR 0036）。 */
+  /** Source folder in a batch import. */
   folder?: string | null
-  /** 一个文件里有几张单据：auto 自动判断、one 整个文件一张、pages 每页一张，或页码范围 "1-2, 3"。 */
+  /**
+   * Number of documents in a file: auto (detect), one (whole file), pages (one per page), or page ranges
+   * "1-2, 3".
+   */
   split?: string
-  /** 内容完全一样的文件之前也传过：那几份。 */
+  /** Earlier uploads of a file with identical content. */
   same_file?: { id: string; filename: string; created_at: string }[]
-  /** 批量导入选了"跳过重复的文件"：这次没有新建，返回的是之前那份。 */
+  /**
+   * "Skip duplicate files" was selected for the batch import: no new document was created and the earlier one
+   * is returned.
+   */
   duplicate_skipped?: boolean
 }
 
-/** 批量导入的一个文件夹和里面有几份文档。 */
+/** A batch-import folder and its document count. */
 export interface FolderCount {
   folder: string
   count: number
 }
 
-/** 文档列表的筛选条件。都不填 = 全部。 */
+/** Document list filters. All empty means everything. */
 export interface DocumentFilters {
   status?: DocumentStatus[]
   template?: string
-  /** YYYY-MM-DD，含这一天 */
+  /** YYYY-MM-DD, inclusive. */
   date_from?: string
   date_to?: string
-  /** 文件名里包含 */
+  /** File name contains. */
   q?: string
-  /** 只看还有字段等人确认的 */
+  /** Only documents with fields awaiting confirmation. */
   pending?: boolean
-  /** 字段内容里包含（例如发票号码、商家名） */
+  /** Field values contain (for example invoice number, merchant name). */
   value_q?: string
-  /** 和 value_q 一起用：只在这个字段里找 */
+  /** With value_q: search only this field. */
   field?: string
-  /** true 只看跳过的，false 不看跳过的 */
+  /** true: skipped only; false: exclude skipped. */
   skipped?: boolean
-  /** 批量导入的文件夹（含子文件夹） */
+  /** Batch-import folder (including subfolders). */
   folder?: string
 }
 
-/** 审核页面的"上一份 / 下一份"（只算待审核的）。 */
+/** Previous / next on the review page (documents awaiting review only). */
 export interface DocumentNeighbors {
+  /** Previous and next document of the list (same filters as the list page, any status). */
   previous: string | null
   next: string | null
-  /** 除了这一份，还有几份待审核。 */
+  /** 1-based position in the list; null when the document no longer matches its filters. */
+  position: number | null
+  total: number
+  /** Opened after this document is reviewed, skipped or deleted. */
+  next_to_review: string | null
+  /** Number of other documents awaiting review. */
   remaining: number
 }
 
-/** 工作台（GET /dashboard）。 */
+/** Dashboard (GET /dashboard). */
 export interface Dashboard {
   counts: {
     queued: number
@@ -159,23 +180,26 @@ export interface Dashboard {
     failed: number
     reviewed: number
     total: number
-    /** 待审核里先跳过的有几份。 */
+    /** Number of skipped documents awaiting review. */
     skipped?: number
     pending_fields: number
     processed_today: number
     reviewed_today: number
     average_page_seconds: number | null
-    /** 最近 7 天每份平均各步用时（秒）：read 认字、wait 排队等模型、extract 模型这边（ADR 0051）。 */
+    /**
+     * Average seconds per step per document over the last 7 days: read (OCR), wait (queue for the model),
+     * extract (model).
+     */
     stage_seconds?: { read?: number; wait?: number; extract?: number } | null
   }
-  /** 排队中和处理中的（带进度）。 */
+  /** Queued and processing documents (with progress). */
   queue: DocumentSummary[]
   failed: DocumentSummary[]
-  /** 待审核里等人确认的字段最多的几份。 */
+  /** Documents awaiting review with the most fields awaiting confirmation. */
   to_review: DocumentSummary[]
 }
 
-/** 一次导出（GET /exports）。 */
+/** One export (GET /exports). */
 export interface ExportRecord {
   id: string
   filename: string
@@ -185,7 +209,7 @@ export interface ExportRecord {
   documents: { id: string; filename: string }[]
   created_at: string
   user_name: string
-  /** 文件还在，可以重新下载。 */
+  /** The file is still available for download. */
   available: boolean
 }
 
@@ -194,7 +218,7 @@ export interface ExportPage {
   total: number
 }
 
-/** 系统信息（GET /system）。 */
+/** System information (GET /system). */
 export interface SystemInfo {
   version: string
   mode: 'personal' | 'team'
@@ -203,17 +227,17 @@ export interface SystemInfo {
     file: string | null
     loaded: string | null
     context: number | null
-    /** 视觉模型文件（mmproj，ADR 0038）。 */
+    /** Vision projector file (mmproj). */
     vision_file?: string | null
-    /** 模型服务现在能不能看图。 */
+    /** Whether the model server can currently process images. */
     sees_images?: boolean
-    /** 什么时候看原图：auto、always、off。 */
+    /** When the page image is shown to the model: auto, always, off. */
     vision_mode?: string
   }
   ocr: { engine: string; version: string | null }
-  /** 页面结构分析用的模型（ADR 0034）。null：没开。 */
+  /** Models used for page structure analysis. null: disabled. */
   structure?: { layout: string | null; table: string | null } | null
-  /** 监视文件夹（放进去的文件自动导入）；没设是 null。 */
+  /** Watch folder (files placed in it are imported automatically); null if not set. */
   watch_dir?: string | null
   templates: { name: string; title: string; version: number }[]
   data: {
@@ -226,41 +250,63 @@ export interface SystemInfo {
     export_bytes: number
   }
   services: { name: string; ok: boolean; detail: string; hint: string }[]
+  /** Attribution from the NOTICE file shipped with the program. */
+  notice?: string
+  license?: string
+  /** The list of third-party licenses is shipped with this build. */
+  third_party?: boolean
+  /** Desktop app only (administrators): folders and background processes. */
+  desktop?: {
+    data_dir: string
+    log_dir: string
+    processes: { name: string; state: 'running' | 'restarting' | 'paused' | 'stopped'; starts: number; note: string | null }[]
+  } | null
 }
 
-/** 分页的列表（后端的 DocumentPage）。 */
+/** Paginated list (backend DocumentPage). */
 export interface DocumentPage {
   items: DocumentSummary[]
   total: number
 }
 
-/** 一个值的出处：在 OCR 结果的第几行、那一行的原文、在页面图片上的框。 */
+/**
+ * Evidence of a value: line number in the OCR result, the text of that line, and the box on the page image.
+ */
 export interface Evidence {
-  /** 第几个视觉行。从原文选取的出处，选的文字块不在任何行里时是 null。 */
+  /**
+   * Visual line number. null for evidence selected from source text when the selected blocks belong to no
+   * line.
+   */
   row: number | null
   row_text: string
-  /** [左, 上, 右, 下]，单位是 /pages/{n}/image 那张图片上的像素。 */
+  /** [left, top, right, bottom] in pixels of the /pages/{n}/image image. */
   bbox: [number, number, number, number]
-  /** 出处文字的 OCR 置信度（0–1）。 */
+  /** OCR confidence of the evidence text (0–1). */
   confidence: number
-  /** 值和原文有多像（0–1），1 是完全一样。 */
+  /** Similarity of value and source text (0–1); 1 means identical. */
   similarity: number
-  /** 出处那几块的原文文字。更新前处理的文档没有。 */
+  /** Text of the evidence blocks. Absent for documents processed by older versions. */
   text?: string
-  /** 模型抄的原文写法（ADR 0040），数字、日期、日期范围才有。 */
+  /** Source notation copied by the model; numbers, dates and date ranges only. */
   quote?: string
-  /** 模型说用了哪几个文字块（编号，ADR 0034）。v3 之前处理的没有。 */
+  /** Text blocks (indices) the model says it used. Absent for documents processed by older versions. */
   blocks?: number[]
-  /** 在文件的第几页（ADR 0036：一张单据可以占好几页）。更新前处理的没有，就是这张单据的第一页。 */
+  /**
+   * Page in the file (a document may span several pages). Absent for older documents, meaning the first page
+   * of the document.
+   */
   page?: number
-  /** 和 PDF 文字层核对的结果（ADR 0042）：none 没有文字层、absent 这里文字层没有字、agree 一致、
-   * ambiguous 对不上是哪一行、conflict 不一样。 */
+  /**
+   * Result of checking against the PDF text layer: none (no text layer), absent (no text-layer characters
+   * here), agree (consistent), ambiguous (unclear which line), conflict (different).
+   */
   text_layer?: 'none' | 'absent' | 'agree' | 'ambiguous' | 'conflict'
 }
 
 /**
- * matched 找到一样的；fuzzy 只找到相似的；not_found 原文里找不到；empty 模型说原文里没有；
- * rejected 模型给了值、原文里核对不上，按规则没有填（ADR 0034）。
+ * matched: identical value found; fuzzy: only a similar value; not_found: absent from the source; empty: the
+ * model reported it absent; rejected: the model gave a value that could not be verified in the source, so it
+ * was not filled.
  */
 export type AlignStatus =
   | 'matched'
@@ -269,73 +315,96 @@ export type AlignStatus =
   | 'empty'
   | 'rejected'
   | 'computed'
-  /** 看原图读的（ADR 0038）：OCR 认错或漏了，要人对着原图核对。 */
+  /** Read from the page image: OCR misread or missed it, so a reviewer should check it against the image. */
   | 'seen'
 
-/** 一个字段的候选值（ADR 0042）：各个来源读出来的不同的值，给人选，系统不会自己替换。 */
+/**
+ * Candidate values of a field: differing values from different sources, offered for selection; never applied
+ * automatically.
+ */
 export interface Candidate {
-  /** ocr 整页 OCR；text_layer PDF 自带的文字；zoom 局部放大再识别；form PDF 表单字段。 */
+  /** ocr: full-page OCR; text_layer: PDF text layer; zoom: zoomed re-recognition; form: PDF form field. */
   source: 'ocr' | 'text_layer' | 'zoom' | 'form'
   text: string
-  /** 按字段类型整理过的值（数字、日期）；整理不出来是 null，用 text。 */
+  /** Value normalized by field type (number, date); null if not normalizable, in which case text is used. */
   value: string | null
   page: number
-  /** 这一页图片上的框 [左, 上, 右, 下]。 */
+  /** Box on this page image [left, top, right, bottom]. */
   box: [number, number, number, number] | null
   confidence: number | null
-  /** 表单字段：页面上能看到 / 页面不可见 / 可见性待确认。 */
+  /** Form fields: visible on the page / not visible on the page / visibility unconfirmed. */
   note: string
   dpi: number | null
-  /** 换成这个值，和这个字段有关的规则过不过（只是提示）；规则不管这个字段是 null。 */
+  /**
+   * Whether the rules involving this field pass with this value (a hint only); null when no rule involves the
+   * field.
+   */
   rule_ok: boolean | null
+  /** Form fields: whether the value is visible on the page (null when unconfirmed). */
+  visible?: boolean | null
 }
 
-/** 一个字段（后端的 ValueOut）。 */
+/** A field (backend ValueOut). */
 export interface FieldValue {
   id: string
   name: string
   type: FieldType
-  /** 日期范围拆开的开始、结束（ADR 0039）：按当前值、后端用代码拆的。 */
+  /** Start and end of a split date range, computed by the backend from the current value. */
   range?: { start: string | null; end: string | null; days: number | null; problem: string | null } | null
-  /** 模型抽出的原值，永远不变。 */
+  /** Value extracted by the model; never changes. */
   value: string | null
-  /** 模型给了、但原文里核对不上、按规则没有填的值（ADR 0034）。核对原图后可以采用。 */
+  /**
+   * Value given by the model but not verifiable in the source and therefore not filled. Can be accepted after
+   * checking the image.
+   */
   rejected_value?: string | null
-  /** 当前值：审核之后的值，界面上显示这个。 */
+  /** Current value: the post-review value shown in the UI. */
   current_value: string | null
   status: AlignStatus
   needs_review: boolean
-  /** 有人修改或确认过。 */
+  /** Edited or confirmed by a person. */
   reviewed: boolean
-  /** 还在等人确认：界面上标黄。 */
+  /** Awaiting confirmation: highlighted in the UI. */
   pending_review: boolean
-  /** 为什么要确认，比如"原文里找不到这个值"。 */
+  /** Why confirmation is needed, for example "value not found in the source text". */
   note: string
-  /** 抽取时找到的出处，永远不变。 */
+  /** Evidence found at extraction; never changes. */
   evidence: Evidence | null
-  /** 候选（ADR 0042）：有冲突、可能漏读时才有。 */
+  /** Candidates: present only for conflicts and possibly missed values. */
   candidates?: { items: Candidate[] } | null
-  /** 当前出处：从原文选取过就是选的那几块，否则等于 evidence。原图上画这个。 */
+  /**
+   * Current evidence: the selected blocks if selected from source text, otherwise evidence. Drawn on the page
+   * image.
+   */
   current_evidence: Evidence | null
-  /** model：模型抽的；manual：审核时人工增加的行。 */
+  /** model: extracted by the model; manual: row added manually during review. */
   origin: 'model' | 'manual' | 'computed'
-  /** 这一格所在的行被删除了（表格才有）。 */
+  /** The row containing this cell was deleted (tables only). */
   deleted: boolean
-  /** 证据（抽取时的出处）：原文一致、有疑点、原文里找不到、原文没有（ADR 0028）。 */
+  /**
+   * Evidence (as found at extraction): matches the source, doubtful, not found in the source, absent from the
+   * source.
+   */
   evidence_state: EvidenceState
-  /** 原文值：按出处文字得到的值，和当前值不一样时才有。"采用原文值"用。 */
+  /**
+   * Source value: the value from the evidence text, present only when it differs from the current value. Used
+   * by "use source value".
+   */
   source_value: string | null
-  /** 校验（按当前值）：没问题、违反警告级规则、违反错误级规则。 */
+  /** Validation (on the current value): ok, violates a warning rule, violates an error rule. */
   check_state: CheckState | null
-  /** 颜色：证据 × 校验 × 有没有人审核过。 */
+  /** Color: evidence × validation × reviewed. */
   level: Level | null
-  /** 中文名：模板里的名字；抽取所有键值对时是单据上的原名。 */
+  /** Display name: the name in the template; in key-value discovery, the label on the document. */
   label?: string | null
-  /** 重新处理之后：上一轮人审核过、可以直接沿用的结果。 */
+  /** After reprocessing: results reviewed in the previous run that can be carried over. */
   suggestion?: Suggestion | null
 }
 
-/** 沿用上一轮的审核：confirm 确认这次的值；edit 改成上次人改的值。 */
+/**
+ * Carry over a review from the previous run: confirm confirms the current value; edit applies the previously
+ * edited value.
+ */
 export interface Suggestion {
   action: 'confirm' | 'edit'
   value: string | null
@@ -346,7 +415,7 @@ export type EvidenceState = 'verified' | 'pending' | 'missing' | 'empty'
 export type CheckState = 'ok' | 'warn' | 'fail'
 export type Level = 'red' | 'yellow' | 'grey' | 'green'
 
-/** 一条没通过的规则，比如"现金 − 总额 = 找零"。 */
+/** A failed rule, for example "cash − total = change". */
 export interface CheckIssue {
   rule: string
   title: string
@@ -361,54 +430,65 @@ export interface Checks {
   issues: CheckIssue[]
 }
 
-/** 一页的抽取结果。 */
-/** 自动判断用哪个模板的经过（ADR 0038）。 */
+/** Extraction result of one page. */
+/** Details of automatic template selection. */
 export interface Classified {
   picked: { template_id: string; version_id: string; title: string; version: number } | null
   reason: string
-  /** model：模型选的；keywords：按关键字；none：没有可选的模板。 */
+  /** model: chosen by the model; keywords: by keyword score; none: no templates available. */
   by: 'model' | 'keywords' | 'none'
   candidates: { template_id: string; title: string; score: number }[]
 }
 
 export interface Extraction {
   id: string
-  /** 这张单据从第几页开始。 */
+  /** First page of this document. */
   page: number
-  /** 到第几页结束（ADR 0036）；只占一页是 null。 */
+  /** Last page of this document; null for a single page. */
   last_page?: number | null
-  /** 读文字时的特别情况，例如"第 2 页：PDF 文字层是乱码，这一页改用 OCR"。 */
+  /**
+   * Special conditions while reading text, for example "page 2: garbled PDF text layer; OCR used for this
+   * page".
+   */
   source_notes?: string[]
   source: string
   model: string
   prompt_version: string
-  /** 内置模板的名字、我的模板的 id，或者 discover（没用模板，抽出所有键值对）。 */
+  /**
+   * Built-in template name, id of one of my templates, or discover (no template; all key-value pairs
+   * extracted).
+   */
   template: string
   template_version: number
-  /** 模板的中文名。 */
+  /** Template display name. */
   template_title?: string
-  /** 自动判断用哪个模板的经过（ADR 0038）；上传时直接选了模板的是 null。 */
+  /** Details of automatic template selection; null when the template was chosen at upload. */
   classified?: Classified | null
-  /** 给模型看了原图的原因（ADR 0038）；没看是 null。 */
+  /** Why the model was shown the page image; null if it was not. */
   vision?: string | null
   run?: number
   run_reason?: string | null
-  /** 字段 ID → 中文名。表格的列写成 items.amount，表名写成 items。 */
+  /** Field ID → display name. Table columns as items.amount, table names as items. */
   labels?: Record<string, string>
-  /** 字段名能切换的语言（ADR 0048），第一个是中文；模板只有中文时是空的。 */
+  /**
+   * Languages available for field names; the first is the default. Empty when the template has a single
+   * language.
+   */
   languages?: string[]
-  /** 别的语言的 labels：语言代码 → {字段 ID → 名字}。 */
+  /** Labels in other languages: language code → {field ID → name}. */
   label_sets?: Record<string, Record<string, string>>
-  /** 抽取时的规则结果，永远不变。 */
+  /** Rule results at extraction time; never change. */
   checks: Checks
-  /** 按审核之后的当前值重新检查的结果（删掉的行不算）。页面显示这个。 */
+  /**
+   * Rule results re-evaluated on the current post-review values (deleted rows excluded). Shown on the page.
+   */
   current_checks: Checks | null
   values: FieldValue[]
-  /** 这次发给模型的是什么（ADR 0053）。更新之前处理的是 null。 */
+  /** Model input of this run. null for documents processed before this was recorded. */
   sent?: SentSummary | null
 }
 
-/** 发给模型的摘要（ADR 0053）。 */
+/** Summary of the model input. */
 export interface SentSummary {
   blocks: number
   total_blocks: number
@@ -418,25 +498,25 @@ export interface SentSummary {
   has_snapshot: boolean
 }
 
-/** 发给模型的单据文字原文。 */
+/** Document text sent to the model. */
 export interface SentText {
   blocks: number[]
   text: string
   sha256: string
 }
 
-/** 文档详情：文档本身 + 每一页的抽取结果。 */
+/** Document details: the document plus the extraction result of each page. */
 export interface DocumentDetail extends DocumentSummary {
   extractions: Extraction[]
-  /** 处理过的每一轮（新的在前）。 */
+  /** Every processed run (newest first). */
   runs?: RunInfo[]
-  /** extractions 是第几轮的。不是 current_run 时只能查看。 */
+  /** Run of extractions. Read-only when it is not current_run. */
   viewing_run?: number
-  /** 可以沿用上一轮审核的字段有几个。 */
+  /** Number of fields whose previous review can be carried over. */
   suggestions?: number
 }
 
-/** 处理过的一轮。 */
+/** A processed run. */
 export interface RunInfo {
   run: number
   template: string
@@ -447,57 +527,67 @@ export interface RunInfo {
   current: boolean
 }
 
-/** 重新处理的原因。 */
+/** Reprocessing reason. */
 export type ReprocessReason =
   | 'template_changed'
   | 'wrong_template'
   | 'bad_result'
   | 'model_changed'
   | 'batch'
+  | 'restart'
   | 'other'
 
 export const REPROCESS_REASONS: Record<ReprocessReason, string> = {
-  template_changed: '模板改了',
-  wrong_template: '选错了模板',
-  bad_result: '结果不好，再跑一次',
-  model_changed: '换了模型或 OCR',
-  batch: '批量重新处理',
-  other: '其他',
+  get template_changed() { return t('模板已修改') },
+  get wrong_template() { return t('模板选择错误') },
+  get bad_result() { return t('结果不理想，重新运行') },
+  get model_changed() { return t('已更换模型或 OCR') },
+  get batch() { return t('批量重新处理') },
+  get restart() { return t('处理时间过长，重新开始') },
+  get other() { return t('其他') },
 }
 
 export type FieldType = 'string' | 'number' | 'date' | 'date_range'
 
-/** 日期范围导出成（ADR 0039）：统一格式、原文、拆成两列。 */
+/** Date range export format: uniform, source text, or two columns. */
 export type RangeExport = 'normalized' | 'original' | 'columns'
 
-/** 模板里的一个字段（或表格的一列）。 */
+/** A template field (or a table column). */
 export interface TemplateField {
-  /** 字段 ID：小写英文字母开头，只有小写字母、数字、下划线。保存后不要改。 */
+  /**
+   * Field ID: starts with a lowercase letter; only lowercase letters, digits and underscores. Do not change
+   * after saving.
+   */
   name: string
   label: string
   type: FieldType
   required: boolean
   description: string
-  /** 单据上的其他写法，一起告诉模型。 */
+  /** Other notations on documents, passed to the model as well. */
   aliases: string[]
-  /** 导出 Excel 时要不要这一列。 */
+  /** Whether this column is included in Excel exports. */
   export: boolean
-  /** 敏感信息（证件号码等），默认不导出。 */
+  /** Sensitive information (identity document numbers and the like); not exported by default. */
   sensitive: boolean
-  /** 可选值：抽到的值不在里面就提醒。空 = 不限。 */
+  /** Allowed values: warn when the extracted value is not among them. Empty means unrestricted. */
   options: string[]
-  /** false = 人工填：不交给模型，审核时填。 */
+  /** false = manual entry: not sent to the model; entered during review. */
   extract: boolean
-  /** 计算字段的公式（ADR 0035），例如 check_out - check_in。空 = 不是计算字段。 */
+  /** Formula of a computed field, for example check_out - check_in. Empty if not computed. */
   compute?: string
-  /** 不能重复（ADR 0036）：发票号码这类，别的单据里有一样的值就提醒可能重复报销。 */
+  /**
+   * Must be unique (for example invoice numbers): warn about a possible duplicate claim when another document
+   * has the same value.
+   */
   unique?: boolean
-  /** 日期范围导出成什么样（ADR 0039），默认统一格式。 */
+  /** Date range export format; uniform format by default. */
   range_export?: RangeExport
-  /** 统一格式里开始、结束之间写什么，默认 " ~ "。 */
+  /** Separator between start and end in the uniform format; " ~ " by default. */
   range_separator?: string
-  /** 别的语言的名字（ADR 0048）：语言代码 → 名字。label 是默认的中文名。 */
+  /** Names in other languages: language code → name. label is in the template's primary language. */
   names?: Record<string, string>
+  /** Description in other languages: language code → description. */
+  descriptions?: Record<string, string>
 }
 
 export interface TemplateTable {
@@ -507,8 +597,10 @@ export interface TemplateTable {
   required: boolean
   export: boolean
   columns: TemplateField[]
-  /** 别的语言的表名（ADR 0048）。 */
+  /** Table name in other languages. */
   names?: Record<string, string>
+  /** Table description in other languages. */
+  descriptions?: Record<string, string>
 }
 
 export interface TemplateRule {
@@ -518,36 +610,40 @@ export interface TemplateRule {
   severity: 'error' | 'warning'
 }
 
-/** 规则库里的一条规则（编辑器里选）。 */
+/** A rule from the rule library (selectable in the editor). */
 export interface RuleInfo extends TemplateRule {
   per_row: string | null
-  /** 模板里要有这些字段（值可以空）这条规则才用得上（ADR 0049）。 */
+  /** The rule applies only when the template contains these fields (values may be empty). */
   requires?: string[]
-  /** 只适用于某个国家的规则：国家代码（CN、AU）；通用的是空的。 */
+  /** Country-specific rule: country code (CN, AU); empty for generic rules. */
   country: string
 }
 
-/** 自己写的规则（ADR 0035）：条件例如 sum(items.amount) == total。 */
+/** Custom rule: a condition such as sum(items.amount) == total. */
 export interface CustomRule {
   title: string
   check: string
   severity: 'error' | 'warning'
-  /** 写表名：每一行单独检查，条件里写这张表的列名。 */
+  /** Table name: each row is checked separately, and the condition uses this table's column names. */
   per_row: string | null
 }
 
-/** mine：我的模板；starter：起步模板库；builtin：内置（评测、命令行用）。 */
+/** mine: my templates; starter: starter library; builtin: built-in (evaluation and CLI). */
 export type TemplateKind = 'mine' | 'starter' | 'builtin'
 
 export interface Template {
   name: string
   version: number
   title: string
-  /** 模板名的别的语言写法（ADR 0048）。 */
+  /** Template name in other languages. */
   titles?: Record<string, string>
-  /** 能切换的语言，第一个是默认的中文。 */
+  /** Primary language: the language of title, description and every label and description. */
+  language?: string
+  /** Template description in other languages. */
+  descriptions?: Record<string, string>
+  /** Available languages; the first is the primary language. */
   languages?: string[]
-  /** 起步模板的依据：法规条款、使用场景、查证来源。 */
+  /** Basis of a starter template: regulations, use cases, sources. */
   basis?: string[]
   description: string
   category: string
@@ -560,21 +656,32 @@ export interface Template {
   tables: TemplateTable[]
   rules: TemplateRule[]
   custom_rules?: CustomRule[]
-  /** 功能领域（发票、交通……），可以有几个。 */
+  /**
+   * Domains (invoice, transport, …); several allowed. Known domains in their stored form whatever language they
+   * were typed in; others as written.
+   */
   domains?: string[]
-  /** 国家和地区代码（CN、AU……）；空 = 通用。 */
+  /** The domains in the interface language, in the same order. */
+  domain_names?: string[]
+  /** Country or region code (CN, AU, …); empty means generic. */
   countries?: string[]
-  /** 自定义标签。 */
+  /** Custom tags. */
   tags?: string[]
-  /** 最近一次有文档用它的时间。 */
+  /** Last time a document used it. */
   last_used_at?: string | null
-  /** 从起步模板复制的：起步模板后来加的公式（字段 ID → 公式），这份还没有。 */
+  /**
+   * For copies of a starter template: formulas the starter template has since added (field ID → formula) that
+   * this copy lacks.
+   */
   starter_formulas?: Record<string, string>
   versions: { version: number; note: string; created_at: string }[]
   used: number
-  /** 对象：几份单据说的同一个人、同一家公司，导出时按编号合并成一行。 */
+  /**
+   * Subjects: several documents referring to the same person or company are merged into one row by identifier
+   * on export.
+   */
   entities?: { name: string; label: string; key: string; fields: string[] }[]
-  /** 参照表：固定名单，用来对照、补编号。 */
+  /** Reference tables: fixed lists used for matching and filling identifiers. */
   references?: {
     name: string
     label: string
@@ -583,7 +690,7 @@ export interface Template {
     match_field: string
     match_column: string
   }[]
-  /** 按原 Excel 导出的样式。 */
+  /** Layout for export to the original workbook. */
   workbook?: {
     filename: string
     sheets: {
@@ -602,7 +709,7 @@ export interface Template {
 export type SheetRole = 'document' | 'items' | 'entity' | 'reference' | 'options' | 'ignore'
 export type ColumnSource = 'extract' | 'manual' | 'doc' | 'auto' | 'lookup' | 'none'
 
-/** Excel 的一列：表头、前几个值、猜的来源。预览里可以改。 */
+/** A workbook column: header, first few values, guessed source. Editable in the preview. */
 export interface ExcelColumn {
   index: number
   header: string
@@ -617,7 +724,7 @@ export interface ExcelColumn {
   aliases: string[]
   options: string[]
   auto: string
-  /** 「参照表 sheet 名::列名」 */
+  /** "reference sheet name::column name" */
   lookup: string
 }
 
@@ -628,15 +735,20 @@ export interface ExcelSheet {
   rows: number
   hidden: boolean
   same_as: string
-  /** 对象表、参照表：编号列；明细表：连到单据的那一列。 */
+  /**
+   * Entity and reference sheets: the identifier column; line-item sheets: the column linking to the document.
+   */
   key_header: string
-  /** 参照表：「sheet 名::表头」，拿那一列的值来对照。 */
+  /** Reference sheets: "sheet name::header" of the column whose values are matched. */
   match_field: string
   reason: string
   columns: ExcelColumn[]
 }
 
-/** 上传 Excel 的结果：标准模板 Excel（直接给出模板），或者业务报表（每张 sheet 的猜测）。 */
+/**
+ * Result of uploading a workbook: a standard template workbook (the template directly) or a business report
+ * (a guess for each sheet).
+ */
 export interface ExcelAnalysis {
   kind: 'standard' | 'report'
   filename: string
@@ -646,12 +758,17 @@ export interface ExcelAnalysis {
   starter: string
   starter_title: string
   auto_columns: Record<string, string>
+  /** Standard template workbooks: notes on columns and rows that were not recognized and not imported. */
+  ignored?: string[]
 }
 
-/** 保存模板（每次保存是一个新版本）。 */
+/** Save a template (every save creates a new version). */
 export interface TemplateIn {
   title: string
   titles?: Record<string, string>
+  /** Primary language; "zh" when absent. */
+  language?: string
+  descriptions?: Record<string, string>
   category: string
   description: string
   fields: TemplateField[]
@@ -662,11 +779,17 @@ export interface TemplateIn {
   countries: string[]
   tags: string[]
   note: string
-  /** 从 Excel 建的模板：改原表某一列填什么。键"sheet 名::表头"，值是字段 ID 或 period.start 这种（ADR 0039）。 */
+  /**
+   * Templates created from Excel: change what a column of the original workbook is filled with. Keys are
+   * "sheet name::header", values a field ID or something like period.start.
+   */
   column_refs?: Record<string, string>
 }
 
-/** 用样例建模板：选的一个字段。source 是样例里的键值对（kv.3）；自己加的为空。 */
+/**
+ * Creating a template from a sample: one selected field. source is the key-value pair in the sample (kv.3);
+ * empty for added fields.
+ */
 export interface SampleField extends TemplateField {
   source: string | null
 }
@@ -683,74 +806,83 @@ export interface TrialResult {
   }[]
 }
 
-/** 一次审核（POST /values/{id}/revisions）。edit：改成 value；confirm：当前值是对的。 */
+/** A review (POST /values/{id}/revisions). edit: change to value; confirm: the current value is correct. */
 export interface RevisionIn {
   action: 'edit' | 'confirm'
-  /** 新值。只有 edit 用；null 表示"原文里确实没有这个字段"。 */
+  /** New value. Used only by edit; null means the field is indeed absent from the source. */
   value?: string | null
-  /** 为什么这样改。修改时必须写（从原文选取时可以不写）。 */
+  /** Reason for the change. Required for edits (optional when selecting from source text). */
   reason: string
-  /** 从原文选取：这一页 OCR 文字块的编号（OcrLine.index）。值从它们的文字读出，出处换成它们。 */
+  /**
+   * Select from source text: indices of OCR text blocks on this page (OcrLine.index). The value is parsed
+   * from their text and they become the evidence.
+   */
   source_lines?: number[]
-  /** 框选：原图上框出的区域 [x0, y0, x1, y1]（重新识别之后确认的值放在 value）。出处就是这个框。 */
+  /**
+   * Region selection: the region [x0, y0, x1, y1] drawn on the page image (the value confirmed after
+   * re-recognition goes in value). It becomes the evidence.
+   */
   source_box?: Box
   /**
-   * 图中原文（ADR 0050）：图上原样的文字。只能和一块原文或框选一起用；从原文选取时值从它读出。
-   * 团队开了"自动收集纠错样本"时，保存的同时存成 OCR 样本。
+   * Transcription: the text exactly as on the image. Only with a single source block or a region selection;
+   * when selecting from source text, the value is parsed from it. When the team has OCR sample collection
+   * enabled, an OCR sample is stored as well.
    */
   transcription?: string
-  /** 从原文选取、框选的是第几页（一张单据可以占好几页）。 */
+  /** Page for source text or region selection (a document may span several pages). */
   page?: number
 }
 
-/** 页面上的一个框 [左, 上, 右, 下]，和页面图片一样的像素坐标。 */
+/** A box on the page [left, top, right, bottom], in page image pixel coordinates. */
 export type Box = [number, number, number, number]
 
-/** 重新识别一块区域的结果（POST /documents/{id}/pages/{n}/ocr-region）。 */
+/** Result of re-recognizing a region (POST /documents/{id}/pages/{n}/ocr-region). */
 export interface RegionOut {
   text: string
   confidence: number | null
 }
 
-/** 原图上的一个文字块（GET /documents/{id}/pages/{n}/ocr）。 */
+/** A text block on the page image (GET /documents/{id}/pages/{n}/ocr). */
 export interface OcrLine {
   index: number
   text: string
-  /** [左, 上, 右, 下]，和页面图片一样的像素坐标。 */
+  /** [left, top, right, bottom], in page image pixel coordinates. */
   box: [number, number, number, number]
   polygon: [number, number][]
   confidence: number
   row: number | null
 }
 
-/** 一页的 OCR 结果。available=false：这一页处理时还没保存 OCR 结果。 */
+/** OCR result of a page. available=false: OCR results were not stored when this page was processed. */
 export interface PageOcr {
   available: boolean
   lines: OcrLine[]
 }
 
-/** 一条审核记录。 */
+/** A review record. */
 export interface Revision {
   id: string
   seq: number
-  /** edit 修改、confirm 确认、delete 删除这一行、restore 恢复这一行、compute 按公式重算（ADR 0035）。 */
+  /**
+   * edit, confirm, delete (delete this row), restore (restore this row), compute (recalculated by formula).
+   */
   action: 'edit' | 'confirm' | 'delete' | 'restore' | 'compute'
   new_value: string | null
   reason: string
-  /** 从原文选取时的新出处。 */
+  /** New evidence when selected from source text. */
   evidence: Evidence | null
-  /** 谁做的。 */
+  /** Actor. */
   user_id: string
   created_at: string
 }
 
-/** 一个字段的完整经历：模型原值 + 每一次审核。 */
+/** Complete history of a field: model value plus every review. */
 export interface ValueHistory {
   value: FieldValue
   revisions: Revision[]
 }
 
-/** 管理员可以开通给使用者的一项权限（GET /users/permissions）。 */
+/** A permission administrators can grant to members (GET /users/permissions). */
 export interface PermissionOption {
   name: string
   label: string
@@ -758,7 +890,7 @@ export interface PermissionOption {
 
 export type Role = 'admin' | 'member'
 
-/** 新建用户（POST /users）。 */
+/** Create a user (POST /users). */
 export interface UserCreate {
   username: string
   password: string
@@ -767,7 +899,7 @@ export interface UserCreate {
   permissions: string[]
 }
 
-/** 修改用户（PATCH /users/{id}）：只发要改的字段。 */
+/** Update a user (PATCH /users/{id}): send only the fields to change. */
 export interface UserUpdate {
   role?: Role
   permissions?: string[]
@@ -775,18 +907,18 @@ export interface UserUpdate {
   display_name?: string
 }
 
-/** 管理员生成的一次性重设码（只出现这一次）。 */
+/** One-time reset code generated by an administrator (shown only once). */
 export interface ResetCode {
   username: string
   code: string
   expires_at: string
 }
 
-/** 一条审计日志。 */
+/** An audit log entry. */
 export interface AuditLog {
   id: string
   created_at: string
-  /** 谁做的。登录失败且用户名不存在时是 null。 */
+  /** Actor. null for failed logins with an unknown user name. */
   user_id: string | null
   action: string
   target_type: string | null
@@ -799,9 +931,12 @@ export interface AuditPage {
   total: number
 }
 
-/** 某一页的结构（ADR 0034）：版面区域、表格的格子、标题 → 值。审核页"版面结构"画在原图上。 */
+/**
+ * Structure of a page: layout regions, table cells, label → value pairs. Drawn over the page image in the
+ * layout view of the review page.
+ */
 export interface PageStructure {
-  /** 2026-11-14 之前处理的没有。 */
+  /** Absent for documents processed before 2026-11-14. */
   available: boolean
   sources: Record<string, string>
   regions: { kind: string; box: Box }[]
@@ -809,7 +944,7 @@ export interface PageStructure {
     box: Box
     rows: number
     cols: number
-    /** model：表格结构模型认的；rule：按文字位置划分的。 */
+    /** model: recognized by the table structure model; rule: derived from text positions. */
     by: string
     cells: { row: number; col: number; row_span: number; col_span: number; box: Box; text: string }[]
   }[]

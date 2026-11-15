@@ -1,20 +1,22 @@
-"""打分：模型的值对不对、有没有出处、错的有没有被标出来。
+"""Scoring: whether each model value is correct, has evidence, and is flagged when wrong.
 
-只看三件事，每个字段一行：
-- correct：和标准答案一样吗（先统一格式再比）
-- has_evidence：在原文里找到出处了吗
-- flagged：标黄了吗（找不到出处、只是相似、或者规则不通过），和审核页面的标黄一模一样
+Three columns per field:
+- correct: equals the ground truth (after normalization)
+- has_evidence: located in the source text
+- flagged: highlighted for review (no evidence, only a fuzzy match, or a failed rule), exactly as
+  on the review page
 
-由这三列算出的指标：
-- 准确率：模型直接给的值有多少是对的
-- 出处覆盖率：有多少值在原文里找到了出处
-- 错值拦截率：错的值里，有多少被标黄、交给了人
-- 误报率：对的值里，有多少也被标黄了（让人白看一眼）
-- 放行率：没标黄、直接放行的值占多少（省下的人工）
-- 放行准确率：直接放行的值有多准——用户能不能信任"没标黄的就是对的"，看的就是它
-- 宽松准确率：文字只差一两个字母（多半是 OCR 认错字，如 LJAN / LIAN）也算对。
-  和准确率的差距 = OCR 错字的影响；剩下的错才是"抽错了"（选错了值、多抄少抄）
-"""
+Metrics derived from these columns:
+- Accuracy: share of model values that are correct
+- Evidence coverage: share of values located in the source text
+- Error interception rate: share of wrong values that are flagged for review
+- False alarm rate: share of correct values that are flagged anyway (wasted review effort)
+- Pass-through rate: share of values passed without a flag (manual effort saved)
+- Pass-through accuracy: how accurate unflagged values are; this decides whether users can trust
+  that unflagged values are correct
+- Lenient accuracy: text differing by one or two characters (usually OCR misreads such as LJAN /
+  LIAN) also counts as correct. The gap to accuracy is the impact of OCR errors; the remaining
+  errors are extraction errors (wrong value chosen, characters added or dropped)"""
 
 from __future__ import annotations
 
@@ -38,7 +40,8 @@ class FieldScore:
     has_evidence: bool
     flagged: bool
     close: bool = False
-    """宽松地看对不对：文字相似度 ≥ 90%（只差 OCR 错字）。数字和日期和 correct 一样。"""
+    """Lenient correctness: text similarity ≥ 90% (differs only by OCR misreads). Numbers and dates
+    as in correct."""
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -52,7 +55,7 @@ class Summary:
     close_accuracy: float
     evidence_rate: float
     catch_rate: float | None
-    """错的值一个都没有时，没法算拦截率，是 None。"""
+    """None when there are no wrong values, since the interception rate is undefined."""
     false_alarm_rate: float | None
     pass_rate: float
     pass_accuracy: float | None
@@ -62,7 +65,8 @@ class Summary:
 
 
 def same(field_type: str, predicted: str | float | None, gold: str) -> bool:
-    """模型的值和标准答案是不是同一个东西。标准答案为空时，模型也说"没有"才算对。"""
+    """Whether the model value and the ground truth denote the same thing. When the ground truth is
+    empty, only an empty answer is correct."""
     if not gold:
         return predicted is None
     if predicted is None:
@@ -75,7 +79,7 @@ def same(field_type: str, predicted: str | float | None, gold: str) -> bool:
         return expected is not None and expected == _parse_date(str(predicted))
     clock = _clock(str(predicted)), _clock(gold)
     if clock[0] is not None and clock[1] is not None:
-        return clock[0] == clock[1]  # 8:13:39 PM 和 20:13:39 是同一个时间
+        return clock[0] == clock[1]  # 8:13:39 PM and 20:13:39 are the same time.
     return _letters(str(predicted)) == _letters(gold)
 
 
@@ -83,7 +87,7 @@ _TIME = re.compile(r"^\s*(\d{1,2})[:：](\d{2})(?:[:：](\d{2}))?\s*([AaPp]\.?[M
 
 
 def _clock(text: str) -> tuple[int, int, int] | None:
-    """时间 → (时, 分, 秒)，12 小时制换成 24 小时制。不是时间返回 None。"""
+    """Time → (hour, minute, second), converting 12-hour to 24-hour clock. None if not a time."""
     m = _TIME.match(text)
     if m is None:
         return None
@@ -94,7 +98,8 @@ def _clock(text: str) -> tuple[int, int, int] | None:
 
 
 def close_enough(field_type: str, predicted: str | float | None, gold: str) -> bool:
-    """宽松比较：文字只看字母和数字，相似度 ≥ 90% 就算对；其他类型和 same() 一样。"""
+    """Lenient comparison: text compares letters and digits only and matches at similarity ≥ 90%;
+    other types as in same()."""
     if field_type != "string" or not gold or predicted is None:
         return same(field_type, predicted, gold)
     a, b = _letters(str(predicted)), _letters(gold)
@@ -107,7 +112,7 @@ CLOSE_RATIO = 0.9
 def score_report(
     sample_id: str, answers: dict[str, str], report: DocumentReport
 ) -> list[FieldScore]:
-    """一张样本的打分：只评标准答案里有的字段。"""
+    """Score one sample: only fields present in the ground truth are evaluated."""
     rule_failed = report.checks.fields_with_issues()
     scores = []
     for aligned in report.aligned:
@@ -131,7 +136,7 @@ def score_report(
 
 
 def summarize(scores: Sequence[FieldScore]) -> list[Summary]:
-    """每个字段一行，最后一行是"全部"。"""
+    """One row per field; the last row is "all"."""
     fields = list(dict.fromkeys(s.field for s in scores))
     rows = [_summary(f, [s for s in scores if s.field == f]) for f in fields]
     if scores:
@@ -161,12 +166,13 @@ def _rate(part: Iterable[object], whole: Sequence[object]) -> float:
 
 
 def _letters(text: str) -> str:
-    """文字比较：只看字母和数字，忽略大小写、空格和标点。OCR 常把 . 读成 _ 或多读空格。"""
+    """Text comparison on letters and digits only, ignoring case, whitespace and punctuation. OCR
+    often reads . as _ or inserts spaces."""
     return re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]", "", text).upper()
 
 
 def _parse_number(text: str) -> float | None:
-    """把 "RM 1,234.50" 变成 1234.5。"""
+    """Convert "RM 1,234.50" to 1234.5."""
     digits = re.sub(r"[^\d.]", "", text.replace(",", ""))
     try:
         return float(digits)
@@ -175,5 +181,6 @@ def _parse_number(text: str) -> float | None:
 
 
 def _parse_date(text: str) -> date | None:
-    """SROIE 的日期写法很多，读法和审核时"点原文填值"一样（core/textvalue.py）。"""
+    """SROIE dates come in many formats; parsed the same way as click-to-fill during review
+    (core/textvalue.py)."""
     return parse_date(text)

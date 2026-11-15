@@ -4,18 +4,20 @@ import { Button, Flex, Image, Tag, Tooltip, Typography } from 'antd'
 import { getPageCrop } from '../../api/documents'
 import type { Candidate, FieldValue } from '../../api/types'
 import type { Revise } from './useRevise'
+import { useTranslation } from 'react-i18next'
+import { t } from '../../i18n'
 
-/** 候选从哪来（ADR 0042）。 */
+/** Source of a candidate. */
 function sourceName(c: Candidate): string {
   switch (c.source) {
     case 'ocr':
       return 'OCR'
     case 'text_layer':
-      return 'PDF 文字层'
+      return t('PDF 文字层')
     case 'zoom':
-      return c.dpi ? `放大到 ${c.dpi} DPI 再识别` : '原图局部再识别'
+      return c.dpi ? t('放大至 {{dpi}} DPI 后识别', { dpi: c.dpi }) : t('原图局部重新识别')
     case 'form':
-      return '表单字段'
+      return t('表单字段')
   }
 }
 
@@ -26,8 +28,12 @@ const SOURCE_COLOR: Record<Candidate['source'], string> = {
   form: 'geekblue',
 }
 
-/** 候选所在那一块放大后的图（PDF 按 360 DPI 重新画，图片用原图）。和页面图片一样先带 token 取回来。 */
+/**
+ * Zoomed image of the candidate's region (PDFs re-rendered at 360 DPI, images from the original), fetched
+ * with the token like page images.
+ */
 function Crop({ documentId, c }: { documentId: string; c: Candidate }) {
+  const { t } = useTranslation()
   const box = c.box
   const crop = useQuery({
     queryKey: ['crop', documentId, c.page, box?.join(',')],
@@ -39,16 +45,17 @@ function Crop({ documentId, c }: { documentId: string; c: Candidate }) {
   return (
     <Image
       src={crop.data}
-      alt="原图这一块"
+      alt={t('原图局部')}
       style={{ maxHeight: 48, maxWidth: 220, objectFit: 'contain', border: '1px solid #eee' }}
-      preview={{ mask: '放大看' }}
+      preview={{ mask: t('放大查看') }}
     />
   )
 }
 
 /**
- * 各个来源读出来的不同的值（ADR 0042）：整页 OCR、PDF 文字层、局部放大再识别、表单字段。
- * 系统不会自己替换，人看着局部图选一个"采用"（会记进修改记录）。
+ * Differing values from different sources: full-page OCR, PDF text layer, zoomed re-recognition, form fields.
+ * Never applied automatically; a reviewer compares them with the zoomed image and accepts one (recorded in
+ * the history).
  */
 export function Candidates({
   documentId,
@@ -63,13 +70,14 @@ export function Candidates({
   canEdit: boolean
   onDone: () => void
 }) {
+  const { t } = useTranslation()
   const items = v.candidates?.items ?? []
   if (items.length === 0) return null
   const busy = revise.isPending && revise.variables?.valueId === v.id
   return (
     <div style={{ marginTop: 8 }}>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        几个来源读出来的不一样，看图选一个：
+        {t('多个来源的识别结果不一致，请对照图像选择：')}
       </Typography.Text>
       <Flex vertical gap={6} style={{ marginTop: 4 }}>
         {items.map((c, i) => {
@@ -95,21 +103,21 @@ export function Candidates({
                 </Typography.Text>
               )}
               {c.rule_ok === true && (
-                <Tooltip title="换成这个值，和这个字段有关的规则都能通过（只是提示）">
+                <Tooltip title={t('改为此值后，与该字段相关的规则均可通过（仅供参考）')}>
                   <Tag icon={<CheckOutlined />} color="success" style={{ marginInlineEnd: 0 }}>
-                    符合规则
+                    {t('符合规则')}
                   </Tag>
                 </Tooltip>
               )}
               {c.rule_ok === false && (
-                <Tooltip title="换成这个值，和这个字段有关的规则过不了（只是提示）">
+                <Tooltip title={t('改为此值后，与该字段相关的规则无法通过（仅供参考）')}>
                   <Tag icon={<CloseOutlined />} color="warning" style={{ marginInlineEnd: 0 }}>
-                    规则不通过
+                    {t('规则不通过')}
                   </Tag>
                 </Tooltip>
               )}
               {c.source === 'form' && c.note && (
-                <Tag color={c.note === '页面上能看到' ? 'default' : 'orange'} style={{ marginInlineEnd: 0 }}>
+                <Tag color={c.visible === true ? 'default' : 'orange'} style={{ marginInlineEnd: 0 }}>
                   {c.note}
                 </Tag>
               )}
@@ -125,17 +133,17 @@ export function Candidates({
                         change: {
                           action: 'edit',
                           value: shown,
-                          reason: `看原图后采用${sourceName(c)}读的「${c.text}」`,
+                          reason: t('核对原图后采用{{sourceName}}识别的「{{text}}」', { sourceName: sourceName(c), text: c.text }),
                         },
                       },
                       { onSuccess: onDone },
                     )
                   }
                 >
-                  采用
+                  {t('采用')}
                 </Button>
               )}
-              {current && <Tag style={{ marginInlineEnd: 0 }}>现在的值</Tag>}
+              {current && <Tag style={{ marginInlineEnd: 0 }}>{t('当前值')}</Tag>}
             </Flex>
           )
         })}

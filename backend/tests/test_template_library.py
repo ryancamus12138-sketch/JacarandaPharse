@@ -1,4 +1,5 @@
-"""模板库（ADR 0030）：起步模板、我的模板和版本、按模板处理、重新处理、用样例建模板、试跑。"""
+"""Template library: starter templates, my templates and versions, processing by template,
+reprocessing, creating templates from samples, trial runs."""
 
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ from jacara.plugins.model_backends import ChatResult
 from jacara.plugins.validators.rules import RULES, RuleValidator, abn_valid
 from jacara.templates import STARTERS, from_definition, load_starter
 
-# ---------- 起步模板和规则 ----------
+# ---------- Starter templates and rules ----------
 
 
 @pytest.mark.parametrize("name", STARTERS)
@@ -63,9 +64,9 @@ def test_chinese_amount(words, amount):
 
 
 def test_abn_checksum():
-    assert abn_valid("51 824 753 556") is True  # ATO 文档里的示例 ABN
+    assert abn_valid("51 824 753 556") is True  # Example ABN from ATO documentation.
     assert abn_valid("51 824 753 557") is False
-    assert abn_valid("GB 123 4567 89") is None  # 不是 ABN，不检查
+    assert abn_valid("GB 123 4567 89") is None  # Not an ABN; not checked.
 
 
 def validate(rule_ids, **values):
@@ -95,7 +96,8 @@ def test_cn_invoice_rules():
 
 
 def test_rail_ticket_amounts():
-    """开给单位的铁路电子客票：金额（不含税）+ 税额 = 票价；开给个人的没有金额和税额，跳过。"""
+    """Railway e-tickets issued to organizations: amount (excluding tax) + tax = fare; tickets
+    issued to individuals have neither and are skipped."""
     ok = validate(["fare_tax_balance"], amount_total=394.04, tax_total=35.46, total=429.5)
     assert ok.passed == ("fare_tax_balance",)
     personal = validate(["fare_tax_balance"], total=9.0)
@@ -106,7 +108,8 @@ def test_rail_ticket_amounts():
 
 
 def test_air_itinerary_amounts():
-    """行程单：票价 + 燃油 + 民航发展基金 + 其他税费 = 合计；增值税按 39 号公告从票价和燃油里算。"""
+    """Itinerary: fare + fuel + civil aviation development fund + other taxes = total; VAT is
+    computed from fare and fuel per Announcement No. 39."""
     result = validate(
         ["air_total", "air_vat"],
         fare=1000.0,
@@ -147,11 +150,12 @@ def test_required_fields_are_errors():
     assert filled.issues == () and "required" in filled.passed
 
 
-# ---------- 我的模板：接口和处理 ----------
+# ---------- My templates: API and processing ----------
 
 
 class SchemaBackend:
-    """假的模型：按请求里的 JSON Schema 回答。values 是字段 ID → (值, 行号)；pairs 是键值对。"""
+    """Fake model answering according to the JSON Schema in the request. values maps field ID →
+    (value, line number); pairs are key-value pairs."""
 
     name = "fake"
 
@@ -225,7 +229,8 @@ def values(body):
 
 @pytest.fixture
 def mine(client):
-    """从"通用收据"起步模板复制一份，再存一个新版本：总额改叫"合计"，商家税号不导出。"""
+    """Copy the "generic receipt" starter template and save a new version: total renamed, merchant
+    tax id not exported."""
     created = client.post(
         "/api/v1/templates", json={"source": "starter", "starter": "receipt_general"}
     )
@@ -256,7 +261,7 @@ def mine(client):
 def test_template_list_versions_and_archive(client, mine):
     listed = client.get("/api/v1/templates").json()
     assert listed[0]["id"] == mine and listed[0]["title"] == "我的收据"
-    # 内置模板网页上不列；要的话 ?builtin=true
+    # Built-in templates are not listed in the web UI; use ?builtin=true.
     assert all(t["kind"] == "mine" for t in listed)
     everything = client.get("/api/v1/templates?builtin=true").json()
     assert any(t["kind"] == "builtin" and t["name"] == "receipt" for t in everything)
@@ -301,9 +306,9 @@ def test_upload_with_my_template(client, factory, storage, receipt_page, mine):
     )
     headers = [c.value for c in book["汇总"][1]]
     assert "合计" in headers and "商家" in headers
-    assert "商家税号" not in headers  # 设成了不导出
+    assert "商家税号" not in headers  # Set not to export.
 
-    # 下一次上传没选模板：用上一次的
+    # The next upload without a template uses the previous one.
     second = upload(client)
     with session_scope(factory) as session:
         assert session.get_one(Document, uuid.UUID(second)).template_version_id is not None
@@ -322,7 +327,7 @@ def test_template_change_does_not_change_old_documents(
         f"/api/v1/templates/{mine}",
         json={"title": "我的收据", "fields": body["fields"], "rules": []},
     )
-    assert values(detail(client, document_id))["total"]["label"] == "合计"  # 还是第 2 版
+    assert values(detail(client, document_id))["total"]["label"] == "合计"  # Still version 2.
 
 
 def test_reprocess_keeps_old_run_and_suggests(client, factory, storage, receipt_page, mine):
@@ -336,14 +341,14 @@ def test_reprocess_keeps_old_run_and_suggests(client, factory, storage, receipt_
     )
     assert response.status_code == 202, response.text
     assert response.json()["status"] == "uploaded"
-    # 还没处理完：看到的还是第 1 轮
+    # Not finished yet: still shows run 1.
     assert detail(client, document_id)["viewing_run"] == 1
     assert process(factory, storage, document_id, receipt_page) == "done"
 
     body = detail(client, document_id)
     assert body["current_run"] == 2 and body["viewing_run"] == 2
     assert [r["run"] for r in body["runs"]] == [2, 1]
-    assert body["runs"][0]["reason"] == "模板改了"
+    assert body["runs"][0]["reason"] == "模板已修改"
     assert values(body)["total"]["suggestion"] == {"action": "confirm", "value": "9.0", "run": 1}
     assert body["suggestions"] == 1
 
@@ -355,7 +360,7 @@ def test_reprocess_keeps_old_run_and_suggests(client, factory, storage, receipt_
     assert old["viewing_run"] == 1
     old_total = values(old)["total"]
     refused = client.post(f"/api/v1/values/{old_total['id']}/revisions", json={"action": "confirm"})
-    assert refused.status_code == 422  # 旧的一轮只能看
+    assert refused.status_code == 422  # Earlier runs are read-only.
 
 
 def test_reprocess_other_needs_note(client, factory, storage, receipt_page, mine):
@@ -365,13 +370,13 @@ def test_reprocess_other_needs_note(client, factory, storage, receipt_page, mine
     assert response.status_code == 422
 
 
-# ---------- 用样例建模板 ----------
+# ---------- Creating templates from samples ----------
 
 PAIRS = [
     {"key": "商家名称", "value": "BOOK TA _K (TAMAN DAYA) SDN BHD", "type": "string", "row": 1},
     {"key": "Date", "value": "2018-12-25", "type": "date", "row": 4},
     {"key": "Total", "value": 9.0, "type": "number", "row": 6},
-    {"key": "Total", "value": 9.0, "type": "number", "row": 6},  # 重复的只算一个
+    {"key": "Total", "value": 9.0, "type": "number", "row": 6},  # Duplicates count once.
 ]
 
 
@@ -439,11 +444,12 @@ def test_trial_does_not_save(client, factory, storage, receipt_page, mine):
     [page] = response.json()["pages"]
     total = next(f for f in page["fields"] if f["name"] == "total")
     assert total["label"] == "合计" and total["status"] == "matched"
-    assert any(i["rule"] == "required" for i in page["issues"])  # 假模型没给商家和日期
-    assert detail(client, document_id)["current_run"] == 1  # 试跑不保存
+    # The fake model gave no merchant or date.
+    assert any(i["rule"] == "required" for i in page["issues"])
+    assert detail(client, document_id)["current_run"] == 1  # Trial runs are not saved.
 
 
-# ---------- 导出、导入、删除 ----------
+# ---------- Export, import, delete ----------
 
 
 def test_export_then_import(client, mine):
@@ -459,7 +465,7 @@ def test_export_then_import(client, mine):
     assert body["id"] != mine and body["version"] == 1 and body["source"] == "import"
     assert next(f for f in body["fields"] if f["name"] == "total")["label"] == "合计"
 
-    # 起步模板也能导出
+    # Starter templates can be exported too.
     starter = client.get("/api/v1/templates/cn_einvoice/export?format=json").json()
     assert starter["title"] == "中国数电发票"
 
@@ -478,7 +484,7 @@ BLANK = {
 
 
 def test_blank_template_is_created_only_with_content(client):
-    """空白模板：编辑页里填好、点了保存才建；不带内容不建。"""
+    """Blank template: created only when saved from the editor; not created without content."""
     assert client.post("/api/v1/templates", json={"source": "blank"}).status_code == 422
     assert [t for t in client.get("/api/v1/templates").json() if t["kind"] == "mine"] == []
     created = client.post("/api/v1/templates", json=BLANK)
@@ -493,7 +499,8 @@ def test_delete_unused_template(client):
 
 
 def test_used_template_is_hidden_not_removed(client, factory, storage, receipt_page, mine):
-    """用过的模板也能删：从列表、上传里去掉，用过它的文档照常显示。"""
+    """Used templates can be deleted: removed from the list and upload; documents that used them
+    display as usual."""
     document_id = upload(client, mine)
     process(factory, storage, document_id, receipt_page)
     assert client.delete(f"/api/v1/templates/{mine}").status_code == 204
@@ -507,11 +514,12 @@ def test_used_template_is_hidden_not_removed(client, factory, storage, receipt_p
     assert body["extractions"][0]["template_title"] == "我的收据"
     assert values(body)["total"]["label"] == "合计"
     redo = client.post(f"/api/v1/documents/{document_id}/reprocess", json={"reason": "bad_result"})
-    assert redo.status_code == 422 and "已经删除" in redo.json()["detail"]
+    assert redo.status_code == 422 and "已删除" in redo.json()["detail"]
 
 
 def test_generic_starters_have_no_regional_rules():
-    """起步模板库：通用模板只用通用规则；国家模板只用通用规则和本国的规则（ADR 0037）。"""
+    """Starter library: generic templates use only generic rules; country templates only generic
+    rules and their own country's rules."""
     from jacara.plugins.validators import REGIONS
 
     countries = {name: load_starter(name).countries for name in STARTERS}
@@ -536,7 +544,8 @@ def test_generic_starters_have_no_regional_rules():
 
 
 def test_my_templates_rules_follow_fields_and_countries(client, mine):
-    """我的模板的规则跟着字段和国家走（ADR 0048）；标签可以随便改，只改标签不出新版本。"""
+    """Rules of my templates follow fields and countries; tags can be changed freely, and changing
+    only tags creates no new version."""
     body = client.get(f"/api/v1/templates/{mine}").json()
     assert body["domains"] == ["收据"] and body["countries"] == [] and body["tags"] == []
     saved = client.put(
@@ -560,9 +569,9 @@ def test_my_templates_rules_follow_fields_and_countries(client, mine):
     assert labelled["tags"] == ["2026-10 出差", "财务部"]
     assert labelled["countries"] == ["AU", "NZ"] and labelled["version"] == version
     bad = client.patch(f"/api/v1/templates/{mine}/labels", json={"countries": ["China"]})
-    assert bad.status_code == 422 and "两个字母" in bad.json()["detail"]
+    assert bad.status_code == 422 and "两位字母" in bad.json()["detail"]
 
-    # 只改名字和标签：不出新版本
+    # Only name and tags changed: no new version.
     again = client.put(
         f"/api/v1/templates/{mine}",
         json={
@@ -577,7 +586,7 @@ def test_my_templates_rules_follow_fields_and_countries(client, mine):
         again["version"] == version and again["title"] == "新名字" and again["countries"] == ["AU"]
     )
 
-    # 去掉澳洲：澳洲的规则跟着去掉（规则变了，出新版本）
+    # Australia removed: its rules are removed too (rules changed, so a new version).
     general = client.put(
         f"/api/v1/templates/{mine}",
         json={
@@ -588,3 +597,28 @@ def test_my_templates_rules_follow_fields_and_countries(client, mine):
         },
     ).json()
     assert general["countries"] == [] and general["rules"] == []
+
+
+def test_domains_are_shown_in_the_interface_language(client, mine):
+    """Known domains are stored under one name whatever language they were typed in, and shown in
+    the language of whoever looks; free-text domains stay as written."""
+    english = {"Accept-Language": "en"}
+    labelled = client.patch(
+        f"/api/v1/templates/{mine}/labels",
+        json={"domains": ["Lodging", "lodging", "住宿", "Receipt", "出差报销"]},
+    ).json()
+    assert labelled["domains"] == ["住宿", "收据", "出差报销"]
+    assert labelled["domain_names"] == ["住宿", "收据", "出差报销"]
+    seen = client.get(f"/api/v1/templates/{mine}", headers=english).json()
+    assert seen["domains"] == ["住宿", "收据", "出差报销"]
+    assert seen["domain_names"] == ["Lodging", "Receipt", "出差报销"]
+    listed = {t["id"]: t for t in client.get("/api/v1/templates", headers=english).json()}
+    assert listed[mine]["domain_names"][0] == "Lodging"
+    # The starter library is shown in the interface language too, with the same stored names.
+    starters = client.get("/api/v1/templates/starters", headers=english).json()
+    receipt = next(s for s in starters if "收据" in s["domains"])
+    assert "Receipt" in receipt["domain_names"]
+    domains = client.get("/api/v1/templates/domains", headers=english).json()
+    assert {"value": "住宿", "label": "Lodging"} in domains
+    assert {"value": "其他", "label": "Other"} in domains
+    assert client.get("/api/v1/templates/domains").json()[0]["label"] == "发票"

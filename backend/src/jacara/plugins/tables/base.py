@@ -1,8 +1,8 @@
-"""表格识别插件接口（预留，暂无实现）。
+"""Table recognition plugin interface (reserved; not implemented yet).
 
-OCR 只给出一行一行的文字；表格识别再判断每段文字属于第几行、第几列。
-以后接入 RapidTable（或其他本地表格模型）时，在本目录新增一个文件实现 TableEngine 即可。
-"""
+OCR yields text line by line; table recognition then assigns each span to a row and column. To
+integrate RapidTable (or another local table model), add a module in this package implementing
+TableEngine."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from jacara.plugins.ocr.base import Device, OcrPage, Point
 
 @dataclass(frozen=True)
 class TableConfig:
-    """表格识别配置。model 为 None 时用引擎自带的默认模型。"""
+    """Table recognition configuration. model None means the engine's bundled default model."""
 
     engine: str = "rapidtable"
     model: Path | None = None
@@ -25,7 +25,8 @@ class TableConfig:
 
 @dataclass(frozen=True)
 class TableCell:
-    """一个格子：第几行第几列（从 0 开始）、文字、在图上的位置。合并格用 span 表示跨几行几列。"""
+    """A cell: row and column (0-based), text, and position on the image. Merged cells use span for
+    the number of rows and columns covered."""
 
     row: int
     col: int
@@ -37,7 +38,7 @@ class TableCell:
 
 @dataclass(frozen=True)
 class Table:
-    """一张表：所有格子、整张表在图上的位置、行数和列数。"""
+    """A table: all cells, the table's position on the image, and the number of rows and columns."""
 
     cells: tuple[TableCell, ...]
     polygon: tuple[Point, Point, Point, Point]
@@ -47,7 +48,7 @@ class Table:
 
 @dataclass(frozen=True)
 class TableResult:
-    """一张图上识别出的所有表格，以及来源信息（引擎、模型、用时）。"""
+    """All tables recognized on an image, with provenance (engine, model, duration)."""
 
     tables: tuple[Table, ...]
     engine: str
@@ -56,10 +57,9 @@ class TableResult:
 
 
 class TableEngine(Protocol):
-    """所有表格识别引擎都要满足的接口。
+    """Interface every table recognition engine must satisfy.
 
-    输入原图和已经做好的 OCR 结果，避免重复做一次 OCR。
-    """
+    Takes the original image and the existing OCR result to avoid running OCR again."""
 
     name: str
 

@@ -1,4 +1,4 @@
-"""审计日志表：谁、什么时候、做了什么。只新增，不修改、不删除（项目规则 3）。"""
+"""Audit log table: who did what, and when. Append-only: rows are never updated or deleted."""
 
 from __future__ import annotations
 
@@ -16,13 +16,14 @@ class AuditLog(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     team_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
-    """哪个团队的事。登录失败时可能不知道是谁，就是空的。"""
+    """Team concerned. Empty when the actor is unknown (for example failed logins)."""
     user_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
-    """谁做的。"""
+    """Actor."""
     action: Mapped[str] = mapped_column(String(64), index=True)
-    """做了什么，例如 auth:login、document:upload、value:edit。"""
+    """Action, for example auth:login, document:upload, value:edit."""
     target_type: Mapped[str | None] = mapped_column(String(32))
-    """对什么做的：document、value、user……"""
+    """Target type: document, value, user, …"""
     target_id: Mapped[str | None] = mapped_column(String(64))
     detail: Mapped[dict[str, Any]] = mapped_column(default=dict)
-    """补充信息，例如文件名、导出了几个文档、登录失败时输入的用户名。"""
+    """Additional details, for example file name, number of exported documents, or the user name
+    entered in a failed login."""

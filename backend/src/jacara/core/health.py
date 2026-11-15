@@ -1,8 +1,8 @@
-"""检查后端依赖的服务是否连得上：数据库、任务队列、对象存储、本地模型；还有 .env 和网页是否准备好。
+"""Check that backend dependencies are reachable (database, task queue, object storage, local model)
+and that .env and the frontend are ready.
 
-每项检查都返回 Check：成功时写版本等信息，失败时写原因和怎么解决。
-检查只读不写，不会创建或修改任何东西。
-"""
+Each check returns a Check: version information on success, or the cause and remedy on failure.
+Checks are read-only and never create or modify anything."""
 
 from __future__ import annotations
 
@@ -10,11 +10,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from jacara.core.config import Settings
+from jacara.core.i18n import N_, tr
 
 TIMEOUT_S = 3
-"""每项检查最多等几秒。连不上的服务通常马上就报错，不会等满。"""
+"""Timeout in seconds for each check. Unreachable services usually fail immediately rather than
+waiting for the full timeout."""
 
-_START_INFRA = "运行 docker compose up -d 启动，再用 docker compose ps 看状态"
+_START_INFRA = N_("运行 docker compose up -d 启动，再用 docker compose ps 查看状态")
 
 
 @dataclass(frozen=True)
@@ -26,24 +28,35 @@ class Check:
 
 
 def check_secrets(settings: Settings) -> Check:
-    """.env 里的密码不能还是空的或示例值 change-me：这样谁都猜得到。"""
+    """Passwords in .env must not be empty or the example value change-me, which anyone can
+    guess."""
     weak = settings.weak_secrets()
     if weak:
         return Check(
-            ".env 密钥",
+            tr(".env 密钥"),
             False,
-            "还是空的或 change-me：" + "、".join(weak),
-            "用 openssl rand -hex 16 生成随机值填进 .env",
+            tr("仍为空或 change-me：{names}", names=tr("、").join(weak)),
+            tr("使用 openssl rand -hex 16 生成随机值并填入 .env"),
         )
-    return Check(".env 密钥", True, "都已改成自己的值")
+    return Check(tr(".env 密钥"), True, tr("均已设置为自定义值"))
 
 
 def check_web(settings: Settings) -> Check:
-    """网页有没有打包。没打包也能用 API 和 npm run dev，所以只是提醒。"""
+    """Whether the frontend has been built. The API and `npm run dev` work without it, so this is
+    only a warning."""
     index = settings.web_dist / "index.html"
     if index.is_file():
-        return Check("网页", True, f"已打包（{settings.web_dist}）")
-    return Check("网页", False, "还没打包，打开 8000 只会看到提示", "cd web && npm run build")
+        return Check(tr("网页"), True, tr("已打包（{web_dist}）", web_dist=settings.web_dist))
+    return Check(
+        tr("网页"),
+        False,
+        tr("找不到网页文件（{web_dist}）", web_dist=settings.web_dist)
+        if settings.jacara_desktop
+        else tr("尚未构建，访问 8000 端口只会显示提示页"),
+        tr("安装不完整，请重新安装 JacarandaParse")
+        if settings.jacara_desktop
+        else "cd web && npm run build",
+    )
 
 
 def check_postgres(settings: Settings) -> Check:
@@ -60,11 +73,13 @@ def check_postgres(settings: Settings) -> Check:
         ) as conn:
             version = conn.execute("SHOW server_version").fetchone()
     except psycopg.OperationalError as err:
-        hint = _START_INFRA
+        hint = tr(_START_INFRA)
         if "password authentication failed" in str(err):
-            hint = ".env 里的 POSTGRES_PASSWORD 和数据库创建时用的不一样"
+            hint = tr(".env 中的 POSTGRES_PASSWORD 与数据库创建时使用的不一致")
         return Check("PostgreSQL", False, _first_line(err), hint)
-    return Check("PostgreSQL", True, f"版本 {version[0] if version else '未知'}")
+    return Check(
+        "PostgreSQL", True, tr("版本 {value}", value=version[0] if version else tr("未知"))
+    )
 
 
 def check_valkey(settings: Settings) -> Check:
@@ -77,16 +92,16 @@ def check_valkey(settings: Settings) -> Check:
         port=settings.valkey_port,
         socket_connect_timeout=TIMEOUT_S,
         socket_timeout=TIMEOUT_S,
-        retry=Retry(NoBackoff(), 0),  # 检查只试一次：连不上就是连不上，不要反复重试
+        retry=Retry(NoBackoff(), 0),  # Single attempt per check: no retries.
     )
     try:
         info = client.info("server")
     except redis.RedisError as err:
-        return Check("Valkey", False, _first_line(err), _START_INFRA)
+        return Check("Valkey", False, _first_line(err), tr(_START_INFRA))
     finally:
         client.close()
-    version = info.get("valkey_version") or info.get("redis_version", "未知")
-    return Check("Valkey", True, f"版本 {version}")
+    version = info.get("valkey_version") or info.get("redis_version", tr("未知"))
+    return Check("Valkey", True, tr("版本 {version}", version=version))
 
 
 def check_s3(settings: Settings) -> Check:
@@ -108,13 +123,22 @@ def check_s3(settings: Settings) -> Check:
         buckets = [b["Name"] for b in client.list_buckets().get("Buckets", [])]
     except ClientError as err:
         code = err.response.get("Error", {}).get("Code", "")
-        return Check("SeaweedFS", False, f"S3 拒绝访问（{code}）", ".env 里的 S3 密钥不对")
+        return Check(
+            "SeaweedFS", False, tr("S3 拒绝访问（{code}）", code=code), tr(".env 中的 S3 密钥错误")
+        )
     except BotoCoreError as err:
-        return Check("SeaweedFS", False, _first_line(err), _START_INFRA)
+        return Check("SeaweedFS", False, _first_line(err), tr(_START_INFRA))
     if settings.s3_bucket in buckets:
-        return Check("SeaweedFS", True, f"已连接，存储桶 {settings.s3_bucket} 已存在")
+        return Check(
+            "SeaweedFS", True, tr("已连接，存储桶 {s3_bucket} 已存在", s3_bucket=settings.s3_bucket)
+        )
     return Check(
-        "SeaweedFS", True, f"已连接，存储桶 {settings.s3_bucket} 还没创建（上传文件时会创建）"
+        "SeaweedFS",
+        True,
+        tr(
+            "已连接，存储桶 {s3_bucket} 尚未创建（首次上传时自动创建）",
+            s3_bucket=settings.s3_bucket,
+        ),
     )
 
 
@@ -125,13 +149,42 @@ def check_model(settings: Settings) -> Check:
         response = httpx.get(f"{settings.model_server}/health", timeout=TIMEOUT_S)
     except httpx.HTTPError as err:
         return Check(
-            "llama-server", False, _first_line(err), "运行 uv run jacara serve --model 模型文件"
+            "llama-server",
+            False,
+            _first_line(err),
+            tr("如果还没有模型，请在「设置 → 模型」中配置；否则请重新启动 JacarandaParse")
+            if settings.jacara_desktop
+            else tr("运行 uv run jacara serve --model <模型文件>"),
         )
     if response.status_code != 200:
         return Check(
-            "llama-server", False, f"服务返回 {response.status_code}", "模型可能还在加载，稍等再试"
+            "llama-server",
+            False,
+            tr("服务返回 {status_code}", status_code=response.status_code),
+            tr("模型可能仍在加载，请稍后重试"),
         )
-    return Check("llama-server", True, f"已就绪（{settings.model_server}）")
+    return Check(
+        "llama-server", True, tr("已就绪（{model_server}）", model_server=settings.model_server)
+    )
+
+
+def check_watch(settings: Settings) -> list[Check]:
+    """Each watch folder still exists (it may have been moved or deleted after it was set)."""
+    checks = []
+    for folder in settings.watch_folders():
+        name = tr("监视文件夹：{name}", name=folder.path.name or str(folder.path))
+        if folder.path.expanduser().is_dir():
+            checks.append(Check(name, True, str(folder.path)))
+        else:
+            checks.append(
+                Check(
+                    name,
+                    False,
+                    tr("找不到文件夹：{folder}", folder=folder.path),
+                    tr("在「设置 → 识别和处理」中重新选择这个监视文件夹，或删除它"),
+                )
+            )
+    return checks
 
 
 CHECKS: tuple[Callable[[Settings], Check], ...] = (
@@ -145,7 +198,19 @@ CHECKS: tuple[Callable[[Settings], Check], ...] = (
 
 
 def run_checks(settings: Settings) -> list[Check]:
-    return [check(settings) for check in CHECKS]
+    """The checks that apply to how this instance runs: PostgreSQL, Valkey and S3 only when they
+    are the database, queue and file store in use (the desktop app uses none of them), and the .env
+    secrets only when a .env file is read."""
+    skip: set[Callable[[Settings], Check]] = set()
+    if settings.jacara_database != "postgres":
+        skip.add(check_postgres)
+    if settings.jacara_queue != "celery":
+        skip.add(check_valkey)
+    if settings.jacara_storage != "s3":
+        skip.add(check_s3)
+    if settings.jacara_desktop:
+        skip.add(check_secrets)
+    return [check(settings) for check in CHECKS if check not in skip] + check_watch(settings)
 
 
 def _first_line(err: BaseException) -> str:

@@ -1,14 +1,14 @@
-"""让 API 顺便提供网页：把 web/dist 里打包好的前端文件发给浏览器。
+"""Serve the built frontend (web/dist) from the API.
 
-这样使用时只要打开 http://127.0.0.1:8000，不用再运行 npm run dev。
-开发时照样用 npm run dev（5173，改了马上看到），这里只服务 npm run build 打包出来的东西。
+Users open http://127.0.0.1:8000 without running `npm run dev`. Development still uses `npm run
+dev` (port 5173, hot reload); this module serves only the output of `npm run build`.
 
-规则：
-- /api/... 永远是接口。接口不存在就是 404 JSON，不会变成网页。
-- dist 里真有这个文件（例如 /assets/index-3f2a.js、/favicon.svg）就发这个文件。
-- 其他网址（例如 /documents/123）都发 index.html，由前端的路由决定显示哪个页面。
-  这叫 SPA 回退：没有它，在 /documents/123 按刷新会得到 404。
-"""
+Rules:
+- /api/... is always the API. Unknown API paths return a JSON 404 and never fall through to the
+  frontend.
+- Files that exist in dist (for example /assets/index-3f2a.js, /favicon.svg) are served as is.
+- Every other path (for example /documents/123) serves index.html and the frontend router selects
+  the page. This is the SPA fallback; without it, reloading /documents/123 returns 404."""
 
 from __future__ import annotations
 
@@ -17,27 +17,31 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 
-NOT_BUILT = "网页还没有打包。在项目里运行：cd web && npm install && npm run build，然后重启。"
+from jacara.core.i18n import N_, tr
+
+NOT_BUILT = N_("网页尚未构建。请在项目目录运行：cd web && npm install && npm run build，然后重启。")
 
 _IMMUTABLE = "public, max-age=31536000, immutable"
-"""assets/ 里的文件名带内容指纹（index-3f2a.js），内容一变名字就变，所以浏览器可以一直缓存。"""
+"""File names in assets/ carry a content hash (index-3f2a.js) that changes with the content, so
+browsers may cache them indefinitely."""
 
 _NO_CACHE = "no-cache"
-"""index.html 每次都要问一下有没有新版本，否则更新后浏览器还在用旧页面。"""
+"""index.html is always revalidated; otherwise browsers keep using the old page after an update."""
 
 
 def mount_web(app: FastAPI, dist: Path) -> None:
-    """在所有接口之后加一条"兜底"路由。必须最后调用：前面的路由先匹配。"""
+    """Add the catch-all route after all API routes. Must be called last so that earlier routes
+    match first."""
     root = dist.resolve()
 
     @app.get("/{path:path}", include_in_schema=False)
     def web(path: str) -> Response:
         if path == "api" or path.startswith("api/"):
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "没有这个接口")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, tr("接口不存在"))
 
         index = root / "index.html"
         if not index.is_file():
-            return PlainTextResponse(NOT_BUILT, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return PlainTextResponse(tr(NOT_BUILT), status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         file = _inside(root, path)
         if file is not None:
@@ -47,7 +51,8 @@ def mount_web(app: FastAPI, dist: Path) -> None:
 
 
 def _inside(root: Path, path: str) -> Path | None:
-    """dist 里的这个文件。不存在、或者网址想跳出 dist（../../.env）都返回 None。"""
+    """The file in dist for this path. None if it does not exist or the path escapes dist
+    (../../.env)."""
     if not path:
         return None
     file = (root / path).resolve()

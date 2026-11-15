@@ -11,7 +11,16 @@ title = "检验报告（化验单）"
 titles = { en = "Laboratory Report", ar = "تقرير المختبر", de = "Laborbefund", es = "Informe de laboratorio", fr = "Compte rendu d'analyses", hi = "प्रयोगशाला रिपोर्ट", id = "Hasil laboratorium", it = "Referto di laboratorio", ja = "臨床検査報告書", ko = "임상검사 결과보고서", ms = "Laporan makmal", nl = "Laboratoriumuitslag", pl = "Wynik badania laboratoryjnego", th = "รายงานผลการตรวจทางห้องปฏิบัติการ", vi = "Phiếu kết quả xét nghiệm", "zh-Hant" = "檢驗報告" }
 domains = ["医疗", "检验报告"]
 description = "医院、体检中心、第三方实验室出具的检验报告：血常规、生化、尿常规、免疫等。患者信息、标本、送检和报告时间，以及每一项检验的结果、单位、参考范围、高低提示；检查结果超出参考范围却没标高低的会提醒。"
+descriptions = { en = "Laboratory reports from hospitals, health check centers and independent laboratories: complete blood count, biochemistry, urinalysis, immunology, etc. Patient information, specimen, request and report times, and for each test the result, unit, reference range and high/low flag; results outside the reference range without a flag are reported." }
 rules = ["lab_flag"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: laboratory reports.",
+  "Field source: the clinical test report contents required by the Administrative Measures for Clinical Laboratories of Medical Institutions (2006) (laboratory name, patient name, sex, age, medical record number, test items, results and units, reference ranges, abnormal flags, operator, verifier, specimen receipt time, report time), ISO 15189:2022 7.4.1.6 (specimen type, collection time);",
+  "The five fields of each test result (test, result, unit, reference range, abnormal flag) match the structure of the MedRepBench paper.",
+]
 
 [[fields]]
 name = "institution"
@@ -19,6 +28,7 @@ label = "医疗机构"
 names = { en = "Institution", ar = "المنشأة", de = "Einrichtung", es = "Centro", fr = "Établissement", hi = "संस्थान", id = "Institusi", it = "Struttura", ja = "医療機関", ko = "의료기관", ms = "Institusi", nl = "Instelling", pl = "Placówka", th = "สถานพยาบาล", vi = "Cơ sở y tế", "zh-Hant" = "醫療機構" }
 type = "string"
 description = "出报告的医院、体检中心或检验所名称，一般在最上面"
+descriptions = { en = "The name of the hospital, health check center or laboratory issuing the report, usually at the top" }
 aliases = ["医院", "Hospital", "Laboratory", "Lab"]
 
 [[fields]]
@@ -27,6 +37,7 @@ label = "报告名称"
 names = { en = "Report Title", ar = "عنوان التقرير", de = "Berichtstitel", es = "Título del informe", fr = "Titre du compte rendu", hi = "रिपोर्ट का शीर्षक", id = "Judul laporan", it = "Titolo del referto", ja = "報告書名", ko = "보고서명", ms = "Tajuk laporan", nl = "Titel uitslag", pl = "Tytuł wyniku", th = "ชื่อรายงาน", vi = "Tên phiếu", "zh-Hant" = "報告名稱" }
 type = "string"
 description = "报告单的标题或检验组合，例如 血常规、肝功能、尿常规检验报告单，照抄"
+descriptions = { en = "The report title or test panel, for example complete blood count, liver function, urinalysis report; copy it as written" }
 aliases = ["检验项目", "检验目的", "组合项目", "Test", "Panel"]
 
 [[fields]]
@@ -52,6 +63,7 @@ label = "年龄"
 names = { en = "Age", ar = "العمر", de = "Alter", es = "Edad", fr = "Âge", hi = "आयु", id = "Usia", it = "Età", ja = "年齢", ko = "나이", ms = "Umur", nl = "Leeftijd", pl = "Wiek", th = "อายุ", vi = "Tuổi", "zh-Hant" = "年齡" }
 type = "string"
 description = "照抄，带单位（35岁、3月、10天）"
+descriptions = { en = "Copy it as written, with the unit (35岁, 3月, 10天 / 35 years, 3 months, 10 days)" }
 aliases = ["Age"]
 
 [[fields]]
@@ -61,6 +73,7 @@ names = { en = "Medical Record No.", ar = "رقم الملف الطبي", de = "
 type = "string"
 sensitive = true
 description = "门诊号、住院号、病历号、ID 号、体检号，照抄"
+descriptions = { en = "Outpatient number, inpatient number, medical record number, ID number, health check number; copy it as written" }
 aliases = ["门诊号", "住院号", "病人ID", "ID号", "体检号", "MRN", "Patient ID"]
 
 [[fields]]
@@ -69,6 +82,7 @@ label = "科别"
 names = { en = "Department", ar = "القسم", de = "Station", es = "Servicio", fr = "Service", hi = "विभाग", id = "Poli / ruang", it = "Reparto", ja = "診療科", ko = "진료과", ms = "Jabatan", nl = "Afdeling", pl = "Oddział", th = "แผนก", vi = "Khoa", "zh-Hant" = "科別" }
 type = "string"
 description = "申请检验的科室"
+descriptions = { en = "The department requesting the test" }
 aliases = ["科室", "申请科室", "送检科室", "Department", "Ward"]
 
 [[fields]]
@@ -99,6 +113,7 @@ label = "标本类型"
 names = { en = "Specimen Type", ar = "نوع العينة", de = "Probenart", es = "Tipo de muestra", fr = "Type d'échantillon", hi = "नमूने का प्रकार", id = "Jenis spesimen", it = "Tipo di campione", ja = "検体種別", ko = "검체종류", ms = "Jenis spesimen", nl = "Soort monster", pl = "Rodzaj materiału", th = "ชนิดสิ่งส่งตรวจ", vi = "Loại mẫu", "zh-Hant" = "檢體類別" }
 type = "string"
 description = "血清、全血、尿液、粪便等"
+descriptions = { en = "Serum, whole blood, urine, stool, etc." }
 aliases = ["样本类型", "标本", "样本", "Specimen", "Sample Type"]
 
 [[fields]]
@@ -108,6 +123,7 @@ names = { en = "Specimen No.", ar = "رقم العينة", de = "Probennummer", 
 type = "string"
 unique = true
 description = "标本条码号、样本号、检验单号，照抄"
+descriptions = { en = "Specimen barcode, sample number, test request number; copy it as written" }
 aliases = ["条码号", "样本号", "检验号", "Specimen No", "Barcode", "Accession No"]
 
 [[fields]]
@@ -116,6 +132,7 @@ label = "采集时间"
 names = { en = "Collected", ar = "تاريخ السحب", de = "Entnahme", es = "Extracción", fr = "Prélèvement", hi = "संग्रह", id = "Diambil", it = "Prelievo", ja = "採取日時", ko = "채취일시", ms = "Diambil", nl = "Afname", pl = "Pobranie", th = "วันเวลาเก็บ", vi = "Thời gian lấy mẫu", "zh-Hant" = "採檢時間" }
 type = "string"
 description = "采样、采集时间，照抄（含时分）"
+descriptions = { en = "Sampling or collection time; copy it as written (with hours and minutes)" }
 aliases = ["采样时间", "采集时间", "Collected", "Collection Time"]
 
 [[fields]]
@@ -124,6 +141,7 @@ label = "接收时间"
 names = { en = "Received", ar = "تاريخ الاستلام", de = "Eingang", es = "Recepción", fr = "Réception", hi = "प्राप्ति", id = "Diterima", it = "Accettazione", ja = "受付日時", ko = "접수일시", ms = "Diterima", nl = "Ontvangst", pl = "Przyjęcie", th = "วันเวลารับ", vi = "Thời gian nhận mẫu", "zh-Hant" = "接收時間" }
 type = "string"
 description = "实验室接收标本的时间，照抄（含时分）"
+descriptions = { en = "The time the laboratory received the specimen; copy it as written (with hours and minutes)" }
 aliases = ["接收时间", "收样时间", "Received"]
 
 [[fields]]
@@ -132,6 +150,7 @@ label = "报告时间"
 names = { en = "Reported", ar = "تاريخ التقرير", de = "Befunddatum", es = "Informe", fr = "Compte rendu", hi = "रिपोर्ट", id = "Dilaporkan", it = "Refertazione", ja = "報告日時", ko = "보고일시", ms = "Dilaporkan", nl = "Uitslagdatum", pl = "Wydanie wyniku", th = "วันเวลารายงาน", vi = "Thời gian trả kết quả", "zh-Hant" = "報告時間" }
 type = "string"
 description = "出报告、审核的时间，照抄（含时分）"
+descriptions = { en = "The report or verification time; copy it as written (with hours and minutes)" }
 aliases = ["报告时间", "报告日期", "Reported", "Report Date"]
 
 [[fields]]
@@ -154,6 +173,7 @@ label = "检验结果"
 names = { en = "Results", ar = "النتائج", de = "Ergebnisse", es = "Resultados", fr = "Résultats", hi = "परिणाम", id = "Hasil", it = "Risultati", ja = "検査結果", ko = "검사결과", ms = "Keputusan", nl = "Uitslagen", pl = "Wyniki", th = "ผลการตรวจ", vi = "Kết quả", "zh-Hant" = "檢驗結果" }
 required = true
 description = "报告上每一项检验一行（例如白细胞、血红蛋白、谷丙转氨酶）。表头、分组标题、备注不算一行；两栏排版的报告左右两栏都要"
+descriptions = { en = "One row per test on the report (for example white blood cells, hemoglobin, ALT). Headers, group titles and notes are not rows; in two-column layouts include both columns" }
 
 [[tables.columns]]
 name = "code"
@@ -161,6 +181,7 @@ label = "代号"
 names = { en = "Code", ar = "الرمز", de = "Kürzel", es = "Código", fr = "Code", hi = "कोड", id = "Kode", it = "Codice", ja = "コード", ko = "코드", ms = "Kod", nl = "Code", pl = "Kod", th = "รหัส", vi = "Mã", "zh-Hant" = "代號" }
 type = "string"
 description = "项目的英文缩写，如 WBC、HGB、ALT；没有就留空"
+descriptions = { en = "The English abbreviation of the test, such as WBC, HGB, ALT; leave empty if absent" }
 aliases = ["缩写", "代号", "Code"]
 
 [[tables.columns]]
@@ -169,6 +190,7 @@ label = "项目"
 names = { en = "Test", ar = "الفحص", de = "Untersuchung", es = "Prueba", fr = "Analyse", hi = "जाँच", id = "Pemeriksaan", it = "Esame", ja = "検査項目", ko = "검사항목", ms = "Ujian", nl = "Bepaling", pl = "Badanie", th = "รายการตรวจ", vi = "Xét nghiệm", "zh-Hant" = "檢驗項目" }
 type = "string"
 description = "检验项目的中文或英文名称，照抄"
+descriptions = { en = "The Chinese or English name of the test; copy it as written" }
 aliases = ["项目名称", "检验项目", "Test", "Item"]
 
 [[tables.columns]]
@@ -177,6 +199,7 @@ label = "结果"
 names = { en = "Result", ar = "النتيجة", de = "Ergebnis", es = "Resultado", fr = "Résultat", hi = "परिणाम", id = "Hasil pemeriksaan", it = "Risultato", ja = "結果", ko = "결과", ms = "Keputusan ujian", nl = "Uitslag", pl = "Wynik", th = "ผล", vi = "Kết quả xét nghiệm", "zh-Hant" = "結果" }
 type = "string"
 description = "照抄结果：数字（12.3）、定性（阴性、阳性、+、-）、带符号（<0.1、>1000）都照原样；高低箭头不要写进结果"
+descriptions = { en = "Copy the result as written: numbers (12.3), qualitative results (negative, positive, +, -) and values with signs (<0.1, >1000) all as shown; do not put high/low arrows into the result" }
 aliases = ["结果", "测定值", "Result", "Value"]
 
 [[tables.columns]]
@@ -185,6 +208,7 @@ label = "提示"
 names = { en = "Flag", ar = "مؤشر", de = "Kennzeichen", es = "Indicador", fr = "Indicateur", hi = "संकेत", id = "Tanda", it = "Segnalazione", ja = "判定", ko = "판정", ms = "Tanda", nl = "Markering", pl = "Oznaczenie", th = "สัญลักษณ์", vi = "Cờ", "zh-Hant" = "提示" }
 type = "string"
 description = "异常提示：↑、↓、H、L、高、低、阳性、* 等，照抄；正常没有就留空"
+descriptions = { en = "The abnormal flag: ↑, ↓, H, L, 高, 低, positive, * and so on; copy it as written; leave empty when normal" }
 aliases = ["提示", "标志", "异常", "Flag"]
 
 [[tables.columns]]
@@ -193,6 +217,7 @@ label = "单位"
 names = { en = "Unit", ar = "الوحدة", de = "Einheit", es = "Unidad", fr = "Unité", hi = "इकाई", id = "Satuan", it = "Unità", ja = "単位", ko = "단위", ms = "Unit", nl = "Eenheid", pl = "Jednostka", th = "หน่วย", vi = "Đơn vị", "zh-Hant" = "單位" }
 type = "string"
 description = "结果的单位，如 10^9/L、g/L、mmol/L、U/L，照抄"
+descriptions = { en = "The unit of the result, such as 10^9/L, g/L, mmol/L, U/L; copy it as written" }
 aliases = ["单位", "Unit", "Units"]
 
 [[tables.columns]]
@@ -201,6 +226,7 @@ label = "参考范围"
 names = { en = "Reference Range", ar = "المدى المرجعي", de = "Referenzbereich", es = "Intervalo de referencia", fr = "Valeurs de référence", hi = "संदर्भ सीमा", id = "Nilai rujukan", it = "Valori di riferimento", ja = "基準値", ko = "참고치", ms = "Julat rujukan", nl = "Referentiewaarden", pl = "Zakres referencyjny", th = "ค่าอ้างอิง", vi = "Khoảng tham chiếu", "zh-Hant" = "參考範圍" }
 type = "string"
 description = "参考范围或参考区间，照抄，如 3.5-9.5、<5.0、阴性"
+descriptions = { en = "The reference range or reference interval; copy it as written, such as 3.5-9.5, <5.0, negative" }
 aliases = ["参考值", "参考区间", "正常值", "Reference", "Reference Range", "Ref"]
 
 [[tables.columns]]
@@ -209,4 +235,5 @@ label = "方法"
 names = { en = "Method", ar = "الطريقة", de = "Methode", es = "Método", fr = "Méthode", hi = "विधि", id = "Metode", it = "Metodo", ja = "測定方法", ko = "검사방법", ms = "Kaedah", nl = "Methode", pl = "Metoda", th = "วิธีตรวจ", vi = "Phương pháp", "zh-Hant" = "方法" }
 type = "string"
 description = "检验方法，有才写"
+descriptions = { en = "The test method, only if given" }
 aliases = ["检验方法", "Method"]

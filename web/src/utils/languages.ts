@@ -1,14 +1,14 @@
 import { useState } from 'react'
 
 /**
- * 模板字段名的语言（ADR 0048）。代码是 BCP 47 的简写；名字用那种语言自己的写法，
- * 中文用户也能认出"English""日本語"。
+ * Languages of template field names. Codes are short BCP 47 tags; names are written in the language itself
+ * (endonyms), so users recognize "English" and "日本語" regardless of UI language.
  */
 export const LANGUAGE_NAMES: Record<string, string> = {
-  zh: '中文',
-  'zh-Hant': '繁體中文',
+  zh: '中文', // i18n-ignore: endonym
+  'zh-Hant': '繁體中文', // i18n-ignore: endonym
   en: 'English',
-  ja: '日本語',
+  ja: '日本語', // i18n-ignore: endonym
   ko: '한국어',
   ms: 'Bahasa Melayu',
   vi: 'Tiếng Việt',
@@ -30,7 +30,7 @@ export function languageName(code: string): string {
   return LANGUAGE_NAMES[code] ?? code
 }
 
-/** 下拉框的选项：按给的顺序，第一个一般是中文。 */
+/** Select options in the given order; the first is usually Chinese. */
 export function languageOptions(codes: string[]): { value: string; label: string }[] {
   return codes.map((code) => ({ value: code, label: languageName(code) }))
 }
@@ -47,18 +47,19 @@ function write(key: string, value: string): void {
   try {
     window.localStorage.setItem(key, value)
   } catch {
-    // 浏览器不让存（隐私模式等）就只在这一页里记着
+    // When the browser forbids storage (private mode and similar), remember the choice for this page only.
   }
 }
 
 /**
- * 记住选的语言（只在这个浏览器里，按 key 分开记，例如每个模板一份）。
- * 选的语言这个模板没有时，用第一个（中文）。
+ * Remember the selected language (in this browser only, separately per key, for example per template). When
+ * nothing was selected or the template lacks the selected language, the first one (the template's primary
+ * language) is used.
  */
 export function useLanguage(key: string, available: string[]): [string, (code: string) => void] {
   const [chosen, setChosen] = useState<Record<string, string>>({})
-  const stored = chosen[key] ?? read(`jacara.language.${key}`) ?? 'zh'
-  const language = available.includes(stored) ? stored : (available[0] ?? 'zh')
+  const stored = chosen[key] ?? read(`jacara.language.${key}`)
+  const language = stored && available.includes(stored) ? stored : (available[0] ?? 'zh')
   const choose = (code: string) => {
     write(`jacara.language.${key}`, code)
     setChosen((old) => ({ ...old, [key]: code }))

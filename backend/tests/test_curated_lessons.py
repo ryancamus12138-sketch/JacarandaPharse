@@ -1,4 +1,5 @@
-"""整理过的例子（ADR 0055，B2 + B3）：只用错在模型的、合并重复、去掉过期的、同一个发单方优先。"""
+"""Curated examples: model errors only, duplicates merged, stale examples dropped, same issuer
+preferred."""
 
 from __future__ import annotations
 
@@ -22,8 +23,9 @@ def test_series_key_prefers_tax_id_then_name():
     assert series_key({"merchant": "BOOK TA.K (TAMAN DAYA) SDN BHD"}) == (
         "name:booktaktamandayasdnbhd"
     )
-    assert series_key({"merchant": "AB"}) is None  # 太短，不算
-    assert series_key({"buyer_tax_id": "913101123456XY"}) is None  # 买方税号不算发单方
+    assert series_key({"merchant": "AB"}) is None  # Too short; ignored.
+    # The buyer tax id is not the issuer.
+    assert series_key({"buyer_tax_id": "913101123456XY"}) is None
 
 
 def test_series_found_in_ocr_text():
@@ -49,8 +51,8 @@ def test_same_mistakes_are_merged_and_counted():
         L("merchant")
     ]
     chosen = curate(lessons)
-    assert chosen[0].field == "change" and chosen[0].count == 4  # 出现得多的在前
-    assert chosen[0].before == "0"  # 留最新的那个例子
+    assert chosen[0].field == "change" and chosen[0].count == 4  # Most frequent first.
+    assert chosen[0].before == "0"  # Keep the newest example.
     assert "同样的错出现过 4 次" in note_for(chosen)
 
 
@@ -71,7 +73,7 @@ def test_series_with_three_documents_comes_first():
     text = "BOOK TA .K (TAMAN DAYA) SDN BHD\nCHANGE 1.00"
     chosen = curate(others + ours, text)
     assert chosen[0].field == "change" and chosen[0].series == shop
-    # 不满 3 份：不单独算系列，按次数排
+    # Fewer than 3 documents: no separate series; ordered by count.
     few = curate(others + ours[:2], text)
     assert few[0].field == "merchant"
 
@@ -95,5 +97,6 @@ def test_pipeline_records_curated_prompt_version(receipt_page):
     pipeline = Pipeline(ocr=None, extractor=extractor, lessons=lambda _t: lessons)  # type: ignore[arg-type]
     pipeline.learn_mode = "curated"
     report = pipeline.extract_page(receipt_page, "r.jpg", 1, "receipt")
-    assert report.extraction.prompt_version.endswith("+curated1")  # OCR 认错的那条没给模型
-    assert extractor.lessons_mode == "recent"  # 抽完复原
+    # The OCR misread was not given to the model.
+    assert report.extraction.prompt_version.endswith("+curated1")
+    assert extractor.lessons_mode == "recent"  # Restored after extraction.

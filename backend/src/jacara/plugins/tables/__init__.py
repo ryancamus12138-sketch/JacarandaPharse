@@ -1,4 +1,4 @@
-"""表格识别插件（预留）。目前只有接口，还没有登记任何引擎。"""
+"""Table recognition plugins (reserved). Only the interface exists; no engine is registered yet."""
 
 from jacara.plugins.tables.base import Table, TableCell, TableConfig, TableEngine, TableResult
 

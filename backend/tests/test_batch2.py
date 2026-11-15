@@ -1,4 +1,5 @@
-"""v3 第 2 批（ADR 0036）：乱码改走 OCR、重复检查、一份文件分成几张单据、批量导入。"""
+"""Garbled text layers fall back to OCR; duplicate checks; splitting a file into documents; batch
+import."""
 
 from __future__ import annotations
 
@@ -14,18 +15,16 @@ def test_garbled_text_layer_is_detected():
     assert garbled_ratio("") == 0
 
 
-# ---------- 一份文件分成几张单据 ----------
+# ---------- Splitting a file into documents ----------
 
 import uuid  # noqa: E402
-
-import pytest  # noqa: E402
 
 from jacara.pipeline.process import process_document  # noqa: E402
 from jacara.pipeline.run import Pipeline  # noqa: E402
 from jacara.pipeline.segment import SplitError, normalize_split, page_marker, segments  # noqa: E402
 from jacara.plugins.extractors import LlmExtractor  # noqa: E402
 
-from .conftest import make_line, make_page  # noqa: E402
+from .conftest import make_line, make_page, raises  # noqa: E402
 from .test_template_library import SchemaBackend, detail, upload  # noqa: E402
 
 
@@ -58,11 +57,11 @@ def test_page_markers_and_split_modes():
     assert segments(pages, "auto", judge=lambda a, b: True) == [(1, 3)]
     assert segments(pages, "one") == [(1, 3)]
     assert segments(pages, "pages") == [(1, 1), (2, 2), (3, 3)]
-    # 没写到的页按自动判断，从写到的最后一页后面重新开始
+    # Pages not covered are detected automatically, starting after the last covered page.
     assert segments(pages, "1") == [(1, 1), (2, 2), (3, 3)]
     assert segments(pages, "1-2, 3") == [(1, 2), (3, 3)]
     assert normalize_split(" 1 - 2，3 ") == "1-2, 3"
-    with pytest.raises(SplitError, match="应该从第 3 页开始"):
+    with raises(SplitError, "应从第 3 页开始"):
         normalize_split("1-2, 4")
 
 
@@ -90,7 +89,7 @@ def test_two_page_folio_is_one_document(client, factory, storage, monkeypatch):
     assert (first["page"], first["last_page"]) == (1, 2)
     assert (second["page"], second["last_page"]) == (3, None)
     values = {v["name"]: v for v in first["values"]}
-    # 总额在第 2 页：出处记的是第 2 页、第 2 页自己的坐标
+    # The total is on page 2: the evidence records page 2 in page 2's own coordinates.
     total = values["total"]
     assert total["current_value"] == "1939.0"
     assert total["evidence"]["page"] == 2
@@ -107,7 +106,7 @@ def test_two_page_folio_is_one_document(client, factory, storage, monkeypatch):
         json={"reason": "bad_result", "split": "2-3"},
     )
     assert bad.status_code == 422 and "从第 1 页开始" in bad.json()["detail"]
-    # 改成每页一张：重新处理后 3 张单据
+    # Switch to one document per page: 3 documents after reprocessing.
     redo = client.post(
         f"/api/v1/documents/{document_id}/reprocess",
         json={"reason": "bad_result", "split": "pages"},
@@ -116,7 +115,7 @@ def test_two_page_folio_is_one_document(client, factory, storage, monkeypatch):
     assert redo.json()["split"] == "pages"
 
 
-# ---------- 重复检查、批量导入 ----------
+# ---------- Duplicate checks, batch import ----------
 
 
 def upload_file(client, name="r.jpg", data=b"x", **form):
@@ -171,11 +170,11 @@ def test_same_invoice_number_is_flagged(client, factory, storage, monkeypatch):
     [extraction] = detail(client, ids[1])["extractions"]
     issues = [i for i in extraction["current_checks"]["issues"] if i["rule"] == "duplicate"]
     assert len(issues) == 1 and issues[0]["severity"] == "warning"
-    assert "账单号「F-100」和《r.jpg》第 1–2 页" in issues[0]["message"]
+    assert "账单号「F-100」与《r.jpg》第 1–2 页" in issues[0]["message"]
     folio = next(v for v in extraction["values"] if v["name"] == "folio_no")
     assert folio["check_state"] == "warn"
 
-    # 改掉其中一份的账单号：不再提醒
+    # Change the bill number of one document: no more warning.
     revise = client.post(
         f"/api/v1/values/{folio['id']}/revisions",
         json={"action": "edit", "value": "F-101", "reason": "看错了"},
@@ -202,16 +201,16 @@ def test_watch_folder_imports_new_files_once(tmp_path, factory, storage, queue):
     done = {p.name: r for p, r in watcher.scan()}
     assert done["a.jpg"] == "导入"
     assert "b.pdf" in done and ".DS_Store" not in done and "notes.txt" not in done
-    assert watcher.scan() == []  # 没变的文件不再看
+    assert watcher.scan() == []  # Unchanged files are not examined again.
 
-    (root / "copy.jpg").write_bytes(b"one")  # 内容一样：以前导入过
+    (root / "copy.jpg").write_bytes(b"one")  # Same content: previously imported.
     assert {p.name: r for p, r in watcher.scan()} == {"copy.jpg": "以前导入过"}
     with session_scope(factory) as session:
         folders = sorted(d.folder or "" for d in session.query(Document).all())
     assert "收件箱/酒店" in folders
 
 
-# ---------- 删除文档 ----------
+# ---------- Deleting documents ----------
 
 
 def test_delete_documents_one_and_many(client, factory, storage, receipt_page):
@@ -223,7 +222,7 @@ def test_delete_documents_one_and_many(client, factory, storage, receipt_page):
     ids = [upload_file(client, data=d)["id"] for d in (b"1", b"2", b"3")]
     process(factory, storage, ids[0], receipt_page)
     client.post(f"/api/v1/documents/{ids[0]}/comments", json={"body": "看一下"})
-    # 三个原始文件 + 处理过的那份的 OCR 快照（ADR 0053）
+    # Three originals + the OCR snapshot of the processed document.
     assert len(storage.files) == 4
     assert any(k.startswith(f"ocr-snapshots/{ids[0]}/") for k in storage.files)
 
@@ -235,10 +234,11 @@ def test_delete_documents_one_and_many(client, factory, storage, receipt_page):
         assert session.query(ExtractedValue).count() == 0
         assert session.query(Comment).count() == 0
         session.get_one(Document, uuid.UUID(ids[1])).status = "processing"
-    assert len(storage.files) == 2  # 快照跟着删了
+    assert len(storage.files) == 2  # The snapshot is deleted too.
 
+    # A document being processed is deleted too (its worker gives it up, see test_stop_processing).
     many = client.post("/api/v1/documents/delete", json={"ids": ids[1:]}).json()
-    assert many["deleted"] == 1 and "正在处理" in many["skipped"][0]
-    assert client.get("/api/v1/documents").json()["total"] == 1
+    assert many == {"deleted": 2, "skipped": []}
+    assert client.get("/api/v1/documents").json()["total"] == 0
     actions = [x["action"] for x in client.get("/api/v1/audit-logs").json()["items"]]
-    assert actions.count("document:delete") == 2
+    assert actions.count("document:delete") == 3

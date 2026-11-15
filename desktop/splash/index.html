@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JacarandaParse</title>
+    <link rel="stylesheet" href="splash.css" />
+  </head>
+  <body>
+    <main>
+      <img src="icon.png" alt="" width="72" height="72" />
+      <h1>JacarandaParse</h1>
+      <p id="starting">正在启动…<br /><span class="en">Starting…</span></p>
+      <section id="failed" hidden>
+        <p class="error">程序没能启动。<br /><span class="en">JacarandaParse could not start.</span></p>
+        <pre id="reason"></pre>
+        <p class="hint">
+          日志在这个文件夹中，反馈问题时请附上：<br />
+          <span class="en">The logs are in this folder; please attach them to a problem report:</span>
+        </p>
+        <pre id="logs"></pre>
+      </section>
+    </main>
+    <script src="splash.js"></script>
+  </body>
+</html>

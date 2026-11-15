@@ -1,8 +1,8 @@
-"""文档的业务逻辑：上传、列表、详情、下载、重新处理、完成审核、导出。
+"""Document business logic: upload, list, details, download, reprocessing, review completion,
+export.
 
-权限检查、状态变化只写在这里（项目分层规则）。service 不知道 HTTP，
-抛出的是业务错误（DocumentError），由 router 翻译成 HTTP 状态码。
-"""
+Permission checks and state transitions live only here. Services know nothing about HTTP; they
+raise business errors (DocumentError), which routers translate to HTTP status codes."""
 
 from __future__ import annotations
 
@@ -20,8 +20,10 @@ from typing import Any, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from jacara.core.advice import pick
 from jacara.core.config import get_settings
 from jacara.core.daterange import parse_date_range
+from jacara.core.i18n import N_, nested, render, render_checks, stored, tr, trc
 from jacara.core.owner import Owner
 from jacara.core.permissions import require
 from jacara.core.queue import QueueError, TaskQueue
@@ -56,6 +58,7 @@ from jacara.modules.documents.schemas import (
     SentOut,
     SentText,
     SkipIn,
+    StopManyOut,
     StructureCell,
     StructurePair,
     StructureRegion,
@@ -75,6 +78,7 @@ from jacara.pipeline.current import (
     source_value,
     suggestions,
     template_of,
+    template_title,
     wants_source,
 )
 from jacara.pipeline.entities import entity_conflicts
@@ -86,7 +90,7 @@ from jacara.plugins.exporters import create_exporter
 from jacara.plugins.exporters.csv_files import workbook_to_csv
 from jacara.plugins.exporters.excel import cell_value
 from jacara.plugins.extractors import ExtractionError
-from jacara.plugins.extractors.base import DISCOVER, split_cell_name
+from jacara.plugins.extractors.base import split_cell_name
 from jacara.plugins.extractors.llm import look_at
 from jacara.plugins.model_backends import ModelBackend, ModelBackendError
 from jacara.plugins.ocr.base import OcrEngine
@@ -96,17 +100,29 @@ from jacara.workbook.fill import DocRow, fill_workbook
 
 log = logging.getLogger(__name__)
 
-REPROCESSABLE = {"done", "reviewed", "failed"}
-"""这些状态的文档可以换模板重新处理（新的一轮）。"""
+NO_VISION = N_(
+    "模型当前无法读图：请将视觉模型 mmproj-F16.gguf 放入 models/，并重新执行 jacara start"
+)
+NO_VISION_DESKTOP = N_(
+    "模型当前无法读图：请在「设置 → 模型」中配置视觉模型，并重新启动 JacarandaParse"
+)
+
+REPROCESSABLE = {"done", "reviewed", "failed", "uploaded", "processing"}
+"""Statuses from which a document can be reprocessed (a new run). A queued or running document is
+restarted: the running worker notices within a second and stops (see claim)."""
+
+STOPPABLE = {"uploaded", "processing"}
+"""Statuses in which processing can be stopped."""
 
 RETRYABLE = {"uploaded", "failed"}
-"""这些状态的文档可以（重新）放进队列。processing 正在处理，done 已经有结果。"""
+"""Statuses from which a document can be (re)queued. processing is in progress; done already has
+results."""
 
 EXPORTABLE = {"done", "reviewed"}
-"""处理完、有结果的文档才能导出。"""
+"""Only processed documents with results can be exported."""
 
 MAX_EXPORT = 100
-"""一次最多导出几个文档。"""
+"""Maximum number of documents per export."""
 
 ALLOWED_TYPES = {
     "image/jpeg": ".jpg",
@@ -118,21 +134,22 @@ ALLOWED_TYPES = {
 
 
 DASHBOARD_LIMIT = 8
-"""工作台"需要先处理"每类最多列几份。"""
+"""Maximum number of documents per category under "Needs attention" on the dashboard."""
 
 
 def start_of_today() -> datetime:
-    """今天 0 点（按本机时区的日期，换成 UTC）。工作台的"今天"按用户这台电脑的日期算。"""
+    """Midnight today (local date of this machine, converted to UTC). "Today" on the dashboard
+    follows the date of the user's machine."""
     return day_start(datetime.now().astimezone().date())
 
 
 def day_start(day: date) -> datetime:
-    """本机时区某一天的 0 点，换成 UTC（数据库里的时间按 UTC 比较）。"""
+    """Local midnight of a given day, converted to UTC (database times are compared in UTC)."""
     return datetime.combine(day, datetime.min.time()).astimezone().astimezone(UTC)
 
 
 class DocumentError(Exception):
-    """业务错误。code 让 router 知道该返回哪种 HTTP 状态。"""
+    """Business error. code tells the router which HTTP status to return."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -155,9 +172,9 @@ class DocumentService:
         self.storage = storage
         self.queue = queue
         self.ocr = ocr
-        """只有"重新识别这块"用到。"""
+        """Used only by "re-recognize region"."""
         self.model = model
-        """只有"让模型看这块"用到（ADR 0038）。"""
+        """Used only by "ask the model about a region"."""
         self.owner = owner
 
     def upload(
@@ -171,11 +188,12 @@ class DocumentService:
         split: str = "auto",
         skip_duplicate: bool = False,
     ) -> DocumentOut:
-        """template：我的模板的 id，或者 discover（抽出所有键值对）。不写就用上一次用的。
+        """template: id of one of my templates, or discover (extract all key-value pairs). Defaults
+        to the template used last.
 
-        folder：批量导入时文件所在的文件夹；split：文件里有几张单据（ADR 0036）；
-        skip_duplicate：同一个文件之前传过就不再新建，返回之前那份。
-        """
+                folder: source folder in a batch import; split: number of documents in the file;
+        skip_duplicate: if the same file was uploaded before, return the earlier document instead
+        of creating a new one."""
         require(self.owner, "document:create")
         split = check_split(split)
         sha256 = hashlib.sha256(data).hexdigest()
@@ -189,23 +207,28 @@ class DocumentService:
         except TemplateFailure as err:
             raise DocumentError(err.code, err.message) from err
         if content_type not in ALLOWED_TYPES:
-            # 有的客户端不告诉我们类型（application/octet-stream），按文件后缀猜一次
+            # Some clients send no media type (application/octet-stream); guess once from the file
+            # extension.
             content_type = mimetypes.guess_type(filename)[0] or content_type
         if content_type not in ALLOWED_TYPES:
-            raise DocumentError("unsupported", f"不支持的文件类型：{content_type}，支持图片和 PDF")
+            raise DocumentError(
+                "unsupported",
+                tr("不支持的文件类型：{content_type}。支持图片和 PDF", content_type=content_type),
+            )
         limit = get_settings().max_upload_mb
         if len(data) > limit * 1024 * 1024:
-            raise DocumentError("too_large", f"文件超过 {limit} MB")
+            raise DocumentError("too_large", tr("文件超过 {limit} MB", limit=limit))
         if not data:
-            raise DocumentError("empty", "文件是空的")
+            raise DocumentError("empty", tr("文件为空"))
 
         document_id = uuid.uuid4()
         safe_name = PurePath(filename).name or f"upload{ALLOWED_TYPES[content_type]}"
         key = f"documents/{document_id}/{safe_name}"
         try:
-            self.storage.put(key, data, content_type)  # 先存文件，再写数据库
+            # Store the file first, then write the database.
+            self.storage.put(key, data, content_type)
         except StorageError as err:
-            raise DocumentError("storage", "对象存储暂时不可用，请稍后再试") from err
+            raise DocumentError("storage", tr("对象存储暂时不可用，请稍后再试")) from err
 
         document = self.repo.add(
             Document(
@@ -240,43 +263,51 @@ class DocumentService:
         return self._with_counts([document])[0]
 
     def process(self, document_id: uuid.UUID) -> DocumentOut:
-        """重新放进队列：处理失败后重试，或者上传时队列没连上。"""
+        """Requeue: retry after a failure, or after the queue was unreachable at upload."""
         document = self._find(document_id)
         require(self.owner, "document:process", document.team_id)
         if document.storage_key is None:
-            raise DocumentError("no_file", "这个文档没有保存原始文件（命令行导入的），无法处理")
+            raise DocumentError("no_file", tr("此文档未保存原始文件（通过命令行导入），无法处理"))
         if document.status not in RETRYABLE:
-            raise DocumentError("conflict", f"文档状态是 {document.status}，不能重新处理")
+            raise DocumentError(
+                "conflict", tr("文档状态为 {status}，无法重新处理", status=document.status)
+            )
         document.status = "uploaded"
         document.error = None
         record(self.session, self.owner, "document:process", "document", document.id)
         if not self._enqueue(document):
-            raise DocumentError("queue", "任务队列暂时不可用，请稍后再试")
+            raise DocumentError("queue", tr("任务队列暂时不可用，请稍后再试"))
         return DocumentOut.model_validate(document)
 
     def reprocess(self, document_id: uuid.UUID, data: ReprocessIn) -> DocumentOut:
-        """重新处理（ADR 0030）：用选的模板（或现在这个模板的最新版）跑新的一轮。
+        """Reprocess with the selected template (or the latest version of the current template) as a
+        new run.
 
-        旧的几轮都留着，可以查看；新一轮处理完才换过去，失败了旧结果照常能用。
-        审核完的文档变回待审核，审计日志记下原因。
-        """
+                Earlier runs are kept for inspection; the new run replaces them only once it
+        finishes, so the old results remain usable if it fails. Reviewed documents return to
+        awaiting review, and the audit log records the reason."""
         document = self._find(document_id)
         require(self.owner, "document:process", document.team_id)
         if document.storage_key is None:
-            raise DocumentError("no_file", "这个文档没有保存原始文件（命令行导入的），无法处理")
+            raise DocumentError("no_file", tr("此文档未保存原始文件（通过命令行导入），无法处理"))
         if document.status not in REPROCESSABLE:
-            raise DocumentError("conflict", f"文档状态是 {document.status}，现在不能重新处理")
+            raise DocumentError(
+                "conflict", tr("文档状态为 {status}，当前无法重新处理", status=document.status)
+            )
         note = data.note.strip()
         if data.reason == "other" and not note:
-            raise DocumentError("invalid", '原因选了"其他"，请写一句说明')
+            raise DocumentError("invalid", tr("原因为“其他”时，请填写说明"))
         templates = TemplateService(self.owner, self.session)
         try:
             if data.template is not None:
                 pick = templates.pick_for_upload(data.template)
             elif document.auto:
-                pick = Pick(None, auto=True)  # 重新自动判断：模板改了、加了新模板都会用上
+                # Re-run automatic selection so that changed and newly added templates are
+                # considered.
+                pick = Pick(None, auto=True)
             elif document.template_version_id is not None:
-                # 同一个模板的最新版（"模板改了"最常见）
+                # Latest version of the same template (the most common case: the template was
+                # changed).
                 current = self.session.get_one(TemplateVersion, document.template_version_id)
                 pick = Pick(templates.latest_version_id(current.template_id))
             else:
@@ -294,10 +325,17 @@ class DocumentService:
             document.vision = None if data.vision == "default" else data.vision
         if data.pdf_read is not None:
             document.pdf_read = None if data.pdf_read == "default" else data.pdf_read
-        document.run_reason = f"{label}：{note}" if note else label
+        document.run_reason = (
+            stored("{label}：{note}", label=nested(label), note=note) if note else stored(label)
+        )
         document.status = "uploaded"
         document.error = None
         document.reviewed_at = None
+        # Releases a running worker: it stops at its next progress report and writes nothing.
+        document.claim = None
+        # Progress of the run being replaced; the new run reports its own.
+        document.stage = None
+        document.progress = None
         _clear_skip(document)
         record(
             self.session,
@@ -312,25 +350,81 @@ class DocumentService:
             **({"pdf_read": data.pdf_read} if data.pdf_read is not None else {}),
         )
         if not self._enqueue(document):
-            raise DocumentError("queue", "任务队列暂时不可用，请稍后再试")
+            raise DocumentError("queue", tr("任务队列暂时不可用，请稍后再试"))
         return DocumentOut.model_validate(document)
 
+    def stop(self, document_id: uuid.UUID) -> DocumentOut:
+        """Stop processing a queued or running document. The running worker notices at its next
+        progress report (about once a second), abandons its request to the model server and writes
+        nothing; the document becomes failed with a note and can be reprocessed. Earlier runs stay
+        as they were."""
+        document = self._find(document_id)
+        require(self.owner, "document:process", document.team_id)
+        if document.status not in STOPPABLE:
+            raise DocumentError(
+                "conflict", tr("文档状态为 {status}，没有正在进行的处理", status=document.status)
+            )
+        document.status = "failed"
+        document.error = stored("已手动停止处理")
+        document.claim = None
+        document.stage = None
+        document.progress = None
+        document.processed_at = datetime.now(UTC)
+        record(self.session, self.owner, "document:stop", "document", document.id)
+        return DocumentOut.model_validate(document)
+
+    def stop_many(self, ids: list[uuid.UUID]) -> StopManyOut:
+        """Stop the selected documents that are queued or being processed. Others (already
+        finished, failed or missing) are listed in skipped, one line each."""
+        stopped = 0
+        skipped: list[str] = []
+        for document_id in dict.fromkeys(ids):
+            document = self.repo.get(document_id, self.owner.team_id)
+            if document is None:
+                skipped.append(tr("{name}：文档不存在", name=str(document_id)))
+                continue
+            if document.status not in STOPPABLE:
+                skipped.append(tr("{name}：没有正在进行的处理", name=document.filename))
+                continue
+            self.stop(document_id)
+            stopped += 1
+        return StopManyOut(stopped=stopped, skipped=skipped)
+
+    def stop_all(self) -> StopManyOut:
+        """Stop every queued and running document of this team (the "Stop all" button of the
+        processing queue). Each becomes failed ("stopped manually") and can be reprocessed;
+        earlier results stay as they were."""
+        require(self.owner, "document:process", self.owner.team_id)
+        ids = list(
+            self.session.scalars(
+                select(Document.id).where(
+                    Document.team_id == self.owner.team_id, Document.status.in_(STOPPABLE)
+                )
+            )
+        )
+        return self.stop_many(ids) if ids else StopManyOut(stopped=0)
+
     def add_review_time(self, document_id: uuid.UUID, seconds: int) -> None:
-        """审核用时加上 seconds 秒（审核页报来的，只算页面开着、人在操作的时间）。"""
+        """Add seconds to the review time (reported by the review page; only time with the page open
+        and in use)."""
         document = self._find(document_id)
         require(self.owner, "document:review", document.team_id)
         if document.status not in ("done", "reviewed"):
-            raise DocumentError("conflict", f"文档状态是 {document.status}，不在审核")
+            raise DocumentError(
+                "conflict", tr("文档状态为 {status}，不处于审核阶段", status=document.status)
+            )
         document.review_seconds = (document.review_seconds or 0) + seconds
 
     def reprocess_many(self, data: ReprocessManyIn) -> ReprocessManyOut:
-        """勾选的几份一起重新处理（各跑新的一轮），每份用同样的设置（网页上默认：模板用各自的最新版，
-        看不看原图、PDF 怎么读按系统设置，分单据和上次一样）。正在处理、还在排队的跳过。
-        任务队列连不上时马上停下、报错：已经改成"排队中"的那份和上传时队列没连上一样，
-        列表上可以"重试"。
-        """
+        """Reprocess the selected documents (a new run each) with the same settings (web UI
+        defaults: each document's latest template version, system defaults for vision and PDF
+        read mode, and the previous split). Documents being processed or still queued are
+        restarted: their running worker gives them up (see reprocess). If the task queue is
+        unreachable, stop immediately and report the error: a
+        document already set to queued is in the same state as an upload whose queue was
+        unreachable and can be retried from the list."""
         if data.reason == "other" and not data.note.strip():
-            raise DocumentError("invalid", '原因选了"其他"，请写一句说明')
+            raise DocumentError("invalid", tr("原因为“其他”时，请填写说明"))
         ids = data.ids
         choice = ReprocessIn(
             template=data.template,
@@ -342,12 +436,7 @@ class DocumentService:
         )
         queued = 0
         skipped: list[str] = []
-        busy = {"uploaded": "正在排队", "processing": "正在处理"}
         for document_id in dict.fromkeys(ids):
-            document = self.repo.get(document_id, self.owner.team_id)
-            if document is not None and document.status in busy:
-                skipped.append(f"{document.filename}：{busy[document.status]}")
-                continue
             try:
                 self.reprocess(document_id, choice)
             except DocumentError as err:
@@ -355,24 +444,27 @@ class DocumentService:
                     raise
                 document = self.session.get(Document, document_id)
                 name = document.filename if document is not None else str(document_id)
-                skipped.append(f"{name}：{err.message}")
+                skipped.append(tr("{name}：{message}", name=name, message=err.message))
                 continue
             queued += 1
         return ReprocessManyOut(queued=queued, skipped=skipped)
 
     def adopt_previous(self, document_id: uuid.UUID) -> AdoptOut:
-        """采纳上次的确认：重新处理之后，把能沿用的上一轮审核一次用上（见 suggestions）。"""
+        """Accept previous confirmations: after reprocessing, apply all reviews from the previous
+        run that can be carried over (see suggestions)."""
         document = self._find(document_id)
         require(self.owner, "document:review", document.team_id)
         if document.status not in ("done", "reviewed"):
-            raise DocumentError("conflict", f"文档状态是 {document.status}，处理完成后才能审核")
+            raise DocumentError(
+                "conflict", tr("文档状态为 {status}，处理完成后方可审核", status=document.status)
+            )
         fields = FieldService(self.session, self.owner)
         confirmed = edited = 0
         for extraction in document.extractions:
             by_id = {v.id: v for v in extraction.values}
             found = suggestions(extraction, previous_extraction(document, extraction))
             for value_id, (action, value, run) in found.items():
-                reason = f"沿用第 {run} 轮的审核"
+                reason = stored("沿用第 {run} 轮的审核", run=run)
                 fields.apply(by_id[value_id], action, value, reason)
                 confirmed += action == "confirm"
                 edited += action == "edit"
@@ -409,10 +501,12 @@ class DocumentService:
         return [k for k in keys if k]
 
     def delete(self, ids: list[uuid.UUID]) -> DeleteOut:
-        """删除文档：原始文件、每一轮的结果、审核记录、备注都删掉，不能恢复。审计日志记下删了什么。
+        """Delete a document: the original file, the results of every run, review records and
+        comments are deleted permanently. The audit log records what was deleted.
 
-        正在处理的不删（worker 正在用它），等处理完再删。导出记录里的文件不受影响。
-        """
+                Queued and running documents are deleted too: the worker holding one notices at its
+        next progress report or when it saves (its claim is gone with the row), writes nothing and
+        removes the OCR snapshot it made. Files of earlier exports are not affected."""
         documents = [self._find(i) for i in dict.fromkeys(ids)]
         for document in documents:
             require(self.owner, "document:delete", document.team_id)
@@ -420,9 +514,6 @@ class DocumentService:
         skipped: list[str] = []
         deleted = 0
         for document in documents:
-            if document.status == "processing":
-                skipped.append(f"{document.filename}：正在处理，等处理完再删")
-                continue
             record(
                 self.session,
                 self.owner,
@@ -435,11 +526,12 @@ class DocumentService:
             )
             if document.storage_key:
                 keys.append(document.storage_key)
-            keys += self._sample_crops(document.id)  # OCR 样本的小图（ADR 0050）一起删
-            keys += self._snapshots(document.id)  # 每一轮的 OCR 快照（ADR 0053）一起删
+            keys += self._sample_crops(document.id)  # Also delete the OCR sample crops.
+            keys += self._snapshots(document.id)  # Also delete the OCR snapshots of every run.
             self.repo.delete(document)
             deleted += 1
-        # 先提交，再删原始文件：数据库没删成的话，文件还在
+        # Commit before deleting the original file: if the database delete fails, the file is still
+        # there.
         self.session.commit()
         for key in keys:
             try:
@@ -458,7 +550,7 @@ class DocumentService:
         return DocumentPage(items=self._with_counts(documents), total=total)
 
     def _with_counts(self, documents: list[Document]) -> list[DocumentOut]:
-        """文档 + 每份还有几个字段等人确认、几条备注没解决。"""
+        """Documents with their number of fields awaiting confirmation and unresolved comments."""
         ids = [d.id for d in documents]
         counts = self.repo.review_counts(ids)
         comments = CommentRepository(self.session).open_counts(ids)
@@ -477,15 +569,29 @@ class DocumentService:
             for d in documents
         ]
 
-    def neighbors(self, document_id: uuid.UUID) -> DocumentNeighbors:
-        """审核页面的"上一份 / 下一份"：按列表顺序，前后两份待审核（done）的文档。"""
+    def neighbors(
+        self, document_id: uuid.UUID, filters: DocumentFilter | None = None
+    ) -> DocumentNeighbors:
+        """Previous / next on the review page: the adjacent documents of the list as filtered on
+        the list page, and the next document awaiting review (done) for after a review."""
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
-        previous, following, remaining = self.repo.neighbors(document, ("done",))
-        return DocumentNeighbors(previous=previous, next=following, remaining=remaining)
+        previous, following, position, total = self.repo.adjacent(
+            document, filters or DocumentFilter()
+        )
+        before, after, remaining = self.repo.neighbors(document, ("done",))
+        return DocumentNeighbors(
+            previous=previous,
+            next=following,
+            position=position,
+            total=total,
+            next_to_review=after or before,
+            remaining=remaining,
+        )
 
     def dashboard(self) -> Dashboard:
-        """工作台：各状态多少份、今天处理和审核了多少、处理队列、需要先处理的。"""
+        """Dashboard: counts per status, processed and reviewed today, processing queue, items
+        needing attention."""
         require(self.owner, "document:read")
         team = self.owner.team_id
         status = self.repo.status_counts(team)
@@ -517,7 +623,8 @@ class DocumentService:
         )
 
     def get(self, document_id: uuid.UUID, run: int | None = None) -> DocumentDetail:
-        """文档详情。run：看第几轮的结果（旧的几轮只能看）；不写就是现在用的这一轮。"""
+        """Document details. run: which run to show (earlier runs are read-only); defaults to the
+        current run."""
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
         viewing = run or document.current_run
@@ -526,7 +633,9 @@ class DocumentService:
         else:
             chosen = [e for e in document.all_extractions if e.run == viewing]
             if not chosen:
-                raise DocumentError("not_found", f"这个文档没有第 {viewing} 轮的结果")
+                raise DocumentError(
+                    "not_found", tr("此文档没有第 {viewing} 轮的结果", viewing=viewing)
+                )
         detail = DocumentDetail.model_validate(document).model_copy(
             update={"extractions": [ExtractionOut.model_validate(e) for e in chosen]}
         )
@@ -553,15 +662,15 @@ class DocumentService:
         )
 
     def sent_text(self, document_id: uuid.UUID, extraction_id: uuid.UUID) -> SentText:
-        """某一张单据某一轮发给模型的单据文字原文（ADR 0053）。"""
+        """Document text sent to the model for one document in one run."""
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
         extraction = next((e for e in document.all_extractions if e.id == extraction_id), None)
         if extraction is None:
-            raise DocumentError("not_found", "找不到这次抽取")
+            raise DocumentError("not_found", tr("抽取结果不存在"))
         data = extraction.model_input
         if not data:
-            raise DocumentError("not_found", "这次抽取没有记下发给模型的文字（更新之前处理的）")
+            raise DocumentError("not_found", tr("此次抽取未记录发送给模型的文字（在更新前处理）"))
         return SentText(
             blocks=[int(n) for n in data.get("blocks", [])],
             text=str(data.get("text", "")),
@@ -569,12 +678,13 @@ class DocumentService:
         )
 
     def page_ocr(self, document_id: uuid.UUID, page: int) -> PageOcr:
-        """第 page 页的 OCR 结果：每个文字块的文字和位置。审核页面"从原文选取"用。"""
+        """OCR result of page page: text and position of every text block. Used by "select from
+        source text" on the review page."""
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
         extraction = covering(document.extractions, page)
         if extraction is None:
-            raise DocumentError("not_found", f"第 {page} 页没有抽取结果")
+            raise DocumentError("not_found", tr("第 {page} 页无抽取结果", page=page))
         ocr = ocr_page_json(extraction.ocr, page, extraction.page)
         lines = (ocr or {}).get("lines", [])
         return PageOcr(
@@ -585,26 +695,29 @@ class DocumentService:
     def page_structure(
         self, document_id: uuid.UUID, page: int, run: int | None = None
     ) -> PageStructureOut:
-        """第 page 页的结构：版面区域、表格的格子、标题 → 值。审核页"版面结构"用。"""
+        """Structure of page page: layout regions, table cells, label → value pairs. Used by the
+        layout view of the review page."""
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
         wanted = run or document.current_run
         extraction = covering((e for e in document.all_extractions if e.run == wanted), page)
         if extraction is None:
-            raise DocumentError("not_found", f"第 {page} 页没有抽取结果")
+            raise DocumentError("not_found", tr("第 {page} 页无抽取结果", page=page))
         return structure_view(extraction.structure, page, extraction.page)
 
     def review(self, document_id: uuid.UUID) -> DocumentOut:
-        """完成审核：所有需要确认的字段都处理过了，文档状态 done → reviewed。"""
+        """Complete review: every field requiring confirmation has been handled; the status changes
+        from done to reviewed."""
         document = self._find(document_id)
         require(self.owner, "document:review", document.team_id)
         if document.status != "done":
             raise DocumentError(
-                "conflict", f"文档状态是 {document.status}，处理完成（done）后才能完成审核"
+                "conflict",
+                tr("文档状态为 {status}，处理完成（done）后方可完成审核", status=document.status),
             )
         pending = sum(v.pending_review for e in document.extractions for v in e.values)
         if pending:
-            raise DocumentError("conflict", f"还有 {pending} 个字段等待确认")
+            raise DocumentError("conflict", tr("尚有 {pending} 个字段待确认", pending=pending))
         document.status = "reviewed"
         document.reviewed_at = datetime.now(UTC)
         _clear_skip(document)
@@ -612,11 +725,12 @@ class DocumentService:
         return DocumentOut.model_validate(document)
 
     def skip(self, document_id: uuid.UUID, data: SkipIn) -> DocumentOut:
-        """先跳过：拿不准的先放一放。跳过的不算进"下一份"，列表里可以筛出来，过后再回来审。"""
+        """Skip for now: set aside a document that needs more thought. Skipped documents are
+        excluded from "Next", can be filtered in the list, and can be reviewed later."""
         document = self._find(document_id)
         require(self.owner, "document:review", document.team_id)
         if document.status != "done":
-            raise DocumentError("conflict", "只有处理完、还没完成审核的文档可以跳过")
+            raise DocumentError("conflict", tr("仅处理完成且未完成审核的文档可跳过"))
         document.skipped_at = datetime.now(UTC)
         document.skip_reason = data.reason.strip() or None
         document.skipped_by = self.owner.user_id
@@ -631,7 +745,7 @@ class DocumentService:
         return self._with_counts([document])[0]
 
     def unskip(self, document_id: uuid.UUID) -> DocumentOut:
-        """取消跳过：回到待审核里，"下一份"又会轮到它。"""
+        """Unskip: return the document to the review queue, where "Next" reaches it again."""
         document = self._find(document_id)
         require(self.owner, "document:review", document.team_id)
         if document.skipped_at is not None:
@@ -642,31 +756,38 @@ class DocumentService:
     def export(
         self, document_ids: list[uuid.UUID], language: str | None = None
     ) -> tuple[str, bytes]:
-        """把一个或多个文档导出成一个 Excel（汇总表一行一张单据），返回（文件名，文件内容）。
+        """Export one or more documents to one Excel workbook (a summary sheet with one row per
+        document); return (file name, bytes).
 
-        格子里是审核之后的值（current_value）；改过的标蓝，批注里写原值和原因。
-        """
+                Cells contain post-review values (current_value); edited cells are blue, with the
+        original value and reason in a cell comment."""
         documents = self._exportable(document_ids)
         data, layout = self._excel(documents, language)
         if len(documents) == 1:
             name = f"{PurePath(documents[0].filename).stem}.xlsx"
         elif layout:
-            # 按原表导出：用原表的名字
-            name = f"{PurePath(layout).stem}-{date.today():%Y%m%d}-{len(documents)}份.xlsx"
+            # Export to the original sheet: use its file name.
+            name = tr(
+                "{stem}-{day:%Y%m%d}-{n}份.xlsx",
+                stem=PurePath(layout).stem,
+                day=date.today(),
+                n=len(documents),
+            )
         else:
-            name = f"jacara-{date.today():%Y%m%d}-{len(documents)}份.xlsx"
+            name = tr("jacara-{day:%Y%m%d}-{n}份.xlsx", day=date.today(), n=len(documents))
         self._record_export(documents, "xlsx", name, data)
         return name, data
 
     def export_zip(
         self, document_ids: list[uuid.UUID], language: str | None = None
     ) -> tuple[str, bytes]:
-        """每个文档单独一个 Excel，打包成一个 zip。
+        """One Excel workbook per document, packed into a zip.
 
-        浏览器一次只能下载一个文件，没法直接下载文件夹，所以打包；解压后就是一个文件夹。
+                Browsers download one file at a time and cannot download folders, hence the zip;
+        it extracts to a folder.
 
-        zip 里的文件名跟原文件同名（receipt.jpg → receipt.xlsx），重名的加 (2)、(3)。
-        """
+                File names in the zip follow the originals (receipt.jpg → receipt.xlsx);
+        duplicates get (2), (3)."""
         documents = self._exportable(document_ids)
         out = io.BytesIO()
         used: set[str] = set()
@@ -674,7 +795,7 @@ class DocumentService:
             for document in documents:
                 name = _unique(f"{PurePath(document.filename).stem}.xlsx", used)
                 archive.writestr(name, self._excel([document], language)[0])
-        name = f"jacara-{date.today():%Y%m%d}-{len(documents)}份.zip"
+        name = tr("jacara-{day:%Y%m%d}-{n}份.zip", day=date.today(), n=len(documents))
         data = out.getvalue()
         self._record_export(documents, "zip", name, data)
         return name, data
@@ -682,17 +803,17 @@ class DocumentService:
     def export_csv(
         self, document_ids: list[uuid.UUID], language: str | None = None
     ) -> tuple[str, bytes, str]:
-        """导出 CSV：内容和标准格式的 Excel 一样（汇总一行一张单据，明细表、键值对各一张）。
+        """Export CSV with the same content as the standard Excel export (summary with one row per
+        document, one table each for line items and key-value pairs).
 
-        只有汇总一张表时下载一个 .csv；还有明细表、键值对时，每张表一个 .csv 打包成 zip。
-        返回（文件名，内容，格式 csv 或 zip）。
-        """
+                A single .csv when there is only the summary table; otherwise one .csv per table
+        packed into a zip. Returns (file name, content, format csv or zip)."""
         documents = self._exportable(document_ids)
         files = workbook_to_csv(_workbook(documents, language))
         if len(documents) == 1:
             stem = PurePath(documents[0].filename).stem
         else:
-            stem = f"jacara-{date.today():%Y%m%d}-{len(documents)}份"
+            stem = tr("jacara-{day:%Y%m%d}-{n}份", day=date.today(), n=len(documents))
         if len(files) == 1:
             name, data, kind = f"{stem}.csv", files[0][1], "csv"
         else:
@@ -708,7 +829,8 @@ class DocumentService:
     def export_json(
         self, document_ids: list[uuid.UUID], language: str | None = None
     ) -> tuple[str, bytes]:
-        """导出 JSON：给别的程序读。内容和 Excel 一样，按文档 → 单据 → 字段、表格嵌套。"""
+        """Export JSON for other programs. Same content as Excel, nested as document → sub-document
+        → fields and tables."""
         from jacara.plugins.exporters.json_export import to_json
 
         documents = self._exportable(document_ids)
@@ -731,16 +853,18 @@ class DocumentService:
         if len(documents) == 1:
             stem = PurePath(documents[0].filename).stem
         else:
-            stem = f"jacara-{date.today():%Y%m%d}-{len(documents)}份"
+            stem = tr("jacara-{day:%Y%m%d}-{n}份", day=date.today(), n=len(documents))
         name = f"{stem}.json"
         self._record_export(documents, "json", name, content)
         return name, content
 
     def _excel(self, documents: list[Document], language: str | None = None) -> tuple[bytes, str]:
-        """导出成 Excel：模板有原表样式（从 Excel 建的模板）就填回原表，否则用标准格式。
+        """Export to Excel: fill the original sheet if the template has one (templates created from
+        Excel), otherwise use the standard format.
 
-        返回（文件内容，原表的文件名；标准格式时为空）。原表在对象存储里取不到时退回标准格式。
-        """
+                Returns (bytes, original sheet file name; None for the standard format). Falls
+        back to the standard format if the original sheet cannot be retrieved from object
+        storage."""
         template = _layout_template(documents)
         if template is not None and template.workbook is not None:
             try:
@@ -749,34 +873,41 @@ class DocumentService:
                 log.warning("取不到模板 %s 的原表，改用标准格式导出", template.name)
             else:
                 rows = _doc_rows(documents, template)
-                title = f"{date.today():%Y-%m-%d} 导出"
+                title = tr("{day:%Y-%m-%d} 导出", day=date.today())
                 return fill_workbook(template, original, rows, title), template.workbook.filename
         return _workbook(documents, language), ""
 
     def _exportable(self, document_ids: list[uuid.UUID]) -> list[Document]:
-        """导出前的检查（两种导出都一样）：有权限、数量对、都找得到、都处理完了。按用户选的顺序返回。"""
+        """Pre-export checks (shared by both export formats): permission, count, existence,
+        processing finished. Returns documents in the order selected by the user."""
         require(self.owner, "document:export")
-        ids = list(dict.fromkeys(document_ids))  # 去掉重复的 id，保持原来的顺序
+        ids = list(dict.fromkeys(document_ids))  # Remove duplicate ids, preserving order.
         if not ids:
-            raise DocumentError("invalid", "请至少选择一个文档")
+            raise DocumentError("invalid", tr("请至少选择一个文档"))
         if len(ids) > MAX_EXPORT:
-            raise DocumentError("invalid", f"一次最多导出 {MAX_EXPORT} 个文档")
+            raise DocumentError("invalid", tr("单次最多导出 {limit} 个文档", limit=MAX_EXPORT))
 
         found = {d.id: d for d in self.repo.get_many(ids, self.owner.team_id)}
         missing = [str(i) for i in ids if i not in found]
         if missing:
-            raise DocumentError("not_found", f"找不到文档：{', '.join(missing)}")
+            raise DocumentError(
+                "not_found", tr("文档不存在：{documents}", documents=", ".join(missing))
+            )
         documents = [found[i] for i in ids]
         not_ready = [d.filename for d in documents if d.status not in EXPORTABLE]
         if not_ready:
-            raise DocumentError("conflict", f"这些文档还没处理完，不能导出：{', '.join(not_ready)}")
+            raise DocumentError(
+                "conflict",
+                tr("以下文档尚未处理完成，无法导出：{documents}", documents=", ".join(not_ready)),
+            )
         return documents
 
     def _record_export(
         self, documents: list[Document], file_format: str, filename: str, data: bytes
     ) -> None:
-        # 导出是"数据离开系统"，要留记录：谁、什么时候、导出了哪些文档、什么格式。
-        # 文件也存一份，导出记录页可以重新下载（ADR 0029）
+        # An export is data leaving the system and must be recorded: who, when, which documents,
+        # which format. The file is also stored so that it can be downloaded again from the export
+        # history.
         export = save_export(
             self.session, self.storage, self.owner, filename, file_format, data, documents
         )
@@ -794,40 +925,47 @@ class DocumentService:
         document = self._find(document_id)
         require(self.owner, "document:download", document.team_id)
         if document.storage_key is None:
-            raise DocumentError("no_file", "这个文档没有保存原始文件（命令行导入的）")
+            raise DocumentError("no_file", tr("此文档未保存原始文件（通过命令行导入）"))
         try:
             return document, self.storage.get(document.storage_key)
         except StorageError as err:
-            raise DocumentError("storage", "对象存储暂时不可用，请稍后再试") from err
+            raise DocumentError("storage", tr("对象存储暂时不可用，请稍后再试")) from err
 
     def page_image(self, document_id: uuid.UUID, page: int) -> bytes:
-        """第 page 页（从 1 开始）的 PNG 图片。坐标和抽取时一样，审核页面在上面画出处框。"""
+        """PNG image of page page (1-based). Coordinates match extraction; the review page draws
+        evidence boxes on it."""
         document, data = self._page_file(document_id, page)
         try:
             return page_png(data, document.content_type == "application/pdf", page)
         except Exception as err:
-            raise DocumentError("unreadable", "这个文件打不开，可能已损坏") from err
+            raise DocumentError("unreadable", tr("无法打开此文件，文件可能已损坏")) from err
 
     def _page_file(self, document_id: uuid.UUID, page: int) -> tuple[Document, bytes]:
-        """检查权限、页码，取回原文件（还没画成图）。"""
+        """Check permission and page number, and retrieve the original file (not yet rendered)."""
         document = self._find(document_id)
         require(self.owner, "document:read", document.team_id)
         if document.storage_key is None:
-            raise DocumentError("no_file", "这个文档没有保存原始文件（命令行导入的）")
+            raise DocumentError("no_file", tr("此文档未保存原始文件（通过命令行导入）"))
         if not 1 <= page <= document.page_count:
             raise DocumentError(
-                "not_found", f"这个文档只有 {document.page_count} 页，没有第 {page} 页"
+                "not_found",
+                tr(
+                    "此文档仅有 {page_count} 页，不存在第 {page} 页",
+                    page_count=document.page_count,
+                    page=page,
+                ),
             )
         try:
             return document, self.storage.get(document.storage_key)
         except StorageError as err:
-            raise DocumentError("storage", "对象存储暂时不可用，请稍后再试") from err
+            raise DocumentError("storage", tr("对象存储暂时不可用，请稍后再试")) from err
 
     def describe_region(
         self, document_id: uuid.UUID, page: int, box: list[float]
     ) -> RegionDescription:
-        """框选建模板（ADR 0047）：框里的值（先用存下的 OCR，没有再局部重新识别）、旁边的标签、
-        在页面哪里、像什么类型。"""
+        """Template building by region selection: the value inside the box (from the stored OCR,
+        otherwise by re-recognizing the region), the nearby label, its position on the page and
+        its likely type."""
         from jacara.modules.templates.boxes import (
             field_id,
             guess_type,
@@ -850,13 +988,14 @@ class DocumentService:
                 text, confidence = read_region(self.page_image(document_id, page), box, self.ocr)
             except ValueError as err:
                 raise DocumentError("invalid", str(err)) from err
-        # 标签只用版面分析配好的"标题 → 值"（处理单据时就算好了），对不上就留空，不猜
+        # Labels come only from label → value pairs paired by layout analysis (computed during
+        # processing); if none matches, leave it empty rather than guess.
         structure = (
             structure_view(extraction.structure, page, extraction.page) if extraction else None
         )
         pair = pair_for(structure.pairs, box) if structure else None
         label = pair.key if pair else None
-        side = SIDES.get(pair.rule) if pair else None
+        side = tr(SIDES[pair.rule]) if pair and pair.rule in SIDES else None
         where = position(
             box, float((ocr or {}).get("width") or 1), float((ocr or {}).get("height") or 1)
         )
@@ -872,13 +1011,15 @@ class DocumentService:
         )
 
     def page_crop(self, document_id: uuid.UUID, page: int, box: list[float]) -> bytes:
-        """这一页上 box（和页面图片一样的坐标）这一块放大后的 PNG（ADR 0042）：审核页在候选旁边
-        显示局部图。PDF 按局部放大再识别时的倍数重新画，图片用原图。"""
+        """Zoomed PNG of box (page image coordinates) on this page: the review page shows it next to
+        candidates. PDFs are re-rendered at the zoomed re-recognition scale; images use the
+        original."""
         from jacara.pipeline.region import crop_region
         from jacara.pipeline.zoom import ZOOM_SCALE
         from jacara.plugins.ocr.loader import PDF_SCALE
 
-        document, data = self._page_file(document_id, page)  # 检查权限、页码，取回原文件
+        # Check permission and page number, and retrieve the original file.
+        document, data = self._page_file(document_id, page)
         is_pdf = document.content_type == "application/pdf"
         try:
             image = (
@@ -891,17 +1032,18 @@ class DocumentService:
         except ValueError as err:
             raise DocumentError("invalid", str(err)) from err
         except Exception as err:
-            raise DocumentError("unreadable", "这个文件打不开，可能已损坏") from err
+            raise DocumentError("unreadable", tr("无法打开此文件，文件可能已损坏")) from err
         out = io.BytesIO()
         crop.save(out, format="PNG")
         return out.getvalue()
 
     def ocr_region(self, document_id: uuid.UUID, page: int, box: list[float]) -> RegionOut:
-        """把页面上的一块区域裁下来重新 OCR。要能看文档，也要能改字段（不然认出来也没用）。"""
+        """Crop a region of the page and re-run OCR. Requires permission to view the document and to
+        edit fields (the result is useless otherwise)."""
         document = self._find(document_id)
         require(self.owner, "document:review", document.team_id)
         if self.ocr is None:
-            raise DocumentError("unavailable", "OCR 引擎没有准备好")
+            raise DocumentError("unavailable", tr("OCR 引擎未就绪"))
         image = self.page_image(document_id, page)
         try:
             text, confidence = read_region(image, box, self.ocr)
@@ -910,15 +1052,16 @@ class DocumentService:
         return RegionOut(text=text, confidence=confidence)
 
     def look_region(self, document_id: uuid.UUID, page: int, data: LookIn) -> LookOut:
-        """让模型看页面上的一小块（ADR 0038）：手写、印章、被笔迹盖住的字，OCR 认不出时用。
-        只返回读出来的，不保存；人确认后再用"审核字段"保存。"""
+        """Ask the model about a small region of the page: for handwriting, stamps and text covered
+        by pen marks that OCR cannot read. Returns the reading only and saves nothing; after
+        confirmation, save with field review."""
         document = self._find(document_id)
         require(self.owner, "document:review", document.team_id)
         check = getattr(self.model, "sees_images", None)
         if self.model is None or not callable(check) or not check():
             raise DocumentError(
                 "unavailable",
-                "模型现在不能看图：把视觉模型 mmproj-F16.gguf 放进 models/，重新 jacara start",
+                tr(pick(NO_VISION_DESKTOP, NO_VISION)),
             )
         image = self.page_image(document_id, page)
         try:
@@ -932,12 +1075,12 @@ class DocumentService:
         return LookOut(text=text, value=value, model=model)
 
     def _enqueue(self, document: Document) -> bool:
-        """先提交，再放进队列。
+        """Commit first, then enqueue.
 
-        顺序不能反：worker 是另一个进程，用自己的数据库连接去查这个文档。
-        如果先放进队列，worker 可能在提交之前就来查，会找不到。
-        队列连不上不算上传失败：文件和记录都在，状态停在 uploaded，之后可以调用重新处理。
-        """
+                The order matters: the worker is another process that looks up the document over
+        its own database connection. If enqueued first, the worker may look before the commit and
+        not find it. An unreachable queue is not an upload failure: the file and the record
+        exist, the status stays uploaded, and the document can be requeued later."""
         self.session.commit()
         try:
             self.queue.enqueue_document(document.id)
@@ -949,27 +1092,35 @@ class DocumentService:
     def _find(self, document_id: uuid.UUID) -> Document:
         document = self.repo.get(document_id, self.owner.team_id)
         if document is None:
-            raise DocumentError("not_found", "找不到这个文档")
+            raise DocumentError("not_found", tr("文档不存在"))
         return document
 
 
 SIDES = {
-    "inline": "后面",
-    "colon": "右边",
-    "label_left": "右边",
-    "row_label": "这一行右边",
-    "colon_below": "下面",
-    "header_above": "下面",
-    "two_column_table": "右边",
+    "inline": N_("后方"),
+    "colon": N_("右侧"),
+    "label_left": N_("右侧"),
+    "row_label": N_("同一行右侧"),
+    "colon_below": N_("下方"),
+    "header_above": N_("下方"),
+    "two_column_table": N_("右侧"),
 }
-"""版面分析的配对规则 → 值在标签的哪边（框选建模板写说明用）。"""
+"""Layout pairing rule → side of the label on which the value lies (used for position hints in
+region-based template building)."""
+
+
+def _region_kind(block: dict[str, Any]) -> str:
+    """Display name of a layout region in the request language."""
+    name = str(block["attrs"].get("kind") or "")
+    return tr(name) if name else ""
 
 
 def structure_view(data: dict[str, Any] | None, page: int = 1, first: int = 1) -> PageStructureOut:
-    """存下来的结构 → 画在原图上用的样子：合并的格子画成一个，空格子不画。
+    """Stored structure → shapes drawn over the page image: merged cells are drawn once; empty cells
+    are not drawn.
 
-    几页拼成的单据（ADR 0036）：只取第 page 页上的部分，坐标换回这一页自己的。
-    """
+        For documents spanning several pages, only the parts on page page are returned, with
+    coordinates converted back to that page."""
     if not data:
         return PageStructureOut(available=False)
     part = page_slice(data, page, first)
@@ -977,7 +1128,7 @@ def structure_view(data: dict[str, Any] | None, page: int = 1, first: int = 1) -
         data = _one_page(data, *part)
     blocks = {b["id"]: b for b in data.get("blocks", [])}
     regions = [
-        StructureRegion(kind=blocks[a]["attrs"].get("kind", ""), box=blocks[a]["box"])
+        StructureRegion(kind=_region_kind(blocks[a]), box=blocks[a]["box"])
         for a in data.get("layouts", [])
         if a in blocks
     ]
@@ -1039,7 +1190,10 @@ def structure_view(data: dict[str, Any] | None, page: int = 1, first: int = 1) -
         )
     return PageStructureOut(
         available=True,
-        sources=data.get("sources") or {},
+        sources={
+            key: trc("structure source", str(name))
+            for key, name in (data.get("sources") or {}).items()
+        },
         regions=regions,
         tables=tables,
         pairs=pairs,
@@ -1047,8 +1201,9 @@ def structure_view(data: dict[str, Any] | None, page: int = 1, first: int = 1) -
 
 
 def _one_page(data: dict[str, Any], top: float, bottom: float) -> dict[str, Any]:
-    """几页拼成的结构里，中心落在 [top, bottom) 这一段的块，坐标往上挪 top。
-    跨页的表格：只留这一页上的格子，表格的框缩到这些格子。"""
+    """Blocks of a multi-page structure whose center lies within [top, bottom), shifted up by top.
+    For tables spanning pages, only cells on this page are kept and the table box is shrunk to
+    them."""
 
     def inside(box: list[float]) -> bool:
         return top <= (box[1] + box[3]) / 2 < bottom
@@ -1102,7 +1257,7 @@ def _clear_skip(document: Document) -> None:
 
 
 def _runs(document: Document) -> list[RunOut]:
-    """处理过的每一轮，新的在前。"""
+    """Every processed run, newest first."""
     firsts: dict[int, Extraction] = {}
     for e in document.all_extractions:
         firsts.setdefault(e.run, e)
@@ -1121,7 +1276,7 @@ def _runs(document: Document) -> list[RunOut]:
 
 
 def range_out(value: str | None, day_first: bool | None) -> RangeOut | None:
-    """日期范围拆开（ADR 0039）：审核页显示"2014-07-01 ~ 2014-07-31（31 天）"。"""
+    """Split date ranges: the review page shows "2014-07-01 ~ 2014-07-31 (31 days)"."""
     if not value:
         return None
     parsed = parse_date_range(value, day_first)
@@ -1130,15 +1285,12 @@ def range_out(value: str | None, day_first: bool | None) -> RangeOut | None:
         start=found.start.isoformat() if found and found.start else None,
         end=found.end.isoformat() if found and found.end else None,
         days=found.days if found else None,
-        problem=parsed.problem,
+        problem=tr(parsed.problem) if parsed.problem else None,
     )
 
 
 def _template_title(extraction: Extraction) -> str:
-    if extraction.template == DISCOVER:
-        return "抽取所有键值对"
-    template = template_of(extraction)
-    return template.title if template else extraction.template
+    return template_title(extraction)
 
 
 def _with_states(
@@ -1147,9 +1299,10 @@ def _with_states(
     previous: Extraction | None = None,
     session: Session | None = None,
 ) -> ExtractionOut:
-    """按当前值重新检查规则，再给每个字段标上校验状态和颜色（ADR 0028）、中文名，
-    以及能沿用的上一轮审核（previous 是同一页上一轮的结果）。
-    有 session 时再比一比对象（同一个病人、同一家公司）和别的单据对不对得上（ADR 0031）。"""
+    """Re-run rules on the current values, then annotate each field with its validation status and
+    color, display name, and any review from the previous run that can be carried over (previous
+    is the previous run's result for the same page). With a session, also check whether the
+    subject (same patient, same company) matches other documents."""
     checks = current_checks_json(extraction)
     template = template_of(extraction) if session is not None else None
     if session is not None and template is not None and template.entities:
@@ -1159,12 +1312,13 @@ def _with_states(
     labels = labels_of(extraction)
     hints = suggestions(extraction, previous)
     by_id = {v.id: v for v in extraction.values}
-    # 更新前处理的文档，出处里没存文字，要用这一页的 OCR 结果找（只在需要时才读）
+    # Documents processed before evidence text was stored: locate it with the OCR result of this
+    # page (loaded only when needed).
     needs_ocr = any(wants_source(v) and "text" not in (v.evidence or {}) for v in extraction.values)
     lines = (extraction.ocr or {}).get("lines") if needs_ocr else None
     shape = template if template is not None else template_of(extraction)
     day_first = shape.day_first if shape is not None else None
-    # 字段名的别的语言（ADR 0048）：第一个是默认的中文
+    # Field labels in other languages: the first is the default.
     languages = list(shape.languages) if shape is not None else []
     others = {lang: labels_of(extraction, lang) for lang in languages[1:]}
     values = [
@@ -1190,13 +1344,13 @@ def _with_states(
         for v in out.values
     ]
     notes = [
-        f"第 {page} 页：{data['note']}"
+        tr("第 {page} 页：{note}", page=page, note=render(data["note"]))
         for page, data in pages_json(extraction.ocr, extraction.page)
         if data.get("note")
     ]
     return out.model_copy(
         update={
-            "current_checks": checks,
+            "current_checks": render_checks(checks),
             "values": values,
             "labels": labels,
             "languages": languages if len(languages) > 1 else [],
@@ -1231,11 +1385,12 @@ def _count_pages(content_type: str, data: bytes) -> int:
         with pdfplumber.open(io.BytesIO(data)) as pdf:
             return len(pdf.pages)
     except Exception as err:
-        raise DocumentError("unreadable", "PDF 文件打不开，可能已损坏") from err
+        raise DocumentError("unreadable", tr("无法打开 PDF 文件，文件可能已损坏")) from err
 
 
 def _layout_template(documents: list[Document]) -> Template | None:
-    """这几份文档都用同一个模板（同一版），而且它有原表样式：返回这个模板。"""
+    """The template shared by all these documents (same version), if it has an original sheet
+    layout; otherwise None."""
     templates = {(e.template, e.template_version): e for d in documents for e in d.extractions[:1]}
     if len(templates) != 1 or any(not d.extractions for d in documents):
         return None
@@ -1244,7 +1399,8 @@ def _layout_template(documents: list[Document]) -> Template | None:
 
 
 def _doc_rows(documents: list[Document], template: Template) -> list[DocRow]:
-    """审核之后的值 → 填原表用的每一行。设成不导出的字段留空。"""
+    """Post-review values → rows for filling the original sheet. Fields set not to export are left
+    empty."""
     hidden = {f.name for f in template.fields if not f.export}
     for t in template.tables:
         hidden |= {f"{t.name}.{c.name}" for c in t.columns if not c.export or not t.export}
@@ -1276,7 +1432,8 @@ def _doc_rows(documents: list[Document], template: Template) -> list[DocRow]:
 
 
 def _workbook(documents: list[Document], language: str | None = None) -> bytes:
-    """几个文档写进一个 Excel，返回文件内容。language：列名用哪种语言（ADR 0048）。"""
+    """Write several documents into one Excel workbook and return its bytes. language: language of
+    the column headers."""
     reports = [report for d in documents for report in load_reports(d, language)]
     exporter = create_exporter("excel")
     with tempfile.TemporaryDirectory() as tmp:
@@ -1286,7 +1443,8 @@ def _workbook(documents: list[Document], language: str | None = None) -> bytes:
 
 
 def _unique(name: str, used: set[str]) -> str:
-    """zip 里不能有两个同名文件：receipt.xlsx 已经有了，就叫 receipt (2).xlsx。"""
+    """A zip cannot contain two files with the same name: if receipt.xlsx exists, use receipt
+    (2).xlsx."""
     stem, suffix = PurePath(name).stem, PurePath(name).suffix
     candidate, n = name, 1
     while candidate in used:
@@ -1297,7 +1455,8 @@ def _unique(name: str, used: set[str]) -> str:
 
 
 def clean_folder(folder: str | None) -> str | None:
-    """批量导入的文件夹：统一用 / 分隔，去掉开头结尾的 / 和 . 、..，最长 255 个字。空的是 None。"""
+    """Normalize a batch-import folder: / as separator, leading and trailing / removed, . and ..
+    removed, at most 255 characters. None if empty."""
     if not folder:
         return None
     parts = [p.strip() for p in folder.replace("\\", "/").split("/")]
@@ -1306,7 +1465,7 @@ def clean_folder(folder: str | None) -> str | None:
 
 
 def check_split(split: str | None) -> str:
-    """检查"一个文件里有几张单据"的写法（ADR 0036），写错了说清楚。"""
+    """Validate the "documents per file" value and explain any error."""
     try:
         return normalize_split(split)
     except SplitError as err:

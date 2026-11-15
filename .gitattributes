@@ -1,0 +1,4 @@
+# Development-only files excluded from git archive
+.github export-ignore
+.pre-commit-config.yaml export-ignore
+CLAUDE.md export-ignore

@@ -1,4 +1,4 @@
-"""模型和数据集库接口：/api/v1/hub（ADR 0059、0060）。"""
+"""Model and dataset library API: /api/v1/hub."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ from starlette.background import BackgroundTask
 
 from jacara.core.config import get_settings
 from jacara.core.deps import get_owner, get_queue, get_session, get_storage
+from jacara.core.i18n import render
 from jacara.core.owner import Owner
 from jacara.core.queue import TaskQueue
 from jacara.core.storage import ObjectStorage
@@ -44,7 +45,7 @@ from jacara.modules.hub.schemas import (
 )
 from jacara.modules.hub.service import HubService
 
-router = APIRouter(prefix="/hub", tags=["模型和数据集库"])
+router = APIRouter(prefix="/hub", tags=["模型和数据集"])
 
 _STATUS = {
     "not_found": status.HTTP_404_NOT_FOUND,
@@ -67,19 +68,19 @@ Service = Annotated[HubService, Depends(get_service)]
 
 
 def _http_error(err: HubError) -> HTTPException:
-    return HTTPException(status_code=_STATUS.get(err.code, 400), detail=err.message)
+    return HTTPException(status_code=_STATUS.get(err.code, 400), detail=render(err.message))
 
 
 def _download(filename: str, data: bytes, media_type: str) -> Response:
     return attachment(filename, data, media_type)
 
 
-# ---- 模型库 ----
+# ---- Model library ----
 
 
-@router.get("/models", summary="模型库")
+@router.get("/models", summary="模型")
 def models(service: Service) -> HubModels:
-    """模型库里的模型和每个版本：模型卡、文件、SHA-256、在不在用。"""
+    """Models in the library and each version: model card, files, SHA-256, whether in use."""
     return service.models()
 
 
@@ -95,7 +96,8 @@ def start_upload(service: Service) -> UploadOut:
 async def upload_file(
     upload_id: str, filename: str, request: Request, service: Service
 ) -> UploadedFile:
-    """请求体就是文件本身（Content-Type: application/octet-stream）。大模型几个 GB 也可以。"""
+    """The request body is the file itself (Content-Type: application/octet-stream); multi-gigabyte
+    models are supported."""
     length = request.headers.get("content-length")
     try:
         return await service.receive_file(
@@ -107,8 +109,8 @@ async def upload_file(
 
 @router.post("/models/uploads/{upload_id}/finish", summary="建新版本", status_code=201)
 def finish_upload(upload_id: str, data: FinishIn, service: Service) -> VersionOut:
-    """检查传上来的文件（GGUF 文件头；ONNX 能加载、形状对；识别模型的字典和类别数对得上），
-    通过了才成为这个模型的下一个版本。"""
+    """Validate the uploaded files (GGUF header; ONNX loads with correct shapes; recognition
+    dictionary matches the class count); on success they become the next version of the model."""
     try:
         return service.finish(upload_id, data)
     except HubError as err:
@@ -133,7 +135,8 @@ def update_card(name: str, version: int, data: CardIn, service: Service) -> Vers
 
 @router.post("/models/{name}/versions/{version}/use", summary="用这个版本")
 def use_version(name: str, version: int, service: Service) -> HubModels:
-    """写进 models/selected.json（和"换模型"一样），jacara stop、jacara start 后生效。"""
+    """Written to models/selected.json (as with model selection); takes effect after `jacara stop`
+    and `jacara start`."""
     try:
         return service.use(name, version)
     except HubError as err:
@@ -154,7 +157,7 @@ def download_version(name: str, version: int, service: Service) -> FileResponse:
         filename, path = service.pack(name, version)
     except HubError as err:
         raise _http_error(err) from err
-    service.session.commit()  # 审计日志先提交：文件是在响应里慢慢发的
+    service.session.commit()  # Commit the audit log first: the file is streamed in the response.
     return FileResponse(
         path,
         media_type="application/zip",
@@ -167,10 +170,10 @@ def download_version(name: str, version: int, service: Service) -> FileResponse:
     )
 
 
-# ---- 数据集库 ----
+# ---- Dataset library ----
 
 
-@router.get("/datasets", summary="数据集库")
+@router.get("/datasets", summary="数据集")
 def datasets(service: Service) -> list[DatasetOut]:
     return service.datasets()
 
@@ -207,7 +210,7 @@ def delete_dataset(dataset_id: uuid.UUID, service: Service) -> None:
         raise _http_error(err) from err
 
 
-# ---- 评测 ----
+# ---- Evaluation ----
 
 
 @router.get("/evals", summary="OCR 模型评测记录")
@@ -217,7 +220,7 @@ def evals(service: Service) -> list[EvalOut]:
 
 @router.post("/evals", summary="开始一次 OCR 模型评测", status_code=201)
 def create_eval(data: EvalIn, service: Service) -> EvalOut:
-    """放进后台队列，在数据集的某一边上比较两个模型（ADR 0060）。"""
+    """Queue a background comparison of two models on one split of a dataset."""
     try:
         return service.create_eval(data)
     except HubError as err:

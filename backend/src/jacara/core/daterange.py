@@ -1,15 +1,18 @@
-"""日期范围（ADR 0039）：模型照抄原文（"July 1 - July 31 , 2014"），这里用代码拆成开始和结束日期。
+"""Date ranges: the model copies the source text verbatim ("July 1 - July 31 , 2014"); this module
+splits it into start and end dates.
 
-拆日期交给代码，不交给模型：模型改写的值在原文里找不到、没法核对；代码每次结果一样。
-认得的写法：
-- 年份只写一次：July 1 - July 31, 2014；July 1-31, 2014；7月1日至31日
-- 跨年：Dec 28, 2014 - Jan 3, 2015；Dec 28 - Jan 3, 2015（开始补成前一年）
-- 中文：2014年7月1日至2014年7月31日、2014年7月1日至7月31日
-- 数字：2014.07.01-2014.07.31、01/07/2014 ~ 31/07/2014、7/1 - 7/31/2014
-- 分隔：- – — ~ ～ 至 到 to through thru until till
-01/07/2014 是 1 月 7 日还是 7 月 1 日：按模板的国家（美国等是月/日，其他是日/月）；
-不知道国家、两个数又都不超过 12 时不猜，说"日月顺序分不清"。
-"""
+Splitting is done in code rather than by the model: a value rewritten by the model cannot be
+located in the source text for verification, while code is deterministic.
+Supported forms:
+- Year written once: July 1 - July 31, 2014; July 1-31, 2014; 7月1日至31日
+- Across years: Dec 28, 2014 - Jan 3, 2015; Dec 28 - Jan 3, 2015 (the start takes the previous
+  year)
+- Chinese: 2014年7月1日至2014年7月31日, 2014年7月1日至7月31日
+- Numeric: 2014.07.01-2014.07.31, 01/07/2014 ~ 31/07/2014, 7/1 - 7/31/2014
+- Separators: - – — ~ ～ 至 到 to through thru until till
+Whether 01/07/2014 is 7 January or 1 July follows the template country (month/day in the United
+States and some others, day/month elsewhere). When the country is unknown and both numbers are 12
+or less, the order is not guessed and the result is reported as ambiguous."""
 
 from __future__ import annotations
 
@@ -19,8 +22,10 @@ from dataclasses import dataclass
 from datetime import date
 from itertools import pairwise
 
+from jacara.core.i18n import N_
+
 MONTH_FIRST = frozenset({"US", "PH", "FM", "MH", "PW"})
-"""日期写成 月/日/年 的国家和地区。"""
+"""Countries and regions that write dates as month/day/year."""
 
 _MONTHS = {
     name: number
@@ -67,7 +72,8 @@ _BARE_END = re.compile(
 )
 
 
-ORDER_PROBLEM = "结束日期早于开始日期"
+ORDER_PROBLEM = N_("结束日期早于开始日期")
+AMBIGUOUS_PROBLEM = N_("数字日期无法区分日与月（模板未选择国家），已按 日/月 顺序读取")
 
 
 @dataclass(frozen=True)
@@ -77,13 +83,13 @@ class DateRange:
 
     @property
     def days(self) -> int | None:
-        """一共几天，首尾都算（7 月 1 日到 7 月 31 日是 31 天）。"""
+        """Number of days, inclusive (1 July to 31 July is 31 days)."""
         if self.start is None or self.end is None:
             return None
         return (self.end - self.start).days + 1
 
     def text(self, separator: str = " ~ ") -> str:
-        """统一格式：2014-07-01 ~ 2014-07-31。"""
+        """Normalized form: 2014-07-01 ~ 2014-07-31."""
         start = self.start.isoformat() if self.start else ""
         end = self.end.isoformat() if self.end else ""
         return f"{start}{separator}{end}".strip()
@@ -93,7 +99,7 @@ class DateRange:
 class Parsed:
     range: DateRange | None
     problem: str | None = None
-    """拆不开、不确定的原因；没问题是 None。"""
+    """Reason the text could not be split or is uncertain; None when there is no problem."""
 
 
 @dataclass
@@ -102,15 +108,18 @@ class _Part:
     month: int | None
     day: int
     unsure: bool = False
-    """日、月两个数都不超过 12，又不知道国家：不确定哪个是月。"""
+    """Both day and month are 12 or less and the country is unknown: the month cannot be determined.
+    """
     pair: tuple[int, int] | None = None
-    """数字写法的两个数（写的顺序）；不是数字写法是 None。"""
+    """The two numbers of a numeric date, in written order; None for non-numeric forms."""
     day_first: bool | None = None
-    """这个数字日期确定是 日/月（True）还是 月/日（False）；不确定是 None。"""
+    """Whether this numeric date is known to be day/month (True) or month/day (False); None when
+    uncertain."""
 
 
 def day_first_for(countries: Iterable[str]) -> bool | None:
-    """模板的国家 → 数字日期是不是 日/月/年。不分国家（通用）或者两种都有：None（不知道）。"""
+    """Template country → whether numeric dates are day/month/year. None (unknown) for generic
+    templates or countries that use both."""
     codes = {c.upper() for c in countries}
     if not codes:
         return None
@@ -132,14 +141,14 @@ def _month(name: str | None) -> int | None:
 
 
 def _numbers(a: int, b: int, year: int | None, day_first: bool | None) -> _Part:
-    """两个数字，一个是日一个是月。"""
+    """Two numbers, one the day and the other the month."""
     if day_first is True or a > 12:
         return _Part(year, b, a, pair=(a, b), day_first=True)
     if day_first is False or b > 12:
         return _Part(year, a, b, pair=(a, b), day_first=False)
     if a == b:
         return _Part(year, a, b, pair=(a, b), day_first=True)
-    return _Part(year, b, a, unsure=True, pair=(a, b))  # 先按日/月，但标出来不确定
+    return _Part(year, b, a, unsure=True, pair=(a, b))  # Assume day/month, but mark as uncertain.
 
 
 def _part(m: re.Match[str], day_first: bool | None) -> _Part | None:
@@ -171,10 +180,11 @@ def _pieces(text: str, day_first: bool | None) -> list[tuple[re.Match[str], _Par
 
 
 def parse_date_range(text: str, day_first: bool | None = None) -> Parsed:
-    """原文 → 开始、结束日期。day_first：数字日期是不是 日/月/年（None 不知道）。"""
+    """Source text → start and end dates. day_first: whether numeric dates are day/month/year (None
+    if unknown)."""
     source = " ".join(str(text or "").split())
     if not source:
-        return Parsed(None, "是空的")
+        return Parsed(None, N_("为空"))
     pieces = _pieces(source, day_first)
     start = end = None
     for (m1, p1), (m2, p2) in pairwise(pieces):
@@ -184,7 +194,7 @@ def parse_date_range(text: str, day_first: bool | None = None) -> Parsed:
     if start is None and pieces:
         first, part = pieces[0]
         bare = _BARE_END.match(source[first.end() :])
-        if bare:  # July 1-31, 2014：结束只写了日
+        if bare:  # July 1-31, 2014: only the day is given for the end.
             start, end = part, _Part(_year(bare["y"]), None, int(bare["d"]))
     if start is None or end is None:
         if len(pieces) == 1 and pieces[0][1].year and pieces[0][1].month:
@@ -192,14 +202,15 @@ def parse_date_range(text: str, day_first: bool | None = None) -> Parsed:
             try:
                 single = date(only.year or 0, only.month or 0, only.day)
             except ValueError:
-                return Parsed(None, "日期不对")
-            return Parsed(DateRange(None, single), "只找到一个日期，当作结束日期")
-        return Parsed(None, "认不出开始和结束日期")
+                return Parsed(None, N_("日期无效"))
+            return Parsed(DateRange(None, single), N_("仅找到一个日期，已作为结束日期"))
+        return Parsed(None, N_("无法识别开始和结束日期"))
     return _combine(start, end)
 
 
 def _combine(start: _Part, end: _Part) -> Parsed:
-    # 一边能确定顺序（31/07/2014），另一边（01/07/2014）照它读：同一个范围写法一样
+    # If one side determines the order (31/07/2014), read the other side (01/07/2014) the same way:
+    # both ends of a range use the same format.
     for unsure, sure in ((start, end), (end, start)):
         if unsure.unsure and unsure.pair and sure.pair and sure.day_first is not None:
             a, b = unsure.pair
@@ -215,20 +226,21 @@ def _combine(start: _Part, end: _Part) -> Parsed:
     if end.year is None:
         end.year = start.year
     if start.year is None or start.month is None or end.month is None:
-        return Parsed(None, "原文里没有年份" if start.year is None else "认不出月份")
+        return Parsed(None, N_("原文中没有年份") if start.year is None else N_("无法识别月份"))
     try:
         first = date(start.year, start.month, start.day)
         last = date(end.year or start.year, end.month, end.day)
     except ValueError:
-        return Parsed(None, "日期不对（没有这一天）")
+        return Parsed(None, N_("日期无效（该日不存在）"))
     if first > last and borrowed_year:
         try:
-            first = first.replace(year=first.year - 1)  # Dec 28 - Jan 3, 2015：开始是前一年
+            # Dec 28 - Jan 3, 2015: the start is in the previous year.
+            first = first.replace(year=first.year - 1)
         except ValueError:
-            return Parsed(None, "日期不对（没有这一天）")
+            return Parsed(None, N_("日期无效（该日不存在）"))
     parsed = DateRange(first, last)
     if first > last:
         return Parsed(parsed, ORDER_PROBLEM)
     if start.unsure or end.unsure:
-        return Parsed(parsed, "数字日期分不清哪个是日、哪个是月（模板没选国家），先按 日/月 读的")
+        return Parsed(parsed, AMBIGUOUS_PROBLEM)
     return Parsed(parsed)

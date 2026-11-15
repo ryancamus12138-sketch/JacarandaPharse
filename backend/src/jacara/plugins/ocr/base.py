@@ -1,13 +1,14 @@
-"""OCR 扩展点：规定"OCR 插件长什么样"和"OCR 结果长什么样"。
+"""OCR extension point: defines the shape of OCR plugins and OCR results.
 
-这里只定义契约，不做任何识别。流水线后面的步骤（抽取、证据对齐、表格还原）只认这些类型，
-不关心底层是 RapidOCR、PaddleOCR 还是以后的别的引擎。
+Only the contract is defined here; no recognition happens. Later pipeline steps (extraction,
+evidence alignment, table reconstruction) depend only on these types, regardless of whether
+RapidOCR, PaddleOCR or a future engine runs underneath.
 
-换模型有两种情况：
-1. 同一个引擎，换模型文件（例如自己微调的手写体识别模型）：只改 OcrConfig，不改代码。
-2. 换一个引擎（例如 PaddleOCR 官方包）：在本目录新建一个文件实现 OcrEngine，
-   再在 __init__.py 里登记一行。其他代码都不用改。
-"""
+Two ways to change the model:
+1. Same engine, different model files (for example a fine-tuned handwriting recognition model):
+   change OcrConfig only; no code changes.
+2. Different engine (for example the official PaddleOCR package): implement OcrEngine in a new
+   module in this package and register it in __init__.py. No other code changes."""
 
 from __future__ import annotations
 
@@ -20,45 +21,49 @@ Device = Literal["cpu", "cuda", "coreml"]
 
 @dataclass(frozen=True)
 class OcrConfig:
-    """OCR 插件的通用配置。字段为 None 表示用插件自带的默认模型。"""
+    """Common OCR plugin configuration. None means the plugin's bundled default model."""
 
     engine: str = "rapidocr"
-    """用哪个 OCR 插件，名字要在 __init__.py 的登记表里。"""
+    """OCR plugin to use; the name must be registered in __init__.py."""
 
     det_model: Path | None = None
-    """文字检测模型：找出图上哪里有字。"""
+    """Text detection model: finds where text is in the image."""
 
     rec_model: Path | None = None
-    """文字识别模型：认出框里写的是什么。微调后的手写体模型放这里。"""
+    """Text recognition model: reads the text inside each box. Fine-tuned handwriting models go
+    here."""
 
     rec_dict: Path | None = None
-    """识别模型的字典文件。自己微调的识别模型通常要配套提供。"""
+    """Dictionary file of the recognition model. Usually required with a custom fine-tuned
+    recognition model."""
 
     cls_model: Path | None = None
-    """方向分类模型：判断文字是不是倒过来的。"""
+    """Orientation classification model: detects upside-down text."""
 
     use_angle_cls: bool = True
-    """是否纠正倒置的文字。扫描件、手机拍照建议打开。"""
+    """Whether to correct upside-down text. Recommended for scans and phone photos."""
 
     device: Device = "cpu"
-    """在哪里运行：cpu；cuda（NVIDIA 显卡）；coreml（苹果芯片）。"""
+    """Execution provider: cpu; cuda (NVIDIA GPUs); coreml (Apple silicon)."""
 
     min_confidence: float = 0.5
-    """置信度低于这个值的识别结果直接丢掉。"""
+    """Recognition results with confidence below this are discarded."""
 
     max_side: int = 4000
-    """整页识别前，图的长边超过这么多像素才缩小（ADR 0042）。
+    """Images whose longer side exceeds this many pixels are downscaled before full-page OCR.
 
-    RapidOCR 默认是 2000：216 DPI 的 A4（2526 像素高）会先被压回 2000，小字更难认。
-    在 Mac 上实测放宽到 4000 每页只多 0.1～0.2 秒。"""
+        RapidOCR defaults to 2000: an A4 page at 216 DPI (2526 pixels tall) would first be shrunk
+    to 2000, making small text harder to read. On a Mac, raising it to 4000 costs only 0.1–0.2
+    seconds per page."""
 
     extra: dict[str, object] = field(default_factory=dict)
-    """各引擎特有的高级参数，原样传给引擎。用来预留，不影响其他插件。"""
+    """Engine-specific advanced parameters, passed to the engine unchanged. Reserved; does not
+    affect other plugins."""
 
 
 @dataclass(frozen=True)
 class Point:
-    """图片上的一个点，单位是像素，原点在左上角。"""
+    """A point on the image, in pixels, origin at the top left."""
 
     x: float
     y: float
@@ -66,11 +71,11 @@ class Point:
 
 @dataclass(frozen=True)
 class OcrLine:
-    """识别出的一行文字。
+    """A recognized text line.
 
-    polygon 是四个角的坐标（左上、右上、右下、左下）。用四边形而不是矩形，
-    是因为拍照和扫描的发票常常是歪的；审核页面要在原图上画出准确的高亮框。
-    """
+        polygon holds the four corners (top left, top right, bottom right, bottom left). A
+    quadrilateral rather than a rectangle, because photographed and scanned invoices are often
+    skewed and the review page must draw precise highlights on the original image."""
 
     text: str
     polygon: tuple[Point, Point, Point, Point]
@@ -78,7 +83,7 @@ class OcrLine:
 
     @property
     def bbox(self) -> tuple[float, float, float, float]:
-        """外接矩形 (x0, y0, x1, y1)，排序和比较位置时用。"""
+        """Bounding rectangle (x0, y0, x1, y1), for sorting and position comparisons."""
         xs = [p.x for p in self.polygon]
         ys = [p.y for p in self.polygon]
         return (min(xs), min(ys), max(xs), max(ys))
@@ -86,9 +91,11 @@ class OcrLine:
 
 @dataclass(frozen=True)
 class FormValue:
-    """PDF 表单里一个字段存的值（ADR 0042）。box 是控件在渲染图上的框 (x0, y0, x1, y1)。
+    """Value stored in a PDF form field. box is the widget's box (x0, y0, x1, y1) on the rendered
+    image.
 
-    存的值不一定画在页面上：hidden 是字段设了"隐藏"，页面上看不见。"""
+        The stored value is not necessarily drawn on the page: hidden means the field is set to
+    hidden and invisible on the page."""
 
     name: str
     value: str
@@ -98,10 +105,10 @@ class FormValue:
 
 @dataclass(frozen=True)
 class OcrPage:
-    """一页图片的识别结果，以及"它是怎么来的"。
+    """Recognition result of one page image and its provenance.
 
-    engine 和 models 必须记录：项目规则要求每次结果都能追溯到用的是哪个引擎、哪个模型文件。
-    """
+        engine and models must be recorded so that every result can be traced to the engine and
+    model files used."""
 
     width: int
     height: int
@@ -110,22 +117,25 @@ class OcrPage:
     models: dict[str, str]
     duration_ms: int
     text_layer: tuple[OcrLine, ...] = ()
-    """PDF 自带的文字（ADR 0042）：只拿来和 OCR 核对，不当作原文。坐标和 lines 一样。
-    图片、扫描件没有；看不见的字（多半是别的软件留下的旧 OCR）不算。"""
+    """Text embedded in the PDF: used only to cross-check OCR, never as the source text. Same
+    coordinates as lines. Absent for images and scans; invisible text (usually an old OCR layer
+    left by other software) is excluded."""
     forms: tuple[FormValue, ...] = ()
-    """PDF 表单字段存的值（ADR 0042）。"""
+    """Values stored in PDF form fields."""
 
     @property
     def text(self) -> str:
-        """按阅读顺序拼成的全文，每行一个换行。"""
+        """Full text in reading order, one line per text line."""
         return "\n".join(line.text for line in self.lines)
 
 
 class OcrEngine(Protocol):
-    """OCR 插件接口：任何类只要有 name 属性和 recognize 方法，就是一个 OCR 插件。"""
+    """OCR plugin interface: any class with a name attribute and a recognize method is an OCR
+    plugin."""
 
     name: str
 
     def recognize(self, image: Path) -> OcrPage:
-        """识别一张图片。图片里没有文字时返回空的 lines，而不是报错。"""
+        """Recognize one image. Returns empty lines rather than raising when the image contains no
+        text."""
         ...

@@ -1,0 +1,34 @@
+# opencv-python-headless built from source for the macOS package (build_opencv.py).
+#
+# The macOS wheels on PyPI link FFmpeg built with --enable-gpl: cv2 loads libavcodec, which links
+# libx264 and libx265 (GPL-2.0-or-later); 4.13.0.92 also ships librubberband, libvidstab and
+# libpostproc (GPL). The Windows wheel loads OpenCV's own LGPL FFmpeg build as a plug-in and is
+# used as published. The app does not read or write video, so the macOS build leaves FFmpeg out.
+#
+# The version must be the one in uv.lock (4.14 and newer are held back there). The release tag is
+# the build number of the version; the commit pins it, because a tag can be moved.
+
+version = 1
+package = "opencv-python-headless"
+package_version = "4.13.0.92"
+repository = "https://github.com/opencv/opencv-python"
+tag = "92"
+commit = "4ddfc013fd1f13d9b9e379dbebf2cdbeb052e7f8"
+license = "Apache-2.0"
+# CMake arguments added to opencv-python's own (CMAKE_ARGS). Without FFmpeg and GStreamer there is
+# no video library at all. OPENCV_FORCE_3RDPARTY_BUILD builds zlib, libpng, libjpeg, libtiff, libwebp,
+# OpenJPEG and OpenEXR from the copies in OpenCV's 3rdparty folder (their own permissive licences)
+# instead of linking whatever the build machine has installed (Homebrew on the macOS runners);
+# AVIF would still come from the build machine, so it is left out. build_opencv.py checks that cv2
+# then links only system libraries.
+# macOS: the oldest system the build runs on. CMake takes it from MACOSX_DEPLOYMENT_TARGET; without
+# it the build targets the system of the build machine (macOS 15 on the runners). Must be
+# bundle.macOS.minimumSystemVersion in desktop/src-tauri/tauri.conf.json (build_opencv.py checks).
+macos_deployment_target = "14.0"
+
+cmake_args = [
+    "-DWITH_FFMPEG=OFF",
+    "-DWITH_GSTREAMER=OFF",
+    "-DWITH_AVIF=OFF",
+    "-DOPENCV_FORCE_3RDPARTY_BUILD=ON",
+]

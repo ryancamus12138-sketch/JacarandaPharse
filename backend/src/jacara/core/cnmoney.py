@@ -1,8 +1,7 @@
-"""中文大写金额（壹佰贰拾叁圆肆角伍分）→ 数字。
+"""Convert Chinese uppercase amounts (壹佰贰拾叁圆肆角伍分) to numbers.
 
-发票上"价税合计（大写）"的写法不统一：圆/元、整/正、前面有没有 ⊗、拾前面写不写壹，
-所以不拿文字比，先变成数字再和小写合计比。
-"""
+The uppercase total on invoices is written inconsistently (圆/元, 整/正, an optional leading ⊗, an
+optional 壹 before 拾), so amounts are compared as numbers rather than as text."""
 
 from __future__ import annotations
 
@@ -14,7 +13,7 @@ IGNORED = set("整正人民币⊗ⓧ×（）() \t　")
 
 
 def parse_chinese_amount(text: str) -> float | None:
-    """解析不了（有不认识的字、什么都没有）返回 None。"""
+    """Return None when the text cannot be parsed (unknown characters or no amount)."""
     text = "".join(ch for ch in text if ch not in IGNORED).replace("元", "圆")
     if not text:
         return None

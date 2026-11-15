@@ -1,0 +1,225 @@
+# Desktop app: build the macOS and Windows installers.
+#
+# - On a pull request that changes the packaging (the paths below): builds and checks both
+#   installers and keeps them as workflow artifacts. GitHub runs a workflow's manual trigger only
+#   once the file is on the default branch, so a new packaging change is checked this way.
+# - Run by hand (Actions → desktop → Run workflow): the same, for any branch.
+# - On a v* tag: the same, and the installers and their .sha256 files are attached to a draft
+#   release of this repository, to be checked by hand before anything is published.
+#
+# Backend tests run on both systems as their own job, beside the build, so a test failure does not
+# hide whether the packaging works (and the reverse); the run fails if either fails.
+#
+# Each build: Python, web and shell dependencies → web pages →
+# llama.cpp and the table model (pinned, SHA-256 checked) → licence list (stops on GPL, LGPL, AGPL)
+# → PyInstaller → smoke test of the packaged backend → package checks (model weights, GPL
+# libraries, contents; on macOS minimum system version and ad-hoc signatures) → rustfmt and clippy
+# on the shell → Tauri installer → SHA-256 of each installer.
+#
+# macOS uses opencv-python-headless built from source without FFmpeg (packaging/desktop/opencv.lock
+# says why); every step runs uv with --no-sync, because syncing the environment would put the
+# PyPI wheel back.
+name: desktop
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/desktop.yml"
+      - "desktop/**"
+      - "packaging/desktop/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "web/package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - name: Python dependencies
+        run: uv sync --locked
+      - name: Backend tests
+        run: uv run --no-sync pytest
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: macos-arm64
+          - os: windows-latest
+            platform: windows-x64
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            desktop/package-lock.json
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
+      - name: Versions agree
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            uv run --no-project python packaging/desktop/check_versions.py --tag "$GITHUB_REF_NAME"
+          else
+            uv run --no-project python packaging/desktop/check_versions.py
+          fi
+
+      - name: Python dependencies
+        run: uv sync --locked --group desktop
+
+      - name: Cached OpenCV wheel (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/cache@v6
+        with:
+          path: build/desktop/wheels
+          key: opencv-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packaging/desktop/opencv.lock') }}
+      - name: Install OpenCV without FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          uv run --no-sync python packaging/desktop/build_opencv.py --install
+          uv run --no-sync pytest backend/tests/test_opencv_resize.py
+
+      - name: Web pages
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Shell dependencies and cargo-about
+        shell: bash
+        run: |
+          (cd desktop && npm ci)
+          cargo install cargo-about --version 0.9.3 --locked --features cli
+
+      - name: llama.cpp and the table model
+        run: |
+          uv run --no-sync python packaging/desktop/fetch_llama.py --platform ${{ matrix.platform }}
+          uv run --no-sync python packaging/desktop/fetch_table_model.py
+
+      - name: Licence list
+        run: uv run --no-sync python packaging/desktop/licenses.py
+
+      - name: Package the backend
+        run: uv run --no-sync pyinstaller packaging/desktop/jacara.spec --noconfirm
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          mkdir -p build/desktop/smoke
+          uv run --no-sync python - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          image = Image.new("RGB", (900, 600), "white")
+          draw = ImageDraw.Draw(image)
+          font = ImageFont.load_default(size=36)
+          lines = ["ACME TRADING LTD", "Receipt No: 10023", "Date: 2026-11-15", "Total: 128.50"]
+          for i, text in enumerate(lines):
+              draw.text((60, 60 + i * 80), text, fill="black", font=font)
+          image.save("build/desktop/smoke/sample.pdf")
+          image.save("build/desktop/smoke/sample.jpg")
+          PY
+          exe=dist/jacara-backend/jacara-backend
+          [[ "$RUNNER_OS" == Windows ]] && exe="$exe.exe"
+          uv run --no-sync python packaging/desktop/smoke.py "$exe" \
+            build/desktop/smoke/sample.pdf build/desktop/smoke/sample.jpg
+
+      - name: Package checks
+        shell: bash
+        run: |
+          sign=()
+          [[ "$RUNNER_OS" == macOS ]] && sign=(--sign)
+          uv run --no-sync python packaging/desktop/check_bundle.py dist/jacara-backend "${sign[@]}"
+
+      - name: Shell code checks
+        working-directory: desktop/src-tauri
+        run: |
+          cargo fmt --check
+          cargo clippy --locked -- -D warnings
+
+      - name: Installer
+        id: tauri
+        uses: tauri-apps/tauri-action@v1
+        with:
+          projectPath: desktop
+          tauriScript: npm run tauri
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: JacarandaParse ${{ github.ref_name }}
+          releaseBody: Draft built by the desktop workflow; check the installers before publishing.
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          uploadUpdaterJson: false
+          uploadWorkflowArtifacts: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Signatures (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app=$(ls -d desktop/src-tauri/target/release/bundle/macos/*.app)
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+      - name: SHA-256 of the installers
+        shell: bash
+        env:
+          ARTIFACTS: ${{ steps.tauri.outputs.artifactPaths }}
+        run: |
+          uv run --no-sync python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          made = []
+          for path in map(Path, json.loads(os.environ["ARTIFACTS"])):
+              if path.is_file() and path.suffix in (".dmg", ".exe"):
+                  digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                  checksum = path.with_name(path.name + ".sha256")
+                  checksum.write_text(f"{digest}  {path.name}\n", "utf-8")
+                  made.append(checksum.as_posix())
+                  print(f"{digest}  {path.name}")
+          if not made:
+              raise SystemExit("no installer found among the artifacts")
+          Path("build/desktop/checksums.txt").write_text("\n".join(made) + "\n", "utf-8")
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sha256-${{ matrix.platform }}
+          path: desktop/src-tauri/target/release/bundle/**/*.sha256
+
+      - name: Attach the SHA-256 files to the draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: xargs gh release upload "$GITHUB_REF_NAME" --clobber < build/desktop/checksums.txt

@@ -1,10 +1,12 @@
-"""文字比对对齐器：逐行查找值在原文里的位置。
+"""Text-matching aligner: locate a value in the source text line by line.
 
-- 数字：把原文里的数读出来按数值比（core/numbers.py），9.0 写成 9.00、78.5、1,234.50 都认；
-- 日期：把原文里像日期的写法读成日期再比（core/dates.py），25/12/2018、25 DEC 18 都认。
-- 先查模型说的那一行，找不到再查全文。
-- 文字字段允许 OCR 小错（相似度够高算 fuzzy）；数字和日期必须完全一致，差一位都不行。
-"""
+- Numbers: numbers in the source are parsed and compared numerically (core/numbers.py), so 9.0
+  matches 9.00, 78.5 and 1,234.50 are recognized;
+- Dates: date-like spans in the source are parsed and compared (core/dates.py), so 25/12/2018 and
+  25 DEC 18 are recognized.
+- The line named by the model is searched first, then the whole text.
+- Text fields tolerate small OCR errors (sufficient similarity counts as fuzzy); numbers and
+  dates must match exactly, down to the last digit."""
 
 from __future__ import annotations
 
@@ -13,6 +15,7 @@ from difflib import SequenceMatcher
 from typing import Protocol
 
 from jacara.core.dates import date_pattern
+from jacara.core.i18n import join_notes, stored
 from jacara.core.numbers import number_pattern
 from jacara.plugins.aligners.base import AlignedField, Evidence
 from jacara.plugins.extractors.base import ExtractedField, ExtractionResult, split_cell_name
@@ -21,7 +24,7 @@ from jacara.plugins.ocr.layout import OcrRow, group_rows
 
 
 class Span(Protocol):
-    """找到的一段：re.Match 和 core.numbers.NumberMatch 都是。"""
+    """A located span: re.Match or core.numbers.NumberMatch."""
 
     def start(self) -> int: ...
 
@@ -29,13 +32,13 @@ class Span(Protocol):
 
 
 class Finder(Protocol):
-    """查找规则：正则（日期、时间）和 core.numbers.NumberPattern（数字）都是。"""
+    """Search rule: a regular expression (dates, times) or core.numbers.NumberPattern (numbers)."""
 
     def search(self, text: str, /) -> Span | None: ...
 
 
 def _squash(text: str) -> str:
-    """比较文字时忽略大小写和空格：OCR 经常多读或少读空格。"""
+    """Ignore case and whitespace when comparing text: OCR often adds or drops spaces."""
     return re.sub(r"\s+", "", text).lower()
 
 
@@ -44,11 +47,11 @@ _AMPM = r"\s*[ap]\.?\s*m\b\.?"
 
 
 def time_pattern(value: str) -> re.Pattern[str] | None:
-    """一个时间（14:05、20:13:39）在单据上可能的写法；不是时间返回 None。
+    """Possible notations of a time (14:05, 20:13:39) on a document; None if not a time.
 
-    模板常让模型写成 24 小时制，单据上却常写 8:13:39 PM：两种都算对上。
-    值没写秒时，原文带不带秒都行。24 小时制的写法后面不能跟 AM/PM（8:13 PM 不是 08:13）。
-    """
+        Templates often ask the model for 24-hour times while documents print 8:13:39 PM; both
+    match. A value without seconds matches source text with or without seconds. 24-hour notations
+    must not be followed by AM/PM (8:13 PM is not 08:13)."""
     m = _TIME.match(value)
     if m is None:
         return None
@@ -64,12 +67,12 @@ def time_pattern(value: str) -> re.Pattern[str] | None:
 
 
 def _tidy(text: str) -> str:
-    """去掉逗号、句号前多余的空格：PDF 里常见 "August 3 , 2014" 这种写法。"""
+    """Remove extra spaces before commas and periods, common in PDFs as in "August 3 , 2014"."""
     return re.sub(r"\s+(?=[,.])", "", text)
 
 
 def _best_similarity(needle: str, haystack: str) -> float:
-    """needle 在 haystack 里最像的那一段有多像（0～1）。"""
+    """Similarity (0–1) of the best-matching span of haystack to needle."""
     if not needle or not haystack:
         return 0.0
     if needle in haystack:
@@ -88,9 +91,9 @@ class TextMatchAligner:
 
     def __init__(self, min_similarity: float = 0.85, min_confidence: float = 0.8) -> None:
         self.min_similarity = min_similarity
-        """文字字段相似度低于这个值，就算找不到。"""
+        """Text fields with similarity below this are not found."""
         self.min_confidence = min_confidence
-        """出处的 OCR 置信度低于这个值，即使找到了也要人工确认。"""
+        """Evidence with OCR confidence below this requires manual confirmation even when found."""
 
     def align(self, page: OcrPage, result: ExtractionResult) -> tuple[AlignedField, ...]:
         rows = group_rows(page)
@@ -98,20 +101,22 @@ class TextMatchAligner:
 
     def _align_field(self, field: ExtractedField, rows: tuple[OcrRow, ...]) -> AlignedField:
         if field.value is None:
-            return AlignedField(field, "empty", None, False, "模型说原文里没有这个字段")
+            return AlignedField(field, "empty", None, False, stored("模型判断原文中没有此字段"))
 
-        # 模型说的那几行：值折行时是第一行到最后一行（row 到 row_end）
+        # Lines named by the model: when the value wraps, from the first to the last line (row to
+        # row_end).
         last = field.row_end or field.row
         claimed = [r for r in rows if field.row is not None and field.row <= r.index <= (last or 0)]
         taken = {r.index for r in claimed}
         others = [r for r in rows if r.index not in taken]
         if field.row is not None:
-            # 先找模型说的那一行附近：同一个价格（9.99）在收据上常出现好几次
+            # Search near the line named by the model first: the same price (9.99) often appears
+            # several times on a receipt.
             others.sort(key=lambda r: abs(r.index - (field.row or 0)))
 
         clock = time_pattern(str(field.value)) if field.type == "string" else None
         if clock is not None:
-            # 时间：原文写 8:13:39 PM、模型写 20:13:39 也算一样
+            # Times: source 8:13:39 PM and model 20:13:39 count as equal.
             evidence = self._find_exact(clock, claimed + others)
         elif field.type in ("string", "date_range"):
             span = (last - field.row + 1) if field.row is not None and last is not None else 1
@@ -126,27 +131,40 @@ class TextMatchAligner:
 
         if evidence is None:
             return AlignedField(
-                field, "not_found", None, True, "原文里找不到这个值，可能是模型编的或改写了"
+                field, "not_found", None, True, stored("原文中未找到此值，可能为模型臆造或改写")
             )
 
         notes: list[str] = []
         if evidence.similarity < 1.0:
-            notes.append(f"原文里只有相似的文字（相似度 {evidence.similarity:.2f}）")
+            notes.append(
+                stored(
+                    "原文中仅有相似文字（相似度 {similarity:.2f}）",
+                    similarity=evidence.similarity,
+                )
+            )
         slack = _row_slack(field)
         if field.row is not None and not (
             field.row - slack <= evidence.row <= (last or field.row) + slack
         ):
-            where = f"第 {field.row}～{last} 行" if last != field.row else f"第 {field.row} 行"
-            notes.append(f"模型说在{where}，实际在第 {evidence.row} 行")
+            where = (
+                stored("第 {row}～{last} 行", row=field.row, last=last)
+                if last != field.row
+                else stored("第 {row} 行", row=field.row)
+            )
+            notes.append(
+                stored("模型指出位于{where}，实际位于第 {row} 行", where=where, row=evidence.row)
+            )
         if evidence.confidence < self.min_confidence:
-            notes.append(f"原文这里 OCR 置信度只有 {evidence.confidence:.2f}")
+            notes.append(
+                stored("原文此处 OCR 置信度仅为 {confidence:.2f}", confidence=evidence.confidence)
+            )
         if field.type == "number" and isinstance(field.value, float):
             sign = _sign_mismatch(field.value, evidence)
             if sign:
                 notes.append(sign)
 
         status = "matched" if evidence.similarity == 1.0 else "fuzzy"
-        return AlignedField(field, status, evidence, bool(notes), "；".join(notes))
+        return AlignedField(field, status, evidence, bool(notes), join_notes(*notes))
 
     def _find_exact(self, pattern: Finder, rows: list[OcrRow]) -> Evidence | None:
         for row in rows:
@@ -163,16 +181,18 @@ class TextMatchAligner:
         return None
 
     def _find_text(self, value: str, rows: list[OcrRow], claimed_span: int = 1) -> Evidence | None:
-        """文字字段：逐行找；地址这种长文字可能跨几行，所以也试连续 2～4 行拼起来。
+        """Text fields: search line by line; long text such as addresses may wrap, so 2–4
+        consecutive lines are also tried combined.
 
-        rows 的顺序就是优先顺序（模型说的那一行在最前，然后由近到远）。相似度一样时，
-        行数少的优先、排在前面的优先：短文字不会因为"拼了 4 行里包含它"就跑到远处去。
-        """
+                The order of rows is the priority (the line named by the model first, then
+        nearest to farthest). On equal similarity, fewer lines and earlier rows win, so short
+        text is not matched far away merely because a 4-line combination contains it."""
         needle = _squash(value)
         by_index = {r.index: r for r in rows}
         best: tuple[float, int, int, list[OcrRow]] | None = None
-        """(相似度, -行数, -优先顺序, 这几行)：越大越好。"""
-        # 模型说值跨了几行，就至少试到这么多行（最多 _MAX_CLAIMED_SPAN 行）
+        """(similarity, -line count, -priority, lines): larger is better."""
+        # When the model says the value spans several lines, try at least that many (at most
+        # _MAX_CLAIMED_SPAN).
         max_span = max(_MAX_SPAN, min(claimed_span, _MAX_CLAIMED_SPAN))
         for order, start in enumerate(rows):
             for size in range(1, max_span + 1):
@@ -186,15 +206,16 @@ class TextMatchAligner:
                 if score >= self.min_similarity and (best is None or key > best[:3]):
                     best = (*key, span)
                 if score == 1.0:
-                    break  # 再多拼几行也只会更长，没必要
+                    break  # Combining more lines only makes the text longer.
             if best is not None and best[:2] == (1.0, -1):
-                break  # 一模一样、只占一行：后面的不可能更好
+                break  # Exact match on a single line: nothing later can be better.
         if best is None:
             return None
         score, _, _, span = best
         lines = _lines_for(needle, tuple(ln for r in span for ln in r.lines))
         if len(lines) == 1:
-            # 一块文字里只有一部分是这个值（"Guest Name: Sanjay" 里的 Sanjay）：框只框住值
+            # Only part of the block is the value (Sanjay in "Guest Name: Sanjay"): box only the
+            # value.
             found = re.search(re.escape(value.strip()), lines[0].text, re.IGNORECASE)
             lines = (_clip_to(lines[0], found),)
         row_text = " / ".join(r.text for r in span)
@@ -202,54 +223,60 @@ class TextMatchAligner:
 
 
 def _span_text(needle: str, span: list[OcrRow]) -> str:
-    """几行拼起来比较用的文字。
+    """Text of several lines combined for comparison.
 
-    一行：整行原样（和以前一样）。跨几行（折行的商品名、地址）：每行只留和这个值有关的文字块，
-    否则商品名第一行后面的数量、金额（"Room Charges Deluxe  1  1939.00"）会夹在两段名字中间，
-    拼出来就对不上了。
-    """
+        One line: the whole line as is (as before). Several lines (wrapped product names,
+    addresses): only the blocks related to the value are kept from each line; otherwise the
+    quantity and amount after the first line of a product name ("Room Charges Deluxe  1
+    1939.00") would sit between the two parts of the name and the combination would not match."""
     if len(span) == 1:
         return _squash(span[0].text)
     return _squash("".join(ln.text for r in span for ln in _lines_for(needle, r.lines)))
 
 
 def _sign_mismatch(value: float, evidence: Evidence) -> str | None:
-    """正负号对不上：原文写 "6.00-"（折扣、退款），值却是正的 6.0；或者反过来。
+    """Sign mismatch: the source says "6.00-" (discount, refund) while the value is a positive 6.0,
+    or vice versa.
 
-    找出处时不看正负号（收据上负号的写法太多），所以单独查一次。
-    """
+        Evidence search ignores signs (receipts write negatives in too many ways), so the sign is
+    checked separately."""
     if value == 0:
         return None
     number = re.escape(f"{abs(value):.2f}")
     text = " ".join(line.text for line in evidence.lines)
     negative = re.search(rf"(-\s*{number}|\(\s*{number}\s*\)|{number}\s*-)(?![\d])", text)
     if negative and value > 0:
-        return f"原文是 {negative[0].strip()}（负数，多半是折扣），值却是正的"
+        return stored("原文为 {value}（负数，通常为折扣），但值为正数", value=negative[0].strip())
     if not negative and value < 0 and re.search(rf"(?<![\d.]){number}(?![\d])", text):
-        return f"原文是 {abs(value):.2f}（正数），值却是负的"
+        return stored("原文为 {value:.2f}（正数），但值为负数", value=abs(value))
     return None
 
 
 def _row_slack(field: ExtractedField) -> int:
-    """行号允许差几行。表格的一行商品常占两行（上一行商品名，下一行数量和价格），
-    模型只给一个行号，所以格子差一行不算问题；普通字段必须是同一行。"""
+    """Allowed line number deviation. A line-item row often occupies two lines (name above, quantity
+    and price below) while the model gives one line number, so table cells may be off by one;
+    regular fields must be on the same line."""
     return 1 if split_cell_name(field.name) else 0
 
 
 _MAX_SPAN = 4
-"""文字字段最多跨几行去找。"""
+"""Maximum number of lines a text field may span."""
 
 _MAX_CLAIMED_SPAN = 8
-"""模型说值跨了好几行（长地址、长商品名）时，最多试到几行。"""
+"""When the model says a value spans several lines (long addresses, long product names), the maximum
+number of lines tried."""
 
 
 MIN_PIECE = 3
-"""一个文字块"是这个值的一部分"至少要有几个字：不然 "1"（房间数）也算 "OYO 4189 Resort" 的一部分，
-出处框就从店名一直拉到这一行最右边的房间数。和值完全一样的短块（例如值就是 "1"）不受限制。"""
+"""Minimum characters for a text block to count as part of the value: otherwise "1" (number of
+rooms) would count as part of "OYO 4189 Resort" and the evidence box would stretch from the name
+to the room count at the right edge. Short blocks identical to the value (for example the value
+"1") are exempt."""
 
 
 def _lines_for(needle: str, lines: tuple[OcrLine, ...]) -> tuple[OcrLine, ...]:
-    """一行里只挑和这个值有关的文字块，高亮框才准。挑不出来就用整行。"""
+    """Select only the text blocks of a line related to the value so the highlight is precise; fall
+    back to the whole line."""
     picked: list[OcrLine] = []
     for line in lines:
         text = _squash(line.text)
@@ -263,13 +290,15 @@ def _lines_for(needle: str, lines: tuple[OcrLine, ...]) -> tuple[OcrLine, ...]:
 
 
 def _clip_to(line: OcrLine, found: Span | None) -> OcrLine:
-    """值只是这个文字块的一部分时，按字在块里的位置估出值那一段的框（沿着块的上下边按比例截）。
+    """When the value is only part of a text block, estimate the box of that part from its character
+    position within the block (cut proportionally along the block's top and bottom edges).
 
-    "Date: 31/12/2017" 是一块，值 31/12/2017 在后面 10 个字：框只画后面那段。
-    按字数比例估，等宽字体最准；比例字体会差一点，但比框住整块（连标签一起）准得多。
-    只改框，文字还是整块的原文（"6.00-" 的负号、"原文值"都要看整块）。
-    找不到、或者就是整块的，原样返回。
-    """
+        "Date: 31/12/2017" is one block and the value 31/12/2017 is its last 10 characters: only
+    that part is boxed. The proportional estimate is exact for monospaced fonts and slightly off
+    for proportional ones, but far more precise than boxing the whole block including the label.
+    Only the box changes; the text remains the whole block (the minus sign of "6.00-" and the
+    source value need the whole block). Returned unchanged when not found or when the value is
+    the whole block."""
     text = line.text
     if found is None or not text or (found.start() == 0 and found.end() >= len(text)):
         return line

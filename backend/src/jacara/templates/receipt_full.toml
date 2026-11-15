@@ -1,5 +1,5 @@
-# 收据模板：收据上能找到的所有单个字段（15 个）加商品明细。版本 3：同 receipt.toml 第 3 版。
-# 命令行 --template receipt_full 用。说明见 receipt.toml。
+# Receipt template: every single-value field found on receipts (15) plus line items. Version 3 matches
+# receipt.toml version 3. Used by the CLI with --template receipt_full; see receipt.toml for the format.
 
 name = "receipt_full"
 version = 3
@@ -113,8 +113,8 @@ type = "number"
 required = false
 description = "找零（Change）"
 
-# 表格：行数不固定，每行同样的几列。每一格都当作一个字段存（items.2.amount = 第 2 行的金额），
-# 和普通字段一样找出处、校验、审核。
+# Tables: a variable number of rows with identical columns. Each cell is stored as a field (items.2.amount =
+# amount in row 2) and goes through evidence, validation and review like a regular field.
 [[tables]]
 name = "items"
 label = "商品明细"

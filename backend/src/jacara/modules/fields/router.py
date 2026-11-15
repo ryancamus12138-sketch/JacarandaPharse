@@ -1,4 +1,5 @@
-"""字段审核接口：/api/v1/values（一个字段）和 /api/v1/extractions（表格增删行）。"""
+"""Field review API: /api/v1/values (single fields) and /api/v1/extractions (adding and removing
+table rows)."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy.orm import Session
 
 from jacara.core.deps import get_owner, get_session, get_storage
+from jacara.core.i18n import render
 from jacara.core.owner import Owner
 from jacara.core.storage import ObjectStorage
 from jacara.modules.fields.schemas import (
@@ -47,15 +49,16 @@ Service = Annotated[FieldService, Depends(get_service)]
 
 
 def _http_error(err: FieldError) -> HTTPException:
-    return HTTPException(status_code=_STATUS.get(err.code, 400), detail=err.message)
+    return HTTPException(status_code=_STATUS.get(err.code, 400), detail=render(err.message))
 
 
 @router.post("/confirm", summary="批量确认")
 def confirm_many(change: ConfirmManyIn, service: Service) -> ConfirmManyOut:
-    """一次确认好几个字段（值是对的）。每个字段各记一条确认记录；已经删掉的行跳过。
+    """Confirm several fields at once (their values are correct). One confirmation is recorded per
+    field; deleted rows are skipped.
 
-    例如：`{"ids": ["…", "…"], "reason": "核对过原件"}`。原因不写就记"批量确认"。
-    """
+        Example: `{"ids": ["…", "…"], "reason": "Checked against the original"}`. Without a
+    reason, "Bulk confirmation" is recorded."""
     try:
         return service.confirm_many(change.ids, change.reason)
     except FieldError as err:
@@ -64,7 +67,8 @@ def confirm_many(change: ConfirmManyIn, service: Service) -> ConfirmManyOut:
 
 @router.get("/{value_id}/revisions", summary="修改历史")
 def get_history(value_id: uuid.UUID, service: Service) -> ValueHistory:
-    """一个字段的模型原值，以及每一次修改或确认：谁、什么时候、改成什么、为什么。"""
+    """The model value of a field and every edit or confirmation: who, when, new value and
+    reason."""
     try:
         return service.history(value_id)
     except FieldError as err:
@@ -73,17 +77,19 @@ def get_history(value_id: uuid.UUID, service: Service) -> ValueHistory:
 
 @router.post("/{value_id}/revisions", status_code=status.HTTP_201_CREATED, summary="审核字段")
 def revise_value(value_id: uuid.UUID, change: RevisionIn, service: Service) -> ValueOut:
-    """修改（edit）或确认（confirm）一个字段。原值不变，新增一条审核记录。
+    """Edit or confirm a field. The original value is kept and a revision is added.
 
-    - 修改：`{"action": "edit", "value": "9.50", "reason": "OCR 把 9.50 认成了 9.00"}`
-    - 确认：`{"action": "confirm"}`
-    - 从原文选取：`{"action": "edit", "source_lines": [12, 13]}`（这一页 OCR 结果里的第几块，
-      见 `/documents/{id}/pages/{n}/ocr`），值从这几块的文字读出，出处换成这几块
-    - 图中原文（ADR 0050）：`{"action": "edit", "source_lines": [4], "transcription": "17/05/24"}`，
-      值从改好的原文读出；开了"自动收集纠错样本"的话同时存成一条 OCR 样本
+        - Edit: `{"action": "edit", "value": "9.50", "reason": "OCR read 9.50 as 9.00"}`
+        - Confirm: `{"action": "confirm"}`
+        - Select from source text: `{"action": "edit", "source_lines": [12, 13]}` (block indices
+          in this page's OCR result, see `/documents/{id}/pages/{n}/ocr`); the value is parsed
+          from these blocks, which become the evidence
+        - Transcription: `{"action": "edit", "source_lines": [4], "transcription": "17/05/24"}`;
+          the value is parsed from the corrected transcription; when OCR sample collection is
+          enabled, an OCR sample is stored as well
 
-    返回审核之后的字段：current_value 是新值，pending_review 变成 false。
-    """
+        Returns the reviewed field: current_value is the new value and pending_review becomes
+    false."""
     try:
         return service.revise(value_id, change)
     except FieldError as err:
@@ -98,10 +104,9 @@ def revise_value(value_id: uuid.UUID, change: RevisionIn, service: Service) -> V
 def add_row(
     extraction_id: uuid.UUID, table: TableName, row: RowIn, service: Service
 ) -> list[ValueOut]:
-    """在表格（如商品明细 items）里加一行，插在第 after 行后面（不写就加在最后）。
+    """Add a row to a table (such as line items) after row after (appended when omitted).
 
-    返回新行的每一格（值是空的），再用"审核字段"填值。
-    """
+    Returns the cells of the new row (empty values); fill them with field review."""
     try:
         return service.add_row(extraction_id, table, row)
     except FieldError as err:
@@ -112,7 +117,8 @@ def add_row(
 def delete_row(
     extraction_id: uuid.UUID, table: TableName, index: int, change: RowChange, service: Service
 ) -> list[ValueOut]:
-    """删除表格的一行（原因必填）。不真的删：每一格记一条删除记录，可以恢复。"""
+    """Delete a table row (reason required). Nothing is deleted: a delete revision is recorded for
+    each cell and can be restored."""
     try:
         return service.delete_row(extraction_id, table, index, change)
     except FieldError as err:
@@ -123,7 +129,7 @@ def delete_row(
 def restore_row(
     extraction_id: uuid.UUID, table: TableName, index: int, change: RowChange, service: Service
 ) -> list[ValueOut]:
-    """恢复删掉的一行（原因必填）。"""
+    """Restore a deleted row (reason required)."""
     try:
         return service.restore_row(extraction_id, table, index, change)
     except FieldError as err:

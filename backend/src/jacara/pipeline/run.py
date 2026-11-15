@@ -1,10 +1,10 @@
-"""流水线：一个文件 → 每一页的 DocumentReport。
+"""Pipeline: a file → one DocumentReport per page.
 
-读取 → OCR → 分析页面结构（ADR 0034）→ 抽取 → 对齐 → 校验。
-抽哪些字段和表格、查哪些规则，由模板决定（templates/*.toml）。
-命令行（jacara extract）和后台任务（jacara worker）用的是同一份代码，所以两边的结果一定一样。
-这里只计算、不打印、不碰数据库。
-"""
+Read → OCR → page structure analysis → extraction → alignment → validation. The template
+(templates/*.toml) decides which fields and tables are extracted and which rules are checked. The
+CLI (`jacara extract`) and the background worker (`jacara worker`) share this code, so their
+results are always identical. This module only computes; it neither prints nor touches the
+database."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from typing import cast
 
 import numpy as np
 
+from jacara.core.i18n import stored, tr
 from jacara.pipeline.classify import AutoChoice, Chooser, classify, head_text
 from jacara.pipeline.compute import compute
 from jacara.pipeline.fieldcheck import Zoomer, check_fields, rule_hints
@@ -40,49 +41,54 @@ from jacara.structure.graph import PageStructure
 from jacara.templates import DEFAULT_TEMPLATE, Template, load_template
 
 TemplateChoice = str | Template | AutoChoice
-"""用哪个模板：内置模板的名字、一个 Template（我的模板的某个版本）、DISCOVER（不用模板），
-或者 AutoChoice（每张单据自动从我的模板里挑，ADR 0038）。"""
+"""Template to use: a built-in template name, a Template (a version of my template), DISCOVER (no
+template), or AutoChoice (each document picks one of my templates automatically)."""
 
 Progress = Callable[[str, int], None]
-"""报告进度：（现在在做什么，0～100）。后台任务用它把进度写进数据库，工作台显示。"""
+"""Progress callback: (current step, 0–100). The background worker writes it to the database for the
+dashboard."""
 
 
 @dataclass
 class Pipeline:
-    """把各步骤的插件组装在一起。换插件只要传不同的对象进来。"""
+    """Assembles the plugins of each step. Swapping a plugin only requires passing a different
+    object."""
 
     ocr: OcrEngine
     extractor: Extractor
     aligner: BlockAligner = field(default_factory=BlockAligner)
     structure: StructureEngines = NO_MODELS
-    """分析页面结构用的版面模型、表格模型。默认不用模型（只按规则）；
-    后台和命令行传 default_engines()。"""
+    """Layout and table models for page structure analysis. No models by default (rules only); the
+    worker and the CLI pass default_engines()."""
     vision: VisionMode = "off"
-    """什么时候让模型看原图（ADR 0038，JACARA_VISION）。模型服务没加载视觉模型时不看。"""
+    """When the model is shown the page image (JACARA_VISION). Never when the model server has no
+    vision projector loaded."""
     pdf_read: PdfRead = "image"
-    """PDF 怎么读文字（ADR 0042，JACARA_PDF_READ）：image 画成图做 OCR，文字层只核对；
-    text 只读文字层。"""
+    """How PDF text is read (JACARA_PDF_READ): image renders pages for OCR and uses the text layer
+    only for cross-checking; text reads only the text layer."""
     field_check: bool = True
-    """按模板字段逐一核对：PDF 文字层、表单字段、漏读的值（ADR 0042）。"""
+    """Check each template field against the PDF text layer, form fields and missed values."""
     zoom: bool = True
-    """有冲突、可能漏读时局部放大再识别（ADR 0042）。"""
+    """Zoomed re-recognition for conflicts and possibly missed values."""
     lessons: Callable[[str], Sequence[Lesson]] | None = None
-    """从人改过的地方学（ADR 0045）：模板名 → 以前人工改过的例子。不给就不用。"""
+    """Learning from corrections: template name → past manual corrections. Not used when absent."""
     learn_mode: str = "recent"
-    """怎么挑例子：recent（最近改得多的，ADR 0045）或 curated（整理过的，ADR 0055）。"""
+    """Example selection: recent (recently and frequently corrected) or curated."""
 
     def read(self, path: Path, pdf_read: PdfRead | None = None) -> list[OcrPage]:
-        """读文件：图片走 OCR；PDF 默认画成图走 OCR，文字层只核对（ADR 0042）。"""
+        """Read the file: images through OCR; PDFs rendered for OCR by default, with the text layer
+        used only for cross-checking."""
         return load_pages(path, self.ocr, pdf_read or self.pdf_read)
 
     def needs_images(self, vision: VisionMode = "off") -> bool:
-        """要不要把每页画成图：用版面模型、表格模型，或者可能让模型看原图时才要。"""
+        """Whether pages must be rendered: only when layout or table models are used, or the model
+        may be shown the page image."""
         if self.structure.layout is not None or self.structure.table is not None:
             return True
         return vision != "off" and self.sees_images()
 
     def sees_images(self) -> bool:
-        """模型能不能看图（ADR 0038）。"""
+        """Whether the model can process images."""
         check = getattr(self.extractor, "sees_images", None)
         return bool(check()) if callable(check) else False
 
@@ -98,26 +104,25 @@ class Pipeline:
         vision: str | None = None,
         zoom: Zoomer | None = None,
     ) -> DocumentReport:
-        """一页走完 分析结构 → 抽取 → 对齐 → 校验。
+        """Run one page through structure analysis → extraction → alignment → validation.
 
-        image 是这一页的图（用版面、表格模型时要）；
-        structure 是已经分析好的结构（试跑时用存下来的）；
-        images 是给模型看的原图（PNG），vision 是为什么看（ADR 0038）；
-        zoom 是局部放大再识别（ADR 0042），不给就不放大。
-        """
+                image is the page image (needed by layout and table models); structure is an
+        already analyzed structure (stored structures are reused by trial runs); images are page
+        images (PNG) for the model and vision is why they are shown; zoom is zoomed
+        re-recognition, disabled when absent."""
         manual: frozenset[str] = frozenset()
         computed: frozenset[str] = frozenset()
         tpl: Template | None = None
         if structure is None:
             structure = analyze_page(page, image, self.structure)
         validator = None
-        checks = ValidationResult((), (), ())  # 没有模板，就没有规则
+        checks = ValidationResult((), (), ())  # No template, no rules.
         if template == DISCOVER:
             result = self.extractor.discover(page, structure)
             name, version = DISCOVER, 1
         else:
             if isinstance(template, AutoChoice):
-                raise TypeError("自动判断要用 extract_pages")
+                raise TypeError("AutoChoice templates go through extract_pages")
             tpl = template if isinstance(template, Template) else load_template(template)
             taught = self._teach(tpl, page)
             try:
@@ -125,7 +130,7 @@ class Pipeline:
                     result = self.extractor.extract(
                         page, tpl.specs, tpl.table_specs, structure, images=images
                     )
-                    result = replace(result, vision=vision or "看了原图")
+                    result = replace(result, vision=vision or stored("读取了原图"))
                 else:
                     result = self.extractor.extract(page, tpl.specs, tpl.table_specs, structure)
             finally:
@@ -133,7 +138,8 @@ class Pipeline:
                     self.extractor.lessons = ("", 0)  # type: ignore[attr-defined]
                     self.extractor.lessons_mode = "recent"  # type: ignore[attr-defined]
             if tpl.manual_fields:
-                # 人工填的字段不交给模型，先放一个空值，审核时填（ADR 0031）
+                # Manual-entry fields are not sent to the model; an empty value is stored and filled
+                # during review.
                 empty = tuple(ExtractedField(f.name, f.type, None) for f in tpl.manual_fields)
                 result = replace(result, fields=result.fields + empty)
                 manual = frozenset(f.name for f in tpl.manual_fields)
@@ -142,10 +148,11 @@ class Pipeline:
         day_first = tpl.day_first if tpl is not None else None
         aligned = self.aligner.align(page, result, structure, day_first)
         if self.field_check:
-            # 按模板字段逐一核对（ADR 0042）：文字层、表单字段只当候选，漏读的去标签旁边找
+            # Check each template field: text layer and form fields serve only as candidates; missed
+            # values are looked for next to their labels.
             aligned = check_fields(aligned, page, tpl, zoom if self.zoom else None, day_first)
         if tpl is not None and tpl.formulas():
-            # 计算字段（ADR 0035）：用核对过的值算，按规则没有填的（rejected）当作没有
+            # Computed fields use the cross-checked values; values rejected by rule count as absent.
             now = {a.field.name: None if a.status == "rejected" else a.field.value for a in aligned}
             done = compute(tpl, now)
             extra = tuple(ExtractedField(c.name, "number", c.value) for c in done)
@@ -162,7 +169,7 @@ class Pipeline:
             )
             computed = frozenset(c.name for c in done)
         if validator is not None:
-            # 核对不上、按规则没有填的值（rejected），校验时也当作没有
+            # Values rejected by cross-checking also count as absent during validation.
             rejected = {a.field.name for a in aligned if a.status == "rejected"}
             fields = [replace(f, value=None) if f.name in rejected else f for f in result.fields]
             checks = validator.validate(fields)
@@ -186,7 +193,8 @@ class Pipeline:
         )
 
     def _teach(self, template: Template, page: OcrPage) -> bool:
-        """把以前人工改过的例子交给抽取器（ADR 0045、0055）。交了返回 True，抽完要清掉。"""
+        """Pass past manual corrections to the extractor. Returns True if passed; they must be
+        cleared after extraction."""
         if self.lessons is None or not hasattr(self.extractor, "lessons"):
             return False
         found = self.lessons(template.name)
@@ -215,17 +223,18 @@ class Pipeline:
         history: Mapping[str, int] | None = None,
         zoom_for: Callable[[int, Sequence[float]], Zoomer] | None = None,
     ) -> DocumentReport:
-        """一张单据（可能有好几页）走完 分析结构 → 抽取 → 对齐 → 校验（ADR 0036）。
+        """Run one document (possibly several pages) through structure analysis → extraction →
+        alignment → validation.
 
-        好几页的拼成上下相连的一张长页一起处理：跨页的明细表接在一起，字段在哪一页都能找到。
-        first 是这张单据在文件里从第几页开始；
-        before_extract 在分析完版面、开始抽取前调用（报进度）；
-        vision 是这一次看不看原图（不写用 Pipeline.vision，ADR 0038）。
-        written(已写, 预计) 在模型边写边传时报告写了多少字；预计按 history（模板名 → 以前回答的
-        平均长度）估，没有历史就按字段数和页面的行数估。
-        模板是 AutoChoice 时先给这张单据选模板（ADR 0038）。
-        zoom_for(first, 每页的起点) 给这张单据做局部放大再识别（ADR 0042）。
-        """
+                Several pages are stacked into one tall page and processed together, so line-item
+        tables spanning pages are joined and fields are found on any page. first is the first
+        page of this document in the file; before_extract is called after layout analysis and
+        before extraction (to report progress); vision decides whether the page image is shown
+        this time (defaults to Pipeline.vision). written(written, expected) reports the
+        characters written while the model streams; expected is estimated from history (template
+        name → average past answer length), or from the field count and page line count without
+        history. When the template is AutoChoice, a template is selected for this document first.
+        zoom_for(first, page offsets) provides zoomed re-recognition for this document."""
         stacked = stack_pages(pages)
         image = stack_images(images, stacked)
         starts = stacked.starts if len(pages) > 1 else ()
@@ -292,18 +301,18 @@ class Pipeline:
         pdf_read: PdfRead | None = None,
         pages: list[OcrPage] | None = None,
     ) -> list[DocumentReport]:
-        """整个文件：每张单据一份报告。name 是显示用的文件名（默认取 path 的文件名）。
+        """A whole file: one report per document. name is the display file name (defaults to the
+        file name of path).
 
-        split：文件里有几张单据（ADR 0036）：auto 自动判断、one、pages 或页码范围。
-        pdf_read：这一次 PDF 怎么读（ADR 0042），不写用 Pipeline.pdf_read。
-        progress 不为空时，每开始一步就报告一次：识别文字占前 10%，分单据到 15%，
-        抽取按单据平分剩下的。
-        pages：已经认好的字（流水线的 OCR 工位做的，ADR 0051），给了就不再识别。
-        """
+                split: number of documents in the file: auto, one, pages, or page ranges.
+        pdf_read: how PDFs are read this time (defaults to Pipeline.pdf_read). When progress is
+        set, every step reports once: OCR takes the first 10%, document splitting up to 15%, and
+        extraction divides the rest equally among documents. pages: text already recognized (by
+        the OCR stage of the pipeline); OCR is skipped when given."""
         report = progress or (lambda _stage, _percent: None)
         name = name or path.name
         if pages is None:
-            report("识别文字", 5)
+            report(stored("文字识别"), 5)
             pages = self.read(path, pdf_read)
         looks = vision or self.vision
         images = page_images(path) if self.needs_images(looks) else [None] * len(pages)
@@ -313,16 +322,21 @@ class Pipeline:
             split,
             cast(Judge, judge) if callable(judge) else None,
             lambda k: report(
-                f"判断第 {k} / {len(pages)} 页是不是新的一张单据", 10 + 5 * k // len(pages)
+                stored("判断第 {k} / {n} 页是否为新单据", k=k, n=len(pages)),
+                10 + 5 * k // len(pages),
             ),
         )
         reports: list[DocumentReport] = []
         for n, (a, b) in enumerate(parts, start=1):
             low = 20 + 75 * (n - 1) // len(parts)
             high = 20 + 75 * n // len(parts)
-            where = f"第 {a} 页" if a == b else f"第 {a}–{b} 页"
-            which = f"第 {n} / {len(parts)} 张单据（{where}）" if len(parts) > 1 else where
-            report(f"分析{which}的版面", 15 + 80 * (n - 1) // len(parts))
+            where = stored("第 {a} 页", a=a) if a == b else stored("第 {a}–{b} 页", a=a, b=b)
+            which = (
+                stored("第 {n} / {count} 张单据（{where}）", n=n, count=len(parts), where=where)
+                if len(parts) > 1
+                else where
+            )
+            report(stored("分析{which}的版面", which=which), 15 + 80 * (n - 1) // len(parts))
             reports.append(
                 self.extract_pages(
                     pages[a - 1 : b],
@@ -331,9 +345,9 @@ class Pipeline:
                     a,
                     template,
                     before_extract=lambda which=which, n=n: report(
-                        f"选模板、抽取{which}"
+                        stored("选择模板并抽取{which}", which=which)
                         if isinstance(template, AutoChoice)
-                        else f"抽取{which}",
+                        else stored("抽取{which}", which=which),
                         20 + 75 * (n - 1) // len(parts),
                     ),
                     vision=looks,
@@ -350,12 +364,14 @@ class Pipeline:
 
 
 WRITE_SHARE = 0.95
-"""模型写的字超过预计时，进度停在这一段的 95%，等写完再往后走，不倒退、不超过。"""
+"""When the model writes more than expected, progress stops at 95% of this segment until the answer
+completes; it never goes backwards or beyond."""
 
 
 def expected_chars(template: TemplateChoice, page: OcrPage, history: Mapping[str, int]) -> int:
-    """模型这次大约要写多少字：同一个模板以前回答的平均长度；没有就粗估：
-    每个字段约 60 字，表格每一格约 45 字、行数按页面上的行数的一半估。"""
+    """Expected length of the model answer: the average past answer length for the template;
+    otherwise a rough estimate of about 60 characters per field and 45 per table cell, with rows
+    estimated as half the lines on the page."""
     name = (
         DISCOVER
         if template == DISCOVER
@@ -374,8 +390,9 @@ def expected_chars(template: TemplateChoice, page: OcrPage, history: Mapping[str
 
 
 def writing(report: Progress, which: str, low: int, high: int) -> Callable[[int, int], None]:
-    """模型写了多少字 → 进度：这张单据的抽取占 low～high，按 已写 / 预计 往前走；
-    每秒最多报一次，说还要大约几秒。"""
+    """Characters written by the model → progress: extraction of this document spans low–high and
+    advances by written / expected; reported at most once per second with the estimated seconds
+    remaining."""
     started = time.monotonic()
     last = [0.0]
 
@@ -387,14 +404,24 @@ def writing(report: Progress, which: str, low: int, high: int) -> Callable[[int,
         share = min(WRITE_SHARE, written / expected) if expected else WRITE_SHARE
         speed = written / max(now - started, 0.1)
         left = max(0, round((expected - written) / speed)) if speed and written < expected else 0
-        hint = f"，大约还要 {left} 秒" if left else "，快写完了"
-        report(f"抽取{which}：模型已写 {share:.0%}{hint}", low + round((high - low) * share))
+        hint = stored("，预计剩余 {left} 秒", left=left) if left else stored("，即将完成")
+        report(
+            stored(
+                "抽取{which}：模型已输出 {share:.0%}{hint}", which=which, share=share, hint=hint
+            ),
+            low + round((high - low) * share),
+        )
 
     return tell
 
 
 def page_label(name: str, first: int, last: int, total: int) -> str:
-    """多页文件显示成"发票.pdf 第 2 页""发票.pdf 第 2–3 页"，单页就是文件名。"""
+    """Multi-page files are shown as "invoice.pdf page 2" or "invoice.pdf pages 2–3"; single-page
+    files by file name."""
     if total <= 1:
         return name
-    return f"{name} 第 {first} 页" if first == last else f"{name} 第 {first}–{last} 页"
+    return (
+        tr("{name} 第 {first} 页", name=name, first=first)
+        if first == last
+        else tr("{name} 第 {first}–{last} 页", name=name, first=first, last=last)
+    )

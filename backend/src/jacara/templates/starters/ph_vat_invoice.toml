@@ -13,7 +13,17 @@ titles = { en = "VAT Invoice (Philippines)" }
 countries = ["PH"]
 domains = ["发票"]
 description = "菲律宾 VAT invoice：卖方登记名称、VAT 登记的 TIN 和分支码、地址、Invoice 字样、日期、流水号、买方名称地址 TIN、描述数量单价、VATable 销售额、VAT、零税率和免税销售额、含税总额、ATP / PTU 号。TIN 格式不对、VAT 不等于 12%、标题没有 Invoice 会提醒。"
+descriptions = { en = "Philippine VAT invoices: seller's registered name, VAT-registered TIN and branch code, address, the word Invoice, date, serial number, buyer name, address and TIN, description, quantity, unit price, VATable sales, VAT, zero-rated and exempt sales, total including VAT, ATP / PTU number. Invalid TIN formats, VAT other than 12%, and titles without Invoice are reported." }
 rules = ["issue_date_exists", "issue_date_not_future", "net_tax_gross", "item_line", "ph_seller_tin", "ph_vat_12", "ph_invoice_title"]
+
+[basis]
+# English version of the notes at the top of this file.
+en = [
+  "For: Philippine VAT invoices (after the EOPT Act, the Invoice replaced the Official Receipt as the primary document).",
+  "Basis: RA 11976 (Ease of Paying Taxes Act); RR 7-2024 (as amended by RR 11-2024) Annex B: registered name, VAT-registered statement and TIN + branch code, business address, title containing Invoice, date, serial number, quantity, unit price, description, buyer name, address and TIN, total including VAT, VAT shown separately, VATable / zero-rated / exempt shown separately, ATP or PTU number. VAT 12% (NIRC sections 106 and 108).",
+  "Use: issued by Philippine VAT-registered businesses; buyers deduct input VAT with it.",
+  "Sources: TeamEnergy \"Notice to Suppliers: EOPT Invoicing Requirements\"; Grant Thornton PH \"Clarification on RR 7-2024\".",
+]
 
 [[fields]]
 name = "document_title"
@@ -21,6 +31,7 @@ label = "单据标题"
 names = { en = "Document Title" }
 type = "string"
 description = "单据最上面的标题，照抄"
+descriptions = { en = "The title at the top of the document; copy it as written" }
 
 [[fields]]
 name = "invoice_no"
@@ -30,6 +41,7 @@ type = "string"
 required = true
 unique = true
 description = "照抄，不要改格式"
+descriptions = { en = "Copy it as written; do not change the format" }
 
 [[fields]]
 name = "issue_date"
@@ -70,6 +82,7 @@ label = "买方税号"
 names = { en = "Buyer Tax ID" }
 type = "string"
 description = "照抄；没有就留空"
+descriptions = { en = "Copy it as written; leave empty if absent" }
 
 [[fields]]
 name = "buyer_address"
@@ -114,12 +127,14 @@ label = "ATP / PTU 号"
 names = { en = "ATP / PTU No." }
 type = "string"
 description = "单据底部的 ATP、OCN 或 PTU 号，照抄"
+descriptions = { en = "The ATP, OCN or PTU number at the bottom of the document; copy it as written" }
 
 [[tables]]
 name = "items"
 label = "明细"
 names = { en = "Items" }
 description = "每一行商品或服务一行；表头、小计、合计不算"
+descriptions = { en = "One row per product or service; headers, subtotals and totals do not count" }
 
 [[tables.columns]]
 name = "description"
@@ -145,3 +160,4 @@ label = "金额"
 names = { en = "Amount" }
 type = "number"
 description = "这一行的金额（单据上怎么写就照抄：含税还是不含税看表头）"
+descriptions = { en = "The amount of this row (copy as written; whether it includes tax depends on the header)" }

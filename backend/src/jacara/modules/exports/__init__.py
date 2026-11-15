@@ -1,1 +1,1 @@
-"""导出记录：每次导出的文件都存下来，可以重新下载（ADR 0029）。"""
+"""Export history: every exported file is stored and can be downloaded again."""

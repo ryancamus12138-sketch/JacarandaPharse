@@ -1,5 +1,6 @@
 import { Alert } from 'antd'
 import { type CSSProperties, type ReactNode, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 const PREFIX = 'jacara.tip.'
 
@@ -12,8 +13,9 @@ function closed(id: string): boolean {
 }
 
 /**
- * 蓝色的说明提示：右上角有 ×，点了就不再显示（记在这个浏览器里，换浏览器或清了网站数据会再出现）。
- * 只用于"说明怎么用"的提示；"正在处理""处理失败"这类状态提醒不要用它。
+ * Blue help tip with a close button in the top-right corner; once closed it stays hidden (remembered in this
+ * browser; reappears in another browser or after clearing site data).
+ * Only for usage hints; do not use it for status messages such as "processing" or "processing failed".
  */
 export function Tip({
   id,
@@ -21,19 +23,20 @@ export function Tip({
   description,
   style,
 }: {
-  /** 每个提示一个名字，记住"关掉了"用。 */
+  /** Name of each tip, used to remember that it was closed. */
   id: string
   title: ReactNode
   description?: ReactNode
   style?: CSSProperties
 }) {
+  const { t } = useTranslation()
   const [hidden, setHidden] = useState(() => closed(id))
   if (hidden) return null
   return (
     <Alert
       type="info"
       showIcon
-      closable={{ 'aria-label': '关掉这个提示' }}
+      closable={{ 'aria-label': t('关闭此提示') }}
       title={title}
       description={description}
       style={style}
@@ -42,7 +45,7 @@ export function Tip({
         try {
           localStorage.setItem(PREFIX + id, '1')
         } catch {
-          // 存不了：这次关掉，下次打开还会出现
+          // Storage unavailable: hidden now, shown again next time.
         }
       }}
     />

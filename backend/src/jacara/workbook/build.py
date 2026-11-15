@@ -1,12 +1,14 @@
-"""按预览里确认的结果，把业务 Excel 变成模板定义（ADR 0031）。
+"""Turn a business workbook into a template definition according to the confirmed preview.
 
-输入是每张 sheet 的角色和每一列的来源（预览里人确认、改过的），输出是模板定义：
-- 单据表、对象表的列，明细表里"单据上的字段" → 普通字段（同一个字段 ID 只建一次）
-- 明细表自己的列 → 表格
-- 对象表 → 对象（编号字段 + 属于它的字段）
-- 参照表 → 参照名单（整张表的数据存进模板）
-- 每张 sheet 每一列填什么 → 工作簿样式（导出时填回原 Excel）
-"""
+Input: the role of each sheet and the source of each column (confirmed or corrected in the
+preview). Output: a template definition:
+- Columns of document and entity sheets, and document-level fields in line-item sheets → regular
+  fields (each field ID created once)
+- Columns specific to line-item sheets → tables
+- Entity sheets → subjects (identifier field + its fields)
+- Reference sheets → reference lists (the whole sheet's data stored in the template)
+- Content of each column of each sheet → workbook layout (for exporting into the original
+  workbook)"""
 
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import Any
 
+from jacara.core.i18n import tr
 from jacara.templates import load_starter
 from jacara.templates.extras import MAX_REFERENCE_ROWS, normalize
 from jacara.workbook.analyze import _cells, _headers, _text, data_rows, open_workbook, slug
@@ -34,7 +37,7 @@ class ColumnChoice:
     options: list[str] = dc_field(default_factory=list)
     auto: str = ""
     lookup: str = ""
-    """「参照表 sheet 名::列名」。"""
+    """"reference sheet name::column name"."""
 
 
 @dataclass
@@ -46,7 +49,7 @@ class SheetChoice:
     same_as: str = ""
     key_header: str = ""
     match_field: str = ""
-    """参照表：「sheet 名::表头」，拿那一列的值来对照。"""
+    """Reference sheets: "sheet name::header" of the column whose values are matched."""
 
 
 class BuildError(ValueError):
@@ -54,7 +57,8 @@ class BuildError(ValueError):
 
 
 def _ids(sheets: list[SheetChoice], role: str, prefix: str) -> dict[str, str]:
-    """每张 sheet 一个英文名（表格、对象、参照表用）：英文 sheet 名转一下，中文的编号。"""
+    """An English name per sheet (for tables, subjects and reference tables): English sheet names
+    converted, others numbered."""
     result: dict[str, str] = {}
     for n, s in enumerate((s for s in sheets if s.role == role), start=1):
         candidate = slug(s.name) or (prefix if n == 1 else f"{prefix}_{n}")
@@ -86,7 +90,7 @@ def build_definition(
     sheets: list[SheetChoice],
     starter: str = "",
 ) -> dict[str, Any]:
-    """返回模板定义（fields、tables、entities、references、rules、workbook）。"""
+    """Return the template definition (fields, tables, entities, references, rules, workbook)."""
     active = [s for s in sheets if s.role != "ignore"]
     tables = _ids(active, "items", "items")
     entities = _ids(active, "entity", "entity")
@@ -95,11 +99,11 @@ def build_definition(
     fields: dict[str, dict[str, Any]] = {}
     table_defs: dict[str, dict[str, Any]] = {}
     refs: dict[str, str] = {}
-    """「sheet 名::表头」→ 这一格填什么（字段 ID 或 items.amount）。"""
+    """"sheet name::header" → content of the cell (field ID or items.amount)."""
 
     def add_field(c: ColumnChoice) -> str:
         if not c.field:
-            raise BuildError(f"「{c.header}」还没有字段 ID")
+            raise BuildError(tr("「{header}」尚无字段 ID", header=c.header))
         existing = fields.get(c.field)
         if existing is None:
             fields[c.field] = _field(c)
@@ -124,16 +128,20 @@ def build_definition(
                     {
                         "name": tables[s.name],
                         "label": s.name,
-                        "description": f"「{s.name}」里的每一行",
+                        "description": tr("「{name}」里的每一行", name=s.name),
                         "required": False,
                         "export": True,
                         "columns": [],
                     },
                 )
                 if not c.field:
-                    raise BuildError(f"「{s.name}」的「{c.header}」还没有列 ID")
+                    raise BuildError(
+                        tr("「{name}」的「{header}」尚无列 ID", name=s.name, header=c.header)
+                    )
                 if any(col["name"] == c.field for col in table["columns"]):
-                    raise BuildError(f"「{s.name}」里列 ID {c.field} 重复了")
+                    raise BuildError(
+                        tr("「{name}」中列 ID {field} 重复", name=s.name, field=c.field)
+                    )
                 table["columns"].append(_field(c))
                 refs[key] = f"{tables[s.name]}.{c.field}"
 
@@ -143,7 +151,9 @@ def build_definition(
             continue
         key_column = next((c for c in s.columns if c.header == s.key_header), None)
         if key_column is None or refs.get(f"{s.name}::{key_column.header}") is None:
-            raise BuildError(f"对象表「{s.name}」要选一列当编号（从单据抽或人工填的列）")
+            raise BuildError(
+                tr("对象表「{name}」需选择一列作为编号（从单据抽取或人工填写的列）", name=s.name)
+            )
         members = [
             refs[f"{s.name}::{c.header}"] for c in s.columns if f"{s.name}::{c.header}" in refs
         ]
@@ -172,7 +182,11 @@ def build_definition(
         match_field = refs.get(s.match_field, "") if s.match_field else ""
         if s.match_field and not match_field:
             raise BuildError(
-                f"参照表「{s.name}」要对照的列「{s.match_field.split('::')[-1]}」没有建成字段"
+                tr(
+                    "参照表「{name}」的对照列「{column}」未创建为字段",
+                    name=s.name,
+                    column=s.match_field.split("::")[-1],
+                )
             )
         reference_defs.append(
             {
@@ -234,7 +248,7 @@ def build_definition(
     }
     if not definition["fields"]:
         raise BuildError(
-            "没有任何字段：至少要有一张单据表或对象表，或者明细表里标一列“单据上的字段”"
+            tr("没有任何字段：至少需要一张单据表或对象表，或在明细表中将一列设为“单据级字段”")
         )
     return definition
 
@@ -242,7 +256,7 @@ def build_definition(
 def _starter_rules(
     starter: str, fields: dict[str, Any], tables: dict[str, dict[str, Any]]
 ) -> list[str]:
-    """对上了起步模板：它的规则里，要用的字段这里都有的，一起带过来。"""
+    """Matched a starter template: carry over its rules whose fields are all present here."""
     if not starter:
         return []
     names = set(fields)

@@ -12,7 +12,9 @@
 
 ## 绝对不能破坏的规则
 
-1. **离线**：运行时不访问任何外部网络。不引入需要联网的依赖、遥测或在线 API（包括短信、邮件验证）。
+1. **离线**：运行时不访问外部网络。不引入需要联网的依赖、遥测或在线 API（包括短信、邮件验证）。
+   只有两个例外，且都必须由用户在界面上主动点击触发（ADR 0068）：(1) 从随程序发布的固定清单下载模型文件，
+   下载后校验 SHA-256；(2) 检查和下载程序更新，安装前校验更新签名。不得在后台自动联网，不得发送用户数据。
    接口文档页（/docs）的界面文件随包提供，不从 CDN 加载。前端也不从 CDN 加载字体、图标或脚本。
 2. **原始值不覆盖**：模型抽出的原始值永远保留，人工修改另存一条修改记录（`value_revisions`）。
 3. **审计日志只追加**：不提供修改或删除审计记录的代码路径。
@@ -56,6 +58,8 @@ backend/src/jacara/
     fields/         字段值与人工审核：修改、确认、修改历史（/api/v1/values）
     auth/           团队、用户、登录会话、重设码（/api/v1/auth、/api/v1/users）
     audit/          审计日志：只追加（/api/v1/audit-logs）
+    app_settings/   设置页上能改的设置（ADR 0063）：/api/v1/settings。存 data/settings.json，
+                    .env 优先（core/config.py 的 PageSettingsSource，只认 PAGE_EDITABLE 里的几项）
     hub/            模型和数据集库（ADR 0059）、OCR 模型评测（ADR 0060）：/api/v1/hub。
                     registry.py 管 models/hub 里的文件和模型卡（不进数据库），datasets.py 读 PaddleOCR 格式的 zip，
                     evals.py 是后台任务跑的评测
@@ -68,7 +72,7 @@ backend/src/jacara/
   cli.py        命令行入口（jacara start 一起启动模型、worker、API）
   eval/         评测：sroie.py 读数据集，score.py 打分和指标，run.py 跑流水线、写结果；
                 replay.py 回放（ADR 0053），tables.py 表格明细配对（ADR 0062），ocr.py OCR 模型评测（ADR 0060）
-backend/migrations/   Alembic 数据库迁移
+backend/src/jacara/migrations/   Alembic 数据库迁移
 backend/tests/        自动测试（pytest）
 web/          前端（React + TypeScript + Vite + Ant Design + react-router + TanStack Query）
   vite.config.ts    开发服务器：只监听 127.0.0.1:5173，/api 转发给后端 127.0.0.1:8000
@@ -82,6 +86,10 @@ web/          前端（React + TypeScript + Vite + Ant Design + react-router + T
   src/features/     按功能分的页面：documents（列表、上传、导出）、review（审核工作台）、admin（用户管理、审计日志）
   src/utils/        小工具：文件大小、时间格式、saveFile()
 deploy/       部署相关
+desktop/      桌面版外壳（ADR 0068）：src-tauri/（Rust，Tauri 2）、splash/（启动页）；package.json 只装 Tauri 命令行工具
+packaging/desktop/  桌面版打包：jacara.spec（PyInstaller）、fetch_llama.py / llama.lock、fetch_table_model.py、
+              licenses.py（THIRD_PARTY_LICENSES）、check_bundle.py、smoke.py、check_versions.py、
+              build_opencv.py / opencv.lock（macOS 用不含 FFmpeg 的 OpenCV）
 docs/adr/     架构决策记录
 compose.yaml  开发用基础设施：PostgreSQL、Valkey、SeaweedFS
 ```
@@ -120,6 +128,9 @@ service 抛出带 `code` 的业务错误（如 `DocumentError("not_found", ...)`
 `reviews` 里带着每个字段最新的审核结果；格子写审核之后的值，改过的标蓝、批注写原值和原因。
 多个文档默认每份一个 Excel、打包成 zip（`export.zip`，重名加 (2)）；也可以汇总到一个 Excel（`export.xlsx`）。
 两种导出共用 `_exportable()` 的检查，都记审计日志（detail 里有 format）。
+
+**个人版和团队版（ADR 0063）：** 同一份代码，`JACARA_MODE` 区分，不另开分支或文件夹；前端只看 `/auth/me` 的 `mode`
+决定显示什么。团队版的代码和测试都要保留、照跑。
 
 **账号和权限：** `JACARA_MODE=personal`（默认）不用登录；`team` 模式必须登录，请求头带 `Authorization: Bearer <token>`。
 只有两种角色：管理员（admin）和使用者（member）。使用者默认能看、能下载、能导出，其余权限（`GRANTABLE`）
@@ -199,8 +210,8 @@ API 在所有接口之后用 `core/web.py` 挂一条兜底路由提供 `web/dist
 
 Python 3.13（`.python-version`）、uv、FastAPI + fastapi-offline + uvicorn、Pydantic v2、SQLAlchemy 2、Alembic、
 Celery + Valkey、argon2-cffi（密码哈希）、PostgreSQL 18、SeaweedFS（只用 S3 接口，boto3）、pypdfium2 + pdfplumber、
-RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、openpyxl、pytest。
-前端：Node.js 26、npm、Vite、React、TypeScript、Ant Design、react-router、TanStack Query、oxlint。
+RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、openpyxl、pytest、Babel（只在开发时整理翻译）。
+前端：Node.js 26、npm、Vite、React、TypeScript、Ant Design、react-router、TanStack Query、i18next + react-i18next、oxlint。
 
 ## 工作方式
 
@@ -216,14 +227,50 @@ RapidOCR（运行 PP-OCR 模型）、llama-server + Qwen3.5-9B（Q4_K_M）、ope
   改了提示词、模型、对齐规则或模板，都要跑一次评测，结果记进 `docs/eval/README.md`；最看重“放行准确率”（没标黄的值有多准）。
 - 改了数据库表就生成一条迁移，检查后再提交；需要改已有数据时在迁移里手写 SQL。
 - 重要的技术选择写一条 ADR（`docs/adr/NNNN-标题.md`），格式参考 0002。
-- 不提交 `.env`、数据集、模型文件、`node_modules/`、`web/dist/`。密钥只放在 `.env`。要提交 `web/package-lock.json`。
+- 代码注释（Python docstring、`#`、TS/TSX 的 `//` `/** */`、配置文件、脚本）一律用英文、工程化的写法；
+  注释里不写 ADR 编号（设计依据写在 ADR 里，代码只说明行为和原因）。
+- 界面有中文和英文两种语言（ADR 0065），中文原文就是翻译的键：
+  前端文字写 `t('中文')`（组件外的常量表用 `msg()` 或 getter），英文写进 `web/src/i18n/en.json`，`npm run i18n:check` 检查；
+  后端返回给网页的文字写 `tr('中文')`，worker 写进数据库、之后再显示的说明写 `stored('中文')`，
+  改完按 ADR 0065 跑 `pybabel extract` / `update`，在 `backend/src/jacara/locale/en/LC_MESSAGES/messages.po` 填英文，
+  再 `pybabel compile`（`.po`、`.mo` 都提交），`backend/tests/test_i18n.py` 会检查有没有漏。
+  模板内容（字段名、模板名）、命令行输出、提示词、认中文的正则不走这套翻译。
+- 界面文字（网页和后端返回的提示、报错）按 ADR 0067 的文案规范写：书面语、先结论后处理方法、统一叫法、
+  标签和单句提示不加句号；发布后再改 `stored()` / `N_()` 的措辞，按 ADR 0067 把旧原文留在翻译目录里。
+- 标准模板工作簿（`workbook/standard.py`）改格式时：新列只追加在末尾并给默认值，改了表头把旧写法加进 `FORMER`，
+  删掉的列名加进 `RETIRED`，`FORMAT_VERSION` 加 1，并在 ADR 0067 的"格式版本记录"表里加一行。
+- 模板有主语言（ADR 0066）：`label`、`title`、`description` 是主语言的，别的语言放 `names`、`titles`、`descriptions`。
+  起步模板 `.toml` 用中文写，每处 `description` 后面跟 `descriptions = { en = "..." }`，开头的依据注释对应 `[basis]` 的 `en`；
+  改中文说明时英文一起改，`backend/tests/test_i18n_api.py` 会检查。
+- 不提交 `.env`、数据集、模型文件、`node_modules/`、`web/dist/`、`build/`、`dist/`、`desktop/src-tauri/target/`。
+  密钥只放在 `.env`。要提交 `web/package-lock.json`、`desktop/package-lock.json`、`desktop/src-tauri/Cargo.lock`。
 - 前端调用后端只通过 `web/src/api/`，页面里不直接写 `fetch`。按钮显不显示看 `/auth/me` 的 `permissions`，但真正的权限检查在后端。
-- **npm 命令只在 `web/` 里运行。** 根目录不应该有 `package.json`、`package-lock.json`、`node_modules/`，
+- **npm 命令只在 `web/` 里运行**（唯一的例外是 `desktop/`，那里只有 Tauri 命令行工具，不装前端依赖）。
+  根目录不应该有 `package.json`、`package-lock.json`、`node_modules/`，
   否则网页里会有两份 React（白屏、`Invalid hook call`）。`web/` 里只放前端文件，不要有 `__init__.py`。
+- 桌面版安装包不能带 GPL / AGPL 的东西，也包括依赖的 wheel 里随附的二进制库：`check_bundle.py` 会拦下
+  x264、x265 和 GPL 版 FFmpeg，`licenses.py` 会拦下 GPL 系许可的包。加依赖后跑一遍下面的桌面版打包命令。
 
 ## 常用命令
 
 ```bash
+# 个人版发布和安装（ADR 0064）
+./scripts/install.sh                      # 用户：第一次安装（uv sync --no-dev + jacara setup）
+uv run jacara setup                       # 生成 .env（随机密钥、个人版）、启动 Docker、建表、检查模型；可以重复运行
+./scripts/build_release.sh                # 维护者：打发布包到 release/（推 v* 标签时 GitHub Actions 自动打包发布）
+
+# 桌面版打包（ADR 0068；推 v* 标签或手动运行 .github/workflows/desktop.yml 时自动构建，下面是本机构建的顺序）
+uv sync --group desktop
+uv run --no-sync python packaging/desktop/build_opencv.py --install   # 只在 macOS：换成不含 FFmpeg 的 OpenCV；之后都用 --no-sync
+cd web && npm ci && npm run build && cd ..
+uv run --no-sync python packaging/desktop/fetch_llama.py               # llama.cpp（按 llama.lock 校验）
+uv run --no-sync python packaging/desktop/fetch_table_model.py         # 表格模型（按 SHA-256 校验）
+uv run --no-sync python packaging/desktop/licenses.py                  # THIRD_PARTY_LICENSES（先 cargo install cargo-about --version 0.9.3 --locked --features cli）
+uv run --no-sync pyinstaller packaging/desktop/jacara.spec --noconfirm
+uv run --no-sync python packaging/desktop/smoke.py dist/jacara-backend/jacara-backend 样例.pdf 样例.jpg
+uv run --no-sync python packaging/desktop/check_bundle.py dist/jacara-backend --sign   # macOS 加 --sign
+cd desktop && npm ci && npm run tauri build                            # 安装包在 desktop/src-tauri/target/release/bundle/
+
 # 环境
 uv sync                                   # 安装依赖
 cp .env.example .env                      # 第一次：复制配置后把 change-me 都改成随机值
@@ -259,7 +306,7 @@ uv run jacara user password admin                          # 唯一的管理员�
 cd web && npm install                     # 第一次，或者 package.json 变了之后
 npm install 包名                          # 加新包：一定要在 web/ 里
 npm run dev -- --force                    # 装了新包后页面异常：清掉 Vite 缓存再启动
-npm run lint && npm run build             # 前端检查（提交前）；build 同时生成 dist/ 给 jacara start 用
+npm run lint && npm run i18n:check && npm run build   # 前端检查（提交前）；build 同时生成 dist/ 给 jacara start 用
 
 # 模型库和 OCR 模型评测（ADR 0059、0060）
 uv run jacara models list                                            # 模型库里的模型和版本

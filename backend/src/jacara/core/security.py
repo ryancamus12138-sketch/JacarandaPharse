@@ -1,9 +1,9 @@
-"""密码和登录 token。
+"""Passwords and login tokens.
 
-密码：只存 Argon2id 哈希，不存原文。哈希是单向的：能验证"输入的密码对不对"，但算不回原文。
-token：登录成功后发给用户的一串随机字符，之后每个请求都带上它。数据库里只存它的 SHA-256，
-        数据库泄露了，拿到的也只是哈希，冒充不了任何人。
-"""
+Passwords: only Argon2id hashes are stored, never the plaintext. The hash is one-way: it can
+verify a password but cannot be reversed.
+Tokens: a random string issued at login and sent with every subsequent request. The database
+stores only its SHA-256, so a leaked database cannot be used to impersonate anyone."""
 
 from __future__ import annotations
 
@@ -13,51 +13,58 @@ import secrets
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 
-_hasher = PasswordHasher()  # 默认参数就是 OWASP 推荐的 Argon2id 设置
+_hasher = PasswordHasher()  # Defaults match the OWASP-recommended Argon2id parameters.
 
 _DUMMY_HASH = _hasher.hash("用户不存在时也算一次哈希")
-"""用户名不存在时，也拿这个哈希验证一次：花的时间一样，别人就没法靠"响应快慢"猜出哪些用户名存在。"""
+"""Verified against when the user name does not exist, so the response time is the same and cannot
+reveal which user names exist."""
 
 MIN_PASSWORD_LENGTH = 8
 
 
 def hash_password(password: str) -> str:
-    """把密码变成哈希。同一个密码每次结果都不一样（里面带了随机的盐），这是正常的。"""
+    """Hash a password. The same password yields a different hash each time (random salt); this is
+    expected."""
     return _hasher.hash(password)
 
 
 def verify_password(password_hash: str | None, password: str) -> bool:
-    """密码对不对。password_hash 是 None（用户不存在）时也照样算一次，然后返回 False。"""
+    """Whether the password is correct. When password_hash is None (unknown user), a hash is still
+    computed and False is returned."""
     try:
-        _hasher.verify(password_hash or _DUMMY_HASH, password)  # 密码不对会抛出异常
+        _hasher.verify(password_hash or _DUMMY_HASH, password)  # Raises on a wrong password.
     except (VerificationError, InvalidHashError):
         return False
-    return password_hash is not None  # 用户不存在时，就算"碰巧对上"假哈希也不算
+    # Unknown user: never succeed, even if the dummy hash happens to match.
+    return password_hash is not None
 
 
 def new_token() -> str:
-    """登录 token：32 字节的随机数，写成 43 个字符。猜中的概率可以忽略。"""
+    """Login token: 32 random bytes encoded as 43 characters. The probability of guessing it is
+    negligible."""
     return secrets.token_urlsafe(32)
 
 
 def token_hash(token: str) -> str:
-    """数据库里存的是 token 的哈希。token 本身已经足够随机，用 SHA-256 就够了，不需要 Argon2。"""
+    """The database stores a hash of the token. The token already has full entropy, so SHA-256
+    suffices; Argon2 is unnecessary."""
     return hashlib.sha256(token.encode()).hexdigest()
 
 
 RESET_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-"""重设码用的字：去掉了容易看错、念错的 0 O 1 I。"""
+"""Alphabet for reset codes: excludes the easily confused characters 0 O 1 I."""
 
 
 def new_reset_code() -> str:
-    """一次性重设码，比如 "K7QM-3XWD"：8 个字，32 选 1，一共约 1 万亿种。
+    """One-time reset code such as "K7QM-3XWD": 8 characters from a 32-character alphabet, about
+    10^12 combinations.
 
-    只在 15 分钟里有效、只能用一次，管理员当面或电话告诉对方，比登录 token 短得多也够安全。
-    """
+        Valid for 15 minutes and usable once; an administrator passes it on in person or by
+    phone. Much shorter than a login token, yet secure enough under these limits."""
     raw = "".join(secrets.choice(RESET_CODE_ALPHABET) for _ in range(8))
     return f"{raw[:4]}-{raw[4:]}"
 
 
 def normalize_reset_code(code: str) -> str:
-    """输入时不分大小写、不管横线和空格："k7qm 3xwd" 和 "K7QM-3XWD" 是同一个码。"""
+    """Input is case-insensitive and ignores hyphens and spaces: "k7qm 3xwd" equals "K7QM-3XWD"."""
     return "".join(c for c in code.upper() if c.isalnum())
