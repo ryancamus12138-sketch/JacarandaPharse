@@ -17,7 +17,12 @@ Checks, each of which fails when a file is missing from the package:
 - a full backup is made, checked and restored through the maintenance jobs, and an automatic
   database backup (SQLite online backup) is made and restored;
 - closing standard input stops everything.
-No model file is given, so no model server starts and extraction itself is not exercised."""
+No model file is given, so no model server starts and extraction itself is not exercised.
+
+The backend's output is read all the time in a thread, as the desktop shell does (on Windows a
+pipe holds only a few kilobytes, and a backend whose output nobody reads stops at its next line).
+When a check fails, its output and the log files are printed, so a failure on a build machine can
+be understood from the build log."""
 
 from __future__ import annotations
 
@@ -29,15 +34,34 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
+from typing import IO
 
 import httpx
+
+OUTPUT: list[str] = []
+"""Everything the backend has printed (standard output and standard error)."""
+
+LOGS: list[Path] = []
+"""Folders whose files are printed after a failure."""
+
+
+def show_output() -> None:
+    print("---- backend output ----", flush=True)
+    print("".join(OUTPUT[-400:]).rstrip() or "(nothing)", flush=True)
+    for folder in LOGS:
+        for log in sorted(folder.glob("*.log")) if folder.is_dir() else []:
+            print(f"---- {log.name} ----", flush=True)
+            text = log.read_text("utf-8", errors="replace")
+            print(text[-20000:].rstrip() or "(empty)", flush=True)
 
 
 def check(ok: bool, what: str) -> None:
     print(("ok    " if ok else "FAIL  ") + what, flush=True)
     if not ok:
+        show_output()
         raise SystemExit(1)
 
 
@@ -55,6 +79,7 @@ def main() -> None:
         HOME=str(home),
         USERPROFILE=str(home),
     )
+    LOGS.append(data / "logs")
     process = subprocess.Popen(  # noqa: S603
         [str(exe), "desktop"],
         env=env,
@@ -63,22 +88,30 @@ def main() -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if process.stdout is None or process.stdin is None:
         raise SystemExit("no pipes to the backend")
-    enter = None
-    deadline = time.monotonic() + 120
-    while time.monotonic() < deadline:
-        line = process.stdout.readline()
-        if not line:
-            break
-        found = re.search(r"JACARA_READY (\S+)", line)
-        if found:
-            enter = found.group(1)
-            break
-    if enter is None:
+    ready = threading.Event()
+    found: list[str] = []
+
+    def read(stream: IO[str]) -> None:
+        for line in stream:
+            OUTPUT.append(line)
+            if not found and (match := re.search(r"JACARA_READY (\S+)", line)):
+                found.append(match.group(1))
+                ready.set()
+        ready.set()  # The backend ended.
+
+    threading.Thread(target=read, args=(process.stdout,), name="output", daemon=True).start()
+    ready.wait(timeout=120)
+    if not found:
+        exited = process.poll()
+        print(f"backend {'exited with ' + str(exited) if exited is not None else 'still running'}")
         check(False, "started and reported ready (database migrated)")
         return
+    enter = found[0]
     check(True, "started and reported ready (database migrated)")
     base = enter.split("/desktop/")[0]
     client = httpx.Client(base_url=base, follow_redirects=True, timeout=60, trust_env=False)

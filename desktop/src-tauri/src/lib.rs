@@ -146,8 +146,18 @@ fn start_backend(app: &AppHandle, window: WebviewWindow) -> Result<(), String> {
     let app = app.clone();
     thread::spawn(move || {
         let mut ready = false;
-        for line in BufReader::new(stdout).lines() {
-            let Ok(line) = line else { break };
+        let mut reader = BufReader::new(stdout);
+        let mut bytes = Vec::new();
+        loop {
+            bytes.clear();
+            // Read raw lines: a line that is not valid UTF-8 is shown with replacement characters
+            // instead of ending the loop, which would be taken for the backend having stopped.
+            match reader.read_until(b'\n', &mut bytes) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+            let text = String::from_utf8_lossy(&bytes);
+            let line = text.trim_end_matches(['\r', '\n']);
             if let Some(address) = line.strip_prefix(READY) {
                 match Url::parse(address.trim()) {
                     Ok(url) => {
@@ -158,7 +168,7 @@ fn start_backend(app: &AppHandle, window: WebviewWindow) -> Result<(), String> {
                     Err(e) => show_failure(&app, &window, &format!("bad ready line {line:?}: {e}")),
                 }
             } else {
-                note(&line);
+                note(line);
             }
         }
         // Standard output closed: the backend has ended (or is ending on exit).

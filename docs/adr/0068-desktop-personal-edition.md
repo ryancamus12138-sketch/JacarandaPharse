@@ -621,6 +621,14 @@ Hugging Face 上的文件 SHA-256 一致：
     测试里的 `Models` 文件夹就是数据文件夹里的 `models`。
 - 第二次运行时 Windows 上 `licenses.py` 找不到 `npx`：Windows 上它是 `npx.cmd`，`CreateProcess` 不按裸名字找 `.cmd`，
   改为先用 `shutil.which` 找到程序再运行，并按 UTF-8 读取输出。
+- 第四次运行时 Windows 上打包好的后端启动约 2 秒就退出，冒烟测试没有显示原因。按根本原因处理：
+  - 冒烟测试改为像外壳一样在线程里一直读后端的输出（Windows 的管道只能存几 KB，没人读时后端会卡在下一行输出上），
+    任何一项失败都打印后端的输出和日志文件，以后在构建机上失败也能从构建日志看到原因。
+  - 打包好的程序打开 Python 的 UTF-8 模式（PEP 540，spec 里的 `X utf8_mode=1`，PyInstaller 手册
+    "Specifying Python Interpreter Options"）。打包好的程序不读 `PYTHONUTF8` 等环境变量；没有这个设置时，Windows 上的
+    Python 用系统代码页（如 cp1252、cp936）写管道里的标准输出和标准错误、读写子进程的文本，而外壳按 UTF-8 读后端的
+    输出，测试在各系统上也都是 UTF-8 模式（CI 设了 `PYTHONUTF8=1`，macOS 和 Linux 本来就是 UTF-8）。
+  - 外壳读后端输出时，遇到不是 UTF-8 的行改为用替换字符显示；原来会结束读取，被当成后端已经停止。
 - **macOS 的 OpenCV 从源码构建**：PyPI 上 `opencv-python-headless` 的 macOS wheel（4.9 到 5.0 都是）带的 FFmpeg
   是用 `--enable-gpl` 构建的：`cv2` 加载 `libavcodec`，`libavcodec` 链接 `libx264`、`libx265`（GPL-2.0 及以上），
   4.13.0.92 还带 `librubberband`、`libvidstab`、`libpostproc`。项目页说"All wheels ship with FFmpeg licensed under

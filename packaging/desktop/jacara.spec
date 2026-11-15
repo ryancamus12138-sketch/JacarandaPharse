@@ -134,10 +134,19 @@ a = Analysis(
     ],
 )
 pyz = PYZ(a.pure)
+# Python's UTF-8 mode (PEP 540) in the packaged program. Without it Python on Windows uses the
+# system's code page (for example cp1252 or cp936) for standard output and error when they are
+# pipes, and for subprocess text: the desktop shell reads the backend's output as UTF-8, and the
+# tests run in UTF-8 mode on every system (PYTHONUTF8=1 in CI; macOS and Linux default to UTF-8).
+# A packaged program does not read PYTHON* environment variables, so the mode is set here, as the
+# PyInstaller manual's "Specifying Python Interpreter Options" shows. No effect on macOS, where
+# the locale is UTF-8 already.
+options = [("X utf8_mode=1", None, "OPTION")]
+
 exe = EXE(
     pyz,
     a.scripts,
-    [],
+    options,
     exclude_binaries=True,
     name="jacara-backend",
     console=True,
