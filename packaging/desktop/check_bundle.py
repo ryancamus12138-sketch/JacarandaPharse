@@ -145,7 +145,11 @@ def macho_files(bundle: Path) -> list[Path]:
 
 
 def version_tuple(text: str) -> tuple[int, ...]:
-    return tuple(int(p) for p in text.split("."))
+    """Version parts as numbers, without trailing zero parts: 14.0.0 and 14.0 are the same."""
+    parts = [int(p) for p in text.split(".")]
+    while len(parts) > 1 and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
 
 
 def minimum_macos(path: Path) -> str | None:

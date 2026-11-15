@@ -233,7 +233,12 @@ def web_section() -> list[str]:
 
 def rust_section() -> list[str]:
     shell = ROOT / "desktop" / "src-tauri"
-    data = json.loads(run("cargo", "about", "generate", "--format", "json", cwd=shell))
+    # Written to a file (-o): cargo-about refuses to write to a redirected standard output in
+    # PowerShell, which is the default shell of the Windows runners.
+    out = OUT.parent / "cargo-about.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    run("cargo", "about", "generate", "--format", "json", "-o", str(out), cwd=shell)
+    data = json.loads(out.read_text("utf-8"))
     # "licenses" holds each licence text cargo-about chose, with the crates it applies to; "crates"
     # holds each crate's own licence expression, which may offer several licences.
     crates: dict[str, tuple[str, str, list[str], list[str]]] = {}
