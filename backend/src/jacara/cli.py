@@ -1089,12 +1089,20 @@ def _log_for_launcher() -> None:
     - log records at INFO and above go to the log with their time."""
     import faulthandler
     import logging
+    import os
 
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if callable(reconfigure):
             reconfigure(line_buffering=True)
     faulthandler.enable()
+    # For a process that stops making progress without output or exit: with
+    # JACARA_STACK_DUMP_SECONDS set, the Python stack of every thread is written to the log at that
+    # interval (faulthandler.dump_traceback_later, the standard library's tool for hangs; pytest's
+    # faulthandler_timeout uses it too). Off unless set; the packaging smoke test sets it.
+    every = os.environ.get("JACARA_STACK_DUMP_SECONDS")
+    if every:
+        faulthandler.dump_traceback_later(float(every), repeat=True)
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )

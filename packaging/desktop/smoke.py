@@ -76,6 +76,9 @@ def main() -> None:
         JACARA_HOME=str(data),
         JACARA_WATCH_STDIN="1",
         JACARA_WATCH_DIR=str(watch),
+        # Each background process writes the stacks of its threads to its log every 40 seconds,
+        # so a process that hangs shows where (printed with the logs when a check fails).
+        JACARA_STACK_DUMP_SECONDS="40",
         HOME=str(home),
         USERPROFILE=str(home),
     )
@@ -173,6 +176,16 @@ def main() -> None:
             imported = image.name in names
             time.sleep(1)
         check(read, "PDF passes OCR")
+        if not imported:
+            # What the watcher should have seen, and how the app reports its processes.
+            now = time.time()
+            for path in sorted(watch.rglob("*")):
+                stat = path.stat()
+                print(
+                    f"watch folder: {path} {stat.st_size} bytes, "
+                    f"modified {now - stat.st_mtime:.0f} s ago"
+                )
+            print(client.get("/api/v1/system/diagnostics").json()["text"])
         check(imported, "watch folder imports")
         same_origin = {"sec-fetch-site": "same-origin"}
 
